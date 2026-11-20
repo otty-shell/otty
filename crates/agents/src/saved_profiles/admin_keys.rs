@@ -19,7 +19,7 @@ pub(super) struct OldAdminKey {
 impl OldAdminKey {
     /// Whether the key was kept in the entry of `profile`.
     pub(super) fn is_of(&self, profile: &Profile) -> bool {
-        if profile.agent() != self.agent {
+        if *profile.agent() != self.agent {
             return false;
         }
 
@@ -33,8 +33,8 @@ impl OldAdminKey {
 
     /// Whether the key was kept in the entry of the added profile of
     /// `agent` named `name`.
-    pub(super) fn is_of_added(&self, agent: AgentId, name: &str) -> bool {
-        self.agent == agent
+    pub(super) fn is_of_added(&self, agent: &AgentId, name: &str) -> bool {
+        self.agent == *agent
             && self.owner == OldKeyOwner::AddedProfile(name.to_string())
     }
 }
@@ -55,13 +55,14 @@ mod tests {
     use crate::account::Account;
     use crate::admin_key::AdminKeyRef;
     use crate::agent::AgentId;
-    use crate::known_agents;
     use crate::profile::Profile;
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::saved_profiles::SavedProfiles;
     use crate::testing::{chatgpt_login, key_account, organization};
 
-    const CLAUDE: AgentId = AgentId::new("claude-code");
+    fn claude_id() -> AgentId {
+        AgentId::new("claude-code")
+    }
 
     /// An older `agents.json` with an admin key in the default Claude
     /// Code profile and in an added one.
@@ -83,13 +84,12 @@ mod tests {
     }"#;
 
     fn old_file() -> SavedProfiles {
-        SavedProfiles::from_json(OLD_FILE, &known_agents())
-            .expect("the old layout is read")
+        SavedProfiles::from_json(OLD_FILE).expect("the old layout is read")
     }
 
     fn default_claude() -> Profile {
         Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code",
             PathBuf::from("/home/user/.claude"),
         )
@@ -97,7 +97,7 @@ mod tests {
 
     fn claude_api() -> Profile {
         Profile::added(
-            CLAUDE,
+            claude_id(),
             "Claude Code · API",
             PathBuf::from("/home/user/.claude-api"),
         )
@@ -137,8 +137,7 @@ mod tests {
         assert_eq!(saved.admin_key_of(&home), Some(&by_variable()));
         assert_eq!(saved.admin_key_of(&work), Some(&by_file()));
         assert_eq!(
-            SavedProfiles::from_json(&text, &known_agents())
-                .expect("the text was just written"),
+            SavedProfiles::from_json(&text).expect("the text was just written"),
             saved
         );
         assert_eq!(
@@ -167,15 +166,15 @@ mod tests {
     /// a later read finds the profile's organization.
     #[test]
     fn the_admin_key_of_a_profile_with_no_organization_stays_in_its_entry() {
-        let key = key_account(Provider::Anthropic, "sk-ant-made-up-key");
+        let key =
+            key_account(ProviderRef::of_id("anthropic"), "sk-ant-made-up-key");
 
         let saved = moved(std::slice::from_ref(&key), &[]);
         let text = saved.to_json().expect("the paths are text");
 
         assert_eq!(saved.admin_key_of(&key), None);
         assert_eq!(
-            SavedProfiles::from_json(&text, &known_agents())
-                .expect("the text was just written"),
+            SavedProfiles::from_json(&text).expect("the text was just written"),
             old_file()
         );
         assert!(!text.contains("accounts"), "{text}");
@@ -184,14 +183,14 @@ mod tests {
     #[test]
     fn an_old_admin_key_follows_its_renamed_profile_and_goes_with_it() {
         let renamed = Profile::added(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Console",
             PathBuf::from("/home/user/.claude-api"),
         );
         let organization = organization("made-up-org");
 
         let after_rename = old_file().with_added_replaced(
-            CLAUDE,
+            &claude_id(),
             "Claude Code · API",
             renamed.clone(),
         );
@@ -200,7 +199,7 @@ mod tests {
             std::slice::from_ref(&organization),
         )]);
         let removed =
-            after_rename.without_added(CLAUDE, "Claude Code · Console");
+            after_rename.without_added(&claude_id(), "Claude Code · Console");
         let removed_text = removed.to_json().expect("the paths are text");
 
         assert_eq!(moved.admin_key_of(&organization), Some(&by_file()));
@@ -210,7 +209,8 @@ mod tests {
 
     #[test]
     fn only_an_organization_takes_an_admin_key() {
-        let key = key_account(Provider::Anthropic, "sk-ant-made-up-key");
+        let key =
+            key_account(ProviderRef::of_id("anthropic"), "sk-ant-made-up-key");
         let login = chatgpt_login("made-up-account");
 
         let saved = SavedProfiles::default()
@@ -235,8 +235,12 @@ mod tests {
         assert_eq!(removed, SavedProfiles::default());
     }
 
+    /// An admin key of no kind, and so an entry that keeps nothing, is
+    /// left out; the admin key of an organization of a provider no entry
+    /// of the registry names is kept (spec 2026-11-19-agent-plugins,
+    /// "`agents.json`").
     #[test]
-    fn an_account_of_an_unknown_provider_or_with_no_key_is_left_out() {
+    fn an_account_with_no_key_is_left_out_and_an_unknown_provider_kept() {
         let text = r#"{
             "accounts": [
                 { "provider": "future", "organization_id": "a", "admin_key": { "file": "/k" } },
@@ -244,10 +248,23 @@ mod tests {
                 { "provider": "anthropic", "organization_id": "c" }
             ]
         }"#;
+        let anthropic = organization("a");
+        let future = Account::new(
+            ProviderRef::of_id("future"),
+            anthropic.identity().clone(),
+            anthropic.login().clone(),
+            anthropic.kind(),
+            anthropic.found_in()[0].clone(),
+        );
 
-        let saved = SavedProfiles::from_json(text, &known_agents())
-            .expect("the layout is read");
+        let saved = SavedProfiles::from_json(text).expect("the layout is read");
 
-        assert_eq!(saved, SavedProfiles::default());
+        assert_eq!(
+            saved,
+            SavedProfiles::default().with_admin_key_of(
+                &future,
+                Some(AdminKeyRef::File(PathBuf::from("/k")))
+            )
+        );
     }
 }

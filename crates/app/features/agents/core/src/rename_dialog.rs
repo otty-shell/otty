@@ -105,7 +105,10 @@ pub(crate) fn open_for_account(
     }
 
     let saved = state.profiles().account_name(&account);
-    let name = saved.map_or_else(|| own_account_name(&account), String::from);
+    let name = saved.map_or_else(
+        || own_account_name(state.registry(), &account),
+        String::from,
+    );
     state.open_rename(RenameDialog::new(RenameTarget::Account(account), name));
     vec![AgentsOutcome::FocusRenameField]
 }
@@ -162,7 +165,7 @@ pub(crate) fn close_after_save(state: &mut AgentsState) {
             .or(state.selected_hidden_profile())
             .is_some_and(|selected| selected == profile);
         if is_on_screen {
-            state.select_named(profile.agent(), dialog.name.trim());
+            state.select_named(profile.agent().clone(), dialog.name.trim());
         }
     }
 }
@@ -184,7 +187,8 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let name = dialog.name.trim().to_string();
     let changed = match &dialog.target {
         RenameTarget::Account(account) => {
-            let is_own = name.is_empty() || name == own_account_name(account);
+            let is_own = name.is_empty()
+                || name == own_account_name(state.registry(), account);
             let name = (!is_own).then_some(name);
             saved.clone().with_account_name(account, name)
         },
@@ -224,7 +228,7 @@ mod tests {
 
     use otty_agents::{
         Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-        KeyFingerprint, Profile, Provider, SavedProfiles,
+        KeyFingerprint, Profile, ProviderRef, SavedProfiles,
     };
     use otty_app_i18n::{self as i18n, Key};
 
@@ -236,9 +240,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        CODEX, chatgpt_login, claude, codex, connected, now, open_account_menu,
-        open_profile_menu, profiles_loaded_from, save, with_accounts,
-        with_profiles,
+        chatgpt_login, claude, codex, codex_id, connected, now,
+        open_account_menu, open_profile_menu, profiles_loaded_from, save,
+        with_accounts, with_profiles,
     };
 
     fn with_chatgpt(saved: SavedProfiles) -> AgentsState {
@@ -324,7 +328,7 @@ mod tests {
     #[test]
     fn an_account_known_only_by_its_key_is_not_renamed() {
         let key = Account::new(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(
                 "sk-made-up-deepseek-key",
             )),
@@ -348,7 +352,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
         rename_profile(&mut state, codex());
         let renamed = Profile::default_for(
-            CODEX,
+            codex_id(),
             "Codex · Home",
             PathBuf::from("/home/user/.codex"),
         );

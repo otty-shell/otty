@@ -30,7 +30,7 @@ impl From<PathProblem> for FolderProblem {
 
 /// Checks that `folder` is no other profile's config folder of `agent`.
 pub(crate) fn check_folder(
-    agent: AgentId,
+    agent: &AgentId,
     folder: &Path,
     editing: Option<&Profile>,
     profiles: &[&Profile],
@@ -51,14 +51,14 @@ mod tests {
     fn the_folder_of_another_profile_of_the_agent_is_taken() {
         let agent = AgentId::new("codex");
         let other = Profile::added(
-            agent,
+            agent.clone(),
             "Codex · Work",
             PathBuf::from("/home/user/.codex-work"),
         );
         let folder = Path::new("/home/user/.codex-work");
 
-        let taken = check_folder(agent, folder, None, &[&other]);
-        let own = check_folder(agent, folder, Some(&other), &[&other]);
+        let taken = check_folder(&agent, folder, None, &[&other]);
+        let own = check_folder(&agent, folder, Some(&other), &[&other]);
 
         assert_eq!(taken, Err(FolderProblem::Taken));
         assert_eq!(own, Ok(()));

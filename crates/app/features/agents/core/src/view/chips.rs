@@ -3,16 +3,16 @@
 //! is an icon, a name and a small number in a line, in a thin frame; a
 //! press opens what it names.
 
-use iced::widget::{Row, button, row, svg, text};
+use iced::widget::{Row, button, row, text};
 use iced::{Alignment, Border, Color, Element, Padding};
-use otty_app_theme::icons;
 use otty_ui_kit::components::session_row::SessionTone;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, radius, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
-use super::super::model::PaysThroughViewModel;
+use super::super::model::{EntryIcon, PaysThroughViewModel};
+use super::entry_icon;
 
 /// Edge of the icon of a chip (`size={14}`).
 const CHIP_ICON: f32 = 14.0;
@@ -28,8 +28,8 @@ const CHIP_PADDING: Padding = Padding {
 
 /// What one chip shows and what a press on it sends.
 pub(super) struct Chip {
-    /// The SVG of its icon: the agent's or the provider's.
-    pub(super) icon: &'static [u8],
+    /// Its icon: the agent's or the provider's.
+    pub(super) icon: EntryIcon,
     /// The name, such as "Codex · Work" or "OpenAI · you@example.com".
     pub(super) name: String,
     /// The small number after the name, with its color.
@@ -62,7 +62,7 @@ pub(super) fn account_chips<'a>(
     let chips = accounts
         .into_iter()
         .map(|chip| Chip {
-            icon: icons::provider_icon(chip.provider),
+            icon: chip.icon,
             name: chip.name,
             note: chip.number.map(|(number, tone)| {
                 let color = match tone {
@@ -84,12 +84,7 @@ pub(super) fn account_chips<'a>(
 fn chip<'a>(chip: Chip, palette: &UiPalette) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
     let body = typography::BODY;
-    let icon = svg(svg::Handle::from_memory(chip.icon))
-        .width(CHIP_ICON)
-        .height(CHIP_ICON)
-        .style(move |_, _| svg::Style {
-            color: Some(strong),
-        });
+    let icon = entry_icon::view(chip.icon, CHIP_ICON, strong, palette);
     let name = text(chip.name)
         .size(body.size())
         .line_height(iced::Pixels(body.line_height()))

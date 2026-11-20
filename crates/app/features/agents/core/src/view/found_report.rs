@@ -165,7 +165,7 @@ mod tests {
             title: "Found by OTTY",
             intro: String::from("Profiles found: 1. Accounts found: 1."),
             profiles: vec![FoundProfileRowViewModel {
-                agent: "Claude Code",
+                agent: String::from("Claude Code"),
                 profile: String::from("Work"),
                 version: String::from("2.1.328"),
                 folder: String::from("~/.claude-work"),
@@ -184,7 +184,7 @@ mod tests {
                 line: String::from("Nobody is logged in."),
                 fix: Some(NeedFixViewModel {
                     label: String::from("Log in"),
-                    action: NeedAction::LogIn(codex()),
+                    action: Some(NeedAction::LogIn(codex())),
                 }),
             }],
         }

@@ -19,16 +19,17 @@ use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
 use crate::account_key::AccountKey;
+use crate::built_in::ANTHROPIC;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::profile::Profile;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 
 /// The accounts found in the files of `profile`: the login first, then the
 /// Console key of `.claude.json`, then the key of the settings.
 ///
 /// A login whose files name no id and no email can not be told from the
-/// others, so it is no account; neither is a key for a server OTTY does
-/// not know.
+/// others, so it is no account. A key for another server than
+/// Anthropic's is a key for the host of that server.
 pub(super) fn accounts(profile: &Profile) -> Vec<Account> {
     let config_dir = profile.config_dir();
     let found_in = FoundIn::ProfileFolder(config_dir.to_path_buf());
@@ -42,7 +43,13 @@ pub(super) fn accounts(profile: &Profile) -> Vec<Account> {
     let console_key = global_configs
         .iter()
         .find_map(GlobalConfig::primary_api_key)
-        .map(|key| Account::of_key(Provider::Anthropic, key, found_in.clone()));
+        .map(|key| {
+            Account::of_key(
+                ProviderRef::of_id(ANTHROPIC),
+                key,
+                found_in.clone(),
+            )
+        });
     let settings_key = settings.as_ref().and_then(|settings| {
         let provider = provider_of(Some(settings))?;
         let key = settings.env_key()?;
@@ -75,19 +82,19 @@ pub(super) fn settings_key_of(
 }
 
 /// The provider the tokens of the profile in `config_dir` are counted
-/// under, since Claude Code does not write it (spec Decision 4): the
-/// provider of `ANTHROPIC_BASE_URL` in its settings when it is set, else
-/// Anthropic. `None` for a server OTTY does not know.
-pub(super) fn profile_provider(config_dir: &Path) -> Option<Provider> {
+/// under, since Claude Code does not write it (spec Decision 4): the host
+/// of `ANTHROPIC_BASE_URL` in its settings when it is set, else Anthropic.
+/// `None` for a base URL that is not an address of the web.
+pub(super) fn profile_provider(config_dir: &Path) -> Option<ProviderRef> {
     provider_of(read_settings(config_dir).as_ref())
 }
 
-/// The provider of the server `settings` send Claude Code to: the one of
+/// The provider of the server `settings` send Claude Code to: the host of
 /// `ANTHROPIC_BASE_URL`, else Anthropic.
-fn provider_of(settings: Option<&Settings>) -> Option<Provider> {
+fn provider_of(settings: Option<&Settings>) -> Option<ProviderRef> {
     match settings.and_then(Settings::base_url) {
-        Some(base_url) => Provider::of_base_url(base_url),
-        None => Some(Provider::Anthropic),
+        Some(base_url) => ProviderRef::of_base_url(base_url),
+        None => Some(ProviderRef::of_id(ANTHROPIC)),
     }
 }
 
@@ -118,7 +125,7 @@ fn login_account(
 
     Some(
         Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id(ANTHROPIC),
             identity,
             login,
             kind,
@@ -195,7 +202,7 @@ mod tests {
         accounts(&claude_profile(config_dir))
     }
 
-    fn key_account(provider: Provider, config_dir: &Path) -> Account {
+    fn key_account(provider: ProviderRef, config_dir: &Path) -> Account {
         Account::new(
             provider,
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(KEY)),
@@ -216,7 +223,7 @@ mod tests {
         );
 
         let expected = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::AccountId(
                 "00000000-0000-4000-8000-00000000000a".into(),
             ),
@@ -238,7 +245,7 @@ mod tests {
         write_file(&dir.join(".claude.json"), &global_config("prepaid"));
 
         let expected = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::OrganizationId(
                 "00000000-0000-4000-8000-00000000000b".into(),
             ),
@@ -301,7 +308,10 @@ mod tests {
             &format!(r#"{{"primaryApiKey": "{KEY}"}}"#),
         );
 
-        assert_eq!(accounts_in(&dir), [key_account(Provider::Anthropic, &dir)]);
+        assert_eq!(
+            accounts_in(&dir),
+            [key_account(ProviderRef::of_id("anthropic"), &dir)]
+        );
     }
 
     #[test]
@@ -315,12 +325,18 @@ mod tests {
             ),
         );
 
-        assert_eq!(accounts_in(&dir), [key_account(Provider::Anthropic, &dir)]);
-        assert_eq!(profile_provider(&dir), Some(Provider::Anthropic));
+        assert_eq!(
+            accounts_in(&dir),
+            [key_account(ProviderRef::of_id("anthropic"), &dir)]
+        );
+        assert_eq!(
+            profile_provider(&dir),
+            Some(ProviderRef::of_id("anthropic"))
+        );
     }
 
     #[test]
-    fn a_token_for_a_deepseek_base_url_is_a_deepseek_key() {
+    fn a_token_for_a_deepseek_base_url_is_a_key_for_its_host() {
         let temp = TempDir::new();
         let dir = config_dir(&temp);
         write_file(
@@ -334,8 +350,9 @@ mod tests {
             ),
         );
 
-        assert_eq!(accounts_in(&dir), [key_account(Provider::DeepSeek, &dir)]);
-        assert_eq!(profile_provider(&dir), Some(Provider::DeepSeek));
+        let deepseek = ProviderRef::Host(String::from("api.deepseek.com"));
+        assert_eq!(accounts_in(&dir), [key_account(deepseek.clone(), &dir)]);
+        assert_eq!(profile_provider(&dir), Some(deepseek));
     }
 
     /// Claude Code sends the auth token before the API key, so the token
@@ -354,11 +371,18 @@ mod tests {
             ),
         );
 
-        assert_eq!(accounts_in(&dir), [key_account(Provider::Anthropic, &dir)]);
+        assert_eq!(
+            accounts_in(&dir),
+            [key_account(ProviderRef::of_id("anthropic"), &dir)]
+        );
     }
 
+    /// Spec 2026-11-19-agent-plugins, "Identity and links do not depend on
+    /// a provider plugin": a key for a server is an account known by the
+    /// host of the server; the registry names its provider later, if any
+    /// entry serves the host.
     #[test]
-    fn a_key_for_an_unknown_server_is_no_account() {
+    fn a_key_for_any_other_server_is_an_account_of_its_host() {
         let temp = TempDir::new();
         let dir = config_dir(&temp);
         write_file(
@@ -371,8 +395,9 @@ mod tests {
             ),
         );
 
-        assert_eq!(accounts_in(&dir), []);
-        assert_eq!(profile_provider(&dir), None);
+        let gateway = ProviderRef::Host(String::from("gateway.example.com"));
+        assert_eq!(accounts_in(&dir), [key_account(gateway.clone(), &dir)]);
+        assert_eq!(profile_provider(&dir), Some(gateway));
     }
 
     #[test]
@@ -402,7 +427,10 @@ mod tests {
         write_file(&dir.join("settings.json"), "{\"env\": ");
 
         assert_eq!(accounts_in(&dir), []);
-        assert_eq!(profile_provider(&dir), Some(Provider::Anthropic));
+        assert_eq!(
+            profile_provider(&dir),
+            Some(ProviderRef::of_id("anthropic"))
+        );
     }
 
     #[test]
@@ -443,15 +471,17 @@ mod tests {
         );
         let profile = claude_profile(&dir);
         let other = Account::new(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-other")),
             AccountLogin::Key(None),
             AccountKind::Money,
             FoundIn::ProfileFolder(dir.clone()),
         );
 
-        let key =
-            settings_key_of(&profile, &key_account(Provider::DeepSeek, &dir));
+        let key = settings_key_of(
+            &profile,
+            &key_account(ProviderRef::of_id("deepseek"), &dir),
+        );
         let not_this = settings_key_of(&profile, &other);
 
         assert_eq!(

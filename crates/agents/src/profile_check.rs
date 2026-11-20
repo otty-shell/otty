@@ -61,7 +61,7 @@ pub fn check_profile_name(
 /// `editing` is the profile being edited, if any; its own folder is not
 /// "another profile's".
 pub fn check_profile_config_dir(
-    agent: AgentId,
+    agent: &AgentId,
     config_dir: &Path,
     editing: Option<&Profile>,
     profiles: &[&Profile],
@@ -94,23 +94,28 @@ mod tests {
 
     use super::*;
 
-    const CLAUDE: AgentId = AgentId::new("claude-code");
-    const CODEX: AgentId = AgentId::new("codex");
+    fn claude_id() -> AgentId {
+        AgentId::new("claude-code")
+    }
+
+    fn codex_id() -> AgentId {
+        AgentId::new("codex")
+    }
 
     fn profiles() -> [Profile; 3] {
         [
             Profile::default_for(
-                CLAUDE,
+                claude_id(),
                 "Claude Code",
                 PathBuf::from("/home/user/.claude"),
             ),
             Profile::added(
-                CLAUDE,
+                claude_id(),
                 "Semrush",
                 PathBuf::from("/home/user/.claude-semrush"),
             ),
             Profile::default_for(
-                CODEX,
+                codex_id(),
                 "Codex",
                 PathBuf::from("/home/user/.codex"),
             ),
@@ -169,7 +174,7 @@ mod tests {
         let profiles: Vec<&Profile> = profiles.iter().collect();
 
         let taken = check_profile_config_dir(
-            CLAUDE,
+            &claude_id(),
             Path::new("/home/user/.claude-semrush"),
             None,
             &profiles,
@@ -184,19 +189,19 @@ mod tests {
         let profiles: Vec<&Profile> = profiles.iter().collect();
 
         let new = check_profile_config_dir(
-            CLAUDE,
+            &claude_id(),
             Path::new("/home/user/.claude-work"),
             None,
             &profiles,
         );
         let other_agent = check_profile_config_dir(
-            CODEX,
+            &codex_id(),
             Path::new("/home/user/.claude-semrush"),
             None,
             &profiles,
         );
         let own = check_profile_config_dir(
-            CLAUDE,
+            &claude_id(),
             Path::new("/home/user/.claude-semrush"),
             Some(profiles[1]),
             &profiles,

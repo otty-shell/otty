@@ -75,7 +75,7 @@ impl FoundReportViewModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FoundProfileRowViewModel {
     /// The name of its agent, such as "Claude Code".
-    pub(crate) agent: &'static str,
+    pub(crate) agent: String,
     /// The name of the profile, such as "Work".
     pub(crate) profile: String,
     /// The version of the agent's program, or "—".
@@ -91,7 +91,7 @@ impl FoundProfileRowViewModel {
         let profile = shown.profile();
 
         Self {
-            agent: state.agent_name(profile.agent()),
+            agent: state.agent_name(profile.agent()).to_string(),
             profile: profile.name().to_string(),
             version: state
                 .profiles()
@@ -130,7 +130,11 @@ impl FoundAccountRowViewModel {
             .map_or_else(|| UNKNOWN.to_string(), |(number, _)| number);
 
         Self {
-            account: account_name(state.profiles().saved(), account),
+            account: account_name(
+                state.registry(),
+                state.profiles().saved(),
+                account,
+            ),
             found_in: found_in.join(", "),
             reads: reads_of(account.kind()),
             now,
@@ -153,7 +157,7 @@ mod tests {
 
     use otty_agents::{
         AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProfileStatus,
-        Provider, SavedProfiles, SourceId,
+        ProviderRef, SavedProfiles, SourceId,
     };
 
     use super::*;
@@ -173,7 +177,7 @@ mod tests {
     /// A made-up key at OpenAI that ends with `a1f3`.
     fn key_account() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(
                 "sk-made-up-key-for-tests-a1f3",
             )),
@@ -185,7 +189,8 @@ mod tests {
 
     #[test]
     fn each_profile_shows_its_agent_version_folder_and_accounts() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let loaded = profiles_with_accounts_loaded(
             &[
@@ -207,14 +212,14 @@ mod tests {
             vm.profiles,
             vec![
                 FoundProfileRowViewModel {
-                    agent: "Claude Code",
+                    agent: String::from("Claude Code"),
                     profile: String::from("Claude Code"),
                     version: String::from("2.1.328"),
                     folder: String::from("~/.claude"),
                     accounts: String::from("0"),
                 },
                 FoundProfileRowViewModel {
-                    agent: "Codex",
+                    agent: String::from("Codex"),
                     profile: String::from("Codex · Work"),
                     version: String::from(UNKNOWN),
                     folder: String::from("~/.codex-work"),

@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::time::SystemTime;
 
-use super::agent::DESCRIPTOR;
+use super::agent::NAME;
 use super::credentials::{OauthLogin, read_login};
 use super::usage_answer::limits_from;
 use crate::error::{SourceError, Unavailable};
@@ -76,7 +76,7 @@ fn usable_login(config_dir: &Path) -> Result<OauthLogin, SourceError> {
     if login.is_expired(SystemTime::now()) {
         // No reason to log in: the next source runs Claude Code, which
         // renews the token.
-        return Err(SourceError::LoginExpired(DESCRIPTOR.name()));
+        return Err(SourceError::LoginExpired(NAME));
     }
     if !login.may_read_usage() {
         return Err(SourceError::NotAvailable(

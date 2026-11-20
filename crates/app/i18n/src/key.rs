@@ -1539,6 +1539,12 @@ pub enum Key {
     AgentsNeedAdminKeyText,
     /// Button of the need of an organization with no admin key.
     AgentsAddAdminKey,
+    /// Need of an account whose provider no plugin serves.
+    AgentsNeedNoProviderTitle,
+    /// What the need of an account with no provider plugin means, such as "Key for api.deepseek.com found in Claude Code: no provider plugin". Placeholders: `{host}`, `{agent}`.
+    TplAgentsNeedNoProviderText,
+    /// Button of the need of an account with no provider plugin: adds a plugin (off until the Plugins page).
+    AgentsAddPlugin,
     /// Title of the Accounts section of the Agents mode left panel.
     AgentsSectionAccounts,
     /// The first row of the Accounts section and the title of its page: every account.
@@ -1805,8 +1811,6 @@ pub enum Key {
     AgentsAddAccountText,
     /// Note of a provider in the Add account dialog: OTTY reads the money left on the account.
     AgentsAddedLeft,
-    /// Note of OpenRouter in the Add account dialog: OTTY reads the limit of the key.
-    AgentsAddedKeyLimit,
     /// Note of Anthropic and OpenAI in the Add account dialog: OTTY reads the bill of the organization with an admin key.
     AgentsAddedBill,
     /// Error of the Add account dialog: an account with this key place is already added.
@@ -1914,7 +1918,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 894] = [
+    pub(super) const ALL: [Self; 896] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2624,6 +2628,9 @@ impl Key {
         Self::AgentsNeedAdminKeyTitle,
         Self::AgentsNeedAdminKeyText,
         Self::AgentsAddAdminKey,
+        Self::AgentsNeedNoProviderTitle,
+        Self::TplAgentsNeedNoProviderText,
+        Self::AgentsAddPlugin,
         Self::AgentsSectionAccounts,
         Self::AgentsAllAccounts,
         Self::AgentsAllProfiles,
@@ -2757,7 +2764,6 @@ impl Key {
         Self::AgentsEditKeyTitle,
         Self::AgentsAddAccountText,
         Self::AgentsAddedLeft,
-        Self::AgentsAddedKeyLimit,
         Self::AgentsAddedBill,
         Self::AgentsErrorAccountAdded,
         Self::AgentsLeft,

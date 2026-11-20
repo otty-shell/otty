@@ -4,11 +4,13 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::agent::{AgentDescriptor, AgentId};
+use crate::agent::{AgentEntry, AgentId, ConfigFolder};
+use crate::built_in;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::profile::Profile;
 use crate::record_format::RecordFormat;
+use crate::registry::Reader;
 
 /// The variable that moves the data folder of both, and of other programs.
 const XDG_DATA_HOME: &str = "XDG_DATA_HOME";
@@ -24,16 +26,38 @@ const IN_MEMORY: &str = ":memory:";
 /// names.
 #[derive(Debug)]
 pub(super) struct Fork {
-    descriptor: AgentDescriptor,
+    id: &'static str,
+    name: &'static str,
+    program: &'static str,
+    provider_name: &'static str,
+    icon: &'static [u8],
+    config_folder: ConfigFolder,
     data_dir_name: &'static str,
     database_file: &'static str,
     format: RecordFormat,
 }
 
 impl Fork {
-    /// What the app knows of the agent.
-    pub(super) fn descriptor(&self) -> &AgentDescriptor {
-        &self.descriptor
+    /// The id the agent is saved under, such as `kilo`.
+    pub(super) fn id(&self) -> AgentId {
+        AgentId::new(self.id)
+    }
+
+    /// Where the agent keeps its data folder.
+    pub(super) fn config_folder(&self) -> ConfigFolder {
+        self.config_folder
+    }
+
+    /// The entry the agent puts in the registry, built in.
+    pub(super) fn entry(&self) -> AgentEntry {
+        AgentEntry::new(
+            self.id(),
+            self.name,
+            self.program,
+            self.provider_name,
+            Reader::BuiltIn,
+        )
+        .with_icon(self.icon)
     }
 
     /// How the answers in its database are read, and the newest version
@@ -63,7 +87,7 @@ impl Fork {
         env: &AgentEnv,
         data_dir: &Path,
     ) -> Option<PathBuf> {
-        let variable = self.descriptor.database_variable()?;
+        let variable = self.config_folder.database_variable()?;
         let database = env.config_dir_of(variable)?;
         if database == Path::new(IN_MEMORY) {
             return None;
@@ -85,7 +109,7 @@ impl Fork {
     /// variable set to the database in it, so only the sessions are kept
     /// there.
     pub(super) fn start_command(&self, profile: &Profile) -> AgentCommand {
-        let command = AgentCommand::new(self.descriptor.program());
+        let command = AgentCommand::new(self.program);
         if profile.is_in_default_config_dir() {
             return command;
         }
@@ -98,7 +122,7 @@ impl Fork {
             return command.with_env(XDG_DATA_HOME, parent.to_string_lossy());
         }
 
-        match self.descriptor.database_variable() {
+        match self.config_folder.database_variable() {
             Some(variable) => command
                 .with_env(variable, self.database_in(folder).to_string_lossy()),
             None => command,
@@ -109,18 +133,13 @@ impl Fork {
 /// Kilo, the fork of OpenCode by Kilo Code: `~/.local/share/kilo`,
 /// `kilo.db` and `KILO_DB`.
 pub(super) const KILO: Fork = Fork {
-    descriptor: AgentDescriptor::new(
-        AgentId::new("kilo"),
-        "Kilo",
-        "kilo",
-        "kilo",
-        ".local/share/kilo",
-        XDG_DATA_HOME,
-        "Kilo",
-    )
-    .with_stats()
-    .with_database_variable("KILO_DB")
-    .with_cost(),
+    id: "kilo",
+    name: "Kilo",
+    program: "kilo",
+    provider_name: "Kilo",
+    icon: built_in::KILO_ICON,
+    config_folder: ConfigFolder::new(".local/share/kilo", XDG_DATA_HOME)
+        .with_database_variable("KILO_DB"),
     data_dir_name: "kilo",
     database_file: "kilo.db",
     format: RecordFormat::new(
@@ -132,18 +151,13 @@ pub(super) const KILO: Fork = Fork {
 /// OpenCode by Anomaly: `~/.local/share/opencode`, `opencode.db` and
 /// `OPENCODE_DB`.
 pub(super) const OPENCODE: Fork = Fork {
-    descriptor: AgentDescriptor::new(
-        AgentId::new("opencode"),
-        "OpenCode",
-        "opencode",
-        "opencode",
-        ".local/share/opencode",
-        XDG_DATA_HOME,
-        "OpenCode",
-    )
-    .with_stats()
-    .with_database_variable("OPENCODE_DB")
-    .with_cost(),
+    id: "opencode",
+    name: "OpenCode",
+    program: "opencode",
+    provider_name: "OpenCode",
+    icon: built_in::OPENCODE_ICON,
+    config_folder: ConfigFolder::new(".local/share/opencode", XDG_DATA_HOME)
+        .with_database_variable("OPENCODE_DB"),
     data_dir_name: "opencode",
     database_file: "opencode.db",
     format: RecordFormat::new(

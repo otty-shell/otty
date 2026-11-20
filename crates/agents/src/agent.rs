@@ -1,5 +1,6 @@
 //! A coding agent OTTY knows, and how it is told apart from the others.
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
+use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -20,14 +22,14 @@ use crate::stats::StatsSource;
 /// The id of an agent, such as `claude-code` or `codex`.
 ///
 /// It is the name the agent is saved under, so it never changes once an
-/// agent is released.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct AgentId(&'static str);
+/// agent is released; a new id is a new agent.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AgentId(String);
 
 impl AgentId {
     /// The id as text.
-    pub fn as_str(&self) -> &'static str {
-        self.0
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 
     /// An agent id from its text.
@@ -37,66 +39,123 @@ impl AgentId {
     ///
     /// assert_eq!(AgentId::new("codex").as_str(), "codex");
     /// ```
-    pub const fn new(id: &'static str) -> Self {
-        Self(id)
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
     }
 }
 
-/// What OTTY knows of an agent without asking it anything: its id, its
-/// name and icon, its program, its config folder and the variables that
-/// point the program at another one, the provider of its models, whether
-/// it reads a bill and statistics, and whether it writes the cost of each
-/// answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AgentDescriptor {
+/// What the app shows and needs to know of an agent without asking it
+/// anything (spec "Links in the interface"): its id, name and icon, its
+/// program, the provider its models come from, and what reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentEntry {
     id: AgentId,
-    name: &'static str,
-    icon: &'static str,
-    program: &'static str,
-    config_dir_name: &'static str,
-    config_dir_variable: &'static str,
-    database_variable: Option<&'static str>,
-    provider: &'static str,
-    has_bill: bool,
-    has_stats: bool,
-    writes_cost: bool,
+    name: String,
+    icon: Option<Cow<'static, [u8]>>,
+    program: String,
+    provider_name: String,
+    reader: Reader,
 }
 
-impl AgentDescriptor {
+impl AgentEntry {
     /// The id of the agent.
-    pub fn id(&self) -> AgentId {
-        self.id
+    pub fn id(&self) -> &AgentId {
+        &self.id
     }
 
     /// The name shown to the user, such as "Claude Code".
-    pub fn name(&self) -> &'static str {
-        self.name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    /// The name of the agent's icon among the app's icons.
-    pub fn icon(&self) -> &'static str {
-        self.icon
+    /// The SVG of its icon, in one color the app tints; `None` when it has
+    /// none, and the app draws the first letter of its name.
+    pub fn icon(&self) -> Option<&Cow<'static, [u8]>> {
+        self.icon.as_ref()
     }
 
     /// The name of the agent's program, looked up on `PATH`, such as
     /// `claude`.
-    pub fn program(&self) -> &'static str {
-        self.program
+    pub fn program(&self) -> &str {
+        &self.program
     }
 
+    /// The company whose models the agent uses and whose API an API key
+    /// pays, such as "Anthropic". The profile dialog shows it next to the
+    /// agent's name.
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
+
+    /// What reads the agent's profiles.
+    pub fn reader(&self) -> &Reader {
+        &self.reader
+    }
+
+    /// An entry with no icon.
+    ///
+    /// ```
+    /// use otty_agents::{AgentEntry, AgentId, Reader};
+    ///
+    /// let codex = AgentEntry::new(
+    ///     AgentId::new("codex"),
+    ///     "Codex",
+    ///     "codex",
+    ///     "OpenAI",
+    ///     Reader::BuiltIn,
+    /// );
+    ///
+    /// assert_eq!(codex.name(), "Codex");
+    /// assert!(codex.icon().is_none());
+    /// ```
+    pub fn new(
+        id: AgentId,
+        name: impl Into<String>,
+        program: impl Into<String>,
+        provider_name: impl Into<String>,
+        reader: Reader,
+    ) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            icon: None,
+            program: program.into(),
+            provider_name: provider_name.into(),
+            reader,
+        }
+    }
+
+    /// The same entry with the SVG `icon`.
+    pub fn with_icon(mut self, icon: impl Into<Cow<'static, [u8]>>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+}
+
+/// Where an agent keeps its config folder: the folder's name in the home
+/// folder and the environment variables that point the agent's program at
+/// another folder or another database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigFolder {
+    name: &'static str,
+    variable: &'static str,
+    database_variable: Option<&'static str>,
+}
+
+impl ConfigFolder {
     /// The name of the agent's default config folder in the home folder,
     /// such as `.claude`. The folder proposed for a new profile starts with
     /// it, such as `.claude-work`.
-    pub fn config_dir_name(&self) -> &'static str {
-        self.config_dir_name
+    pub fn name(&self) -> &'static str {
+        self.name
     }
 
     /// The environment variable that points the agent's program at a
     /// config folder, such as `CLAUDE_CONFIG_DIR`. When the app found it
     /// set, its folder is the one of the default profile, or holds it, as
     /// `XDG_DATA_HOME` holds the `kilo` folder of Kilo.
-    pub fn config_dir_variable(&self) -> &'static str {
-        self.config_dir_variable
+    pub fn variable(&self) -> &'static str {
+        self.variable
     }
 
     /// The environment variable that points the agent's program at
@@ -107,142 +166,30 @@ impl AgentDescriptor {
         self.database_variable
     }
 
-    /// The company whose models the agent uses and whose API an API key
-    /// pays, such as "Anthropic". The profile dialog shows it next to the
-    /// agent's name.
-    pub fn provider(&self) -> &'static str {
-        self.provider
-    }
-
-    /// Whether the agent reads the real bill of an API key account with an
-    /// admin key: its [`Agent::bill_source`] gives one (spec Decision 9).
-    pub fn has_bill(&self) -> bool {
-        self.has_bill
-    }
-
-    /// Whether the agent reads the statistics of a session and of a
-    /// project: its [`Agent::stats_source`] gives one (spec Decision 14).
-    pub fn has_stats(&self) -> bool {
-        self.has_stats
-    }
-
-    /// Whether the agent writes what each answer cost, as Kilo and
-    /// OpenCode do: its money is that cost, exact, not an estimate at the
-    /// list prices.
-    pub fn writes_cost(&self) -> bool {
-        self.writes_cost
-    }
-
-    /// A descriptor from its parts, of an agent that reads no bill and no
-    /// statistics.
+    /// The config folder `name` in the home folder, which `variable`
+    /// moves.
     ///
     /// ```
-    /// use otty_agents::{AgentDescriptor, AgentId};
+    /// use otty_agents::ConfigFolder;
     ///
-    /// const CODEX: AgentDescriptor = AgentDescriptor::new(
-    ///     AgentId::new("codex"),
-    ///     "Codex",
-    ///     "codex",
-    ///     "codex",
-    ///     ".codex",
-    ///     "CODEX_HOME",
-    ///     "OpenAI",
-    /// );
+    /// const CODEX: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
     ///
-    /// assert_eq!(CODEX.name(), "Codex");
-    /// assert_eq!(CODEX.config_dir_variable(), "CODEX_HOME");
-    /// assert!(!CODEX.has_stats());
+    /// assert_eq!(CODEX.variable(), "CODEX_HOME");
+    /// assert_eq!(CODEX.database_variable(), None);
     /// ```
-    pub const fn new(
-        id: AgentId,
-        name: &'static str,
-        icon: &'static str,
-        program: &'static str,
-        config_dir_name: &'static str,
-        config_dir_variable: &'static str,
-        provider: &'static str,
-    ) -> Self {
+    pub const fn new(name: &'static str, variable: &'static str) -> Self {
         Self {
-            id,
             name,
-            icon,
-            program,
-            config_dir_name,
-            config_dir_variable,
+            variable,
             database_variable: None,
-            provider,
-            has_bill: false,
-            has_stats: false,
-            writes_cost: false,
         }
     }
 
-    /// The same descriptor of an agent that reads a bill.
-    pub const fn with_bill(self) -> Self {
-        Self {
-            has_bill: true,
-            ..self
-        }
-    }
-
-    /// The same descriptor of an agent that reads statistics.
-    ///
-    /// ```
-    /// use otty_agents::{AgentDescriptor, AgentId};
-    ///
-    /// const CODEX: AgentDescriptor = AgentDescriptor::new(
-    ///     AgentId::new("codex"),
-    ///     "Codex",
-    ///     "codex",
-    ///     "codex",
-    ///     ".codex",
-    ///     "CODEX_HOME",
-    ///     "OpenAI",
-    /// )
-    /// .with_stats();
-    ///
-    /// assert!(CODEX.has_stats());
-    /// assert!(!CODEX.has_bill());
-    /// ```
-    pub const fn with_stats(self) -> Self {
-        Self {
-            has_stats: true,
-            ..self
-        }
-    }
-
-    /// The same descriptor of an agent that keeps its sessions in a
-    /// database file, which the environment variable `variable` moves.
+    /// The same folder of an agent that keeps its sessions in a database
+    /// file, which the environment variable `variable` moves.
     pub const fn with_database_variable(self, variable: &'static str) -> Self {
         Self {
             database_variable: Some(variable),
-            ..self
-        }
-    }
-
-    /// The same descriptor of an agent that writes what each answer cost.
-    ///
-    /// ```
-    /// use otty_agents::{AgentDescriptor, AgentId};
-    ///
-    /// const KILO: AgentDescriptor = AgentDescriptor::new(
-    ///     AgentId::new("kilo"),
-    ///     "Kilo",
-    ///     "kilo",
-    ///     "kilo",
-    ///     ".local/share/kilo",
-    ///     "XDG_DATA_HOME",
-    ///     "Kilo",
-    /// )
-    /// .with_database_variable("KILO_DB")
-    /// .with_cost();
-    ///
-    /// assert!(KILO.writes_cost());
-    /// assert_eq!(KILO.database_variable(), Some("KILO_DB"));
-    /// ```
-    pub const fn with_cost(self) -> Self {
-        Self {
-            writes_cost: true,
             ..self
         }
     }
@@ -258,10 +205,17 @@ impl AgentDescriptor {
 /// All methods are plain blocking calls; the app runs them on a background
 /// thread, so an agent can be shared between threads.
 pub trait Agent: Send + Sync {
-    /// What the app shows and needs to know of the agent without asking
-    /// it: its id, name, icon, program, config folder, provider and
-    /// whether it reads a bill and statistics.
-    fn descriptor(&self) -> &AgentDescriptor;
+    /// The entry the agent puts in the registry: its id, name, icon,
+    /// program and provider, read by this built-in reader.
+    fn entry(&self) -> &AgentEntry;
+
+    /// Where the agent keeps its config folder.
+    fn config_folder(&self) -> ConfigFolder;
+
+    /// Whether the agent writes what each answer cost, as Kilo and
+    /// OpenCode do: its money is that cost, exact, not an estimate at the
+    /// list prices.
+    fn writes_cost(&self) -> bool;
 
     /// Config folder of the default profile.
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
@@ -345,15 +299,26 @@ pub trait Agent: Send + Sync {
 
     /// Reads the real bill of an API key account with an admin key (spec
     /// Decision 9). `None`: the agent's provider has no bill OTTY can read,
-    /// and its API key profiles show only the estimate. It gives one
-    /// exactly when [`AgentDescriptor::has_bill`] says so.
+    /// and its API key profiles show only the estimate.
     fn bill_source(&self) -> Option<Box<dyn BillSource>>;
 
     /// Reads the statistics of a session and of a project folder from
     /// local files (spec Decision 14). `None`: not supported, and Show
-    /// statistics is off for the agent's sessions. It gives one exactly
-    /// when [`AgentDescriptor::has_stats`] says so.
+    /// statistics is off for the agent's sessions.
     fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
+
+    /// Whether the agent reads the real bill of an API key account with an
+    /// admin key: its [`Agent::bill_source`] gives one (spec Decision 9).
+    /// The app asks this, so it never makes a source it does not use.
+    fn has_bill(&self) -> bool {
+        self.bill_source().is_some()
+    }
+
+    /// Whether the agent reads the statistics of a session and of a
+    /// project: its [`Agent::stats_source`] gives one (spec Decision 14).
+    fn has_stats(&self) -> bool {
+        self.stats_source().is_some()
+    }
 }
 
 /// The agent of `agents` with the id `id`; `None` when it is not one of
@@ -364,14 +329,17 @@ pub trait Agent: Send + Sync {
 ///
 /// let agents = known_agents();
 ///
-/// let codex = agent_of(&agents, AgentId::new("codex"));
+/// let codex = agent_of(&agents, &AgentId::new("codex"));
 ///
-/// assert_eq!(codex.map(|agent| agent.descriptor().name()), Some("Codex"));
-/// assert!(agent_of(&agents, AgentId::new("cursor")).is_none());
+/// assert_eq!(codex.map(|agent| agent.entry().name()), Some("Codex"));
+/// assert!(agent_of(&agents, &AgentId::new("cursor")).is_none());
 /// ```
-pub fn agent_of(agents: &[Box<dyn Agent>], id: AgentId) -> Option<&dyn Agent> {
+pub fn agent_of<'a>(
+    agents: &'a [Box<dyn Agent>],
+    id: &AgentId,
+) -> Option<&'a dyn Agent> {
     agents
         .iter()
-        .find(|agent| agent.descriptor().id() == id)
+        .find(|agent| agent.entry().id() == id)
         .map(|agent| agent.as_ref())
 }

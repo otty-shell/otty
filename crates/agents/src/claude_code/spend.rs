@@ -53,7 +53,7 @@ impl SpendCounter for SessionSpend {
             config_dir,
             paths,
             now,
-            provider,
+            provider.as_ref(),
             SESSION_FILES,
             |path| read_session_spend(config_dir, path),
         )
@@ -67,7 +67,7 @@ mod tests {
 
     use super::*;
     use crate::claude_code::spend_file::TESTED_VERSION;
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::testing::{
         NOW, TempDir, at, claude_profile, set_file_time, utc_now, write_file,
     };
@@ -145,7 +145,7 @@ mod tests {
     }
 
     /// Claude Code writes no provider: the tokens are counted under the
-    /// provider of the profile's server, Anthropic when none is set.
+    /// host of the profile's server, Anthropic when none is set.
     #[test]
     fn the_tokens_are_counted_under_the_provider_of_the_profile() {
         let config = ConfigDir::new();
@@ -166,11 +166,15 @@ mod tests {
             spend
                 .this_month_by_model()
                 .iter()
-                .map(|model| model.provider())
+                .map(|model| model.provider().cloned())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(providers(&anthropic), [Some(Provider::Anthropic)]);
-        assert_eq!(providers(&deepseek), [Some(Provider::DeepSeek)]);
+        let deepseek_host = ProviderRef::Host(String::from("api.deepseek.com"));
+        assert_eq!(
+            providers(&anthropic),
+            [Some(ProviderRef::of_id("anthropic"))]
+        );
+        assert_eq!(providers(&deepseek), [Some(deepseek_host)]);
     }
 
     #[test]

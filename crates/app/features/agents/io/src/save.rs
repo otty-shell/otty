@@ -88,7 +88,7 @@ fn folder_problem(error: &CreateConfigDirError) -> String {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AgentId, Profile, known_agents};
+    use otty_agents::{AgentId, Profile};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -113,7 +113,7 @@ mod tests {
 
         assert!(result.is_ok(), "{result:?}");
         assert!(folder.is_dir());
-        let (saved, problem) = read_saved(&config_dir, &known_agents());
+        let (saved, problem) = read_saved(&config_dir);
         assert_eq!(problem, None);
         assert_eq!(saved, semrush(&folder));
     }

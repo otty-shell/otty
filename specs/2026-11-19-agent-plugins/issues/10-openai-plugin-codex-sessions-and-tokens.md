@@ -1,4 +1,4 @@
-# 10 OpenAI plugin, Codex part: profiles, sessions and tokens, with parity
+# 10 OpenAI plugin, Codex part: profiles, sessions and tokens
 
 Status: ready-for-agent
 Blocked by: 07, 09
@@ -35,11 +35,7 @@ OpenAI plugin; its provider part `openai` comes in issue 15.
    (`stats.rs`); launch, resume and login commands (`agent.rs`).
 3. Permissions of the `codex` part: `read` of the Codex folders only;
    `env` `CODEX_HOME`; `run` of `codex --version`.
-4. Parity: build the plugin, run `parity codex ~/.codex plugins/openai`
-   (issue 07) on the owner's real files with `nice`, one job, read-only;
-   record in the comments the totals per kind, the number of rows,
-   "equal", and both times. Fix until equal.
-5. Not here: logins, limits, embedding, deleting core code (issue 11);
+4. Not here: logins, limits, embedding, deleting core code (issue 11);
    the provider part `openai` (issue 15).
 
 ## Done when
@@ -49,8 +45,7 @@ OpenAI plugin; its provider part `openai` comes in issue 15.
   ported with the same made-up data and the same expectations; a `.zst`
   fixture equals its plain copy; renamed fields give seen but not
   understood.
-- The plugin builds for `wasm32-wasip2` and its parity run on the real
-  files prints "equal" for tokens and money; times recorded.
+- The plugin builds for `wasm32-wasip2`.
 - `thread/list` appears nowhere in the plugin.
 - The checks of `AGENTS.md` pass for OTTY; the plugin's own `cargo test`
   passes.

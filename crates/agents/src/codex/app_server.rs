@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::agent::{DESCRIPTOR, start_command};
+use super::agent::{PROGRAM, start_command};
 use super::individual_limit::individual_limit_in;
 use super::rate_limits::{WindowNumbers, codex_credits, codex_limits};
 use crate::command::AgentCommand;
@@ -63,7 +63,7 @@ impl LimitSource for AppServer {
 
         let mut program = self.programs.start(&command).map_err(|reason| {
             SourceError::NotAvailable(Unavailable::NotStarted {
-                program: DESCRIPTOR.program(),
+                program: PROGRAM,
                 reason,
             })
         })?;

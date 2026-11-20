@@ -146,7 +146,7 @@ mod tests {
     use otty_agents::fixtures::goose_keyring_entry;
     use otty_agents::{
         AccountIdentity, AccountKind, AccountLogin, FoundIn, KeyFingerprint,
-        Provider, SavedProfiles,
+        ProviderRef, SavedProfiles,
     };
 
     use super::*;
@@ -184,7 +184,8 @@ mod tests {
 
     /// Agents mode on screen with Goose found and `saved` read.
     fn on_screen_with_goose(saved: SavedProfiles) -> AgentsState {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(&mut state, loaded_with_goose(saved));
         state
@@ -204,7 +205,7 @@ mod tests {
     fn keyring_need_actions(state: &AgentsState) -> Vec<Option<NeedAction>> {
         account_needs(state)
             .into_iter()
-            .map(|need| need.fix.map(|fix| fix.action))
+            .map(|need| need.fix.and_then(|fix| fix.action))
             .filter(|action| {
                 matches!(
                     action,
@@ -216,7 +217,7 @@ mod tests {
 
     fn openrouter_key() -> Account {
         Account::new(
-            Provider::OpenRouter,
+            ProviderRef::of_id("openrouter"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(
                 "sk-or-v1-made-up-0000-key-c3d4",
             )),
@@ -228,7 +229,8 @@ mod tests {
 
     #[test]
     fn nothing_is_read_from_the_keyring_before_the_user_allows_it() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
 
         let entered = reduce(&mut state, AgentsIntent::Enter);
         let loaded = reduce(&mut state, loaded_with_goose(report_shown()));
@@ -281,7 +283,8 @@ mod tests {
     /// user is not asked about it.
     #[test]
     fn without_such_an_agent_the_keyring_is_never_asked_about() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -297,7 +300,8 @@ mod tests {
     /// the mode is on screen: once in a run, and again after Refresh.
     #[test]
     fn an_allowed_keyring_is_read_on_screen_once_and_after_refresh() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
 
         let away = reduce(&mut state, loaded_with_goose(allowed()));
         let entered = reduce(&mut state, AgentsIntent::Enter);
@@ -351,7 +355,8 @@ mod tests {
     /// saved: the user is not asked.
     #[test]
     fn with_an_unread_agents_json_the_keyring_is_not_asked_about() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let AgentsIntent::ProfilesLoaded(loaded) =
             loaded_with_goose(report_shown())

@@ -15,7 +15,7 @@ use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
 use crate::account_key::AccountKey;
-use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::bill::BillSource;
 use crate::claude_code::ClaudeCode;
 use crate::codex::Codex;
@@ -30,7 +30,8 @@ use crate::local_time::LocalNow;
 use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
+use crate::registry::Reader;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -51,7 +52,9 @@ mock! {
     pub(crate) Agent {}
 
     impl Agent for Agent {
-        fn descriptor(&self) -> &AgentDescriptor;
+        fn entry(&self) -> &AgentEntry;
+        fn config_folder(&self) -> ConfigFolder;
+        fn writes_cost(&self) -> bool;
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn accounts(&self, profile: &Profile) -> Vec<Account>;
@@ -164,6 +167,18 @@ pub(crate) fn answering(status: u16, body: &str) -> MockHttpsGet {
     client
 }
 
+/// The entry of a made-up agent with the id `id`, whose program is
+/// `program`.
+pub(crate) fn mock_entry(id: &str, program: &str) -> AgentEntry {
+    AgentEntry::new(
+        AgentId::new(id),
+        id,
+        program,
+        "Made-up Labs",
+        Reader::BuiltIn,
+    )
+}
+
 /// A made-up default profile of a made-up agent.
 pub(crate) fn profile(name: &str) -> Profile {
     let agent = AgentId::new("test-agent");
@@ -185,14 +200,14 @@ pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
 
 /// A profile of Claude Code that the user added, in `config_dir`.
 pub(crate) fn claude_profile(config_dir: &Path) -> Profile {
-    let agent = ClaudeCode::default().descriptor().id();
+    let agent = ClaudeCode::default().entry().id().clone();
 
     Profile::added(agent, "Claude Code · Test", config_dir.to_path_buf())
 }
 
 /// A profile of Codex that the user added, in `config_dir`.
 pub(crate) fn codex_profile(config_dir: &Path) -> Profile {
-    let agent = Codex::default().descriptor().id();
+    let agent = Codex::default().entry().id().clone();
 
     Profile::added(agent, "Codex · Test", config_dir.to_path_buf())
 }
@@ -263,7 +278,7 @@ pub(crate) fn set_file_time(path: &Path, time: SystemTime) {
 /// token, found in `/home/user/.claude`.
 pub(crate) fn organization(id: &str) -> Account {
     Account::new(
-        Provider::Anthropic,
+        ProviderRef::of_id("anthropic"),
         AccountIdentity::OrganizationId(id.to_string()),
         AccountLogin::Email(String::from("dev@example.com")),
         AccountKind::Money,
@@ -275,7 +290,7 @@ pub(crate) fn organization(id: &str) -> Account {
 /// `/home/user/.codex`.
 pub(crate) fn chatgpt_login(id: &str) -> Account {
     Account::new(
-        Provider::OpenAI,
+        ProviderRef::of_id("openai"),
         AccountIdentity::AccountId(id.to_string()),
         AccountLogin::Email(String::from("you@example.com")),
         AccountKind::Limits,
@@ -285,7 +300,7 @@ pub(crate) fn chatgpt_login(id: &str) -> Account {
 
 /// The account of the made-up `key` at `provider`, found in
 /// `/home/user/.claude`.
-pub(crate) fn key_account(provider: Provider, key: &str) -> Account {
+pub(crate) fn key_account(provider: ProviderRef, key: &str) -> Account {
     Account::new(
         provider,
         AccountIdentity::KeyFingerprint(KeyFingerprint::of(key)),

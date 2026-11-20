@@ -8,8 +8,8 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    FetchedPrices, MoneyEstimate, PriceSource, SourceError, SourceFailure,
-    SourceId, Unavailable,
+    FetchedPrices, MoneyEstimate, PriceSource, Registry, SourceError,
+    SourceFailure, SourceId, Unavailable,
 };
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::status_badge::StatusTone;
@@ -119,10 +119,11 @@ pub(crate) fn limit_sources(
 /// with when its data is from in the user's `time_zone` when it answered,
 /// or why it failed. Empty before the first read.
 pub(crate) fn own_sources(
+    registry: &Registry,
     own: &OwnRead,
     time_zone: Option<&TimeZone>,
 ) -> Vec<SourceRowViewModel> {
-    let Some(id) = otty_agents::own_source_of(own.account()) else {
+    let Some(id) = otty_agents::own_source_of(own.account(), registry) else {
         return Vec::new();
     };
 

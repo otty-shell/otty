@@ -188,14 +188,14 @@ impl OwnReads {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AdminKeyRef, Amount, Provider};
+    use otty_agents::{AdminKeyRef, Amount, ProviderRef};
 
     use super::*;
     use crate::testing::{at, chatgpt_login, five_hour_limits};
 
     fn deepseek() -> Account {
         Account::added(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         )
     }

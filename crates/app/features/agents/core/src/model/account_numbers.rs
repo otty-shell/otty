@@ -79,7 +79,7 @@ pub(super) fn account_estimate(
         return None;
     }
 
-    match AccountMoney::of(account, None, &spends, prices) {
+    match AccountMoney::of(account, None, &spends, prices, state.registry()) {
         AccountMoney::Estimate(estimate) => Some(estimate),
         _ => None,
     }
@@ -134,7 +134,9 @@ fn money(
         .balance()
         .map(|(_, read_at)| read_at)
         .or(own.bill().map(|(_, read_at)| read_at));
-    let failure = own.failure().map(|error| own_failure_text(account, error));
+    let failure = own
+        .failure()
+        .map(|error| own_failure_text(state, account, error));
     if rows.is_empty() && spent.is_none() && failure.is_none() {
         return None;
     }
@@ -208,10 +210,14 @@ fn key_limit_row(key_limit: &KeyLimit) -> UsageRowViewModel {
 
 /// Why the own read of `account` failed: its source and the reason, such
 /// as "DeepSeek balance: the key was refused".
-fn own_failure_text(account: &Account, error: &SourceError) -> String {
+fn own_failure_text(
+    state: &AgentsState,
+    account: &Account,
+    error: &SourceError,
+) -> String {
     let reason = source_error_text(error);
 
-    match own_source_of(account) {
+    match own_source_of(account, state.registry()) {
         Some(id) => named_failure(source_name(id), &reason),
         None => reason,
     }
@@ -325,7 +331,7 @@ fn spent_this_month(amount: String) -> Vec<UsageRowViewModel> {
 #[cfg(test)]
 mod tests {
     use otty_agents::{
-        Billing, Credits, DaySpend, Limits, ModelTokens, Provider,
+        Billing, Credits, DaySpend, Limits, ModelTokens, ProviderRef,
         SavedProfiles, SourceError, SourceId, Spend, TokenCount,
     };
 
@@ -366,7 +372,7 @@ mod tests {
             TokenCount::new(2_000_000, 0, 0),
             1,
         )
-        .with_provider(Some(Provider::Anthropic));
+        .with_provider(Some(ProviderRef::of_id("anthropic")));
 
         Spend::new(
             vec![DaySpend::new(jiff::civil::date(2026, 11, 16), vec![tokens])],
@@ -549,7 +555,7 @@ mod tests {
 
     /// A made-up account the user added at `provider`, its key in a
     /// variable.
-    fn added(provider: Provider) -> Account {
+    fn added(provider: ProviderRef) -> Account {
         Account::added(
             provider,
             otty_agents::AdminKeyRef::EnvVar(String::from("MADE_UP_KEY")),
@@ -563,7 +569,7 @@ mod tests {
         numbers: Result<otty_agents::AccountNumbers, SourceError>,
     ) -> AgentsState {
         let saved = SavedProfiles::default().with_account_added(
-            account.provider(),
+            account.provider().clone(),
             account.added_key().cloned().expect("an added account"),
         );
         let mut state = with_accounts(
@@ -603,7 +609,7 @@ mod tests {
     /// The owner's check: a DeepSeek key added by hand shows Left.
     #[test]
     fn an_added_key_shows_the_money_left_in_its_currency() {
-        let deepseek = added(Provider::DeepSeek);
+        let deepseek = added(ProviderRef::of_id("deepseek"));
         let state =
             added_with(&deepseek, Ok(balance(Amount::new(110.0, "CNY"), None)));
 
@@ -623,7 +629,7 @@ mod tests {
 
     #[test]
     fn an_openrouter_key_shows_its_limit_with_a_bar() {
-        let openrouter = added(Provider::OpenRouter);
+        let openrouter = added(ProviderRef::of_id("openrouter"));
         let limited = otty_agents::KeyLimit::new(
             Amount::new(12.3, "USD").expect("a number"),
             Amount::new(50.0, "USD"),
@@ -645,7 +651,7 @@ mod tests {
     /// An added organization reads its bill with its own admin key.
     #[test]
     fn an_added_organization_shows_its_bill() {
-        let openai = added(Provider::OpenAI);
+        let openai = added(ProviderRef::of_id("openai"));
         let state = added_with(
             &openai,
             Ok(otty_agents::AccountNumbers::Bill(bill_of(1, 2))),
@@ -664,7 +670,7 @@ mod tests {
 
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
-        let deepseek = added(Provider::DeepSeek);
+        let deepseek = added(ProviderRef::of_id("deepseek"));
         let state = added_with(&deepseek, Err(SourceError::KeyRefused));
 
         let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());

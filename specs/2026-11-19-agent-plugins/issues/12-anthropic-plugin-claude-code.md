@@ -1,4 +1,4 @@
-# 12 Anthropic plugin, Claude Code part: profiles, sessions, tokens, logins, with parity
+# 12 Anthropic plugin, Claude Code part: profiles, sessions, tokens, logins
 
 Status: ready-for-agent
 Blocked by: 07
@@ -35,16 +35,12 @@ plugin; its provider part `anthropic` comes in issue 15.
 4. Not here: `/usage` probe, embedding, deleting core code (issue 13);
    the provider part `anthropic` with the usage API and cost report
    (issue 15).
-5. Parity on the owner's real files (`parity claude-code ~/.claude
-   plugins/anthropic`), `nice`, one job, read-only; totals and times in
-   the comments.
 
 ## Done when
 
 - Tests first: the tests of the ported modules with the same made-up data
   and expectations; a `settings.json` key with a DeepSeek base URL is a
   login for host `api.deepseek.com`; no key text reaches the plugin.
-- Parity "equal" recorded.
 - The checks of `AGENTS.md` pass; the plugin's own tests pass.
 
 ## Comments

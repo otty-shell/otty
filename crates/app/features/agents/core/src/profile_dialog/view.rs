@@ -61,11 +61,12 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
             .agents
             .iter()
             .map(|agent| {
-                NoteSelectOption::new(agent.name).with_note(agent.provider)
+                NoteSelectOption::new(agent.name.clone())
+                    .with_note(agent.provider.clone())
             })
             .collect();
         let ids: Vec<AgentId> =
-            vm.agents.iter().map(|agent| agent.id).collect();
+            vm.agents.iter().map(|agent| agent.id.clone()).collect();
         body = body.push(
             column![
                 caption(i18n::t(Key::AgentsAgent), palette),
@@ -73,7 +74,9 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
                     .open(vm.is_agent_list_open)
                     .on_toggle(send(ProfileDialogIntent::AgentListToggled))
                     .on_pick(move |index| {
-                        send(ProfileDialogIntent::AgentPicked(ids[index]))
+                        send(ProfileDialogIntent::AgentPicked(
+                            ids[index].clone(),
+                        ))
                     }),
             ]
             .spacing(spacing::SPACE_2),
@@ -224,8 +227,8 @@ mod tests {
     fn add_dialog(can_submit: bool) -> ProfileDialogViewModel<'static> {
         let claude = AgentOption {
             id: AgentId::new("claude-code"),
-            name: "Claude Code",
-            provider: "Anthropic",
+            name: String::from("Claude Code"),
+            provider: String::from("Anthropic"),
         };
         ProfileDialogViewModel {
             title: "Add profile",
@@ -233,8 +236,8 @@ mod tests {
                 claude.clone(),
                 AgentOption {
                     id: AgentId::new("codex"),
-                    name: "Codex",
-                    provider: "OpenAI",
+                    name: String::from("Codex"),
+                    provider: String::from("OpenAI"),
                 },
             ],
             is_agent_list_open: false,

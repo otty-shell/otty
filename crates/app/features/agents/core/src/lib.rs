@@ -55,8 +55,11 @@
 //! };
 //! use otty_app_slots::Component;
 //!
+//! let known = otty_agents::known_agents();
+//! let registry = Arc::new(otty_agents::Registry::built_in(&known));
 //! let mut agents = Agents::new(
-//!     Arc::from(otty_agents::known_agents()),
+//!     Arc::from(known),
+//!     registry,
 //!     AgentEnv::new(PathBuf::from("/home/user")),
 //! );
 //!
@@ -139,6 +142,7 @@ mod types;
 mod usage;
 mod view;
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 pub use add_account_dialog::AddAccountIntent;
@@ -158,7 +162,7 @@ use model::{
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
 use new_session_dialog::NewSessionDialogViewModel;
-use otty_agents::AgentEnv;
+use otty_agents::{AgentEnv, Registry};
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
 };
@@ -230,11 +234,14 @@ pub const NEW_SESSION_BUTTON_ID: &str = view::NEW_SESSION_BUTTON_ID;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::AgentEnv;
+/// use otty_agents::{AgentEnv, Registry};
 /// use otty_app_agents::Agents;
 ///
+/// let known = otty_agents::known_agents();
+/// let registry = Arc::new(otty_agents::Registry::built_in(&known));
 /// let agents = Agents::new(
-///     Arc::from(otty_agents::known_agents()),
+///     Arc::from(known),
+///     registry,
 ///     AgentEnv::new(PathBuf::from("/home/user")),
 /// );
 ///
@@ -302,12 +309,18 @@ impl Agents {
         None
     }
 
-    /// Create the feature with the agents OTTY knows and the environment
-    /// they look at, before anything was read. The home folder of `env`
-    /// gives the folder proposed to a new profile.
-    pub fn new(agents: AgentList, env: AgentEnv) -> Self {
+    /// Create the feature with the agents OTTY knows, the registry that
+    /// names them and their providers (spec 2026-11-19-agent-plugins,
+    /// "Links in the interface"), and the environment they look at, before
+    /// anything was read. The home folder of `env` gives the folder
+    /// proposed to a new profile.
+    pub fn new(
+        agents: AgentList,
+        registry: Arc<Registry>,
+        env: AgentEnv,
+    ) -> Self {
         Self {
-            state: AgentsState::new(agents, env),
+            state: AgentsState::new(agents, registry, env),
         }
     }
 
@@ -569,7 +582,8 @@ mod tests {
     };
 
     fn agents_with_a_project() -> Agents {
-        let mut feature = Agents::new(agents(), env());
+        let mut feature =
+            Agents::new(agents(), crate::testing::registry(), env());
         for intent in [
             AgentsIntent::Enter,
             profiles_loaded_from(
@@ -587,7 +601,8 @@ mod tests {
 
     #[test]
     fn the_feature_is_active_only_in_agents_mode() {
-        let mut feature = Agents::new(agents(), env());
+        let mut feature =
+            Agents::new(agents(), crate::testing::registry(), env());
 
         let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
         assert!(feature.is_active());
@@ -597,7 +612,8 @@ mod tests {
 
     #[test]
     fn the_limits_timer_runs_only_in_agents_mode() {
-        let mut feature = Agents::new(agents(), env());
+        let mut feature =
+            Agents::new(agents(), crate::testing::registry(), env());
         let before = feature.subscription().units();
 
         let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
@@ -735,7 +751,8 @@ mod tests {
     /// mode, a dialog under the other dialogs.
     #[test]
     fn the_first_start_shows_the_found_report_as_a_dialog() {
-        let mut feature = Agents::new(agents(), env());
+        let mut feature =
+            Agents::new(agents(), crate::testing::registry(), env());
         let theme = AppTheme::default();
         let _ = feature.reduce(AgentsIntent::Enter, AgentsCtx::default());
         let _ = feature.reduce(
@@ -800,7 +817,7 @@ mod tests {
 
     #[test]
     fn before_the_first_read_the_main_area_is_the_loading_card() {
-        let feature = Agents::new(agents(), env());
+        let feature = Agents::new(agents(), crate::testing::registry(), env());
         let theme = AppTheme::default();
 
         let content = feature.main_area(ThemeProps::new(&theme));

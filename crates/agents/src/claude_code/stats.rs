@@ -73,8 +73,8 @@ impl StatsSource for SessionFilesStats {
 
         let provider = profile_provider(config_dir);
         let files = || std::iter::once(&main.spend).chain(&helpers);
-        let history = whole_history(files(), provider);
-        let spend = tally(files(), now, provider);
+        let history = whole_history(files(), provider.as_ref());
+        let spend = tally(files(), now, provider.as_ref());
         let started_at = earliest(main.first_prompt_at, history.first_at());
         let last_active_at = latest(main.last_prompt_at, history.last_at());
 
@@ -109,7 +109,9 @@ impl StatsSource for SessionFilesStats {
             .filter(|file| file.project() == Some(folder))
             .collect();
 
-        Ok(whole_history(files.iter(), profile_provider(config_dir)))
+        let provider = profile_provider(config_dir);
+
+        Ok(whole_history(files.iter(), provider.as_ref()))
     }
 }
 
@@ -155,7 +157,7 @@ fn read_main_file(path: &Path) -> MainFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::spend::ModelTokens;
     use crate::testing::{NOW, TempDir, claude_profile, utc_now, write_file};
     use crate::token_count::TokenCount;
@@ -254,13 +256,13 @@ mod tests {
                     TokenCount::new(20, 200, 8),
                     2
                 )
-                .with_provider(Some(Provider::Anthropic)),
+                .with_provider(Some(ProviderRef::of_id("anthropic"))),
                 ModelTokens::new(
                     Some("claude-opus-4-5"),
                     TokenCount::new(10, 100, 7),
                     1
                 )
-                .with_provider(Some(Provider::Anthropic)),
+                .with_provider(Some(ProviderRef::of_id("anthropic"))),
             ]
         );
         assert!(stats.limit_changes().is_empty());
@@ -368,13 +370,13 @@ mod tests {
                     TokenCount::new(20, 200, 3),
                     2
                 )
-                .with_provider(Some(Provider::Anthropic)),
+                .with_provider(Some(ProviderRef::of_id("anthropic"))),
                 ModelTokens::new(
                     Some("claude-sonnet-4-5"),
                     TokenCount::new(10, 100, 4),
                     1
                 )
-                .with_provider(Some(Provider::Anthropic)),
+                .with_provider(Some(ProviderRef::of_id("anthropic"))),
             ]
         );
     }

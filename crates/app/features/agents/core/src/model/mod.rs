@@ -3,6 +3,7 @@ mod account_numbers;
 mod account_page;
 mod add_account_dialog;
 mod age;
+mod entry_icon;
 mod found_in;
 mod found_report;
 mod kept_answer;
@@ -39,6 +40,7 @@ pub(crate) use account_page::AccountPageViewModel;
 pub(crate) use add_account_dialog::AddAccountDialogViewModel;
 #[cfg(test)]
 pub(crate) use add_account_dialog::ProviderOption;
+pub(crate) use entry_icon::EntryIcon;
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };

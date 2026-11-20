@@ -281,7 +281,8 @@ mod tests {
 
     #[test]
     fn a_profiles_file_that_can_not_be_read_is_told_once_until_it_is_read() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let profiles = [(claude(), connected())];
         let mut read = |problem: Option<&str>| {
             let _ = reduce(&mut state, AgentsIntent::Refresh);

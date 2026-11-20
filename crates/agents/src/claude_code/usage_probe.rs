@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::agent::{DESCRIPTOR, start_command};
+use super::agent::{PROGRAM, start_command};
 use super::probe_memory::ProbeMemory;
 use super::probe_sessions::remove_probe_sessions;
 use super::trust_question::{TrustAnswer, answer_trust};
@@ -175,7 +175,7 @@ impl LimitSource for UsageProbe {
         let terminal = self.terminals.start(&command, COLUMNS, ROWS).map_err(
             |reason| {
                 SourceError::NotAvailable(Unavailable::NotStarted {
-                    program: DESCRIPTOR.program(),
+                    program: PROGRAM,
                     reason,
                 })
             },
@@ -318,7 +318,7 @@ fn type_keys(
 ) -> Result<(), SourceError> {
     terminal.send(keys).map_err(|reason| {
         SourceError::NotAvailable(Unavailable::NotWritten {
-            program: DESCRIPTOR.program(),
+            program: PROGRAM,
             reason,
         })
     })
@@ -330,11 +330,11 @@ fn type_keys(
 fn ended(screen: &str) -> SourceError {
     if screen.to_lowercase().contains("not found") {
         return SourceError::NotAvailable(Unavailable::ProgramNotFound(
-            DESCRIPTOR.program(),
+            PROGRAM,
         ));
     }
 
-    SourceError::ProgramStopped(DESCRIPTOR.program())
+    SourceError::ProgramStopped(PROGRAM)
 }
 
 /// Why the time ran out, from the last `reading` of the screen: a panel
@@ -349,7 +349,7 @@ fn timed_out(reading: UsageScreen, limit: Duration) -> SourceError {
             Unavailable::ClaudeAsks(ClaudeQuestion::TrustOwnFolderAgain),
         ),
         _ => SourceError::NotAvailable(Unavailable::NoAnswerInTime {
-            program: DESCRIPTOR.program(),
+            program: PROGRAM,
             seconds: limit.as_secs(),
         }),
     }

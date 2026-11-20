@@ -68,15 +68,21 @@ impl<'a> ProfileDialogViewModel<'a> {
         let agent_options: Vec<AgentOption> = state
             .agents()
             .iter()
-            .map(|agent| AgentOption {
-                id: agent.descriptor().id(),
-                name: agent.descriptor().name(),
-                provider: agent.descriptor().provider(),
+            .map(|agent| {
+                let id = agent.entry().id();
+                let entry = state.registry().agent(id);
+                AgentOption {
+                    id: id.clone(),
+                    name: state.agent_name(id).to_string(),
+                    provider: entry
+                        .map(|entry| entry.provider_name().to_string())
+                        .unwrap_or_default(),
+                }
             })
             .collect();
         let agent = agent_options
             .iter()
-            .find(|option| option.id == dialog.agent())
+            .find(|option| option.id == *dialog.agent())
             .cloned();
         let title = match dialog.editing() {
             Some(_) => i18n::t(Key::AgentsEditProfileTitle),
@@ -153,13 +159,13 @@ impl<'a> ProfileDialogViewModel<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentOption {
     pub(crate) id: AgentId,
-    pub(crate) name: &'static str,
-    pub(crate) provider: &'static str,
+    pub(crate) name: String,
+    pub(crate) provider: String,
 }
 
 impl fmt::Display for AgentOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name)
+        f.write_str(&self.name)
     }
 }
 
@@ -204,7 +210,7 @@ mod tests {
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, api_key, claude, claude_work, codex, connected,
+        api_key, claude, claude_id, claude_work, codex, connected,
         folder_looked_up, folder_query, organization, saved_with_admin_key,
         with_accounts, with_saved_profiles,
     };
@@ -230,13 +236,17 @@ mod tests {
         let vm = ProfileDialogViewModel::from_state(&state).expect("open");
 
         assert_eq!(vm.title, i18n::t(Key::AgentsAddProfile));
-        let names: Vec<_> = vm.agents.iter().map(|agent| agent.name).collect();
+        let names: Vec<_> =
+            vm.agents.iter().map(|agent| agent.name.as_str()).collect();
         assert_eq!(names, ["Claude Code", "Codex", "Kilo", "OpenCode"]);
-        let providers: Vec<_> =
-            vm.agents.iter().map(|agent| agent.provider).collect();
+        let providers: Vec<_> = vm
+            .agents
+            .iter()
+            .map(|agent| agent.provider.as_str())
+            .collect();
         assert_eq!(providers, ["Anthropic", "OpenAI", "Kilo", "OpenCode"]);
         assert!(!vm.is_agent_list_open);
-        assert_eq!(vm.agent.map(|agent| agent.id), Some(CLAUDE));
+        assert_eq!(vm.agent.map(|agent| agent.id), Some(claude_id()));
         assert_eq!(vm.folder_choice, Some(FolderChoice::Create));
         assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsCreateFolderHint)));
         assert_eq!(vm.submit_label, i18n::t(Key::ButtonAdd));

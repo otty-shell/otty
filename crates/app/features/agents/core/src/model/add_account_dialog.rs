@@ -2,21 +2,21 @@
 //! added (spec 2026-11-19, Decision 7): the providers with what OTTY reads
 //! of each, where the key is kept, and why it can not be saved yet.
 
-use otty_agents::{AdminKeyRef, Provider};
+use otty_agents::{AddAccountKind, AdminKeyRef, ProviderRef, Registry};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::add_account_dialog::can_submit;
 use super::super::key_place_field::KeyPlaceProblem;
 use super::super::profile_dialog::AdminKeyChoice;
-use super::super::state::AgentsState;
+use super::super::state::{AgentsState, provider_name};
 
 /// A provider an account can be added for, with what OTTY reads of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProviderOption {
     /// The provider.
-    pub(crate) provider: Provider,
+    pub(crate) provider: ProviderRef,
     /// Its name, such as "DeepSeek".
-    pub(crate) name: &'static str,
+    pub(crate) name: String,
     /// What OTTY reads of it, such as "Money left".
     pub(crate) note: &'static str,
 }
@@ -65,7 +65,17 @@ impl<'a> AddAccountDialogViewModel<'a> {
         let providers = if is_editing {
             Vec::new()
         } else {
-            Provider::addable().iter().copied().map(option_of).collect()
+            state
+                .registry()
+                .addable_providers()
+                .iter()
+                .map(|entry| {
+                    option_of(
+                        state.registry(),
+                        &ProviderRef::Id(entry.id().clone()),
+                    )
+                })
+                .collect()
         };
         let key_error = match dialog.key().key_place(state.env().home()) {
             Err(KeyPlaceProblem::KeyPathNotFull) => {
@@ -81,11 +91,12 @@ impl<'a> AddAccountDialogViewModel<'a> {
             title: i18n::t(title),
             text: i18n::t(Key::AgentsAddAccountText),
             providers,
-            provider: option_of(dialog.provider()),
+            provider: option_of(state.registry(), dialog.provider()),
             is_provider_list_open: dialog.is_provider_list_open(),
             key_choice: dialog.key().choice(),
             key: dialog.key().text(),
             key_placeholder: placeholder(
+                state.registry(),
                 dialog.provider(),
                 dialog.key().choice(),
             ),
@@ -107,30 +118,42 @@ pub(crate) fn key_place_text(key: &AdminKeyRef) -> String {
 }
 
 /// The option of `provider`, with what OTTY reads of an account added
-/// there.
-fn option_of(provider: Provider) -> ProviderOption {
-    let note = match provider {
-        Provider::OpenRouter => Key::AgentsAddedKeyLimit,
-        _ if provider.is_added_as_organization() => Key::AgentsAddedBill,
+/// there, as its registry entry tells: the money left of a key, or the
+/// bill of an organization read with an admin key.
+fn option_of(registry: &Registry, provider: &ProviderRef) -> ProviderOption {
+    let note = match add_account_kind(registry, provider) {
+        Some(AddAccountKind::AdminKey) => Key::AgentsAddedBill,
         _ => Key::AgentsAddedLeft,
     };
 
     ProviderOption {
-        provider,
-        name: provider.name(),
+        provider: provider.clone(),
+        name: provider_name(registry, provider).to_string(),
         note: i18n::t(note),
     }
+}
+
+/// What Add account offers for `provider` in `registry`; `None` for a
+/// provider no entry serves.
+fn add_account_kind(
+    registry: &Registry,
+    provider: &ProviderRef,
+) -> Option<AddAccountKind> {
+    registry.provider_of(provider)?.add_account()
 }
 
 /// An example of the place of a key of `provider`, such as
 /// `~/.config/deepseek-key` or `DEEPSEEK_API_KEY`, or the admin key of an
 /// organization, such as `OPENAI_ADMIN_KEY`.
-fn placeholder(provider: Provider, choice: AdminKeyChoice) -> String {
-    let name = provider.name().to_ascii_lowercase();
-    let kind = if provider.is_added_as_organization() {
-        "admin"
-    } else {
-        "api"
+fn placeholder(
+    registry: &Registry,
+    provider: &ProviderRef,
+    choice: AdminKeyChoice,
+) -> String {
+    let name = provider_name(registry, provider).to_ascii_lowercase();
+    let kind = match add_account_kind(registry, provider) {
+        Some(AddAccountKind::AdminKey) => "admin",
+        _ => "api",
     };
 
     match choice {
@@ -173,13 +196,13 @@ mod tests {
         let listed: Vec<_> = vm
             .providers
             .iter()
-            .map(|option| (option.name, option.note))
+            .map(|option| (option.name.as_str(), option.note))
             .collect();
         assert_eq!(
             listed,
             [
                 ("DeepSeek", i18n::t(Key::AgentsAddedLeft)),
-                ("OpenRouter", i18n::t(Key::AgentsAddedKeyLimit)),
+                ("OpenRouter", i18n::t(Key::AgentsAddedLeft)),
                 ("Moonshot", i18n::t(Key::AgentsAddedLeft)),
                 ("Anthropic", i18n::t(Key::AgentsAddedBill)),
                 ("OpenAI", i18n::t(Key::AgentsAddedBill)),
@@ -211,10 +234,11 @@ mod tests {
     #[test]
     fn the_edit_key_dialog_keeps_its_provider_and_shows_its_place() {
         let key = AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY"));
-        let added = Account::added(Provider::OpenAI, key.clone());
+        let added = Account::added(ProviderRef::of_id("openai"), key.clone());
         let mut state = with_accounts(
             &[(codex(), connected(), vec![chatgpt_login()])],
-            SavedProfiles::default().with_account_added(Provider::OpenAI, key),
+            SavedProfiles::default()
+                .with_account_added(ProviderRef::of_id("openai"), key),
         );
         open_account_menu(&mut state, added);
         let _ = reduce(

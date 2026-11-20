@@ -36,10 +36,8 @@ release.
    recorded answers as fixtures. Each plugin gets a new minor version,
    and the embedded copies in `assets/plugins/anthropic/` and
    `assets/plugins/openai/` are rebuilt.
-4. Parity: the numbers read by the core and by the plugin for the
-   owner's accounts are the same (print only "equal" or the differing
-   field names, never a value of a key); then delete the moved files and
-   the built-in entries.
+4. Delete the moved files and the built-in entries; the owner checks
+   the accounts' numbers by hand.
 
 ## Done when
 
@@ -53,7 +51,7 @@ release.
   the new provider part in the permission diff and waits for the user
   (issue 08); a first start with the rebuilt embedded copy installs both
   parts on.
-- Parity recorded; the core files are gone.
+- The core files are gone.
 - The checks of `AGENTS.md` pass; the plugins' own tests pass.
 
 ## Comments

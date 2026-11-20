@@ -182,7 +182,7 @@ fn this_month(key: Key, amount: Dollars) -> (String, SessionTone) {
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        Credits, DaySpend, Limits, ModelTokens, ProfileStatus, Provider,
+        Credits, DaySpend, Limits, ModelTokens, ProfileStatus, ProviderRef,
         SavedProfiles, SourceError, SourceId, Spend, TokenCount,
     };
 
@@ -265,7 +265,7 @@ mod tests {
             TokenCount::new(input, 0, 0),
             1,
         )
-        .with_provider(Some(Provider::Anthropic));
+        .with_provider(Some(ProviderRef::of_id("anthropic")));
         let day = DaySpend::new(jiff::civil::date(2026, 11, 16), vec![tokens]);
 
         Spend::new(vec![day], Vec::new())
@@ -381,7 +381,7 @@ mod tests {
             TokenCount::new(2_000_000, 0, 0),
             1,
         )
-        .with_provider(Some(Provider::Anthropic))
+        .with_provider(Some(ProviderRef::of_id("anthropic")))
         .with_cost(Some(Dollars::from_micro_dollars(1_500_000)));
         let day = DaySpend::new(jiff::civil::date(2026, 11, 16), vec![tokens]);
         let spend = Spend::new(vec![day], Vec::new());
@@ -541,9 +541,9 @@ mod tests {
     /// left was read with its own key, "$12.30 used" for an OpenRouter key.
     #[test]
     fn a_key_shows_the_money_left_or_what_it_used() {
-        let number = |provider, numbers| {
+        let number = |provider: ProviderRef, numbers| {
             let key = otty_agents::AdminKeyRef::EnvVar(String::from("KEY"));
-            let account = Account::added(provider, key.clone());
+            let account = Account::added(provider.clone(), key.clone());
             let mut state = with_accounts(
                 &[(codex(), connected(), vec![chatgpt_login()])],
                 SavedProfiles::default().with_account_added(provider, key),
@@ -574,14 +574,14 @@ mod tests {
 
         assert_eq!(
             number(
-                Provider::DeepSeek,
+                ProviderRef::of_id("deepseek"),
                 otty_agents::AccountNumbers::Balance(left)
             ),
             muted(credits_left("¥110.00"))
         );
         assert_eq!(
             number(
-                Provider::OpenRouter,
+                ProviderRef::of_id("openrouter"),
                 otty_agents::AccountNumbers::Balance(used)
             ),
             muted(i18n::filled(

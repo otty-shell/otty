@@ -10,6 +10,7 @@ use crate::account::Account;
 use crate::bill::Bill;
 use crate::money_estimate::MoneyEstimate;
 use crate::price_table::PriceTable;
+use crate::registry::Registry;
 use crate::spend::{DaySpend, ModelTokens, Spend};
 
 /// The money of an account, for the "Spent this month" of its page: the
@@ -34,7 +35,8 @@ impl AccountMoney {
     /// account's provider and the profile has no other account of that
     /// provider. The tokens of a profile with several accounts of one
     /// provider that does not write which one paid are not split between
-    /// them, and count for none.
+    /// them, and count for none. A provider named by its host is the one
+    /// of `registry` that serves it.
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -42,11 +44,11 @@ impl AccountMoney {
     /// use otty_agents::{
     ///     Account, AccountIdentity, AccountKind, AccountLogin, AccountMoney,
     ///     DaySpend, Dollars, FoundIn, KeyFingerprint, ModelPrice, ModelTokens,
-    ///     PriceTable, Provider, Spend, TokenCount, TokenPrices,
+    ///     PriceTable, ProviderRef, Registry, Spend, TokenCount, TokenPrices,
     /// };
     ///
     /// let key = Account::new(
-    ///     Provider::DeepSeek,
+    ///     ProviderRef::of_id("deepseek"),
     ///     AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-made-up")),
     ///     AccountLogin::Key(None),
     ///     AccountKind::Money,
@@ -60,7 +62,7 @@ impl AccountMoney {
     ///             TokenCount::new(1_000_000, 0, 0),
     ///             1,
     ///         )
-    ///         .with_provider(Some(Provider::DeepSeek)),
+    ///         .with_provider(Some(ProviderRef::of_id("deepseek"))),
     ///     ],
     /// );
     /// let spend = Spend::new(vec![today], Vec::new());
@@ -73,7 +75,13 @@ impl AccountMoney {
     /// )]);
     ///
     /// let accounts = [key.clone()];
-    /// let money = AccountMoney::of(&key, None, &[(&spend, &accounts)], &prices);
+    /// let money = AccountMoney::of(
+    ///     &key,
+    ///     None,
+    ///     &[(&spend, &accounts)],
+    ///     &prices,
+    ///     &Registry::default(),
+    /// );
     ///
     /// let AccountMoney::Estimate(estimate) = money else {
     ///     panic!("no bill was read");
@@ -85,12 +93,13 @@ impl AccountMoney {
         bill: Option<&Bill>,
         profiles: &[(&Spend, &[Account])],
         prices: &PriceTable,
+        registry: &Registry,
     ) -> Self {
         if let Some(bill) = bill {
             return Self::Bill(bill.clone());
         }
 
-        let spend = spend_of_account(account, profiles);
+        let spend = spend_of_account(account, profiles, registry);
 
         Self::Estimate(MoneyEstimate::new(&spend, prices))
     }
@@ -101,6 +110,7 @@ impl AccountMoney {
 fn spend_of_account(
     account: &Account,
     profiles: &[(&Spend, &[Account])],
+    registry: &Registry,
 ) -> Spend {
     let mut days: BTreeMap<Date, Vec<ModelTokens>> = BTreeMap::new();
 
@@ -109,7 +119,7 @@ fn spend_of_account(
             let paid = day
                 .models()
                 .iter()
-                .filter(|tokens| account.pays_for(tokens, accounts))
+                .filter(|tokens| account.pays_for(tokens, accounts, registry))
                 .cloned();
             days.entry(day.date()).or_default().extend(paid);
         }
@@ -129,7 +139,7 @@ mod tests {
     use crate::account::AccountIdentity;
     use crate::bill::DayCost;
     use crate::price_table::ModelPrice;
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::testing::{dollars, key_account, organization, token_prices};
     use crate::token_count::TokenCount;
 
@@ -148,7 +158,7 @@ mod tests {
     /// `account` when the agent wrote it.
     fn tokens(
         millions: u64,
-        provider: Provider,
+        provider: ProviderRef,
         account: Option<AccountIdentity>,
     ) -> ModelTokens {
         ModelTokens::new(Some("m"), TokenCount::new(millions * DOLLAR, 0, 0), 1)
@@ -180,7 +190,8 @@ mod tests {
             jiff::civil::date(2026, 11, 16),
             dollars(12),
         )]);
-        let spend = today(vec![tokens(5, Provider::Anthropic, None)]);
+        let spend =
+            today(vec![tokens(5, ProviderRef::of_id("anthropic"), None)]);
         let accounts = [organization.clone()];
 
         let money = AccountMoney::of(
@@ -188,6 +199,7 @@ mod tests {
             Some(&bill),
             &[(&spend, &accounts)],
             &prices(),
+            &Registry::default(),
         );
 
         assert_eq!(money, AccountMoney::Bill(bill));
@@ -197,11 +209,12 @@ mod tests {
     /// of both.
     #[test]
     fn the_estimate_is_summed_over_the_profiles_that_pay_through_it() {
-        let key = key_account(Provider::DeepSeek, "sk-made-up-deepseek");
-        let home = today(vec![tokens(2, Provider::DeepSeek, None)]);
+        let key =
+            key_account(ProviderRef::of_id("deepseek"), "sk-made-up-deepseek");
+        let home = today(vec![tokens(2, ProviderRef::of_id("deepseek"), None)]);
         let work = today(vec![
-            tokens(3, Provider::DeepSeek, None),
-            tokens(7, Provider::Anthropic, None),
+            tokens(3, ProviderRef::of_id("deepseek"), None),
+            tokens(7, ProviderRef::of_id("anthropic"), None),
         ]);
         let accounts = [key.clone()];
 
@@ -210,6 +223,7 @@ mod tests {
             None,
             &[(&home, &accounts), (&work, &accounts)],
             &prices(),
+            &Registry::default(),
         );
 
         assert_eq!(estimate_today(money), 5 * DOLLAR);
@@ -220,18 +234,32 @@ mod tests {
     /// written count for that account only.
     #[test]
     fn tokens_are_not_split_when_the_agent_does_not_tell_the_account() {
-        let one = key_account(Provider::OpenAI, "sk-made-up-one");
-        let two = key_account(Provider::OpenAI, "sk-made-up-two");
+        let one = key_account(ProviderRef::of_id("openai"), "sk-made-up-one");
+        let two = key_account(ProviderRef::of_id("openai"), "sk-made-up-two");
         let spend = today(vec![
-            tokens(4, Provider::OpenAI, None),
-            tokens(1, Provider::OpenAI, Some(two.identity().clone())),
+            tokens(4, ProviderRef::of_id("openai"), None),
+            tokens(
+                1,
+                ProviderRef::of_id("openai"),
+                Some(two.identity().clone()),
+            ),
         ]);
         let accounts = [one.clone(), two.clone()];
 
-        let of_one =
-            AccountMoney::of(&one, None, &[(&spend, &accounts)], &prices());
-        let of_two =
-            AccountMoney::of(&two, None, &[(&spend, &accounts)], &prices());
+        let of_one = AccountMoney::of(
+            &one,
+            None,
+            &[(&spend, &accounts)],
+            &prices(),
+            &Registry::default(),
+        );
+        let of_two = AccountMoney::of(
+            &two,
+            None,
+            &[(&spend, &accounts)],
+            &prices(),
+            &Registry::default(),
+        );
 
         assert_eq!(estimate_today(of_one), 0);
         assert_eq!(estimate_today(of_two), DOLLAR);
@@ -239,15 +267,16 @@ mod tests {
 
     #[test]
     fn today_is_the_latest_day_of_the_profiles() {
-        let key = key_account(Provider::DeepSeek, "sk-made-up-deepseek");
+        let key =
+            key_account(ProviderRef::of_id("deepseek"), "sk-made-up-deepseek");
         let yesterday = Spend::new(
             vec![DaySpend::new(
                 jiff::civil::date(2026, 11, 15),
-                vec![tokens(2, Provider::DeepSeek, None)],
+                vec![tokens(2, ProviderRef::of_id("deepseek"), None)],
             )],
             Vec::new(),
         );
-        let now = today(vec![tokens(3, Provider::DeepSeek, None)]);
+        let now = today(vec![tokens(3, ProviderRef::of_id("deepseek"), None)]);
         let accounts = [key.clone()];
 
         let money = AccountMoney::of(
@@ -255,6 +284,7 @@ mod tests {
             None,
             &[(&yesterday, &accounts), (&now, &accounts)],
             &prices(),
+            &Registry::default(),
         );
 
         let AccountMoney::Estimate(estimate) = money else {

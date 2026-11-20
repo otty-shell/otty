@@ -34,8 +34,8 @@ impl ProfileDialog {
     }
 
     /// The agent of the profile.
-    pub(crate) fn agent(&self) -> AgentId {
-        self.agent
+    pub(crate) fn agent(&self) -> &AgentId {
+        &self.agent
     }
 
     /// Whether the list of agents is open under the agent field.
@@ -127,7 +127,7 @@ impl ProfileDialog {
                 profile.config_dir().display().to_string(),
             ),
             admin_key,
-            ..Self::add(profile.agent())
+            ..Self::add(profile.agent().clone())
         }
         .editing_profile(profile.clone())
     }
@@ -274,7 +274,7 @@ impl ProfileDialog {
         let folder =
             full_folder(self.path_text(), home).map_err(FolderProblem::from)?;
 
-        check_folder(self.agent, &folder, self.editing.as_ref(), profiles)?;
+        check_folder(&self.agent, &folder, self.editing.as_ref(), profiles)?;
         Ok(folder)
     }
 

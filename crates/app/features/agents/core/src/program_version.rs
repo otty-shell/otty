@@ -23,14 +23,14 @@ pub(crate) fn ask(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         let agent = shown.profile().agent();
         let needs_program = shown.version().is_none()
             && *shown.status() != ProfileStatus::ProgramNotFound;
-        if needs_program && !wanted.contains(&agent) {
-            wanted.push(agent);
+        if needs_program && !wanted.contains(agent) {
+            wanted.push(agent.clone());
         }
     }
 
     wanted
         .into_iter()
-        .filter(|agent| state.profiles_mut().start_version_read(*agent))
+        .filter(|agent| state.profiles_mut().start_version_read(agent))
         .map(AgentsOutcome::LoadVersion)
         .collect()
 }
@@ -67,7 +67,8 @@ mod tests {
 
     #[test]
     fn while_the_mode_is_away_no_program_is_asked_for_its_version() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
 
         let away = reduce(&mut state, loaded(&[None, None]));
         let on_screen = reduce(&mut state, AgentsIntent::Enter);
@@ -75,13 +76,14 @@ mod tests {
         assert!(version_reads(&away).is_empty(), "{away:?}");
         assert_eq!(
             version_reads(&on_screen),
-            [&AgentsOutcome::LoadVersion(claude().agent())]
+            [&AgentsOutcome::LoadVersion(claude().agent().clone())]
         );
     }
 
     #[test]
     fn two_reads_of_the_profiles_ask_the_program_once() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let first = reduce(&mut state, loaded(&[None, None]));
@@ -90,14 +92,15 @@ mod tests {
 
         assert_eq!(
             version_reads(&first),
-            [&AgentsOutcome::LoadVersion(claude().agent())]
+            [&AgentsOutcome::LoadVersion(claude().agent().clone())]
         );
         assert!(version_reads(&second).is_empty(), "{second:?}");
     }
 
     #[test]
     fn profiles_with_a_version_from_their_sessions_ask_nothing() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes =
@@ -108,7 +111,8 @@ mod tests {
 
     #[test]
     fn a_program_not_found_is_not_asked() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -126,14 +130,15 @@ mod tests {
     /// its own, and stays through the next read; a session version wins.
     #[test]
     fn the_programs_version_fills_the_profiles_with_none_of_their_own() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(&mut state, loaded(&[Some("2.1.300"), None]));
 
         let _ = reduce(
             &mut state,
             AgentsIntent::VersionLoaded(LoadedVersion {
-                agent: claude().agent(),
+                agent: claude().agent().clone(),
                 version: Some(String::from("2.1.328")),
             }),
         );

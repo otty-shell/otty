@@ -14,12 +14,13 @@
 //! account.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AdminKeyRef, AgentId, FoundIn, KeyPlace, Profile, ProfileStatus,
-    Project, SavedProfiles, SourceId, merge_accounts, own_source_of,
+    Project, Registry, SavedProfiles, SourceId, merge_accounts, own_source_of,
 };
 
 use super::freshness::{ReadState, Which};
@@ -45,6 +46,7 @@ pub(crate) struct Profiles {
     reads: ReadState,
     is_reload_wanted: bool,
     sessions_wanted: Vec<Profile>,
+    registry: Arc<Registry>,
     bill_agents: Vec<AgentId>,
     limit_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
@@ -137,7 +139,7 @@ impl Profiles {
     /// The shown profile of `agent` named `name`.
     pub(crate) fn named(
         &self,
-        agent: AgentId,
+        agent: &AgentId,
         name: &str,
     ) -> Option<&ProfileState> {
         self.shown.iter().find(|shown| {
@@ -173,7 +175,7 @@ impl Profiles {
             .chain(added)
             .collect();
 
-        merge_accounts(found)
+        merge_accounts(found, &self.registry)
     }
 
     /// What was read of the accounts that tell their own numbers.
@@ -227,7 +229,7 @@ impl Profiles {
     /// The hidden profile of `agent` named `name`.
     pub(crate) fn hidden_named(
         &self,
-        agent: AgentId,
+        agent: &AgentId,
         name: &str,
     ) -> Option<&Profile> {
         self.hidden
@@ -325,8 +327,8 @@ impl Profiles {
 
     /// Whether the agent with the id `id` can read the real bill of an API
     /// key profile with an admin key (spec Decision 9).
-    pub(crate) fn has_bill(&self, id: AgentId) -> bool {
-        self.bill_agents.contains(&id)
+    pub(crate) fn has_bill(&self, id: &AgentId) -> bool {
+        self.bill_agents.contains(id)
     }
 
     /// Whether `profile` is still shown: an answer of a read of a profile
@@ -357,9 +359,11 @@ impl Profiles {
             .is_some_and(|shown| self.admin_key_of(shown) == Some(admin_key))
     }
 
-    /// Nothing read yet; `bill_agents` are the agents whose bill can be
-    /// read, and `limit_agents` those that read limits.
+    /// Nothing read yet; `registry` names the providers of the accounts,
+    /// `bill_agents` are the agents whose bill can be read, and
+    /// `limit_agents` those that read limits.
     pub(crate) fn new(
+        registry: Arc<Registry>,
         bill_agents: Vec<AgentId>,
         limit_agents: Vec<AgentId>,
     ) -> Self {
@@ -373,6 +377,7 @@ impl Profiles {
             reads: ReadState::default(),
             is_reload_wanted: false,
             sessions_wanted: Vec::new(),
+            registry,
             bill_agents,
             limit_agents,
             versions_asked: Vec::new(),
@@ -419,13 +424,19 @@ impl Profiles {
     /// after an edit of its name; it keeps its bill while the admin key of
     /// its organization is the same. A profile whose config folder is gone
     /// has nothing to read. A time zone that could not be read keeps the
-    /// one known.
+    /// one known. The provider of each account found by the host of its
+    /// key is named as the registry names it (spec
+    /// 2026-11-19-agent-plugins, "Identity and links do not depend on a
+    /// provider plugin").
     pub(crate) fn apply_profiles(
         &mut self,
         loaded: LoadedProfiles,
     ) -> Vec<Profile> {
+        let saved = loaded
+            .saved
+            .map(|saved| saved.with_providers_resolved(&self.registry));
         let mut earlier = std::mem::take(&mut self.shown);
-        let earlier_saved = std::mem::replace(&mut self.saved, loaded.saved);
+        let earlier_saved = std::mem::replace(&mut self.saved, saved);
         let mut to_read = Vec::new();
 
         for LoadedProfile {
@@ -435,6 +446,7 @@ impl Profiles {
             version,
         } in loaded.profiles
         {
+            let accounts = merge_accounts(accounts, &self.registry);
             let mut shown = ProfileState::new(profile, status, accounts)
                 .with_version(version);
             let position = earlier.iter().position(|old| {
@@ -478,7 +490,7 @@ impl Profiles {
         let from_program = self
             .program_versions
             .iter()
-            .find(|(asked, _)| *asked == agent)
+            .find(|(asked, _)| asked == agent)
             .map(|(_, version)| version.as_str());
 
         shown.version().or(from_program)
@@ -486,12 +498,12 @@ impl Profiles {
 
     /// Start asking the program of `agent` for its version; `false` when
     /// it was asked before in this run.
-    pub(crate) fn start_version_read(&mut self, agent: AgentId) -> bool {
-        if self.versions_asked.contains(&agent) {
+    pub(crate) fn start_version_read(&mut self, agent: &AgentId) -> bool {
+        if self.versions_asked.contains(agent) {
             return false;
         }
 
-        self.versions_asked.push(agent);
+        self.versions_asked.push(agent.clone());
         true
     }
 
@@ -725,7 +737,7 @@ impl Profiles {
             });
             let is_wanted = !is_hidden
                 && shown.is_api_key()
-                && self.bill_agents.contains(&shown.profile().agent())
+                && self.bill_agents.contains(shown.profile().agent())
                 && shown.bill().reads().is_wanted(which);
             let is_read_by_another =
                 shown.organization().is_some_and(|organization| {
@@ -805,7 +817,7 @@ impl Profiles {
         self.accounts()
             .into_iter()
             .filter_map(|account| {
-                let source = own_source_of(&account)?;
+                let source = own_source_of(&account, &self.registry)?;
                 let place =
                     self.own_read_place(&account, source, may_read_keyring)?;
                 Some((account, place))
@@ -829,7 +841,7 @@ impl Profiles {
         if source == SourceId::ChatGptUsageApi {
             let profiles: Vec<_> = profiles.collect();
             let is_read_by_a_profile = profiles.iter().any(|shown| {
-                self.limit_agents.contains(&shown.profile().agent())
+                self.limit_agents.contains(shown.profile().agent())
             });
             if is_read_by_a_profile {
                 return None;

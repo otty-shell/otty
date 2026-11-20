@@ -458,7 +458,8 @@ mod tests {
 
     #[test]
     fn entering_the_mode_reads_the_profiles_once_at_a_time() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
 
         let entered =
             reduce(&mut state, AgentsIntent::ModeChanged(Mode::Agents));
@@ -485,7 +486,8 @@ mod tests {
     #[test]
     fn each_shown_profile_has_its_sessions_read_and_a_connected_one_its_limits()
     {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -524,7 +526,8 @@ mod tests {
 
     #[test]
     fn a_problem_with_the_saved_profiles_is_told() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -550,7 +553,8 @@ mod tests {
     /// mode then opens on the first profile of the list.
     #[test]
     fn the_first_read_selects_the_first_profile() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
 
         let _ = reduce(
@@ -651,7 +655,7 @@ mod tests {
     fn a_profile_selected_before_it_is_read_stays_until_the_read_after_it() {
         let mut state = with_profiles(&[(claude(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::Refresh);
-        state.select_named(claude_work().agent(), claude_work().name());
+        state.select_named(claude_work().agent().clone(), claude_work().name());
         let _ = state.profiles_mut().start_reload();
 
         let older =
@@ -900,7 +904,8 @@ mod tests {
     /// there is no agent, and opening the mode reads them again.
     #[test]
     fn a_first_profiles_read_that_stopped_leaves_them_unread() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
 
         let _ = reduce(&mut state, AgentsIntent::ProfilesReadStopped);
@@ -917,7 +922,7 @@ mod tests {
     #[test]
     fn a_renamed_profile_keeps_what_was_read_of_it() {
         let renamed = Profile::default_for(
-            claude().agent(),
+            claude().agent().clone(),
             "Claude Code · Home",
             claude().config_dir().to_path_buf(),
         );
@@ -953,7 +958,7 @@ mod tests {
     #[test]
     fn a_read_on_its_way_lands_after_the_profile_was_renamed() {
         let renamed = Profile::default_for(
-            claude().agent(),
+            claude().agent().clone(),
             "Claude Code · Home",
             claude().config_dir().to_path_buf(),
         );
@@ -1011,7 +1016,8 @@ mod tests {
 
     #[test]
     fn the_time_zone_read_with_the_profiles_is_kept_until_known_again() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let moscow = crate::testing::moscow();
         let read = |time_zone: Option<TimeZone>| {
@@ -1056,7 +1062,8 @@ mod tests {
     #[test]
     fn an_api_key_profile_whose_organization_has_an_admin_key_has_its_bill_read()
      {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -1085,7 +1092,8 @@ mod tests {
 
     #[test]
     fn a_subscription_with_an_admin_key_has_no_bill_read() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let outcomes = reduce(
@@ -1204,7 +1212,8 @@ mod tests {
 
     #[test]
     fn an_api_key_profile_has_its_tokens_counted_and_no_limits_read() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let loaded =
@@ -1316,8 +1325,10 @@ mod tests {
         assert_eq!(all_profiles, (false, true));
         assert!(!state.is_all_profiles_selected());
         assert_eq!(
-            state.selected_account().map(|account| account.provider()),
-            Some(otty_agents::Provider::Anthropic)
+            state
+                .selected_account()
+                .map(|account| account.provider().clone()),
+            Some(otty_agents::ProviderRef::of_id("anthropic"))
         );
     }
 
@@ -1451,14 +1462,14 @@ mod tests {
         let _ = reduce(
             &mut state,
             AgentsIntent::ProjectFilter(ProjectFilterChange::Agent(Some(
-                crate::testing::CODEX,
+                crate::testing::codex_id(),
             ))),
         );
 
         assert_eq!(open_menu(&state), None);
         assert_eq!(
             state.search().filter().agent(),
-            Some(crate::testing::CODEX)
+            Some(&crate::testing::codex_id())
         );
     }
 

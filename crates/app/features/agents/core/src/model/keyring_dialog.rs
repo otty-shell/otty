@@ -56,7 +56,8 @@ mod tests {
 
     #[test]
     fn the_dialog_names_the_agents_and_the_services_it_reads() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let AgentsIntent::ProfilesLoaded(loaded) = profiles_loaded_from(
             &[(claude(), connected())],
             SavedProfiles::default().with_found_report_shown(),

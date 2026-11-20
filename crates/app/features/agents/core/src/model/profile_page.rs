@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AgentSession, Profile, ProfileStatus, Provider, SourceFailure,
+    Account, AgentSession, Profile, ProfileStatus, ProviderRef, SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
@@ -18,6 +18,7 @@ use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::super::usage::UsageTab;
 use super::account_name::account_name;
+use super::entry_icon::EntryIcon;
 use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::short_number::account_number;
@@ -34,8 +35,8 @@ use super::{FactViewModel, UNKNOWN};
 pub(crate) struct ProfilePageViewModel {
     /// The profile, sent with the buttons.
     pub(crate) profile: Profile,
-    /// The name of the agent's icon.
-    pub(crate) icon: &'static str,
+    /// The icon of the agent.
+    pub(crate) icon: EntryIcon,
     /// The profile name.
     pub(crate) name: String,
     /// What the profile needs from the user; the block shows only when
@@ -68,7 +69,7 @@ impl ProfilePageViewModel {
 
         Self {
             profile: profile.clone(),
-            icon: state.icon_of(profile.agent()),
+            icon: state.agent_icon(profile.agent()),
             name: profile.name().to_string(),
             needs: needs_of_profile(state, shown),
             info: info(agent, shown),
@@ -98,7 +99,7 @@ impl ProfilePageViewModel {
 
         Self {
             profile: profile.clone(),
-            icon: state.icon_of(profile.agent()),
+            icon: state.agent_icon(profile.agent()),
             name: profile.name().to_string(),
             needs: Vec::new(),
             info: Some(i18n::t(Key::AgentsHiddenProfileNote).to_string()),
@@ -116,8 +117,8 @@ impl ProfilePageViewModel {
 pub(crate) struct PaysThroughViewModel {
     /// The account, sent when the chip is pressed.
     pub(crate) account: Account,
-    /// The name of its provider, for its icon.
-    pub(crate) provider: &'static str,
+    /// The icon of its provider.
+    pub(crate) icon: EntryIcon,
     /// The provider and the login, such as "OpenAI · you@example.com".
     pub(crate) name: String,
     /// Its number and its color, as in the left panel ("42 % used",
@@ -147,23 +148,24 @@ pub(crate) fn money_reason(
 /// its agent does not write which one served a message. `None` when it
 /// can.
 pub(super) fn account_reason(
+    state: &AgentsState,
     agent: &str,
     shown: &ProfileState,
 ) -> Option<String> {
-    let mut providers: Vec<Provider> =
+    let mut providers: Vec<&ProviderRef> =
         shown.accounts().iter().map(Account::provider).collect();
     providers.sort();
     providers.dedup();
 
     providers.into_iter().find_map(|provider| {
-        let count = untold_accounts(shown, provider)?;
+        let count = untold_accounts(state.registry(), shown, provider)?;
 
         Some(i18n::filled(
             Key::TplAgentsAccountsNotTold,
             &[
                 ("agent", agent),
                 ("count", &count.to_string()),
-                ("provider", provider.name()),
+                ("provider", state.provider_name(provider)),
             ],
         ))
     })
@@ -186,7 +188,7 @@ fn usage_block(
     let profiles = state.profiles();
     let agent = state.agent_name(shown.profile().agent());
     let money_reason = money_reason(state, shown);
-    let account_reason = account_reason(agent, shown);
+    let account_reason = account_reason(state, agent, shown);
     let kept = KeptAnswer::new(spend.last_good(), spend.failure());
     let counted = match kept {
         KeptAnswer::Nothing => return None,
@@ -213,6 +215,7 @@ fn usage_block(
         left_out: None,
         home: state.env().home(),
         saved: profiles.saved(),
+        registry: state.registry(),
         time_zone: profiles.time_zone(),
     };
     let block = UsageBlockViewModel::of(&subject, state.usage(), now);
@@ -260,8 +263,12 @@ fn pays_through(
         .filter(|account| !state.profiles().is_account_hidden(account))
         .map(|account| PaysThroughViewModel {
             account: account.clone(),
-            provider: account.provider().name(),
-            name: account_name(state.profiles().saved(), account),
+            icon: state.provider_icon(account.provider()),
+            name: account_name(
+                state.registry(),
+                state.profiles().saved(),
+                account,
+            ),
             number: account_number(state, account),
         })
         .collect()
@@ -371,7 +378,7 @@ mod tests {
     /// A second made-up ChatGPT login.
     fn second_login() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-second")),
             AccountLogin::Email(String::from("two@example.com")),
             AccountKind::Limits,
@@ -384,7 +391,7 @@ mod tests {
     fn spend(account: Option<AccountIdentity>) -> Spend {
         let tokens =
             ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000, 0, 0), 1)
-                .with_provider(Some(Provider::OpenAI))
+                .with_provider(Some(ProviderRef::of_id("openai")))
                 .with_account(account);
         let part = ProjectModelTokens::new(
             Some(PathBuf::from("/work/otty")),
@@ -446,7 +453,7 @@ mod tests {
         let vm = page(&state);
 
         assert_eq!(vm.name, "Codex");
-        assert_eq!(vm.icon, "codex");
+        assert_eq!(vm.icon, crate::testing::agent_icon("codex"));
         assert!(vm.needs.is_empty());
         assert_eq!(vm.info, None);
         let usage = vm.usage.expect("the usage shows");
@@ -458,7 +465,7 @@ mod tests {
             vm.pays_through,
             [PaysThroughViewModel {
                 account: chatgpt_login(),
-                provider: "OpenAI",
+                icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
                 number: None,
             }]
@@ -600,7 +607,7 @@ mod tests {
             unused.needs[0].fix,
             Some(NeedFixViewModel {
                 label: i18n::t(Key::AgentsLogIn).to_string(),
-                action: NeedAction::LogIn(codex()),
+                action: Some(NeedAction::LogIn(codex())),
             })
         );
         assert!(unused.pays_through.is_empty());

@@ -11,8 +11,9 @@ use super::rate_limits::plan_name;
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
+use crate::built_in::OPENAI;
 use crate::profile::Profile;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 
 /// The accounts found in the files of `profile`: the one its `auth.json`
 /// logs in with, as its `auth_mode` says, or none.
@@ -27,8 +28,9 @@ pub(super) fn accounts(profile: &Profile) -> Vec<Account> {
     };
 
     let account = if auth.is_api_key() {
-        auth.api_key()
-            .map(|key| Account::of_key(Provider::OpenAI, key, found_in))
+        auth.api_key().map(|key| {
+            Account::of_key(ProviderRef::of_id(OPENAI), key, found_in)
+        })
     } else {
         auth.tokens()
             .and_then(|tokens| chatgpt_account(tokens, found_in))
@@ -56,7 +58,7 @@ fn chatgpt_account(tokens: &Tokens, found_in: FoundIn) -> Option<Account> {
 
     Some(
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id(OPENAI),
             identity,
             login,
             AccountKind::Limits,
@@ -130,7 +132,7 @@ mod tests {
         write_file(&dir.join("auth.json"), &chatgpt_auth(&tokens));
 
         let expected = Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(ACCOUNT_ID.into()),
             AccountLogin::Email("dev@example.com".into()),
             AccountKind::Limits,
@@ -169,7 +171,7 @@ mod tests {
         write_file(&dir.join("auth.json"), &chatgpt_auth(&tokens));
 
         let expected = Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(ACCOUNT_ID.into()),
             AccountLogin::Unnamed,
             AccountKind::Limits,
@@ -190,7 +192,7 @@ mod tests {
         );
 
         let expected = Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(KEY)),
             AccountLogin::Key(Some("77c2".into())),
             AccountKind::Money,

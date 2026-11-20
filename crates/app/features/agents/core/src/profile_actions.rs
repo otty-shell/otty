@@ -87,7 +87,7 @@ pub(crate) fn saved(
     }
 
     if is_dialog_saving && let Some(dialog) = state.take_dialog() {
-        state.select_named(dialog.agent(), dialog.name().trim());
+        state.select_named(dialog.agent().clone(), dialog.name().trim());
     }
     rename_dialog::close_after_save(state);
     add_account_dialog::close_after_save(state);
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn a_found_profile_can_not_be_removed() {
         let found = otty_agents::Profile::found(
-            claude().agent(),
+            claude().agent().clone(),
             "Work",
             PathBuf::from("/home/user/.claude-work"),
         );

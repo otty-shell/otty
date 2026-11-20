@@ -2,6 +2,7 @@ mod account_page;
 pub(crate) mod add_account_dialog;
 mod blocks;
 mod chips;
+mod entry_icon;
 pub(crate) mod found_report;
 pub(crate) mod keyring_dialog;
 pub(crate) mod left_panel;

@@ -38,8 +38,8 @@ pub fn load_version(
     agent: AgentId,
     shell: &str,
 ) -> Task<AgentsIntent> {
-    let program = agent_of(agents, agent)
-        .map(|known| known.descriptor().program().to_string());
+    let program = agent_of(agents, &agent)
+        .map(|known| known.entry().program().to_string());
     let shell = shell.to_string();
 
     on_own_thread(

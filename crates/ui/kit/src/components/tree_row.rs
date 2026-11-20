@@ -6,6 +6,7 @@ use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::ellipsis_text::EllipsisText;
 use super::glyph;
+use super::letter_icon::letter_icon;
 use super::session_row::SessionTone;
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
@@ -64,6 +65,7 @@ pub struct TreeRow<Message> {
     is_hovered: bool,
     is_drop_target: bool,
     icon: Option<(svg::Handle, Option<Color>)>,
+    letter: Option<String>,
     dot: Option<TargetKind>,
     state: Option<String>,
     on_press: Option<Message>,
@@ -83,6 +85,7 @@ impl<Message> TreeRow<Message> {
             is_hovered: false,
             is_drop_target: false,
             icon: None,
+            letter: None,
             dot: None,
             state: None,
             on_press: None,
@@ -143,6 +146,15 @@ impl<Message> TreeRow<Message> {
         self
     }
 
+    /// Shows the first letter of `name` on a rounded square before the
+    /// label, in place of an icon, for something with no icon of its own
+    /// ([`letter_icon`](super::letter_icon::letter_icon)). It takes the
+    /// colors an icon with no color of its own takes.
+    pub fn letter_icon(mut self, name: impl Into<String>) -> Self {
+        self.letter = Some(name.into());
+        self
+    }
+
     /// Shows a target dot before the label, for a row that starts a session
     /// on that target. The label next to it tells the target apart. In a row
     /// without a caret the dot stands where the caret would.
@@ -197,6 +209,14 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                 .height(MARK_WIDTH)
                 .style(move |_, _| svg::Style { color: Some(color) });
             marks.push(icon.into());
+        }
+        if let Some(name) = value.letter {
+            let color = if is_selected {
+                palette.text_strong()
+            } else {
+                muted
+            };
+            marks.push(letter_icon(&name, MARK_WIDTH, color, &palette));
         }
         if let Some(kind) = value.dot {
             // The dot is half as wide as its column. It stands at the right

@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Dollars, LocalNow, PriceTable, SavedProfiles, SourceError, Spend,
+    Dollars, LocalNow, PriceTable, Registry, SavedProfiles, SourceError, Spend,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -94,6 +94,7 @@ impl UsageBlockViewModel {
             prices: subject.prices,
             home: subject.home,
             saved: subject.saved,
+            registry: subject.registry,
         };
         let amount = match measure {
             UsageMeasure::Money if money_is_estimate(&input, period) => {
@@ -268,6 +269,8 @@ pub(crate) struct UsageSubject<'a> {
     pub(crate) home: &'a Path,
     /// What `agents.json` holds: the names the user gave the accounts.
     pub(crate) saved: Option<&'a SavedProfiles>,
+    /// The registry, which names the providers of the accounts.
+    pub(crate) registry: &'a Registry,
     /// The user's time zone; UTC when it is not known.
     pub(crate) time_zone: Option<&'a TimeZone>,
 }
@@ -511,6 +514,7 @@ mod tests {
             left_out: None,
             home: Path::new("/home/user"),
             saved: None,
+            registry: &crate::testing::BUILT_IN,
             time_zone: None,
         }
     }

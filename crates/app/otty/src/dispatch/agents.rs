@@ -405,7 +405,7 @@ mod tests {
     fn the_numbers_of_an_account_are_read_in_the_background() {
         let mut app = app();
         let account = otty_agents::Account::added(
-            otty_agents::Provider::DeepSeek,
+            otty_agents::ProviderRef::of_id("deepseek"),
             otty_agents::AdminKeyRef::EnvVar(String::from(
                 "OTTY_TEST_NO_SUCH_KEY",
             )),

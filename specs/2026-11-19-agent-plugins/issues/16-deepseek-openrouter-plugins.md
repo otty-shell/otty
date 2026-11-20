@@ -27,9 +27,8 @@ the official set (owner, 2026-11-20); its code goes in issue 17.
    `assets/plugins/openrouter/` with their hashes, by the script of issue
    11; installed on first start with their parts on (issue 08). With no
    DeepSeek or OpenRouter account found they do nothing.
-5. Parity on the owner's accounts ("equal" or differing field names
-   only); delete `deepseek.rs`, `openrouter.rs` and their built-in
-   entries.
+5. Delete `deepseek.rs`, `openrouter.rs` and their built-in entries;
+   the owner checks the accounts by hand.
 
 ## Done when
 
@@ -37,7 +36,7 @@ the official set (owner, 2026-11-20); its code goes in issue 17.
   added by hand (file or variable) reaches the plugin only as a handle;
   a DeepSeek key found behind Claude Code's `ANTHROPIC_BASE_URL` (host
   `api.deepseek.com`) is read by the DeepSeek plugin.
-- Parity recorded; the core files are gone; the app shows both from the
+- The core files are gone; the app shows both from the
   embedded plugins.
 - The checks of `AGENTS.md` pass; the plugins' own tests pass.
 

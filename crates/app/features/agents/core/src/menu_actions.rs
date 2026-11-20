@@ -39,9 +39,11 @@ pub(crate) fn act_on_account(
         AccountAction::Rename => {
             rename_dialog::open_for_account(state, account)
         },
-        AccountAction::OpenUsagePage => {
-            vec![AgentsOutcome::OpenPage(account.usage_page().to_string())]
-        },
+        AccountAction::OpenUsagePage => state
+            .registry()
+            .usage_page(&account)
+            .map(|page| vec![AgentsOutcome::OpenPage(page.to_string())])
+            .unwrap_or_default(),
         AccountAction::AdminKey => match admin_key_profile(state, &account) {
             Some(profile) => profile_dialog::open_edit(state, &profile),
             None => Vec::new(),

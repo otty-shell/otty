@@ -335,7 +335,7 @@ fn stats_source(
         .and_then(|agent| agent.stats_source())
         .ok_or_else(|| {
             SourceError::NotAvailable(Unavailable::NoStatistics(
-                profile.agent(),
+                profile.agent().clone(),
             ))
         })
 }
@@ -345,9 +345,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::agent::{AgentDescriptor, AgentId};
+    use crate::agent::AgentId;
     use crate::known_agents;
-    use crate::testing::{MockAgent, at, utc_now};
+    use crate::testing::{MockAgent, at, mock_entry, utc_now};
 
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(Some(name), TokenCount::new(input, 0, 1), requests)
@@ -417,20 +417,15 @@ mod tests {
 
     #[test]
     fn an_agent_that_reads_no_statistics_is_not_available() {
-        const SILENT: AgentDescriptor = AgentDescriptor::new(
-            AgentId::new("silent"),
-            "Silent",
-            "silent",
-            "silent",
-            ".silent",
-            "SILENT_HOME",
-            "Silent Labs",
-        );
         let mut agent = MockAgent::new();
-        agent.expect_descriptor().return_const(SILENT);
+        agent
+            .expect_entry()
+            .return_const(mock_entry("silent", "silent"));
         agent.expect_stats_source().returning(|| None);
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
-        let silent = Profile::added(SILENT.id(), "Silent", PathBuf::from("/s"));
+        let silent_id = AgentId::new("silent");
+        let silent =
+            Profile::added(silent_id.clone(), "Silent", PathBuf::from("/s"));
 
         let session = read_session_stats(
             &agents,
@@ -441,7 +436,7 @@ mod tests {
         let project = read_project_stats(&agents, &silent, Path::new("/w"));
 
         let not_available =
-            SourceError::NotAvailable(Unavailable::NoStatistics(SILENT.id()));
+            SourceError::NotAvailable(Unavailable::NoStatistics(silent_id));
         assert_eq!(session, Err(not_available.clone()));
         assert_eq!(project, Err(not_available));
     }
@@ -458,7 +453,7 @@ mod tests {
         assert_eq!(
             session,
             Err(SourceError::NotAvailable(Unavailable::NoStatistics(
-                stranger().agent()
+                stranger().agent().clone()
             )))
         );
     }
@@ -466,15 +461,9 @@ mod tests {
     #[test]
     fn the_statistics_come_from_the_source_of_the_profiles_agent() {
         let mut agent = MockAgent::new();
-        agent.expect_descriptor().return_const(AgentDescriptor::new(
-            AgentId::new("stranger"),
-            "Stranger",
-            "stranger",
-            "stranger",
-            ".stranger",
-            "STRANGER_HOME",
-            "Stranger Labs",
-        ));
+        agent
+            .expect_entry()
+            .return_const(mock_entry("stranger", "stranger"));
         agent.expect_stats_source().returning(|| {
             let mut source = MockStatsSource::new();
             source

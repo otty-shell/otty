@@ -58,11 +58,11 @@ pub fn profiles(
     let mut list = Vec::new();
 
     for agent in agents {
-        let changes = saved.default_changes_of(agent.descriptor().id());
+        let changes = saved.default_changes_of(agent.entry().id());
         let profile = default_profile(agent.as_ref(), env, changes);
 
         let is_installed = profile.config_dir().is_dir()
-            || is_program_found(agent.descriptor().program());
+            || is_program_found(agent.entry().program());
         if is_installed {
             list.push(profile);
         }
@@ -111,7 +111,7 @@ pub fn profile_status(
     profile: &Profile,
     is_program_found: impl Fn(&str) -> bool,
 ) -> ProfileStatus {
-    if !is_program_found(agent.descriptor().program()) {
+    if !is_program_found(agent.entry().program()) {
         return ProfileStatus::ProgramNotFound;
     }
 
@@ -124,20 +124,20 @@ fn default_profile(
     env: &AgentEnv,
     changes: Option<&DefaultProfileChanges>,
 ) -> Profile {
-    let descriptor = agent.descriptor();
+    let entry = agent.entry();
     let default_dir = agent.default_config_dir(env);
 
     let Some(changes) = changes else {
         return Profile::default_for(
-            descriptor.id(),
-            descriptor.name(),
+            entry.id().clone(),
+            entry.name(),
             default_dir,
         );
     };
 
-    let name = changes.name().unwrap_or(descriptor.name());
+    let name = changes.name().unwrap_or(entry.name());
     let config_dir = changes.config_dir().unwrap_or(&default_dir);
-    Profile::default_for(descriptor.id(), name, config_dir.to_path_buf())
+    Profile::default_for(entry.id().clone(), name, config_dir.to_path_buf())
         .with_agent_default_dir(&default_dir)
 }
 
@@ -151,17 +151,17 @@ fn found_profiles(
     home_folders: &[PathBuf],
     listed: &[Profile],
 ) -> Vec<Profile> {
-    let descriptor = agent.descriptor();
+    let entry = agent.entry();
     let default_dir = agent.default_config_dir(env);
     let mut found: Vec<Profile> = Vec::new();
 
     for folder in home_folders {
-        let Some(suffix) = folder_suffix(folder, descriptor.config_dir_name())
+        let Some(suffix) = folder_suffix(folder, agent.config_folder().name())
         else {
             continue;
         };
         let is_listed = listed.iter().any(|profile| {
-            profile.agent() == descriptor.id() && profile.config_dir() == folder
+            profile.agent() == entry.id() && profile.config_dir() == folder
         });
         if is_listed {
             continue;
@@ -171,7 +171,7 @@ fn found_profiles(
             continue;
         };
         let candidate =
-            Profile::found(descriptor.id(), name.as_str(), folder.clone());
+            Profile::found(entry.id().clone(), name.as_str(), folder.clone());
         let is_logged_in =
             matches!(agent.detect(&candidate), ProfileStatus::Connected { .. });
         if !is_logged_in && !agent.has_sessions(&candidate) {
@@ -185,7 +185,7 @@ fn found_profiles(
                 .any(|other| other.name() == name)
         };
         let name = if is_taken(&name) {
-            format!("{} · {name}", descriptor.name())
+            format!("{} · {name}", entry.name())
         } else {
             name
         };
@@ -193,7 +193,7 @@ fn found_profiles(
             continue;
         }
 
-        let profile = Profile::found(descriptor.id(), name, folder.clone())
+        let profile = Profile::found(entry.id().clone(), name, folder.clone())
             .with_agent_default_dir(&default_dir);
         found.push(profile);
     }
@@ -259,13 +259,18 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::agent::{AgentDescriptor, AgentId};
+    use crate::agent::AgentId;
     use crate::command::AgentCommand;
     use crate::known_agents;
-    use crate::testing::{MockAgent, TempDir, write_file};
+    use crate::testing::{MockAgent, TempDir, mock_entry, write_file};
 
-    const CLAUDE: AgentId = AgentId::new("claude-code");
-    const CODEX: AgentId = AgentId::new("codex");
+    fn claude_id() -> AgentId {
+        AgentId::new("claude-code")
+    }
+
+    fn codex_id() -> AgentId {
+        AgentId::new("codex")
+    }
 
     fn env_in(home: &Path) -> AgentEnv {
         AgentEnv::new(home.to_path_buf())
@@ -295,7 +300,7 @@ mod tests {
 
         assert_eq!(
             list,
-            [Profile::default_for(CLAUDE, "Claude Code", claude_dir)]
+            [Profile::default_for(claude_id(), "Claude Code", claude_dir)]
         );
         assert_eq!(
             known_agents()[0].launch(&list[0], None),
@@ -318,7 +323,10 @@ mod tests {
             no_program,
         );
 
-        assert_eq!(list, [Profile::default_for(CODEX, "Codex", codex_home)]);
+        assert_eq!(
+            list,
+            [Profile::default_for(codex_id(), "Codex", codex_home)]
+        );
         assert_eq!(
             known_agents()[1].launch(&list[0], None),
             AgentCommand::new("codex")
@@ -340,7 +348,7 @@ mod tests {
         assert_eq!(
             list,
             [Profile::default_for(
-                CLAUDE,
+                claude_id(),
                 "Claude Code",
                 temp.path().join(".claude")
             )]
@@ -354,7 +362,7 @@ mod tests {
         let moved_dir = make_dir(&temp.path().join("data/claude"));
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CLAUDE)
+            DefaultProfileChanges::new(claude_id())
                 .with_name("Claude Code · Home")
                 .with_config_dir(moved_dir.clone()),
         );
@@ -362,7 +370,7 @@ mod tests {
         let list = profiles(&known_agents(), &env, &saved, no_program);
 
         let expected = Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Home",
             moved_dir.clone(),
         )
@@ -380,7 +388,7 @@ mod tests {
         let temp = TempDir::new();
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
+            DefaultProfileChanges::new(codex_id()).with_name("Codex · Home"),
         );
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -394,12 +402,12 @@ mod tests {
         let claude_dir = make_dir(&temp.path().join(".claude"));
         let env = env_in(temp.path());
         let codex_work = Profile::added(
-            CODEX,
+            codex_id(),
             "Codex · Work",
             temp.path().join(".codex-work"),
         );
         let claude_work = Profile::added(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Work",
             temp.path().join(".claude-work"),
         );
@@ -418,7 +426,7 @@ mod tests {
         assert_eq!(
             list,
             [
-                Profile::default_for(CLAUDE, "Claude Code", claude_dir),
+                Profile::default_for(claude_id(), "Claude Code", claude_dir),
                 codex_work,
                 claude_work,
             ]
@@ -432,10 +440,11 @@ mod tests {
         let env = env_in(temp.path());
         let saved = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_config_dir(moved_dir),
+                DefaultProfileChanges::new(codex_id())
+                    .with_config_dir(moved_dir),
             )
             .with_added(Profile::added(
-                CODEX,
+                codex_id(),
                 "Codex · Old",
                 temp.path().join(".codex"),
             ));
@@ -502,11 +511,11 @@ mod tests {
             list,
             [
                 Profile::default_for(
-                    CLAUDE,
+                    claude_id(),
                     "Claude Code",
                     temp.path().join(".claude")
                 ),
-                Profile::found(CLAUDE, "Work", work.clone()),
+                Profile::found(claude_id(), "Work", work.clone()),
             ]
         );
         assert_eq!(
@@ -560,7 +569,7 @@ mod tests {
         claude_login(&work);
         let env = env_in(temp.path());
         let added =
-            Profile::added(CLAUDE, "Claude Code · Office", work.clone());
+            Profile::added(claude_id(), "Claude Code · Office", work.clone());
         let saved = SavedProfiles::default().with_added(added.clone());
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -575,7 +584,8 @@ mod tests {
         claude_login(&work);
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CLAUDE).with_config_dir(work.clone()),
+            DefaultProfileChanges::new(claude_id())
+                .with_config_dir(work.clone()),
         );
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -596,7 +606,7 @@ mod tests {
         codex_session(&codex_team);
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_added(Profile::added(
-            CODEX,
+            codex_id(),
             "Work",
             temp.path().join("data/codex"),
         ));
@@ -622,15 +632,13 @@ mod tests {
     }
 
     /// A made-up agent whose program is `mock-agent`.
-    const MOCK: AgentDescriptor = AgentDescriptor::new(
-        AgentId::new("mock"),
-        "Mock",
-        "mock",
-        "mock-agent",
-        ".mock",
-        "MOCK_HOME",
-        "Mock Labs",
-    );
+    fn mock() -> MockAgent {
+        let mut agent = MockAgent::new();
+        agent
+            .expect_entry()
+            .return_const(mock_entry("mock", "mock-agent"));
+        agent
+    }
 
     fn mock_profile() -> Profile {
         Profile::added(AgentId::new("mock"), "Mock", PathBuf::from("/m"))
@@ -638,8 +646,7 @@ mod tests {
 
     #[test]
     fn a_profile_whose_program_is_not_found_says_so_before_any_check() {
-        let mut agent = MockAgent::new();
-        agent.expect_descriptor().return_const(MOCK);
+        let mut agent = mock();
         agent.expect_detect().never();
 
         let status = profile_status(&agent, &mock_profile(), no_program);
@@ -649,8 +656,7 @@ mod tests {
 
     #[test]
     fn a_profile_whose_program_is_found_has_the_state_its_agent_checks() {
-        let mut agent = MockAgent::new();
-        agent.expect_descriptor().return_const(MOCK);
+        let mut agent = mock();
         agent
             .expect_detect()
             .return_const(ProfileStatus::NotLoggedIn);

@@ -38,10 +38,9 @@ code goes.
    similar, used by issues 13, 14 and 16 too) and the issue comments say
    so.
 5. Delete `crates/agents/src/codex/` (except what step 3 moved) and the
-   built-in Codex registry entry, after a parity run of the full `codex`
-   part (tokens, money, limits shown, the ChatGPT login joined with the
-   same login found in another agent) on the owner's real files,
-   read-only, totals only.
+   built-in Codex registry entry in this issue; the owner checks the
+   full `codex` part by hand (tokens, money, limits shown, the ChatGPT
+   login joined with the same login found in another agent).
 
 ## Done when
 
@@ -49,7 +48,7 @@ code goes.
   `base_url.rs`, `session_limits.rs`, `app_server.rs` (with a mock talk),
   `token_expiry.rs`; the plugin never gets the token text (test host
   check); the method list test.
-- Parity "equal" recorded in the comments; the core Codex folder is gone;
+- The core Codex folder is gone;
   the app shows Codex from the embedded OpenAI plugin with no network.
 - The checks of `AGENTS.md` pass; the plugin's own tests pass.
 

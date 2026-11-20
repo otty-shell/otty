@@ -2,7 +2,7 @@
 //! sessions, and Agents mode with them read.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
@@ -11,16 +11,16 @@ use otty_agents::{
     AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill, Billing,
     DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
     LimitWindow, Limits, ModelPrice, ModelTokens, PriceTable, Profile,
-    ProfileStatus, Provider, SavedProfiles, SessionId, SourceError,
-    SourceFailure, SourceId, Spend, TokenCount, TokenPrices, Unavailable,
-    UsageWindows, WindowId,
+    ProfileStatus, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
+    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
+    Unavailable, UsageWindows, WindowId,
 };
 use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
 use crate::model::{
-    UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
+    EntryIcon, UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
 };
 use crate::reducer::reduce;
 use crate::state::AgentsState;
@@ -31,8 +31,25 @@ use crate::types::{
 };
 use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
-pub(crate) const CLAUDE: AgentId = AgentId::new("claude-code");
-pub(crate) const CODEX: AgentId = AgentId::new("codex");
+/// The id of Claude Code.
+pub(crate) fn claude_id() -> AgentId {
+    AgentId::new("claude-code")
+}
+
+/// The id of Codex.
+pub(crate) fn codex_id() -> AgentId {
+    AgentId::new("codex")
+}
+
+/// The registry of the readers of `otty-agents`, for the view models
+/// that borrow it for the whole test.
+pub(crate) static BUILT_IN: LazyLock<Registry> =
+    LazyLock::new(|| Registry::built_in(&otty_agents::known_agents()));
+
+/// The registry of the readers of `otty-agents`, all built in.
+pub(crate) fn registry() -> Arc<Registry> {
+    Arc::new(Registry::built_in(&otty_agents::known_agents()))
+}
 /// Position of the Title column of the sessions table, which production
 /// code reaches only as the fallback of the sort.
 pub(crate) const TITLE_COLUMN: usize = 0;
@@ -109,7 +126,7 @@ pub(crate) fn env() -> AgentEnv {
 /// The default Claude Code profile in `/home/user/.claude`.
 pub(crate) fn claude() -> Profile {
     Profile::default_for(
-        CLAUDE,
+        claude_id(),
         "Claude Code",
         PathBuf::from("/home/user/.claude"),
     )
@@ -118,7 +135,7 @@ pub(crate) fn claude() -> Profile {
 /// A Claude Code profile the user added, in `/home/user/.claude-work`.
 pub(crate) fn claude_work() -> Profile {
     Profile::added(
-        CLAUDE,
+        claude_id(),
         "Claude Code · Work",
         PathBuf::from("/home/user/.claude-work"),
     )
@@ -126,13 +143,17 @@ pub(crate) fn claude_work() -> Profile {
 
 /// The default Codex profile in `/home/user/.codex`.
 pub(crate) fn codex() -> Profile {
-    Profile::default_for(CODEX, "Codex", PathBuf::from("/home/user/.codex"))
+    Profile::default_for(
+        codex_id(),
+        "Codex",
+        PathBuf::from("/home/user/.codex"),
+    )
 }
 
 /// A Codex profile the user added, in `/home/user/.codex-work`.
 pub(crate) fn codex_work() -> Profile {
     Profile::added(
-        CODEX,
+        codex_id(),
         "Codex · Work",
         PathBuf::from("/home/user/.codex-work"),
     )
@@ -204,7 +225,8 @@ pub(crate) fn with_saved_profiles(
     profiles: &[(Profile, ProfileStatus)],
     saved: SavedProfiles,
 ) -> AgentsState {
-    let mut state = AgentsState::new(agents(), env());
+    let mut state =
+        AgentsState::new(agents(), crate::testing::registry(), env());
     let _ = reduce(&mut state, AgentsIntent::Enter);
     let _ = reduce(&mut state, profiles_loaded_from(profiles, saved));
 
@@ -395,9 +417,48 @@ pub(crate) fn spend_loaded(
 /// the default Claude Code folder.
 pub(crate) fn organization() -> Account {
     Account::new(
-        Provider::Anthropic,
+        ProviderRef::of_id("anthropic"),
         AccountIdentity::OrganizationId(String::from("made-up-org")),
         AccountLogin::Email(String::from("dev@example.com")),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    )
+}
+
+/// The icon the built-in registry gives the agent `id`, such as `codex`.
+pub(crate) fn agent_icon(id: &str) -> EntryIcon {
+    let registry = registry();
+    let entry = registry.agent(&AgentId::new(id));
+
+    EntryIcon::of(entry.and_then(|entry| entry.icon()), id)
+}
+
+/// The icon the built-in registry gives the provider `id`, such as
+/// `openai`.
+pub(crate) fn provider_icon(id: &str) -> EntryIcon {
+    let registry = registry();
+    let entry = registry.provider(&ProviderId::new(id));
+
+    EntryIcon::of(entry.and_then(|entry| entry.icon()), id)
+}
+
+/// The registry of the readers of `otty-agents` without the DeepSeek
+/// entry, as when no plugin serves DeepSeek.
+pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
+    let registry = Registry::built_in(&otty_agents::known_agents());
+
+    Arc::new(registry.without_provider(&ProviderId::new("deepseek")))
+}
+
+/// A made-up key for `api.deepseek.com` found in the settings of the
+/// Claude Code folder, as Claude Code with a DeepSeek base URL keeps it.
+pub(crate) fn deepseek_key_by_host() -> Account {
+    Account::new(
+        ProviderRef::Host(String::from("api.deepseek.com")),
+        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
+            "sk-made-up-deepseek",
+        )),
+        AccountLogin::Key(Some(String::from("seek"))),
         AccountKind::Money,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
     )
@@ -407,7 +468,7 @@ pub(crate) fn organization() -> Account {
 /// folders.
 pub(crate) fn chatgpt_login() -> Account {
     Account::new(
-        Provider::OpenAI,
+        ProviderRef::of_id("openai"),
         AccountIdentity::AccountId(String::from("made-up-account")),
         AccountLogin::Email(String::from("you@example.com")),
         AccountKind::Limits,
@@ -420,7 +481,7 @@ pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
     let login = chatgpt_login();
 
     Account::new(
-        login.provider(),
+        login.provider().clone(),
         login.identity().clone(),
         login.login().clone(),
         login.kind(),
@@ -447,7 +508,16 @@ pub(crate) fn with_accounts(
     profiles: &[(Profile, ProfileStatus, Vec<Account>)],
     saved: SavedProfiles,
 ) -> AgentsState {
-    let mut state = AgentsState::new(agents(), env());
+    with_accounts_in(registry(), profiles, saved)
+}
+
+/// [`with_accounts`] with `registry` naming the agents and providers.
+pub(crate) fn with_accounts_in(
+    registry: Arc<Registry>,
+    profiles: &[(Profile, ProfileStatus, Vec<Account>)],
+    saved: SavedProfiles,
+) -> AgentsState {
+    let mut state = AgentsState::new(agents(), registry, env());
     let _ = reduce(&mut state, AgentsIntent::Enter);
     let _ = reduce(&mut state, profiles_with_accounts_loaded(profiles, saved));
 
@@ -518,7 +588,8 @@ pub(crate) fn billed_claude_loaded() -> AgentsIntent {
 
 /// Agents mode entered, with [`billed_claude_loaded`] read.
 pub(crate) fn with_billed_claude() -> AgentsState {
-    let mut state = AgentsState::new(agents(), env());
+    let mut state =
+        AgentsState::new(agents(), crate::testing::registry(), env());
     let _ = reduce(&mut state, AgentsIntent::Enter);
     let _ = reduce(&mut state, billed_claude_loaded());
 

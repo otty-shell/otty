@@ -1,4 +1,4 @@
-# 07 Plugin parts in Agents mode, and the parity check
+# 07 Plugin parts in Agents mode
 
 Status: ready-for-agent
 Blocked by: 01, 04, 05
@@ -8,8 +8,8 @@ Blocked by: 01, 04, 05
 Spec Decisions 4, 6 and 11. The generic work stays in `otty-agents`
 (`walk.rs`, `spend_files.rs`, `spend_tally.rs`, `record_format.rs`,
 `merge_accounts`, prices); a plugin part only replaces the per-agent
-closures and sources. And the in-core code may be deleted only after a
-parity check on real files.
+closures and sources. Each plugin issue then deletes the in-core code
+its part replaces; the owner checks it by hand (no parity check).
 
 ## What to build
 
@@ -38,12 +38,6 @@ parity check on real files.
 5. A trap or missed deadline fails that read only and keeps the last good
    numbers greyed; three in a row pause only the part whose calls failed,
    until **Try again** or restart. The plugin's other parts keep working.
-6. `crates/agents/examples/parity.rs`: `parity <agent-or-provider id>
-   <profile folder> <plugin folder>`; runs the in-core reader and the
-   plugin's part with that id on the same files, opened read-only; prints
-   only counts, token totals per (day, model) and per kind, money totals,
-   records seen and understood, times, and "equal" or the differing rows.
-   Never a key, token, prompt or session text.
 
 ## Done when
 
@@ -54,16 +48,14 @@ parity check on real files.
   naming the plugin; a trapping part keeps last good numbers and is
   paused after three, while the template's other part keeps reading; one
   provider call per account even with two profiles; a provider part gets
-  no handle for an account of another provider; the parity tool prints
-  equal totals for the template over its fixtures and nothing but
-  numbers.
+  no handle for an account of another provider.
 - The checks of `AGENTS.md` pass.
 
 ## Files
 
 `crates/agents/src/` (new `plugin_agent.rs`, `plugin_provider.rs`,
 changes in `spend_files.rs`, `record_format.rs`, `account_numbers/`),
-`crates/agents/examples/parity.rs`, `crates/agents/Cargo.toml`,
+`crates/agents/Cargo.toml`,
 `crates/app/features/agents/io/` (load plugin parts into the registry).
 
 ## Comments

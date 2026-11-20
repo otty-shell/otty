@@ -40,12 +40,13 @@ pub(super) fn view<'a>(
 
         let mut line = row![text].spacing(spacing::SPACE_4);
         if let Some(fix) = need.fix {
-            line = line.push(
-                Button::new(fix.label, palette)
-                    .kind(ButtonKind::Secondary)
-                    .size(ButtonSize::Small)
-                    .on_press(on_fix(fix.action)),
-            );
+            let mut button = Button::new(fix.label, palette)
+                .kind(ButtonKind::Secondary)
+                .size(ButtonSize::Small);
+            if let Some(action) = fix.action {
+                button = button.on_press(on_fix(action));
+            }
+            line = line.push(button);
         }
 
         list = list.push(line.align_y(Alignment::Center));

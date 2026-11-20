@@ -23,8 +23,8 @@ pub(crate) struct ProjectFilter {
 
 impl ProjectFilter {
     /// The agent whose projects show; `None` for every agent.
-    pub(crate) fn agent(&self) -> Option<AgentId> {
-        self.agent
+    pub(crate) fn agent(&self) -> Option<&AgentId> {
+        self.agent.as_ref()
     }
 
     /// Whether only the projects used in the last 30 days show.
@@ -67,7 +67,7 @@ impl ProjectFilter {
 }
 
 /// A choice of the funnel menu, or the cross of a chip that turns one off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectFilterChange {
     /// Show the projects of every agent (`None`) or of this agent.
     Agent(Option<AgentId>),
@@ -102,7 +102,10 @@ pub(crate) fn filter_projects<'a>(
         .iter()
         .filter(|project| matches_query(project, &query))
         .filter(|project| {
-            filter.agent.is_none_or(|agent| has_agent(project, agent))
+            filter
+                .agent
+                .as_ref()
+                .is_none_or(|agent| has_agent(project, agent))
         })
         .filter(|project| !filter.is_recent_only || is_recent(project, now))
         .filter(|project| {
@@ -128,6 +131,7 @@ pub(crate) fn shown_sessions(
         .filter(|entry| {
             filter
                 .agent
+                .as_ref()
                 .is_none_or(|agent| entry.profile().agent() == agent)
         })
         .count()
@@ -142,7 +146,7 @@ fn matches_query(project: &Project, query: &str) -> bool {
 }
 
 /// Whether `project` has a session of a profile of `agent`.
-fn has_agent(project: &Project, agent: AgentId) -> bool {
+fn has_agent(project: &Project, agent: &AgentId) -> bool {
     project
         .sessions()
         .iter()
@@ -176,7 +180,7 @@ mod tests {
     use otty_agents::{AgentSession, Profile};
 
     use super::*;
-    use crate::testing::{CLAUDE, CODEX, at, claude, codex, session};
+    use crate::testing::{at, claude, claude_id, codex, codex_id, session};
 
     const DAY: u64 = 24 * 60 * 60;
 
@@ -241,7 +245,7 @@ mod tests {
     fn with(changes: &[ProjectFilterChange]) -> ProjectFilter {
         let mut filter = ProjectFilter::default();
         for change in changes {
-            filter.apply(*change);
+            filter.apply(change.clone());
         }
 
         filter
@@ -279,8 +283,9 @@ mod tests {
 
     #[test]
     fn an_agent_keeps_the_projects_it_has_sessions_in() {
-        let codex_only = with(&[ProjectFilterChange::Agent(Some(CODEX))]);
-        let claude_only = with(&[ProjectFilterChange::Agent(Some(CLAUDE))]);
+        let codex_only = with(&[ProjectFilterChange::Agent(Some(codex_id()))]);
+        let claude_only =
+            with(&[ProjectFilterChange::Agent(Some(claude_id()))]);
 
         assert_eq!(filtered("", &codex_only), ["otty", "data-lakehouse-docs"]);
         assert_eq!(filtered("", &claude_only), ["otty", "GovLake", "alpha"]);
@@ -313,7 +318,7 @@ mod tests {
     #[test]
     fn the_text_and_the_choices_work_together() {
         let filter = with(&[
-            ProjectFilterChange::Agent(Some(CLAUDE)),
+            ProjectFilterChange::Agent(Some(claude_id())),
             ProjectFilterChange::RecentOnly(true),
             ProjectFilterChange::SortByName(true),
         ]);
@@ -325,13 +330,13 @@ mod tests {
     #[test]
     fn a_choice_turns_off_and_clear_all_turns_off_every_choice() {
         let mut filter = with(&[
-            ProjectFilterChange::Agent(Some(CODEX)),
+            ProjectFilterChange::Agent(Some(codex_id())),
             ProjectFilterChange::RecentOnly(true),
             ProjectFilterChange::MissingOnly(true),
             ProjectFilterChange::SortByName(true),
         ]);
         assert!(filter.is_any_on());
-        assert_eq!(filter.agent(), Some(CODEX));
+        assert_eq!(filter.agent(), Some(&codex_id()));
         assert!(filter.is_recent_only());
         assert!(filter.is_missing_only());
         assert!(filter.is_sorted_by_name());
@@ -358,7 +363,7 @@ mod tests {
         let all = shown_sessions(otty, &ProjectFilter::default());
         let codex_only = shown_sessions(
             otty,
-            &with(&[ProjectFilterChange::Agent(Some(CODEX))]),
+            &with(&[ProjectFilterChange::Agent(Some(codex_id()))]),
         );
 
         assert_eq!(all, 2);

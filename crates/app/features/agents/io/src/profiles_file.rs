@@ -4,7 +4,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use otty_agents::{Agent, SavedProfiles, SavedProfilesError};
+use otty_agents::{SavedProfiles, SavedProfilesError};
 use otty_app_i18n::{self as i18n, Key};
 use thiserror::Error;
 
@@ -34,13 +34,10 @@ impl From<SavedProfilesError> for ProfilesFileError {
 /// user when the file could not be read. A missing file is the first
 /// start: no changes and nothing to tell. A file that can not be read
 /// gives no changes and the text.
-pub(crate) fn read_saved(
-    config_dir: &Path,
-    agents: &[Box<dyn Agent>],
-) -> (SavedProfiles, Option<String>) {
+pub(crate) fn read_saved(config_dir: &Path) -> (SavedProfiles, Option<String>) {
     let path = profiles_file(config_dir);
 
-    match read_file(&path, agents) {
+    match read_file(&path) {
         Ok(saved) => (saved, None),
         Err(err) => (SavedProfiles::default(), Some(problem(&path, &err))),
     }
@@ -70,10 +67,7 @@ pub(crate) fn write_saved(
 
 /// Read the saved profiles from the file at `path`; a missing file is no
 /// change.
-fn read_file(
-    path: &Path,
-    agents: &[Box<dyn Agent>],
-) -> Result<SavedProfiles, ProfilesFileError> {
+fn read_file(path: &Path) -> Result<SavedProfiles, ProfilesFileError> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(err) if err.kind() == ErrorKind::NotFound => {
@@ -82,7 +76,7 @@ fn read_file(
         Err(err) => return Err(err.into()),
     };
 
-    Ok(SavedProfiles::from_json(&text, agents)?)
+    Ok(SavedProfiles::from_json(&text)?)
 }
 
 /// Log why the file at `path` could not be read and return the text that
@@ -103,7 +97,6 @@ fn profiles_file(config_dir: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::known_agents;
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -120,7 +113,7 @@ mod tests {
     fn a_missing_file_is_no_change_and_nothing_to_tell() {
         let folder = TempDir::new("agents-file-missing");
 
-        let (saved, problem) = read_saved(folder.path(), &known_agents());
+        let (saved, problem) = read_saved(folder.path());
 
         assert_eq!(saved, SavedProfiles::default());
         assert_eq!(problem, None);
@@ -133,7 +126,7 @@ mod tests {
             r#"{"added_profiles":[{"agent":"codex","name":"Codex · Work","config_dir":"/home/user/.codex-work"}]}"#,
         );
 
-        let (saved, problem) = read_saved(folder.path(), &known_agents());
+        let (saved, problem) = read_saved(folder.path());
 
         assert_eq!(problem, None);
         let names: Vec<_> =
@@ -145,7 +138,7 @@ mod tests {
     fn a_broken_file_gives_no_change_and_tells_why() {
         let folder = folder_with("agents-file-broken", "{ not json");
 
-        let (saved, problem) = read_saved(folder.path(), &known_agents());
+        let (saved, problem) = read_saved(folder.path());
 
         assert_eq!(saved, SavedProfiles::default());
         let problem = problem.expect("the user is told");
@@ -169,7 +162,7 @@ mod tests {
             ));
 
         let written = write_saved(&config_dir, &saved);
-        let (read, problem) = read_saved(&config_dir, &known_agents());
+        let (read, problem) = read_saved(&config_dir);
 
         assert!(written.is_ok(), "{written:?}");
         assert_eq!(problem, None);
@@ -196,7 +189,7 @@ mod tests {
         std::fs::create_dir(profiles_file(folder.path()))
             .expect("a folder in place of the file");
 
-        let (saved, problem) = read_saved(folder.path(), &known_agents());
+        let (saved, problem) = read_saved(folder.path());
 
         assert_eq!(saved, SavedProfiles::default());
         let problem = problem.expect("the user is told");

@@ -163,7 +163,8 @@ mod tests {
     #[test]
     fn a_hidden_account_has_no_limits_and_no_bill_read() {
         let first_read = |saved: SavedProfiles| {
-            let mut state = AgentsState::new(agents(), env());
+            let mut state =
+                AgentsState::new(agents(), crate::testing::registry(), env());
             let _ = reduce(&mut state, AgentsIntent::Enter);
             reduce(
                 &mut state,
@@ -261,7 +262,8 @@ mod tests {
     /// hidden, only while Show hidden profiles is on.
     #[test]
     fn a_hidden_profile_is_not_read_and_shows_only_with_show_hidden() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let saved = report_shown().with_profile_hidden(&codex_work(), true);
 
@@ -295,7 +297,8 @@ mod tests {
 
     #[test]
     fn show_again_of_a_profile_saves_it_shown() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let saved = report_shown().with_profile_hidden(&codex_work(), true);
         let _ = reduce(

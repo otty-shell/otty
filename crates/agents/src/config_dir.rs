@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::agent::AgentDescriptor;
+use crate::agent::ConfigFolder;
 use crate::env::AgentEnv;
 
 /// Why the config folder of a new profile could not be created.
@@ -31,12 +31,12 @@ pub enum CreateConfigDirError {
 /// variable names in `env` when it is set, else the agent's config folder
 /// name in the home folder, such as `~/.claude`.
 pub(crate) fn default_config_dir(
-    agent: &AgentDescriptor,
+    agent: ConfigFolder,
     env: &AgentEnv,
 ) -> PathBuf {
-    match env.config_dir_of(agent.config_dir_variable()) {
+    match env.config_dir_of(agent.variable()) {
         Some(folder) => folder.to_path_buf(),
-        None => env.home().join(agent.config_dir_name()),
+        None => env.home().join(agent.name()),
     }
 }
 
@@ -56,7 +56,7 @@ pub(crate) fn default_config_dir(
 /// let env = AgentEnv::new(PathBuf::from("/home/user"));
 ///
 /// let folder = proposed_config_dir(
-///     ClaudeCode::default().descriptor(),
+///     ClaudeCode::default().config_folder(),
 ///     &env,
 ///     "Semrush",
 /// );
@@ -64,12 +64,12 @@ pub(crate) fn default_config_dir(
 /// assert_eq!(folder, Some(PathBuf::from("/home/user/.claude-semrush")));
 /// ```
 pub fn proposed_config_dir(
-    agent: &AgentDescriptor,
+    agent: ConfigFolder,
     env: &AgentEnv,
     name: &str,
 ) -> Option<PathBuf> {
     let suffix = folder_suffix(name)?;
-    let folder = format!("{}-{suffix}", agent.config_dir_name());
+    let folder = format!("{}-{suffix}", agent.name());
 
     Some(env.home().join(folder))
 }
@@ -139,7 +139,7 @@ mod tests {
     fn propose(name: &str) -> Option<PathBuf> {
         let env = env_in(Path::new("/home/user"));
 
-        proposed_config_dir(ClaudeCode::default().descriptor(), &env, name)
+        proposed_config_dir(ClaudeCode::default().config_folder(), &env, name)
     }
 
     #[test]
@@ -147,12 +147,15 @@ mod tests {
         let env = env_in(Path::new("/home/user"));
 
         let claude = proposed_config_dir(
-            ClaudeCode::default().descriptor(),
+            ClaudeCode::default().config_folder(),
             &env,
             "Semrush",
         );
-        let codex =
-            proposed_config_dir(Codex::default().descriptor(), &env, "Semrush");
+        let codex = proposed_config_dir(
+            Codex::default().config_folder(),
+            &env,
+            "Semrush",
+        );
 
         assert_eq!(claude, Some(PathBuf::from("/home/user/.claude-semrush")));
         assert_eq!(codex, Some(PathBuf::from("/home/user/.codex-semrush")));

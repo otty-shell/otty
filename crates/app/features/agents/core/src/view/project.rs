@@ -202,7 +202,7 @@ fn profile_chips<'a>(
     let chips = profiles
         .into_iter()
         .map(|chip| Chip {
-            icon: icons::agent_icon(chip.icon),
+            icon: chip.icon,
             name: chip.name,
             note: None,
             on_press: AgentsIntent::SelectProfile(chip.profile),
@@ -335,7 +335,7 @@ mod tests {
     /// as a link.
     fn profile_cell(icon: &str, name: &str) -> TableCell {
         TableCell::icon_link(
-            svg::Handle::from_memory(icons::agent_icon(icon)),
+            crate::testing::agent_icon(icon).svg_or(icons::MODE_AGENTS),
             name,
         )
     }
@@ -346,12 +346,12 @@ mod tests {
             path: String::from("~/work/otty"),
             profiles: vec![ProjectProfileViewModel {
                 profile: codex(),
-                icon: "codex",
+                icon: crate::testing::agent_icon("codex"),
                 name: String::from("Codex · Main"),
             }],
             accounts: vec![PaysThroughViewModel {
                 account: chatgpt_login(),
-                provider: "OpenAI",
+                icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
                 number: None,
             }],

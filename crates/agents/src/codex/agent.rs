@@ -14,8 +14,9 @@ use super::usage::UsageRequest;
 use super::{accounts, detect, version};
 use crate::account::Account;
 use crate::account_key::AccountKey;
-use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::bill::BillSource;
+use crate::built_in;
 use crate::command::{AgentCommand, profile_command};
 use crate::config_dir::default_config_dir;
 use crate::env::AgentEnv;
@@ -25,22 +26,19 @@ use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
+use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
-pub(super) const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
-    AgentId::new("codex"),
-    "Codex",
-    "codex",
-    "codex",
-    ".codex",
-    "CODEX_HOME",
-    "OpenAI",
-)
-.with_stats();
+/// The id Codex is saved under.
+pub(super) const ID: &str = "codex";
+/// The program, looked up on `PATH`.
+pub(super) const PROGRAM: &str = "codex";
+/// `~/.codex`, which `CODEX_HOME` moves.
+const CONFIG_FOLDER: ConfigFolder = ConfigFolder::new(".codex", "CODEX_HOME");
 
 /// The ids of the session sources, in the order they are given.
 const SESSION_SOURCES: [SourceId; 1] = [SourceId::SessionFiles];
@@ -61,21 +59,50 @@ const LIMIT_SOURCES: [SourceId; 3] = [
 /// ```
 /// use otty_agents::{Agent, Codex};
 ///
-/// assert_eq!(Codex::default().descriptor().name(), "Codex");
+/// assert_eq!(Codex::default().entry().name(), "Codex");
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Codex {
+    entry: AgentEntry,
     session_memory: Arc<FileMemory<Option<SessionMeta>>>,
     spend_memory: Arc<FileMemory<FileSpend>>,
 }
 
+impl Default for Codex {
+    fn default() -> Self {
+        let entry = AgentEntry::new(
+            AgentId::new(ID),
+            "Codex",
+            PROGRAM,
+            "OpenAI",
+            Reader::BuiltIn,
+        )
+        .with_icon(built_in::OPENAI_ICON);
+
+        Self {
+            entry,
+            session_memory: Arc::default(),
+            spend_memory: Arc::default(),
+        }
+    }
+}
+
 impl Agent for Codex {
-    fn descriptor(&self) -> &AgentDescriptor {
-        &DESCRIPTOR
+    fn entry(&self) -> &AgentEntry {
+        &self.entry
+    }
+
+    fn config_folder(&self) -> ConfigFolder {
+        CONFIG_FOLDER
+    }
+
+    /// No: the session files hold the tokens, not what they cost.
+    fn writes_cost(&self) -> bool {
+        false
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        default_config_dir(&DESCRIPTOR, env)
+        default_config_dir(CONFIG_FOLDER, env)
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -182,11 +209,7 @@ impl Agent for Codex {
 /// `codex` of `profile`, with `CODEX_HOME` when its folder is not the
 /// default one.
 pub(super) fn start_command(profile: &Profile) -> AgentCommand {
-    profile_command(
-        profile,
-        DESCRIPTOR.program(),
-        DESCRIPTOR.config_dir_variable(),
-    )
+    profile_command(profile, PROGRAM, CONFIG_FOLDER.variable())
 }
 
 #[cfg(test)]
@@ -203,7 +226,7 @@ mod tests {
 
     fn default_profile() -> Profile {
         Profile::default_for(
-            DESCRIPTOR.id(),
+            AgentId::new(ID),
             "Codex",
             PathBuf::from("/home/user/.codex"),
         )
@@ -284,7 +307,7 @@ mod tests {
     #[test]
     fn a_default_profile_moved_to_another_folder_starts_codex_with_it() {
         let profile = Profile::default_for(
-            DESCRIPTOR.id(),
+            AgentId::new(ID),
             "Codex",
             PathBuf::from("/data/codex"),
         )

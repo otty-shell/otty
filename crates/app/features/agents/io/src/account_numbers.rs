@@ -27,11 +27,11 @@ use crate::shell_variable::shell_variable;
 /// ```
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{Account, AdminKeyRef, KeyPlace, Provider};
+/// use otty_agents::{Account, AdminKeyRef, KeyPlace, ProviderRef};
 /// use otty_app_agents::AgentList;
 ///
 /// let account = Account::added(
-///     Provider::DeepSeek,
+///     ProviderRef::of_id("deepseek"),
 ///     AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
 /// );
 /// let agents: AgentList = Arc::from(otty_agents::known_agents());
@@ -52,7 +52,7 @@ pub fn load_account_numbers(
 ) -> Task<AgentsIntent> {
     let task = format!(
         "reading the numbers of a {} account",
-        account.provider().name()
+        account.provider().as_str()
     );
     let agents = Arc::clone(agents);
     let fallback = account.clone();
@@ -101,7 +101,7 @@ fn read_account_numbers(
 #[cfg(all(test, unix))]
 mod tests {
     use otty_agents::{
-        AdminKeyRef, Provider, SourceError, Unavailable, known_agents,
+        AdminKeyRef, ProviderRef, SourceError, Unavailable, known_agents,
     };
     use otty_app_testing::temp_dir::TempDir;
 
@@ -112,7 +112,8 @@ mod tests {
     /// is sent and no test reaches the network.
     fn missing_key(folder: &TempDir) -> (Account, AdminKeyRef) {
         let key = AdminKeyRef::File(folder.path().join("no-such-key"));
-        let account = Account::added(Provider::DeepSeek, key.clone());
+        let account =
+            Account::added(ProviderRef::of_id("deepseek"), key.clone());
 
         (account, key)
     }

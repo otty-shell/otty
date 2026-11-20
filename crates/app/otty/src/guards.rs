@@ -1061,7 +1061,7 @@ mod tests {
                 vec![
                     add_account(AddAccountIntent::ProviderListToggled),
                     add_account(AddAccountIntent::ProviderPicked(
-                        otty_agents::Provider::OpenRouter,
+                        otty_agents::ProviderRef::of_id("openrouter"),
                     )),
                     add_account(AddAccountIntent::KeyChoicePicked(
                         otty_app_agents::AdminKeyChoice::Variable,
@@ -2124,7 +2124,7 @@ mod tests {
     fn every_item_of_the_agents_account_menu_passes() {
         let mut app = agents_app_with_a_session();
         let account = otty_agents::Account::new(
-            otty_agents::Provider::OpenAI,
+            otty_agents::ProviderRef::of_id("openai"),
             otty_agents::AccountIdentity::AccountId(String::from(
                 "made-up-account",
             )),

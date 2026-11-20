@@ -56,11 +56,12 @@ pub(crate) fn edited(
     }
 
     if editing.is_default() {
-        let profile = Profile::default_for(agent, edit.name, edit.config_dir);
+        let profile =
+            Profile::default_for(agent.clone(), edit.name, edit.config_dir);
         return saved.with_default_edited(agent_name, editing, profile);
     }
 
-    let profile = Profile::added(agent, edit.name, edit.config_dir);
+    let profile = Profile::added(agent.clone(), edit.name, edit.config_dir);
     saved.with_added_replaced(agent, editing.name(), profile)
 }
 

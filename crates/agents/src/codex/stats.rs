@@ -231,7 +231,7 @@ mod tests {
     use super::*;
     use crate::limits::WindowId;
     use crate::percent::Percent;
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::spend::ModelTokens;
     use crate::testing::{
         NOW, TempDir, at, codex_profile, set_file_time, utc_now,
@@ -370,7 +370,7 @@ mod tests {
                 TokenCount::new(400, 900, 70),
                 2
             )
-            .with_provider(Some(Provider::OpenAI))]
+            .with_provider(Some(ProviderRef::of_id("openai")))]
         );
         assert_eq!(
             stats.limit_changes(),
@@ -419,7 +419,10 @@ mod tests {
         assert_eq!(days[days.len() - 2].tokens().total(), 15);
         let nine = &stats.spend().today_by_hour()[9];
         assert_eq!(nine.tokens().total(), 27);
-        assert_eq!(nine.parts()[0].tokens().provider(), Some(Provider::OpenAI));
+        assert_eq!(
+            nine.parts()[0].tokens().provider(),
+            Some(&ProviderRef::of_id("openai"))
+        );
     }
 
     #[test]
@@ -550,9 +553,9 @@ mod tests {
                     TokenCount::new(10, 0, 2),
                     1
                 )
-                .with_provider(Some(Provider::OpenAI)),
+                .with_provider(Some(ProviderRef::of_id("openai"))),
                 ModelTokens::new(Some("o3"), TokenCount::new(10, 0, 1), 1)
-                    .with_provider(Some(Provider::OpenAI)),
+                    .with_provider(Some(ProviderRef::of_id("openai"))),
             ]
         );
     }

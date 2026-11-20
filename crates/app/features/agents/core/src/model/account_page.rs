@@ -12,6 +12,7 @@ use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::account_numbers::AccountNumbersViewModel;
 use super::add_account_dialog::key_place_text;
+use super::entry_icon::EntryIcon;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
 use super::sources::{
@@ -27,8 +28,8 @@ pub(crate) struct AccountPageViewModel {
     pub(crate) account: Account,
     /// The provider and the login, such as "OpenAI · you@example.com".
     pub(crate) name: String,
-    /// The name of the provider, for its icon.
-    pub(crate) provider: &'static str,
+    /// The icon of the provider.
+    pub(crate) icon: EntryIcon,
     /// What the account needs from the user; the block shows only when
     /// there is any.
     pub(crate) needs: Vec<NeedViewModel>,
@@ -56,8 +57,12 @@ impl AccountPageViewModel {
         now: SystemTime,
     ) -> Self {
         let page = Self {
-            name: account_name(state.profiles().saved(), &account),
-            provider: account.provider().name(),
+            name: account_name(
+                state.registry(),
+                state.profiles().saved(),
+                &account,
+            ),
+            icon: state.provider_icon(account.provider()),
             needs: Vec::new(),
             numbers: None,
             used_by: used_by(state, &account),
@@ -89,7 +94,7 @@ impl AccountPageViewModel {
 fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
     let mut list = vec![FactViewModel::new(
         i18n::t(Key::AgentsColumnProvider),
-        account.provider().name().to_string(),
+        state.provider_name(account.provider()).to_string(),
     )];
 
     match account.login() {
@@ -159,7 +164,7 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
     let mut rows = profiles
         .own_reads()
         .of(account)
-        .map(|own| own_sources(own, time_zone))
+        .map(|own| own_sources(state.registry(), own, time_zone))
         .unwrap_or_default();
     let Some(shown) = profiles.first_with(account) else {
         return rows;
@@ -179,7 +184,7 @@ fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
 mod tests {
     use otty_agents::{
         AccountIdentity, AccountKind, AccountLogin, FoundIn, KeyFingerprint,
-        Provider, SavedProfiles, SourceError, SourceId,
+        ProviderRef, SavedProfiles, SourceError, SourceId,
     };
 
     use super::*;
@@ -251,7 +256,7 @@ mod tests {
         let page = page_of(&state, chatgpt_login());
 
         assert_eq!(page.name, "OpenAI · you@example.com");
-        assert_eq!(page.provider, "OpenAI");
+        assert_eq!(page.icon, crate::testing::provider_icon("openai"));
         assert!(page.needs.is_empty());
         assert!(matches!(
             page.numbers,
@@ -280,7 +285,7 @@ mod tests {
     #[test]
     fn a_key_shows_its_ending_and_where_it_was_found() {
         let key = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(
                 "sk-made-up-key-for-tests-a1f3",
             )),
@@ -334,7 +339,7 @@ mod tests {
             .needs
             .iter()
             .filter_map(|need| need.fix.as_ref())
-            .map(|fix| fix.action.clone())
+            .filter_map(|fix| fix.action.clone())
             .collect();
         assert_eq!(actions, vec![NeedAction::OpenAgent(codex())]);
         assert!(matches!(

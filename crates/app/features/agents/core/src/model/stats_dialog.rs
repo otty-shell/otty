@@ -125,6 +125,7 @@ impl SessionStatsViewModel {
             .length()
             .map_or_else(|| String::from(UNKNOWN), length_text);
         let account = session_account_text(
+            state.registry(),
             stats.models(),
             accounts,
             &profiles.all_accounts(),
@@ -167,7 +168,7 @@ impl SessionStatsViewModel {
             None => Some(i18n::t(Key::AgentsMoneySubscription).to_string()),
         };
         let account_reason =
-            shown.and_then(|shown| account_reason(agent, shown));
+            shown.and_then(|shown| account_reason(state, agent, shown));
         let sources = [UsageSource {
             name: profile.name(),
             spend: stats.spend(),
@@ -184,6 +185,7 @@ impl SessionStatsViewModel {
             left_out: None,
             home: state.env().home(),
             saved: profiles.saved(),
+            registry: state.registry(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)
@@ -262,7 +264,11 @@ impl ProjectStatsViewModel {
         let money_reason = project_money_reason(state, &shown);
         let left_out = left_out_text(&shown);
         let account_reason = shown.iter().find_map(|shown| {
-            account_reason(state.agent_name(shown.profile().agent()), shown)
+            account_reason(
+                state,
+                state.agent_name(shown.profile().agent()),
+                shown,
+            )
         });
         let folder = state.selected_project().map(|project| project.folder());
         let subject = UsageSubject {
@@ -275,6 +281,7 @@ impl ProjectStatsViewModel {
             left_out,
             home: state.env().home(),
             saved: profiles.saved(),
+            registry: state.registry(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)
@@ -383,7 +390,7 @@ mod tests {
 
     use otty_agents::{
         DaySpend, Dollars, LimitChange, ModelPrice, ModelTokens, PriceTable,
-        ProjectModelTokens, Provider, SavedProfiles, SessionId, SourceError,
+        ProjectModelTokens, ProviderRef, SavedProfiles, SessionId, SourceError,
         Spend, TokenCount, TokenPrices, Unavailable, WindowId,
     };
     use otty_app_i18n::Locale;
@@ -458,7 +465,7 @@ mod tests {
 
     /// `input` tokens of `model` through `provider` today, 2026-11-16, in
     /// /work/otty and as many in /work/site.
-    fn spend_in_otty(model: &str, provider: Provider, input: u64) -> Spend {
+    fn spend_in_otty(model: &str, provider: ProviderRef, input: u64) -> Spend {
         let tokens =
             ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1)
                 .with_provider(Some(provider));
@@ -498,9 +505,16 @@ mod tests {
         let counted = [
             (
                 claude(),
-                spend_in_otty("opus", Provider::Anthropic, 1_000_000),
+                spend_in_otty(
+                    "opus",
+                    ProviderRef::of_id("anthropic"),
+                    1_000_000,
+                ),
             ),
-            (codex(), spend_in_otty("gpt-5", Provider::OpenAI, 2_000)),
+            (
+                codex(),
+                spend_in_otty("gpt-5", ProviderRef::of_id("openai"), 2_000),
+            ),
         ];
         for (profile, spend) in counted {
             let _ = reduce(
@@ -732,7 +746,8 @@ mod tests {
             None,
             1,
             vec![
-                million_in("opus", 1).with_provider(Some(Provider::Anthropic)),
+                million_in("opus", 1)
+                    .with_provider(Some(ProviderRef::of_id("anthropic"))),
             ],
         );
 
@@ -757,8 +772,9 @@ mod tests {
     fn the_usage_of_a_session_is_its_own_tokens() {
         let mut state = state_with_accounts();
         session_dialog(&mut state);
-        let stats = SessionStats::new(None, None, 1, Vec::new())
-            .with_spend(spend_in_otty("opus", Provider::Anthropic, 3_000));
+        let stats = SessionStats::new(None, None, 1, Vec::new()).with_spend(
+            spend_in_otty("opus", ProviderRef::of_id("anthropic"), 3_000),
+        );
 
         let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
         // Its tokens are today, so it opens on the hours of today, which

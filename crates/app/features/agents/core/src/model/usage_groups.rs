@@ -8,7 +8,7 @@ use std::path::Path;
 
 use otty_agents::{
     Account, DaySpend, HourSpend, ModelTokens, MoneyTotal, PriceTable,
-    ProjectModelTokens, SavedProfiles, Spend,
+    ProjectModelTokens, Registry, SavedProfiles, Spend,
 };
 use otty_app_domain::folder_path::folder_name;
 use otty_app_i18n::{self as i18n, Key};
@@ -69,6 +69,8 @@ pub(crate) struct UsageInput<'a> {
     pub(crate) home: &'a Path,
     /// What `agents.json` holds: the names the user gave the accounts.
     pub(crate) saved: Option<&'a SavedProfiles>,
+    /// The registry, which names the providers of the accounts.
+    pub(crate) registry: &'a Registry,
 }
 
 /// The tokens of each point of `period` in `spend`, oldest first: each
@@ -224,10 +226,12 @@ fn name_of(
         UsageTab::ByAccount => source
             .accounts
             .iter()
-            .find(|account| account.pays_for(part.tokens(), source.accounts))
+            .find(|account| {
+                account.pays_for(part.tokens(), source.accounts, input.registry)
+            })
             .map_or_else(
                 || i18n::t(Key::AgentsNoAccount).to_string(),
-                |account| account_name(input.saved, account),
+                |account| account_name(input.registry, input.saved, account),
             ),
     }
 }
@@ -254,7 +258,7 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
+        AccountIdentity, AccountKind, AccountLogin, FoundIn, ProviderRef,
         TokenCount,
     };
 
@@ -273,7 +277,7 @@ mod tests {
     ) -> ProjectModelTokens {
         let tokens =
             ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1)
-                .with_provider(Some(Provider::Anthropic));
+                .with_provider(Some(ProviderRef::of_id("anthropic")));
 
         ProjectModelTokens::new(project.map(PathBuf::from), tokens)
     }
@@ -332,6 +336,7 @@ mod tests {
             prices: None,
             home: Path::new("/home/user"),
             saved: None,
+            registry: &crate::testing::BUILT_IN,
         }
     }
 
@@ -346,7 +351,7 @@ mod tests {
                         TokenCount::new(input, 0, 0),
                         1,
                     )
-                    .with_provider(Some(Provider::OpenAI));
+                    .with_provider(Some(ProviderRef::of_id("openai")));
                     ProjectModelTokens::new(
                         Some(PathBuf::from(project)),
                         tokens,
@@ -365,7 +370,7 @@ mod tests {
 
     fn chatgpt() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-chatgpt")),
             AccountLogin::Email(String::from("me@example.org")),
             AccountKind::Limits,
@@ -375,7 +380,7 @@ mod tests {
 
     fn claude_max() -> Account {
         Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::AccountId(String::from("made-up-max")),
             AccountLogin::Email(String::from("you@example.com")),
             AccountKind::Limits,

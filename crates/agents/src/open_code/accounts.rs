@@ -19,15 +19,15 @@ use serde_json::Value;
 use super::database::Database;
 use super::provider_ids::provider_of;
 use crate::account::{
-    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-    merge_accounts,
+    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, join_copies,
 };
 use crate::account_key::AccountKey;
 use crate::admin_key::AdminKey;
+use crate::built_in::{KILO, OPENAI};
 use crate::codex::{jwt_claims, plan_name};
 use crate::json_file::{filled, read_json};
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 
 /// A login as the agents keep it: in `auth.json` and `account.json` with
 /// the type `api` or `oauth`, in the `credential` table with `key` or
@@ -48,7 +48,7 @@ impl StoredLogin {
     /// is, with the team of a Kilo login, read for one request.
     fn key_with_fingerprint(
         &self,
-        provider: Provider,
+        provider: &ProviderRef,
         fingerprint: &KeyFingerprint,
     ) -> Option<AccountKey> {
         let secret = match self.kind.as_str() {
@@ -62,7 +62,7 @@ impl StoredLogin {
 
         let team = self
             .account_id()
-            .filter(|_| provider == Provider::Kilo)
+            .filter(|_| provider.is_id(KILO))
             .map(String::from);
         Some(AccountKey::new(AdminKey::of(secret)?).with_organization_id(team))
     }
@@ -131,7 +131,7 @@ pub(super) fn accounts(
         })
         .collect();
 
-    merge_accounts(found)
+    join_copies(found)
 }
 
 /// The key or the login token of `account`, read again from the logins of
@@ -148,7 +148,7 @@ pub(super) fn account_key(
     stored_logins(data_dir, database)
         .into_iter()
         .filter(|(provider_id, _)| {
-            provider_of(provider_id) == Some(account.provider())
+            provider_of(provider_id).as_ref() == Some(account.provider())
         })
         .find_map(|(_, login)| match account.identity() {
             AccountIdentity::KeyFingerprint(fingerprint) => {
@@ -214,14 +214,15 @@ fn account_of(
     found_in: &FoundIn,
 ) -> Option<Account> {
     let provider = provider_of(provider_id)?;
+    let id = provider.as_id().map_or("", |id| id.as_str());
 
-    match (login.kind.as_str(), provider) {
+    match (login.kind.as_str(), id) {
         ("api" | "key", _) => {
             let key = SeenKey::of(login.key.as_deref()?)?;
             Some(Account::of_key(provider, &key, found_in.clone()))
         },
-        ("oauth", Provider::OpenAI) => chatgpt_account(login, found_in),
-        ("oauth", Provider::Kilo) => {
+        ("oauth", OPENAI) => chatgpt_account(login, found_in),
+        ("oauth", KILO) => {
             let token = SeenKey::of(login.access.as_deref()?)?;
             Some(Account::of_key(provider, &token, found_in.clone()))
         },
@@ -258,7 +259,7 @@ fn chatgpt_account(login: &StoredLogin, found_in: &FoundIn) -> Option<Account> {
         .and_then(plan_name);
 
     let account = Account::new(
-        Provider::OpenAI,
+        ProviderRef::of_id(OPENAI),
         identity,
         shown,
         AccountKind::Limits,
@@ -310,7 +311,7 @@ mod tests {
 
     fn chatgpt(id: &str, email: &str, plan: &str, dir: &Path) -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(id.into()),
             AccountLogin::Email(email.into()),
             AccountKind::Limits,
@@ -381,7 +382,7 @@ mod tests {
 
         let mut all = vec![of_codex];
         all.extend(accounts(&dir, None));
-        let merged = merge_accounts(all);
+        let merged = join_copies(all);
 
         assert_eq!(merged.len(), 1);
         assert_eq!(
@@ -418,8 +419,8 @@ mod tests {
         assert_eq!(
             found,
             [
-                key_of(Provider::DeepSeek, KEY, "9b1d"),
-                key_of(Provider::Kilo, kilo_token, "4c2e"),
+                key_of(ProviderRef::of_id("deepseek"), KEY, "9b1d"),
+                key_of(ProviderRef::of_id("kilo"), kilo_token, "4c2e"),
             ]
         );
     }
@@ -489,15 +490,15 @@ mod tests {
 
         let chatgpt = found
             .iter()
-            .find(|account| account.provider() == Provider::OpenAI)
+            .find(|account| account.provider().is_id("openai"))
             .expect("the ChatGPT login is found");
         let kilo = found
             .iter()
-            .find(|account| account.provider() == Provider::Kilo)
+            .find(|account| account.provider().is_id("kilo"))
             .expect("the Kilo login is found");
         let deepseek = found
             .iter()
-            .find(|account| account.provider() == Provider::DeepSeek)
+            .find(|account| account.provider().is_id("deepseek"))
             .expect("the key is found");
 
         assert_eq!(

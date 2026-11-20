@@ -12,11 +12,12 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::account::{Account, AccountIdentity, FoundIn, merge_accounts};
+use crate::account::{Account, AccountIdentity, FoundIn, join_copies};
 use crate::admin_key::AdminKey;
+use crate::built_in::{ANTHROPIC, DEEPSEEK, MOONSHOT, OPENAI, OPENROUTER};
 use crate::env::AgentEnv;
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 use crate::system_keyring::{KeyringError, KeyringRead, SystemKeyring};
 
 /// The entry Goose keeps its secrets in.
@@ -30,14 +31,14 @@ const GOOSE: KeyringEntry = KeyringEntry {
 /// The entries of the known agents, in the order they are read.
 const KNOWN_ENTRIES: [KeyringEntry; 1] = [GOOSE];
 
-/// The variables of a secrets map that hold a key, with the provider of
-/// the key.
-const KEY_VARIABLES: [(&str, Provider); 5] = [
-    ("ANTHROPIC_API_KEY", Provider::Anthropic),
-    ("OPENAI_API_KEY", Provider::OpenAI),
-    ("DEEPSEEK_API_KEY", Provider::DeepSeek),
-    ("OPENROUTER_API_KEY", Provider::OpenRouter),
-    ("MOONSHOT_API_KEY", Provider::Moonshot),
+/// The variables of a secrets map that hold a key, with the id of the
+/// provider of the key.
+const KEY_VARIABLES: [(&str, &str); 5] = [
+    ("ANTHROPIC_API_KEY", ANTHROPIC),
+    ("OPENAI_API_KEY", OPENAI),
+    ("DEEPSEEK_API_KEY", DEEPSEEK),
+    ("OPENROUTER_API_KEY", OPENROUTER),
+    ("MOONSHOT_API_KEY", MOONSHOT),
 ];
 
 /// The entry of the system keyring a known agent keeps its keys in.
@@ -125,7 +126,7 @@ pub(crate) fn key_in_keyring(
 
         let key = KEY_VARIABLES
             .iter()
-            .filter(|(_, provider)| *provider == account.provider())
+            .filter(|(_, provider)| account.provider().is_id(provider))
             .filter_map(|(variable, _)| secrets.get(*variable)?.as_str())
             .find(|key| KeyFingerprint::of(key) == *fingerprint)
             .and_then(AdminKey::of);
@@ -152,7 +153,7 @@ fn accounts_in(
         found.extend(key_accounts(&secrets));
     }
 
-    Ok(merge_accounts(found))
+    Ok(join_copies(found))
 }
 
 /// The secrets map of `entry` of `keyring`; `None` when the entry is not
@@ -179,7 +180,9 @@ fn key_accounts(secrets: &BTreeMap<String, Value>) -> Vec<Account> {
             let key = secrets.get(*variable)?.as_str()?;
             let seen = SeenKey::of(key)?;
 
-            Some(Account::of_key(*provider, &seen, FoundIn::SystemKeyring))
+            let provider = ProviderRef::of_id(*provider);
+
+            Some(Account::of_key(provider, &seen, FoundIn::SystemKeyring))
         })
         .collect()
 }
@@ -260,12 +263,12 @@ mod tests {
             found,
             [
                 (
-                    Provider::Anthropic,
+                    &ProviderRef::of_id("anthropic"),
                     &AccountLogin::Key(Some(String::from("a1f3"))),
                     &[FoundIn::SystemKeyring][..]
                 ),
                 (
-                    Provider::OpenRouter,
+                    &ProviderRef::of_id("openrouter"),
                     &AccountLogin::Key(Some(String::from("c3d4"))),
                     &[FoundIn::SystemKeyring][..]
                 ),
@@ -309,12 +312,12 @@ mod tests {
         };
         let seen = SeenKey::of(OPENROUTER_KEY).expect("a key");
         let account = Account::of_key(
-            Provider::OpenRouter,
+            ProviderRef::of_id("openrouter"),
             &seen,
             FoundIn::SystemKeyring,
         );
         let other = Account::of_key(
-            Provider::OpenRouter,
+            ProviderRef::of_id("openrouter"),
             &SeenKey::of("sk-or-v1-another-key-0000").expect("a key"),
             FoundIn::SystemKeyring,
         );

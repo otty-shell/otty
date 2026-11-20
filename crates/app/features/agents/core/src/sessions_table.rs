@@ -38,7 +38,7 @@ impl SessionKey {
     /// The key of the session of `entry`.
     pub(crate) fn of(entry: &ProjectSession) -> Self {
         Self {
-            agent: entry.profile().agent(),
+            agent: entry.profile().agent().clone(),
             profile: entry.profile().name().to_string(),
             id: entry.session().id().clone(),
         }
@@ -46,7 +46,7 @@ impl SessionKey {
 
     /// Whether `entry` is the session of this key.
     pub(crate) fn is_of(&self, entry: &ProjectSession) -> bool {
-        entry.profile().agent() == self.agent
+        *entry.profile().agent() == self.agent
             && entry.profile().name() == self.profile
             && entry.session().id() == &self.id
     }
@@ -57,7 +57,7 @@ impl SessionKey {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TableSession<'a> {
     entry: &'a ProjectSession,
-    agent_name: &'static str,
+    agent_name: &'a str,
 }
 
 impl<'a> TableSession<'a> {
@@ -67,7 +67,7 @@ impl<'a> TableSession<'a> {
     }
 
     /// The name of the session's agent, such as "Codex".
-    pub(crate) fn agent_name(&self) -> &'static str {
+    pub(crate) fn agent_name(&self) -> &'a str {
         self.agent_name
     }
 
@@ -177,10 +177,10 @@ pub(crate) fn keys() -> Vec<TagKey> {
 
 /// Every session of `project`, newest first, each with the name of its
 /// agent from `agent_name`.
-pub(crate) fn table_sessions(
-    project: &Project,
-    agent_name: impl Fn(AgentId) -> &'static str,
-) -> Vec<TableSession<'_>> {
+pub(crate) fn table_sessions<'a>(
+    project: &'a Project,
+    agent_name: impl Fn(&'a AgentId) -> &'a str,
+) -> Vec<TableSession<'a>> {
     project
         .sessions()
         .iter()
@@ -245,7 +245,7 @@ mod tests {
         .remove(0)
     }
 
-    fn agent_name(agent: AgentId) -> &'static str {
+    fn agent_name(agent: &AgentId) -> &str {
         match agent.as_str() {
             "codex" => "Codex",
             _ => "Claude Code",

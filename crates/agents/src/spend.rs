@@ -10,7 +10,7 @@ use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
 use crate::profile::Profile;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 use crate::token_count::TokenCount;
 
 /// How many days back the tokens are counted, today included.
@@ -284,7 +284,7 @@ impl ProjectModelTokens {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelTokens {
     model: Option<String>,
-    provider: Option<Provider>,
+    provider: Option<ProviderRef>,
     account: Option<AccountIdentity>,
     tokens: TokenCount,
     requests: u64,
@@ -302,8 +302,8 @@ impl ModelTokens {
     /// The provider that served the model: the one the agent wrote, else
     /// the one of the profile's login or server. `None` when it is not
     /// known, such as a local model or a server OTTY does not know.
-    pub fn provider(&self) -> Option<Provider> {
-        self.provider
+    pub fn provider(&self) -> Option<&ProviderRef> {
+        self.provider.as_ref()
     }
 
     /// The account that paid, when the agent writes it, as Codex does for
@@ -376,16 +376,16 @@ impl ModelTokens {
     /// The same tokens, served by `provider`, or by an unknown one.
     ///
     /// ```
-    /// use otty_agents::{ModelTokens, Provider, TokenCount};
+    /// use otty_agents::{ModelTokens, ProviderRef, TokenCount};
     ///
     /// let tokens =
     ///     ModelTokens::new(Some("deepseek-chat"), TokenCount::new(10, 0, 2), 1)
-    ///         .with_provider(Some(Provider::DeepSeek));
+    ///         .with_provider(Some(ProviderRef::of_id("deepseek")));
     ///
-    /// assert_eq!(tokens.provider(), Some(Provider::DeepSeek));
+    /// assert_eq!(tokens.provider(), Some(&ProviderRef::of_id("deepseek")));
     /// assert_eq!(tokens.account(), None);
     /// ```
-    pub fn with_provider(mut self, provider: Option<Provider>) -> Self {
+    pub fn with_provider(mut self, provider: Option<ProviderRef>) -> Self {
         self.provider = provider;
         self
     }

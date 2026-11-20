@@ -37,7 +37,8 @@
 //! [`MoneyTotal::of_models`] prices their tokens.
 //!
 //! Limits, credits and bills belong to an [`Account`]: a login or a key at
-//! a [`Provider`], found in the files of each profile by
+//! a provider, named by a [`ProviderRef`], found in the files of each
+//! profile by
 //! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
 //! app reads them once per account, with the files of one profile it was
 //! found in. With an admin key, an agent's [`BillSource`] reads the real
@@ -67,10 +68,17 @@
 //! the source of an agent with [`agent_of`] and read through it;
 //! [`profile_status`] tells the state of a profile.
 //!
+//! The [`Registry`] is the one list of the agents and providers OTTY knows
+//! right now: names, icons, usage pages and hosts come only from it (spec
+//! 2026-11-19-agent-plugins, "Links in the interface"). Until plugins
+//! fill it, the readers of this crate put their entries in it as built-in
+//! ones ([`Registry::built_in`]). An account whose provider no entry
+//! serves stays known by the host of its key.
+//!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`], built from the
-//! [`AgentDescriptor::config_dir_variable`] of each agent, and runs the
-//! blocking calls on a background thread.
+//! [`ConfigFolder`] of each agent, and runs the blocking calls on a
+//! background thread.
 //!
 //! The `fixtures` feature adds the module `fixtures`: values for the tests
 //! of the crates that use this one.
@@ -83,6 +91,7 @@ mod admin_key;
 mod agent;
 mod balance;
 mod bill;
+mod built_in;
 mod claude_code;
 mod codex;
 mod command;
@@ -117,6 +126,7 @@ mod program_version;
 mod project;
 mod provider;
 mod record_format;
+mod registry;
 mod saved_profiles;
 mod session;
 mod source_id;
@@ -142,7 +152,7 @@ pub use crate::account_numbers::{
     AccountNumbers, KeyPlace, own_source_of, read_account_numbers,
 };
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
-pub use crate::agent::{Agent, AgentDescriptor, AgentId, agent_of};
+pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
 pub use crate::claude_code::ClaudeCode;
@@ -181,8 +191,11 @@ pub use crate::program::{
 };
 pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
-pub use crate::provider::Provider;
+pub use crate::provider::{
+    AddAccountKind, ProviderEntry, ProviderId, ProviderRef,
+};
 pub use crate::record_format::FormatChange;
+pub use crate::registry::{PluginPart, Reader, Registry};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
@@ -209,7 +222,7 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 ///
 /// ```
 /// for agent in otty_agents::known_agents() {
-///     println!("{}", agent.descriptor().name());
+///     println!("{}", agent.entry().name());
 /// }
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
@@ -227,9 +240,10 @@ mod tests {
 
     #[test]
     fn claude_code_codex_kilo_and_opencode_are_the_known_agents() {
-        let ids: Vec<_> = known_agents()
+        let agents = known_agents();
+        let ids: Vec<_> = agents
             .iter()
-            .map(|agent| agent.descriptor().id().as_str())
+            .map(|agent| agent.entry().id().as_str())
             .collect();
 
         assert_eq!(ids, ["claude-code", "codex", "kilo", "opencode"]);
@@ -237,9 +251,10 @@ mod tests {
 
     #[test]
     fn each_known_agent_names_the_provider_of_its_models() {
-        let providers: Vec<_> = known_agents()
+        let agents = known_agents();
+        let providers: Vec<_> = agents
             .iter()
-            .map(|agent| agent.descriptor().provider())
+            .map(|agent| agent.entry().provider_name())
             .collect();
 
         assert_eq!(providers, ["Anthropic", "OpenAI", "Kilo", "OpenCode"]);
@@ -250,8 +265,10 @@ mod tests {
         let found: Vec<_> = known_agents()
             .iter()
             .map(|agent| {
-                let descriptor = agent.descriptor();
-                (descriptor.writes_cost(), descriptor.database_variable())
+                (
+                    agent.writes_cost(),
+                    agent.config_folder().database_variable(),
+                )
             })
             .collect();
 
@@ -269,10 +286,7 @@ mod tests {
     #[test]
     fn every_known_agent_reads_statistics() {
         for agent in known_agents() {
-            let descriptor = agent.descriptor();
-
-            assert!(descriptor.has_stats(), "{}", descriptor.name());
-            assert!(agent.stats_source().is_some(), "{}", descriptor.name());
+            assert!(agent.stats_source().is_some(), "{}", agent.entry().name());
         }
     }
 
@@ -280,22 +294,17 @@ mod tests {
     fn only_claude_code_reads_a_bill() {
         let has_bill: Vec<_> = known_agents()
             .iter()
-            .map(|agent| {
-                (agent.descriptor().has_bill(), agent.bill_source().is_some())
-            })
+            .map(|agent| agent.bill_source().is_some())
             .collect();
 
-        assert_eq!(
-            has_bill,
-            [(true, true), (false, false), (false, false), (false, false)]
-        );
+        assert_eq!(has_bill, [true, false, false, false]);
     }
 
     #[test]
     fn each_known_agent_names_its_config_folder_variable() {
         let variables: Vec<_> = known_agents()
             .iter()
-            .map(|agent| agent.descriptor().config_dir_variable())
+            .map(|agent| agent.config_folder().variable())
             .collect();
 
         assert_eq!(

@@ -20,8 +20,8 @@ pub struct Profile {
 
 impl Profile {
     /// The agent of this profile.
-    pub fn agent(&self) -> AgentId {
-        self.agent
+    pub fn agent(&self) -> &AgentId {
+        &self.agent
     }
 
     /// The name shown to the user.

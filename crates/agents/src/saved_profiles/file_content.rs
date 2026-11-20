@@ -12,9 +12,9 @@ use super::saved_accounts::SavedAccount;
 use super::{DefaultProfileChanges, SavedProfiles};
 use crate::account::AccountIdentity;
 use crate::admin_key::AdminKeyRef;
-use crate::agent::{Agent, AgentId};
+use crate::agent::AgentId;
 use crate::profile::Profile;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 
 /// The whole text of `agents.json`.
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -86,23 +86,21 @@ impl FileContent {
         }
     }
 
-    /// The content this text holds. The entries of an agent not in
-    /// `agents`, of a provider this version does not know, an account entry
-    /// that names no account or keeps nothing, and an admin key of no kind
-    /// are left out.
-    pub(super) fn into_saved(self, agents: &[Box<dyn Agent>]) -> SavedProfiles {
+    /// The content this text holds. The entries of every agent and
+    /// provider are kept, whether or not an entry of the registry names
+    /// them; an account entry that names no provider or no account, or
+    /// keeps nothing, and an admin key of no kind are left out.
+    pub(super) fn into_saved(self) -> SavedProfiles {
         let mut saved = SavedProfiles::default();
 
         for (agent, entry) in self.default_profiles {
-            let Some(agent) = known_agent_id(&agent, agents) else {
-                continue;
-            };
+            let agent = AgentId::new(agent);
 
             if let Some(admin_key) =
                 entry.admin_key.and_then(AdminKeyEntry::into_ref)
             {
                 saved.old_admin_keys.push(OldAdminKey {
-                    agent,
+                    agent: agent.clone(),
                     owner: OldKeyOwner::DefaultProfile,
                     admin_key,
                 });
@@ -115,15 +113,13 @@ impl FileContent {
         }
 
         for entry in self.added_profiles {
-            let Some(agent) = known_agent_id(&entry.agent, agents) else {
-                continue;
-            };
+            let agent = AgentId::new(entry.agent);
 
             if let Some(admin_key) =
                 entry.admin_key.and_then(AdminKeyEntry::into_ref)
             {
                 saved.old_admin_keys.push(OldAdminKey {
-                    agent,
+                    agent: agent.clone(),
                     owner: OldKeyOwner::AddedProfile(entry.name.clone()),
                     admin_key,
                 });
@@ -143,7 +139,7 @@ impl FileContent {
         saved.hidden_profiles = self
             .hidden_profiles
             .into_iter()
-            .filter_map(|entry| entry.into_hidden(agents))
+            .map(HiddenProfileEntry::into_hidden)
             .collect();
         saved.is_found_report_shown = self.found_report_shown;
         saved.is_keyring_allowed = self.keyring_allowed;
@@ -222,7 +218,7 @@ struct AccountEntry {
 impl AccountEntry {
     fn from_saved(saved: &SavedAccount) -> Self {
         let mut entry = Self {
-            provider: String::from(saved.provider.id()),
+            provider: saved.provider.to_saved(),
             account_id: None,
             organization_id: None,
             email: None,
@@ -249,24 +245,19 @@ impl AccountEntry {
         entry
     }
 
-    /// The choices for the account; `None` for a provider this version
-    /// does not know, an entry that names no account, one that keeps
-    /// nothing, or an added account at a provider that can not be added.
-    /// An admin key is kept for an organization only.
+    /// The choices for the account; `None` for an entry that names no
+    /// provider or no account, or one that keeps nothing. A provider no
+    /// entry of the registry names is kept as it is. An admin key is kept
+    /// for an organization only.
     fn into_saved(self) -> Option<SavedAccount> {
-        let provider = Provider::of_id(&self.provider)?;
+        let provider = ProviderRef::from_saved(&self.provider)?;
         let added_key = self.key.and_then(AdminKeyEntry::into_ref);
         let identity = match (self.account_id, self.organization_id, self.email)
         {
             (Some(id), _, _) => AccountIdentity::AccountId(id),
             (None, Some(id), _) => AccountIdentity::OrganizationId(id),
             (None, None, Some(email)) => AccountIdentity::Email(email),
-            (None, None, None) => {
-                if !Provider::addable().contains(&provider) {
-                    return None;
-                }
-                AccountIdentity::AddedKey(added_key?)
-            },
+            (None, None, None) => AccountIdentity::AddedKey(added_key?),
         };
         let is_organization =
             matches!(identity, AccountIdentity::OrganizationId(_));
@@ -301,14 +292,12 @@ impl HiddenProfileEntry {
         }
     }
 
-    /// The hidden profile; `None` for an agent not in `agents`.
-    fn into_hidden(self, agents: &[Box<dyn Agent>]) -> Option<HiddenProfile> {
-        let agent = known_agent_id(&self.agent, agents)?;
-
-        Some(HiddenProfile {
-            agent,
+    /// The hidden profile, of any agent.
+    fn into_hidden(self) -> HiddenProfile {
+        HiddenProfile {
+            agent: AgentId::new(self.agent),
             config_dir: self.config_dir,
-        })
+        }
     }
 }
 
@@ -350,12 +339,4 @@ impl AdminKeyEntry {
 /// Whether `value` is false: a flag that is off is not written.
 fn is_false(value: &bool) -> bool {
     !value
-}
-
-/// The id of the agent of `agents` saved as `id`, if it is one of them.
-fn known_agent_id(id: &str, agents: &[Box<dyn Agent>]) -> Option<AgentId> {
-    agents
-        .iter()
-        .map(|agent| agent.descriptor().id())
-        .find(|known| known.as_str() == id)
 }

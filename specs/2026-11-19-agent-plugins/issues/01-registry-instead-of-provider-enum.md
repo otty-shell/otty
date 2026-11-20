@@ -27,7 +27,8 @@ migration and every later issue only swaps where the data comes from.
    plugin serves an id is the user's choice, issue 08).
 2. The in-core agents and providers register themselves as "built in"
    entries with today's ids, names, hosts, usage pages and the icons of
-   `assets/svg/`. `Provider` and `AgentDescriptor` constants go away;
+   `assets/svg/`. These entries stay only to keep the app working until
+   each plugin issue removes its reader and its entry. `Provider` and `AgentDescriptor` constants go away;
    what used their flags (`has_bill`, `has_stats`, `writes_cost`,
    `addable`, `is_added_as_organization`) reads the entry or the reader.
 3. Account identity: (provider reference, id / organization id / email /
@@ -47,9 +48,8 @@ migration and every later issue only swaps where the data comes from.
    plugin…]" with the button disabled until issue 09); agent not in the
    registry (its profiles leave the lists; its `agents.json` entries
    kept).
-6. `agents.json`: ids stay as saved today; `host:<host>` accepted as a
-   provider for accounts of a provider no entry serves; an unknown id is
-   kept and not read (as today).
+6. `agents.json`: `host:<host>` accepted as a provider for accounts of a
+   provider no entry serves; an unknown id is kept and not read. No compatibility with earlier agents.json: Agents mode was never released.
 
 ## Done when
 
@@ -58,7 +58,7 @@ migration and every later issue only swaps where the data comes from.
   agents is one account with or without an entry for its host; removing
   a provider entry keeps Pays through and Used by; removing an agent
   entry keeps its saved names and hidden items, and they come back when
-  the entry returns; old `agents.json` files read the same.
+  the entry returns.
 - `grep -rn "Provider::" crates/app` finds nothing; no icon is chosen by
   an agent or provider name.
 - The app looks and behaves as before with all built-in entries present.

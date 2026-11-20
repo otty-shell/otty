@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use otty_agents::{
     Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
-    SourceId,
+    ProviderRef, Registry, SourceId,
 };
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
 use super::add_account_dialog::AddAccountDialog;
 use super::menus::{AgentsMenu, OpenMenu};
+use super::model::EntryIcon;
 use super::new_session_dialog::NewSessionDialog;
 use super::profile_dialog::ProfileDialog;
 use super::profile_state::ProfileState;
@@ -29,6 +31,8 @@ use super::usage::UsageChoice;
 /// the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
+    registry: Arc<Registry>,
+    stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
     startup_reads: Option<ReadKind>,
@@ -63,6 +67,17 @@ impl AgentsState {
     /// The agents OTTY knows.
     pub(crate) fn agents(&self) -> &AgentList {
         &self.agents
+    }
+
+    /// The agents and providers OTTY knows right now: the names, icons,
+    /// usage pages and hosts the mode shows.
+    pub(crate) fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
+    /// The registry as the feature shares it with the reads.
+    pub(crate) fn registry_arc(&self) -> &Arc<Registry> {
+        &self.registry
     }
 
     /// The parts of the environment the agents look at: the home folder
@@ -199,27 +214,40 @@ impl AgentsState {
     }
 
     /// The state of Agents mode before anything was read, with the agents
-    /// OTTY knows and the environment they look at.
-    pub(crate) fn new(agents: AgentList, env: AgentEnv) -> Self {
+    /// OTTY knows, the registry that names them and their providers, and
+    /// the environment they look at.
+    pub(crate) fn new(
+        agents: AgentList,
+        registry: Arc<Registry>,
+        env: AgentEnv,
+    ) -> Self {
         let limit_agents = agents
             .iter()
             .filter(|agent| !agent.limit_source_ids().is_empty())
-            .map(|agent| agent.descriptor().id())
+            .map(|agent| agent.entry().id().clone())
             .collect();
         let bill_agents = agents
             .iter()
-            .map(|agent| agent.descriptor())
-            .filter(|descriptor| descriptor.has_bill())
-            .map(|descriptor| descriptor.id())
+            .filter(|agent| agent.has_bill())
+            .map(|agent| agent.entry().id().clone())
             .collect();
+        let stats_agents = agents
+            .iter()
+            .filter(|agent| agent.has_stats())
+            .map(|agent| agent.entry().id().clone())
+            .collect();
+        let profiles =
+            Profiles::new(Arc::clone(&registry), bill_agents, limit_agents);
 
         Self {
             agents,
+            registry,
+            stats_agents,
             env,
             is_active: false,
             startup_reads: None,
             told: ToldProblems::default(),
-            profiles: Profiles::new(bill_agents, limit_agents),
+            profiles,
             selection: None,
             table: SessionsTable::default(),
             dialog: None,
@@ -284,7 +312,7 @@ impl AgentsState {
             return None;
         };
 
-        self.profiles.named(*agent, name)
+        self.profiles.named(agent, name)
     }
 
     /// Whether All accounts is selected.
@@ -303,7 +331,7 @@ impl AgentsState {
             return None;
         };
 
-        self.profiles.hidden_named(*agent, name)
+        self.profiles.hidden_named(agent, name)
     }
 
     /// The selected account, hidden or not, while it is found in a shown
@@ -357,11 +385,41 @@ impl AgentsState {
             .or_else(|| self.profiles.startable().first().copied())
     }
 
-    /// The name of the agent with the id `id`, such as "Codex"; the id
-    /// itself for an agent OTTY does not know.
-    pub(crate) fn agent_name(&self, id: AgentId) -> &'static str {
-        self.agent(id)
-            .map_or(id.as_str(), |agent| agent.descriptor().name())
+    /// The name of the agent with the id `id`, such as "Codex", from its
+    /// registry entry; the id itself for an agent with no entry.
+    pub(crate) fn agent_name<'a>(&'a self, id: &'a AgentId) -> &'a str {
+        self.registry
+            .agent(id)
+            .map_or(id.as_str(), |entry| entry.name())
+    }
+
+    /// The name of the provider `provider`, such as "DeepSeek", from the
+    /// registry entry that serves it; its id or host for a provider no
+    /// entry serves.
+    pub(crate) fn provider_name<'a>(
+        &'a self,
+        provider: &'a ProviderRef,
+    ) -> &'a str {
+        provider_name(&self.registry, provider)
+    }
+
+    /// The icon of the agent with the id `id`: the one of its registry
+    /// entry, else the first letter of its name.
+    pub(crate) fn agent_icon(&self, id: &AgentId) -> EntryIcon {
+        let entry = self.registry.agent(id);
+
+        EntryIcon::of(entry.and_then(|entry| entry.icon()), self.agent_name(id))
+    }
+
+    /// The icon of the provider `provider`: the one of the registry entry
+    /// that serves it, else the first letter of its id or host.
+    pub(crate) fn provider_icon(&self, provider: &ProviderRef) -> EntryIcon {
+        let entry = self.registry.provider_of(provider);
+
+        EntryIcon::of(
+            entry.and_then(|entry| entry.icon()),
+            self.provider_name(provider),
+        )
     }
 
     /// The sessions of the selected project as its table shows them: the
@@ -387,36 +445,28 @@ impl AgentsState {
     }
 
     /// The agent with the id `id`.
-    pub(crate) fn agent(&self, id: AgentId) -> Option<&dyn Agent> {
+    pub(crate) fn agent(&self, id: &AgentId) -> Option<&dyn Agent> {
         otty_agents::agent_of(&self.agents, id)
     }
 
     /// Whether the agent with the id `id` reads the statistics of a session
     /// and of a project (spec Decision 14).
-    pub(crate) fn has_stats(&self, id: AgentId) -> bool {
-        self.agent(id)
-            .is_some_and(|agent| agent.descriptor().has_stats())
+    pub(crate) fn has_stats(&self, id: &AgentId) -> bool {
+        self.stats_agents.contains(id)
     }
 
     /// Whether the agent with the id `id` writes what each answer cost, as
     /// Kilo and OpenCode do: its money is that cost, not an estimate.
-    pub(crate) fn writes_cost(&self, id: AgentId) -> bool {
-        self.agent(id)
-            .is_some_and(|agent| agent.descriptor().writes_cost())
+    pub(crate) fn writes_cost(&self, id: &AgentId) -> bool {
+        self.agent(id).is_some_and(|agent| agent.writes_cost())
     }
 
     /// The source the agent with the id `id` reads its sessions and its
     /// tokens from: its database, or its session files as most agents.
-    pub(crate) fn token_source(&self, id: AgentId) -> SourceId {
+    pub(crate) fn token_source(&self, id: &AgentId) -> SourceId {
         self.agent(id)
             .and_then(|agent| agent.session_source_ids().first().copied())
             .unwrap_or(SourceId::SessionFiles)
-    }
-
-    /// The name of the icon of the agent with the id `id`; empty for an
-    /// agent OTTY does not know, which gets the icon of the mode.
-    pub(crate) fn icon_of(&self, id: AgentId) -> &'static str {
-        self.agent(id).map_or("", |agent| agent.descriptor().icon())
     }
 
     /// The profiles and what was read of them, to start reads and take
@@ -561,7 +611,7 @@ impl AgentsState {
     /// Select the profile `profile`.
     pub(crate) fn select_profile(&mut self, profile: &Profile) {
         self.usage.forget_rows();
-        self.select_named(profile.agent(), profile.name());
+        self.select_named(profile.agent().clone(), profile.name());
     }
 
     /// Forget the selected profile, account or project when the latest read
@@ -594,7 +644,7 @@ impl AgentsState {
         };
 
         self.selection = Some(Selection::Profile {
-            agent: first.profile().agent(),
+            agent: first.profile().agent().clone(),
             name: first.profile().name().to_string(),
         });
     }
@@ -711,11 +761,22 @@ impl AgentsState {
     /// Every session of `project`, newest first, with the names of their
     /// agents.
     fn table_sessions<'a>(
-        &self,
+        &'a self,
         project: &'a Project,
     ) -> Vec<TableSession<'a>> {
         sessions_table::table_sessions(project, |id| self.agent_name(id))
     }
+}
+
+/// The name of the provider `provider` in `registry`, such as "DeepSeek";
+/// its id or host for a provider no entry serves.
+pub(crate) fn provider_name<'a>(
+    registry: &'a Registry,
+    provider: &'a ProviderRef,
+) -> &'a str {
+    registry
+        .provider_of(provider)
+        .map_or(provider.as_str(), |entry| entry.name())
 }
 
 /// What the main area shows: a project, a profile, an account, or All

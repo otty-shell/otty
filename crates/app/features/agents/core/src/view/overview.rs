@@ -24,12 +24,12 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 use super::super::event::AgentsIntent;
 use super::super::model::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
-    NeedViewModel, ProfileTableRowViewModel,
+    EntryIcon, NeedViewModel, ProfileTableRowViewModel,
 };
 use super::profile_page::{
     BUTTON_GAP, HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X,
 };
-use super::{blocks, needs};
+use super::{blocks, entry_icon, needs};
 
 /// Render the All accounts page.
 pub(crate) fn all_accounts<'a>(
@@ -37,7 +37,7 @@ pub(crate) fn all_accounts<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let header = header(
-        icons::ALL_ACCOUNTS,
+        EntryIcon::Svg(icons::ALL_ACCOUNTS.into()),
         i18n::t(Key::AgentsAllAccounts),
         AgentsIntent::OpenAllAccountsMenu,
         palette,
@@ -53,7 +53,7 @@ pub(crate) fn all_profiles<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let header = header(
-        icons::ALL_PROFILES,
+        EntryIcon::Svg(icons::ALL_PROFILES.into()),
         i18n::t(Key::AgentsAllProfiles),
         AgentsIntent::OpenAllProfilesMenu,
         palette,
@@ -97,18 +97,13 @@ fn page<'a>(
 /// which sends `menu`, at the right end. The title ends with "…" when it
 /// does not fit.
 pub(super) fn header<'a>(
-    icon: &'static [u8],
+    icon: EntryIcon,
     title: impl Into<String>,
     menu: AgentsIntent,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
-    let logo = svg(svg::Handle::from_memory(icon))
-        .width(LOGO_SIZE)
-        .height(LOGO_SIZE)
-        .style(move |_, _| svg::Style {
-            color: Some(strong),
-        });
+    let logo = entry_icon::view(icon, LOGO_SIZE, strong, palette);
     let name = EllipsisText::new(
         title,
         typography::TITLE.size(),
@@ -270,7 +265,8 @@ mod tests {
 
     use iced_test::simulator;
     use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn, Provider,
+        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+        ProviderRef,
     };
     use otty_app_theme::theme::ThemeManager;
 
@@ -288,7 +284,7 @@ mod tests {
 
     fn chatgpt() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-account")),
             AccountLogin::Email(String::from("you@example.com")),
             AccountKind::Limits,
@@ -303,7 +299,7 @@ mod tests {
             line: String::from("Nobody is logged in."),
             fix: Some(NeedFixViewModel {
                 label: String::from("Log in"),
-                action: NeedAction::LogIn(codex()),
+                action: Some(NeedAction::LogIn(codex())),
             }),
         }
     }
@@ -313,7 +309,7 @@ mod tests {
             rows: vec![AccountTableRowViewModel {
                 account: chatgpt(),
                 name: String::from("OpenAI · you@example.com"),
-                provider: "OpenAI",
+                provider: String::from("OpenAI"),
                 now: String::from("42 % used"),
                 tone: SessionTone::Muted,
                 is_hidden: false,
@@ -327,7 +323,7 @@ mod tests {
             rows: vec![ProfileTableRowViewModel {
                 profile: codex(),
                 name: String::from("Codex"),
-                agent: "Codex",
+                agent: String::from("Codex"),
                 version: String::from("0.169.0"),
                 today: String::from("needs login"),
                 tone: SessionTone::Failed,
@@ -346,7 +342,7 @@ mod tests {
         ui.find(i18n::t(Key::AgentsAllAccounts))
             .expect("the title should show");
         ui.find(i18n::t(Key::AgentsColumnProvider))
-            .expect("the Provider column should show");
+            .expect("the ProviderRef column should show");
         ui.find("42 % used").expect("the number should show");
         assert!(
             ui.find(i18n::t(Key::AgentsNeedsYou)).is_err(),

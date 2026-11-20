@@ -47,7 +47,8 @@ mod tests {
 
     #[test]
     fn the_first_read_shows_that_it_loads() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         assert_eq!(

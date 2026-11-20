@@ -28,7 +28,7 @@ use super::super::model::{
     AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
     AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
-use super::projects_section;
+use super::{entry_icon, projects_section};
 
 /// Props for the left panel.
 pub(crate) struct LeftPanelProps<'a> {
@@ -269,10 +269,8 @@ fn account_row<'a>(
     vm: AccountRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let icon = svg::Handle::from_memory(icons::provider_icon(vm.provider));
     let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
-    let mut row = TreeRow::new(vm.name, palette)
-        .icon(icon, None)
+    let mut row = entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon)
         .count_tone(vm.tone)
         .selected(vm.is_selected)
         .on_press(AgentsIntent::SelectAccount(vm.account));
@@ -290,10 +288,8 @@ fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let icon = svg::Handle::from_memory(icons::agent_icon(vm.icon));
     let menu = AgentsIntent::OpenProfileMenu(vm.profile.clone());
-    let mut row = TreeRow::new(vm.name, palette)
-        .icon(icon, None)
+    let mut row = entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon)
         .count_tone(vm.tone)
         .selected(vm.is_selected)
         .on_press(AgentsIntent::SelectProfile(vm.profile));
@@ -311,7 +307,7 @@ mod tests {
     use iced_test::simulator;
     use otty_agents::{
         Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        Profile, Provider,
+        Profile, ProviderRef,
     };
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::session_row::SessionTone;
@@ -330,7 +326,7 @@ mod tests {
 
     fn chatgpt() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-account")),
             AccountLogin::Email(String::from("you@example.com")),
             AccountKind::Limits,
@@ -348,7 +344,7 @@ mod tests {
             accounts: vec![AccountRowViewModel {
                 account: chatgpt(),
                 is_selected: false,
-                provider: "OpenAI",
+                icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
                 number: Some(String::from("42 % used")),
                 tone: SessionTone::Muted,
@@ -368,7 +364,7 @@ mod tests {
             profiles: vec![ProfileRowViewModel {
                 profile: codex(),
                 is_selected: false,
-                icon: "codex",
+                icon: crate::testing::agent_icon("codex"),
                 name: String::from("Codex"),
                 number: Some(String::from("3 760 left")),
                 tone: SessionTone::Muted,
@@ -635,21 +631,22 @@ mod tests {
         assert!(number.x + number.width <= LEAST_WIDTH, "{number:?}");
     }
 
-    /// Only the icon name links an agent of `otty-agents` to its logo in
-    /// the theme, so every known agent is checked to have a logo of its
-    /// own, not the icon of the mode.
+    /// The built-in registry gives every known agent a logo of its own,
+    /// so none is drawn as a letter.
     #[test]
     fn every_known_agent_has_a_logo_of_its_own() {
-        let agents = otty_agents::known_agents();
-        let logos: Vec<&[u8]> = agents
+        let registry = crate::testing::registry();
+        let logos: Vec<&[u8]> = registry
+            .agents()
             .iter()
-            .map(|agent| icons::agent_icon(agent.descriptor().icon()))
+            .filter_map(|entry| entry.icon().map(|icon| icon.as_ref()))
             .collect();
 
-        for (agent, logo) in agents.iter().zip(&logos) {
-            let name = agent.descriptor().name();
-            assert_ne!(*logo, icons::MODE_AGENTS, "{name} has no logo");
-        }
+        assert_eq!(
+            logos.len(),
+            registry.agents().len(),
+            "an agent has no logo"
+        );
         let mut distinct = logos.clone();
         distinct.sort_unstable();
         distinct.dedup();

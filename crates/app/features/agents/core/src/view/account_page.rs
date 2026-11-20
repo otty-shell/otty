@@ -8,7 +8,6 @@
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_app_theme::icons;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
@@ -27,7 +26,7 @@ pub(crate) fn view<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let header = overview::header(
-        icons::provider_icon(vm.provider),
+        vm.icon.clone(),
         vm.name.clone(),
         AgentsIntent::OpenAccountMenu(vm.account.clone()),
         palette,
@@ -114,7 +113,7 @@ fn used_by_chips<'a>(
     let chips = used_by
         .into_iter()
         .map(|chip| Chip {
-            icon: icons::agent_icon(chip.icon),
+            icon: chip.icon,
             name: chip.name,
             note: chip.usage.map(|usage| (usage, muted)),
             on_press: AgentsIntent::SelectProfile(chip.profile),
@@ -132,7 +131,7 @@ mod tests {
     use iced_test::simulator;
     use otty_agents::{
         Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        Profile, Provider,
+        Profile, ProviderRef,
     };
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
@@ -154,7 +153,7 @@ mod tests {
 
     fn chatgpt() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-account")),
             AccountLogin::Email(String::from("you@example.com")),
             AccountKind::Limits,
@@ -166,7 +165,7 @@ mod tests {
         AccountPageViewModel {
             account: chatgpt(),
             name: String::from("OpenAI · you@example.com"),
-            provider: "OpenAI",
+            icon: crate::testing::provider_icon("openai"),
             needs: Vec::new(),
             numbers: Some(AccountNumbersViewModel::Limits(LimitsViewModel {
                 updated: Some(String::from("Updated 2 min ago")),
@@ -185,13 +184,13 @@ mod tests {
             used_by: vec![
                 UsedByViewModel {
                     profile: codex("Codex", "/home/user/.codex"),
-                    icon: "codex",
+                    icon: crate::testing::agent_icon("codex"),
                     name: String::from("Codex"),
                     usage: Some(String::from("1.2M today")),
                 },
                 UsedByViewModel {
                     profile: codex("Codex · Work", "/home/user/.codex-work"),
-                    icon: "codex",
+                    icon: crate::testing::agent_icon("codex"),
                     name: String::from("Codex · Work"),
                     usage: None,
                 },
@@ -218,10 +217,10 @@ mod tests {
             line: String::from("Open Codex to log in again."),
             fix: Some(NeedFixViewModel {
                 label: String::from("Open Codex"),
-                action: NeedAction::OpenAgent(codex(
+                action: Some(NeedAction::OpenAgent(codex(
                     "Codex",
                     "/home/user/.codex",
-                )),
+                ))),
             }),
         }
     }

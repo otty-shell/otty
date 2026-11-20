@@ -95,7 +95,7 @@ fn filter_menu(
     for (agent, name) in vm.agents {
         menu = menu.item(
             MenuItem::new(name)
-                .active(filter.agent() == Some(agent))
+                .active(filter.agent() == Some(&agent))
                 .on_press(change(ProjectFilterChange::Agent(Some(agent)))),
         );
     }
@@ -423,7 +423,9 @@ mod tests {
     use super::*;
     use crate::project_filter::ProjectFilter;
 
-    const CODEX: AgentId = AgentId::new("codex");
+    fn codex_id() -> AgentId {
+        AgentId::new("codex")
+    }
 
     fn place() -> MenuPlace {
         MenuPlace::new(Point::new(40.0, 40.0), Size::new(800.0, 600.0))
@@ -433,8 +435,8 @@ mod tests {
         MenuViewModel::ProjectFilter(FilterMenuViewModel {
             place: place(),
             agents: vec![
-                (AgentId::new("claude-code"), "Claude Code"),
-                (CODEX, "Codex"),
+                (AgentId::new("claude-code"), String::from("Claude Code")),
+                (codex_id(), String::from("Codex")),
             ],
             filter,
         })
@@ -476,7 +478,7 @@ mod tests {
         assert_eq!(
             codex,
             vec![AgentsIntent::ProjectFilter(ProjectFilterChange::Agent(
-                Some(CODEX)
+                Some(codex_id())
             ))]
         );
         assert_eq!(
@@ -628,7 +630,7 @@ mod tests {
     #[test]
     fn a_profile_of_the_new_session_menu_starts_the_session() {
         let codex = Profile::default_for(
-            CODEX,
+            codex_id(),
             "Codex",
             PathBuf::from("/home/user/.codex"),
         );

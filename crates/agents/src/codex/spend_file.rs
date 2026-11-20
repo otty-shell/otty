@@ -32,9 +32,10 @@ use serde_json::Value;
 
 use super::session_file::open_session_file;
 use crate::account::AccountIdentity;
+use crate::built_in::OPENAI;
 use crate::json_file::filled;
 use crate::jsonl::{for_each_line, has_marker};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 use crate::record_format::{RecordCounts, RecordFormat};
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::timestamp::parse_rfc3339;
@@ -314,9 +315,9 @@ pub(super) fn is_counted_line(line: &[u8]) -> bool {
 /// for `openai` and for a session that names none, which runs on Codex's
 /// default provider. Any other id is a provider of the user's own config,
 /// such as a local model, and is not known.
-fn provider_of(model_provider: Option<&str>) -> Option<Provider> {
+fn provider_of(model_provider: Option<&str>) -> Option<ProviderRef> {
     match model_provider {
-        None | Some("openai") => Some(Provider::OpenAI),
+        None | Some("openai") => Some(ProviderRef::of_id(OPENAI)),
         Some(_) => None,
     }
 }
@@ -583,7 +584,7 @@ mod tests {
 
         let spend = spend_of(&[&meta, &line]);
 
-        assert_eq!(spend.provider(), Some(Provider::OpenAI));
+        assert_eq!(spend.provider(), Some(&ProviderRef::of_id("openai")));
         assert_eq!(
             spend.account(),
             Some(&AccountIdentity::AccountId("made-up-account".into()))
@@ -599,9 +600,12 @@ mod tests {
         let with_meta = spend_of(&[&meta_of(None, None), &line]);
         let without_meta = spend_of(&[&line]);
 
-        assert_eq!(with_meta.provider(), Some(Provider::OpenAI));
+        assert_eq!(with_meta.provider(), Some(&ProviderRef::of_id("openai")));
         assert_eq!(with_meta.account(), None);
-        assert_eq!(without_meta.provider(), Some(Provider::OpenAI));
+        assert_eq!(
+            without_meta.provider(),
+            Some(&ProviderRef::of_id("openai"))
+        );
     }
 
     /// A provider of the user's own config, such as a local model, is not
@@ -625,7 +629,7 @@ mod tests {
 
         let spend = spend_of(&[&own, &parent, &line]);
 
-        assert_eq!(spend.provider(), Some(Provider::OpenAI));
+        assert_eq!(spend.provider(), Some(&ProviderRef::of_id("openai")));
         assert_eq!(
             spend.account(),
             Some(&AccountIdentity::AccountId("made-up-own".into()))

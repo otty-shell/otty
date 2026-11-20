@@ -15,7 +15,7 @@ use jiff::civil::Date;
 
 use crate::account::AccountIdentity;
 use crate::local_time::{LocalNow, days_before};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 use crate::spend::{
     COUNTED_DAYS, DaySpend, HourSpend, ModelTokens, ProjectModelTokens,
     ProjectTokens, Spend, sort_models,
@@ -27,7 +27,7 @@ use crate::token_count::TokenCount;
 /// What the tokens of the answers are added up by: the provider, the
 /// account and the model.
 type ModelKey<'a> = (
-    Option<Provider>,
+    Option<&'a ProviderRef>,
     Option<&'a AccountIdentity>,
     Option<&'a str>,
 );
@@ -61,7 +61,7 @@ pub(crate) fn first_counted_day(now: &LocalNow) -> Date {
 pub(crate) fn tally<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
     now: &LocalNow,
-    profile_provider: Option<Provider>,
+    profile_provider: Option<&'a ProviderRef>,
 ) -> Spend {
     let today = now.today();
     let first_day = first_counted_day(now);
@@ -119,7 +119,7 @@ pub(crate) fn tally<'a>(
 /// of a file that names no provider are counted under `profile_provider`.
 pub(crate) fn whole_history<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
-    profile_provider: Option<Provider>,
+    profile_provider: Option<&'a ProviderRef>,
 ) -> ProjectStats {
     let answers = once_each(files);
 
@@ -178,7 +178,7 @@ fn count_answer<'a>(
     models: &mut HashMap<ModelKey<'a>, ModelTokens>,
     file: &'a FileSpend,
     answer: &'a CountedAnswer,
-    profile_provider: Option<Provider>,
+    profile_provider: Option<&'a ProviderRef>,
 ) {
     let provider = file.provider().or(profile_provider);
     let key = (provider, file.account(), answer.model());
@@ -187,7 +187,7 @@ fn count_answer<'a>(
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
-                .with_provider(provider)
+                .with_provider(provider.cloned())
                 .with_account(file.account().cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
@@ -199,7 +199,7 @@ fn count_part<'a>(
     parts: &mut Parts<'a>,
     file: &'a FileSpend,
     answer: &'a CountedAnswer,
-    profile_provider: Option<Provider>,
+    profile_provider: Option<&'a ProviderRef>,
 ) {
     let provider = file.provider().or(profile_provider);
     let key = (file.project(), (provider, file.account(), answer.model()));
@@ -208,7 +208,7 @@ fn count_part<'a>(
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
-                .with_provider(provider)
+                .with_provider(provider.cloned())
                 .with_account(file.account().cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
@@ -662,10 +662,10 @@ mod tests {
         let two = AccountIdentity::AccountId("made-up-two".into());
         let files = [
             file("/a", vec![answer(NOW, "gpt-5", input(1))])
-                .with_provider(Some(Provider::OpenAI))
+                .with_provider(Some(ProviderRef::of_id("openai")))
                 .with_account(Some(one.clone())),
             file("/a", vec![answer(NOW, "gpt-5", input(2))])
-                .with_provider(Some(Provider::OpenAI))
+                .with_provider(Some(ProviderRef::of_id("openai")))
                 .with_account(Some(two.clone())),
             file("/a", vec![answer(NOW, "gpt-5", input(4))]),
         ];
@@ -674,7 +674,7 @@ mod tests {
 
         let openai = |tokens, account: &AccountIdentity| {
             ModelTokens::new(Some("gpt-5"), tokens, 1)
-                .with_provider(Some(Provider::OpenAI))
+                .with_provider(Some(ProviderRef::of_id("openai")))
                 .with_account(Some(account.clone()))
         };
         let expected = [
@@ -694,17 +694,22 @@ mod tests {
         let files = [
             file("/a", vec![answer(NOW, "m", input(1))]),
             file("/a", vec![answer(NOW, "m", input(2))])
-                .with_provider(Some(Provider::DeepSeek)),
+                .with_provider(Some(ProviderRef::of_id("deepseek"))),
         ];
 
-        let spend = tally(files.iter(), &utc_now(), Some(Provider::Anthropic));
-        let history = whole_history(files.iter(), Some(Provider::Anthropic));
+        let spend = tally(
+            files.iter(),
+            &utc_now(),
+            Some(&ProviderRef::of_id("anthropic")),
+        );
+        let history =
+            whole_history(files.iter(), Some(&ProviderRef::of_id("anthropic")));
 
         let expected = [
             ModelTokens::new(Some("m"), input(2), 1)
-                .with_provider(Some(Provider::DeepSeek)),
+                .with_provider(Some(ProviderRef::of_id("deepseek"))),
             ModelTokens::new(Some("m"), input(1), 1)
-                .with_provider(Some(Provider::Anthropic)),
+                .with_provider(Some(ProviderRef::of_id("anthropic"))),
         ];
         assert_eq!(spend.last_30_days_by_day()[29].models(), expected);
         assert_eq!(history.models(), expected);

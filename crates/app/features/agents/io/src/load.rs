@@ -99,7 +99,7 @@ fn read_profiles(
     config_dir: &Path,
     shell: &str,
 ) -> LoadedProfiles {
-    let (saved, problem) = read_saved(config_dir, agents);
+    let (saved, problem) = read_saved(config_dir);
     let lookup = ProgramLookup::new(shell);
     let content = problem.is_none().then(|| saved.clone());
 
@@ -568,7 +568,7 @@ mod tests {
         let saved = loaded.saved.expect("the file was read");
         assert!(
             saved
-                .default_changes_of(AgentId::new("codex"))
+                .default_changes_of(&AgentId::new("codex"))
                 .is_some_and(|changes| changes.name() == Some("Codex · Home"))
         );
         assert_eq!(unread.saved, None);

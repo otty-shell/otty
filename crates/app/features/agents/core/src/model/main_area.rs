@@ -100,7 +100,8 @@ mod tests {
 
     #[test]
     fn the_first_read_shows_that_it_loads() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         assert_eq!(
@@ -215,7 +216,8 @@ mod tests {
     fn a_hidden_profile_opens_a_page_that_says_it_is_hidden() {
         use otty_app_i18n::{self as i18n, Key};
 
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(
             &mut state,

@@ -4,11 +4,14 @@
 //! of that provider whose agent does not write which one served a message
 //! is not split: its chip says how many accounts it uses, with no number.
 
-use otty_agents::{Account, DaySpend, Profile, Provider, TokenCount};
+use otty_agents::{
+    Account, DaySpend, Profile, ProviderRef, Registry, TokenCount,
+};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
+use super::entry_icon::EntryIcon;
 use super::numbers::short_count;
 
 /// One chip of "Used by"; a press opens the profile.
@@ -16,8 +19,8 @@ use super::numbers::short_count;
 pub(crate) struct UsedByViewModel {
     /// The profile, sent when the chip is pressed.
     pub(crate) profile: Profile,
-    /// The name of its agent's icon.
-    pub(crate) icon: &'static str,
+    /// The icon of its agent.
+    pub(crate) icon: EntryIcon,
     /// The profile name.
     pub(crate) name: String,
     /// The tokens it sent today through the account ("1.2M today"), "uses
@@ -38,9 +41,9 @@ pub(crate) fn used_by(
             let profile = shown.profile();
             UsedByViewModel {
                 profile: profile.clone(),
-                icon: state.icon_of(profile.agent()),
+                icon: state.agent_icon(profile.agent()),
                 name: profile.name().to_string(),
-                usage: usage(shown, account),
+                usage: usage(state, shown, account),
             }
         })
         .collect()
@@ -50,23 +53,31 @@ pub(crate) fn used_by(
 /// has several accounts of the provider and its agent does not write which
 /// one paid, else the tokens the account paid today, or "no tokens yet"
 /// when it paid none in the days counted. `None` before a count.
-fn usage(shown: &ProfileState, account: &Account) -> Option<String> {
+fn usage(
+    state: &AgentsState,
+    shown: &ProfileState,
+    account: &Account,
+) -> Option<String> {
+    let registry = state.registry();
     let provider = account.provider();
     let days = shown
         .spend()
         .last_good()
         .map(|(spend, _)| spend.last_30_days_by_day());
 
-    if let Some(count) = untold_accounts(shown, provider) {
+    if let Some(count) = untold_accounts(registry, shown, provider) {
         return Some(i18n::filled(
             Key::TplAgentsUsesAccounts,
-            &[("count", &count.to_string()), ("provider", provider.name())],
+            &[
+                ("count", &count.to_string()),
+                ("provider", state.provider_name(provider)),
+            ],
         ));
     }
 
     let paid: Vec<TokenCount> = days?
         .iter()
-        .map(|day| paid_on(day, account, shown.accounts()))
+        .map(|day| paid_on(registry, day, account, shown.accounts()))
         .collect();
     if paid.iter().all(TokenCount::is_zero) {
         return Some(i18n::t(Key::AgentsNoTokensYet).to_string());
@@ -84,8 +95,9 @@ fn usage(shown: &ProfileState, account: &Account) -> Option<String> {
 /// those tokens are then not split between them (spec Decision 4). `None`
 /// when it has one account there, or its agent writes the account.
 pub(super) fn untold_accounts(
+    registry: &Registry,
     shown: &ProfileState,
-    provider: Provider,
+    provider: &ProviderRef,
 ) -> Option<usize> {
     let of_provider = shown
         .accounts()
@@ -102,7 +114,10 @@ pub(super) fn untold_accounts(
         .iter()
         .flat_map(DaySpend::models)
         .any(|tokens| {
-            tokens.provider() == Some(provider) && tokens.account().is_some()
+            let is_of_provider = tokens.provider().is_some_and(|served| {
+                registry.is_same_provider(served, provider)
+            });
+            is_of_provider && tokens.account().is_some()
         });
 
     (of_provider > 1 && !writes_accounts).then_some(of_provider)
@@ -111,13 +126,14 @@ pub(super) fn untold_accounts(
 /// The tokens of `day` that `account` paid, in a profile with the accounts
 /// `profile_accounts`.
 fn paid_on(
+    registry: &Registry,
     day: &DaySpend,
     account: &Account,
     profile_accounts: &[Account],
 ) -> TokenCount {
     day.models()
         .iter()
-        .filter(|tokens| account.pays_for(tokens, profile_accounts))
+        .filter(|tokens| account.pays_for(tokens, profile_accounts, registry))
         .fold(TokenCount::default(), |sum, tokens| sum + tokens.tokens())
 }
 
@@ -127,14 +143,17 @@ mod tests {
 
     use otty_agents::{
         AccountIdentity, AccountKind, AccountLogin, FoundIn, ModelTokens,
-        Provider, SavedProfiles, Spend,
+        ProviderRef, SavedProfiles, Spend,
     };
 
     use super::*;
+    use crate::model::ProfilePageViewModel;
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, at, chatgpt_login, claude, claude_work, codex, codex_work,
-        connected, organization, spend_loaded, with_accounts,
+        connected, deepseek_key_by_host, organization,
+        registry_without_deepseek, spend_loaded, with_accounts,
+        with_accounts_in,
     };
     use crate::types::SpendCount;
 
@@ -142,14 +161,14 @@ mod tests {
     /// 2026-11-16, and 5 000 five days before; the agent wrote the
     /// `account` that paid them, or none.
     fn spend(
-        provider: Provider,
+        provider: ProviderRef,
         model: &str,
         today: u64,
         account: Option<AccountIdentity>,
     ) -> Spend {
         let tokens = |input: u64| {
             ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1)
-                .with_provider(Some(provider))
+                .with_provider(Some(provider.clone()))
                 .with_account(account.clone())
         };
 
@@ -178,7 +197,7 @@ mod tests {
     /// A second made-up ChatGPT login, also found in the Codex folder.
     fn second_login() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-second")),
             AccountLogin::Email(String::from("me@example.org")),
             AccountKind::Limits,
@@ -209,12 +228,17 @@ mod tests {
         counted(
             &mut state,
             &claude(),
-            spend(Provider::Anthropic, "claude-sonnet-4-5", 1_200_000, None),
+            spend(
+                ProviderRef::of_id("anthropic"),
+                "claude-sonnet-4-5",
+                1_200_000,
+                None,
+            ),
         );
         counted(
             &mut state,
             &claude_work(),
-            spend(Provider::DeepSeek, "deepseek-chat", 9_000, None),
+            spend(ProviderRef::of_id("deepseek"), "deepseek-chat", 9_000, None),
         );
 
         let chips = used_by(&state, &organization());
@@ -224,17 +248,58 @@ mod tests {
             vec![
                 UsedByViewModel {
                     profile: claude(),
-                    icon: "claude-code",
+                    icon: crate::testing::agent_icon("claude-code"),
                     name: String::from("Claude Code"),
                     usage: today("1.2M"),
                 },
                 UsedByViewModel {
                     profile: claude_work(),
-                    icon: "claude-code",
+                    icon: crate::testing::agent_icon("claude-code"),
                     name: String::from("Claude Code · Work"),
                     usage: Some(i18n::t(Key::AgentsNoTokensYet).to_string()),
                 },
             ]
+        );
+    }
+
+    /// Spec 2026-11-19-agent-plugins, "Identity and links do not depend on
+    /// a provider plugin": with no DeepSeek entry the key behind Claude
+    /// Code's base URL is listed by its host, still used by Claude Code
+    /// with the tokens it sent there, and Claude Code still pays through
+    /// it, with a letter icon.
+    #[test]
+    fn used_by_and_pays_through_stay_with_no_entry_for_the_provider() {
+        let key = deepseek_key_by_host();
+        let mut state = with_accounts_in(
+            registry_without_deepseek(),
+            &[(claude(), api_key(), vec![key.clone()])],
+            SavedProfiles::default(),
+        );
+        let host = ProviderRef::Host(String::from("api.deepseek.com"));
+        counted(
+            &mut state,
+            &claude(),
+            spend(host, "deepseek-chat", 9_000, None),
+        );
+
+        let chips = used_by(&state, &key);
+        let shown = state.profiles().get(&claude()).expect("shown");
+        let page = ProfilePageViewModel::of(&state, shown, at(20));
+
+        assert_eq!(
+            chips,
+            vec![UsedByViewModel {
+                profile: claude(),
+                icon: crate::testing::agent_icon("claude-code"),
+                name: String::from("Claude Code"),
+                usage: today("9K"),
+            }]
+        );
+        assert_eq!(page.pays_through.len(), 1);
+        assert_eq!(page.pays_through[0].account, key);
+        assert_eq!(
+            page.pays_through[0].icon,
+            EntryIcon::Letter(String::from("api.deepseek.com"))
         );
     }
 
@@ -263,7 +328,7 @@ mod tests {
         counted(
             &mut state,
             &codex(),
-            spend(Provider::OpenAI, "gpt-5", 30_000, None),
+            spend(ProviderRef::of_id("openai"), "gpt-5", 30_000, None),
         );
 
         let chips = used_by(&state, &chatgpt_login());
@@ -292,7 +357,7 @@ mod tests {
             &mut state,
             &codex(),
             spend(
-                Provider::OpenAI,
+                ProviderRef::of_id("openai"),
                 "gpt-5",
                 30_000,
                 Some(second_login().identity().clone()),

@@ -138,7 +138,7 @@ pub trait BillSource: Send {
 /// and never kept.
 pub fn read_bill(
     agents: &[Box<dyn Agent>],
-    agent: AgentId,
+    agent: &AgentId,
     admin_key: &AdminKeyRef,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
@@ -154,9 +154,8 @@ pub fn read_bill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::AgentDescriptor;
     use crate::known_agents;
-    use crate::testing::{MockAgent, NOW, at, dollars};
+    use crate::testing::{MockAgent, NOW, at, dollars, mock_entry};
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
         DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
@@ -207,14 +206,14 @@ mod tests {
 
         let no_bill = read_bill(
             &known_agents(),
-            AgentId::new("codex"),
+            &AgentId::new("codex"),
             &by_variable("KEY"),
             at(NOW),
             key,
         );
         let unknown = read_bill(
             &known_agents(),
-            AgentId::new("stranger"),
+            &AgentId::new("stranger"),
             &by_variable("KEY"),
             at(NOW),
             key,
@@ -232,18 +231,10 @@ mod tests {
 
     #[test]
     fn the_admin_key_is_read_and_given_to_the_bill_source() {
-        const BILLED: AgentDescriptor = AgentDescriptor::new(
-            AgentId::new("billed"),
-            "Billed",
-            "billed",
-            "billed",
-            ".billed",
-            "BILLED_HOME",
-            "Billed Labs",
-        )
-        .with_bill();
         let mut agent = MockAgent::new();
-        agent.expect_descriptor().return_const(BILLED);
+        agent
+            .expect_entry()
+            .return_const(mock_entry("billed", "billed"));
         agent.expect_bill_source().returning(|| {
             let mut source = MockBillSource::new();
             source
@@ -257,13 +248,23 @@ mod tests {
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
         let admin_key = by_variable("BILLED_ADMIN_KEY");
 
-        let read =
-            read_bill(&agents, BILLED.id(), &admin_key, at(NOW), |name| {
+        let read = read_bill(
+            &agents,
+            &AgentId::new("billed"),
+            &admin_key,
+            at(NOW),
+            |name| {
                 (name == "BILLED_ADMIN_KEY")
                     .then(|| String::from("made-up-key"))
-            });
-        let unset =
-            read_bill(&agents, BILLED.id(), &admin_key, at(NOW), no_variables);
+            },
+        );
+        let unset = read_bill(
+            &agents,
+            &AgentId::new("billed"),
+            &admin_key,
+            at(NOW),
+            no_variables,
+        );
 
         assert_eq!(read, Ok(bill()));
         assert!(matches!(unset, Err(SourceError::NotAvailable(_))));

@@ -15,7 +15,7 @@ pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let Some(agent) = state.agents().first() else {
         return Vec::new();
     };
-    let agent = agent.descriptor().id();
+    let agent = agent.entry().id().clone();
 
     state.open_dialog(ProfileDialog::add(agent));
     Vec::new()
@@ -115,7 +115,7 @@ fn pick_agent(state: &mut AgentsState, agent: AgentId) {
     let is_adding = state
         .dialog()
         .is_some_and(|dialog| dialog.editing().is_none());
-    if !is_adding || state.agent(agent).is_none() {
+    if !is_adding || state.agent(&agent).is_none() {
         return;
     }
 
@@ -123,7 +123,7 @@ fn pick_agent(state: &mut AgentsState, agent: AgentId) {
         .dialog()
         .map(|dialog| dialog.name().to_string())
         .unwrap_or_default();
-    let proposal = proposal(state, agent, &name);
+    let proposal = proposal(state, &agent, &name);
     if let Some(dialog) = state.dialog_mut() {
         dialog.pick_agent(agent, proposal);
     }
@@ -157,14 +157,18 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         None => {
             let create_dir = (dialog.folder_choice() == FolderChoice::Create)
                 .then(|| config_dir.clone());
-            let saved =
-                profile_changes::added(saved, dialog.agent(), name, config_dir);
+            let saved = profile_changes::added(
+                saved,
+                dialog.agent().clone(),
+                name,
+                config_dir,
+            );
             (saved, create_dir)
         },
         Some(editing) => {
-            let Some(agent) = state.agent(editing.agent()) else {
+            if state.agent(editing.agent()).is_none() {
                 return Vec::new();
-            };
+            }
             let edit = ProfileEdit {
                 name,
                 config_dir,
@@ -172,7 +176,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             };
             let saved = profile_changes::edited(
                 saved,
-                agent.descriptor().name(),
+                state.agent_name(editing.agent()),
                 editing,
                 edit,
             );
@@ -189,12 +193,12 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 /// The folder proposed for a new profile of `agent` named `name`.
 fn proposal(
     state: &AgentsState,
-    agent: AgentId,
+    agent: &AgentId,
     name: &str,
 ) -> Option<PathBuf> {
     let agent = state.agent(agent)?;
 
-    proposed_config_dir(agent.descriptor(), state.env(), name)
+    proposed_config_dir(agent.config_folder(), state.env(), name)
 }
 
 #[cfg(test)]
@@ -212,7 +216,7 @@ mod tests {
     use crate::profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialog};
     use crate::reducer::reduce as reduce_agents;
     use crate::testing::{
-        CLAUDE, CODEX, admin_key, api_key, claude, claude_work, codex,
+        admin_key, api_key, claude, claude_id, claude_work, codex, codex_id,
         connected, folder_looked_up, folder_query, organization,
         saved_with_admin_key, with_accounts, with_saved_profiles,
     };
@@ -258,7 +262,7 @@ mod tests {
     }
 
     fn claude_added(name: &str, folder: &str) -> Profile {
-        Profile::added(CLAUDE, name, PathBuf::from(folder))
+        Profile::added(claude_id(), name, PathBuf::from(folder))
     }
 
     fn opened_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
@@ -275,7 +279,7 @@ mod tests {
 
         assert!(outcomes.is_empty());
         let dialog = state.dialog().expect("the dialog is open");
-        assert_eq!(dialog.agent(), CLAUDE);
+        assert_eq!(dialog.agent(), &claude_id());
         assert_eq!(dialog.editing(), None);
         assert_eq!(dialog.folder_choice(), FolderChoice::Create);
     }
@@ -401,11 +405,11 @@ mod tests {
         type_name(&mut state, "Work");
 
         let outcomes =
-            send(&mut state, ProfileDialogIntent::AgentPicked(CODEX));
+            send(&mut state, ProfileDialogIntent::AgentPicked(codex_id()));
 
         assert!(outcomes.is_empty());
         let dialog = state.dialog().expect("the dialog is open");
-        assert_eq!(dialog.agent(), CODEX);
+        assert_eq!(dialog.agent(), &codex_id());
         assert_eq!(dialog.path_text(), "/home/user/.codex-work");
     }
 
@@ -425,13 +429,13 @@ mod tests {
         let _ = send(&mut state, ProfileDialogIntent::AgentListToggled);
         let closed_again = !is_open(&state);
         let _ = send(&mut state, ProfileDialogIntent::AgentListToggled);
-        let _ = send(&mut state, ProfileDialogIntent::AgentPicked(CODEX));
+        let _ = send(&mut state, ProfileDialogIntent::AgentPicked(codex_id()));
 
         assert!(closed_at_first);
         assert!(opened);
         assert!(closed_again);
         assert!(!is_open(&state), "a pick closes the list");
-        assert_eq!(state.dialog().map(ProfileDialog::agent), Some(CODEX));
+        assert_eq!(state.dialog().map(ProfileDialog::agent), Some(&codex_id()));
     }
 
     #[test]
@@ -548,7 +552,7 @@ mod tests {
             outcomes,
             save(
                 SavedProfiles::default().with_default_changes(
-                    DefaultProfileChanges::new(CLAUDE)
+                    DefaultProfileChanges::new(claude_id())
                         .with_name("Claude Code · Home")
                         .with_config_dir(PathBuf::from("/data/claude"))
                 ),
@@ -567,8 +571,9 @@ mod tests {
         assert_eq!(
             outcomes,
             save(
-                SavedProfiles::default()
-                    .with_default_changes(DefaultProfileChanges::new(CODEX)),
+                SavedProfiles::default().with_default_changes(
+                    DefaultProfileChanges::new(codex_id())
+                ),
                 None
             )
         );
@@ -589,7 +594,7 @@ mod tests {
             outcomes,
             save(
                 saved.with_added_replaced(
-                    CLAUDE,
+                    &claude_id(),
                     "Claude Code · Work",
                     claude_added(
                         "Claude Code · Office",
@@ -841,7 +846,7 @@ mod tests {
                 saved
                     .with_admin_key_of(&organization(), Some(key))
                     .with_added_replaced(
-                        CLAUDE,
+                        &claude_id(),
                         "Claude Code · Work",
                         claude_work()
                     ),
@@ -882,7 +887,7 @@ mod tests {
         let removed = send(&mut removing, ProfileDialogIntent::Submitted);
 
         let unchanged = SavedProfiles::default()
-            .with_default_changes(DefaultProfileChanges::new(CLAUDE));
+            .with_default_changes(DefaultProfileChanges::new(claude_id()));
         assert_eq!(
             named,
             save(
@@ -932,8 +937,9 @@ mod tests {
         assert_eq!(
             outcomes,
             save(
-                saved_with_admin_key()
-                    .with_default_changes(DefaultProfileChanges::new(CLAUDE)),
+                saved_with_admin_key().with_default_changes(
+                    DefaultProfileChanges::new(claude_id())
+                ),
                 None
             )
         );

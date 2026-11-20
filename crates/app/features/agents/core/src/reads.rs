@@ -341,7 +341,8 @@ mod tests {
         is_fresh: bool,
         limits: fn(&otty_agents::Profile, SystemTime) -> AgentsIntent,
     ) -> AgentsState {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let shown = [(claude(), connected())];
         let (profiles, read_at) = if is_fresh {
             (fresh_profiles_loaded(&shown), SystemTime::now())
@@ -363,7 +364,8 @@ mod tests {
 
     #[test]
     fn at_start_the_profiles_are_read_with_the_mode_away() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
 
         let started = reduce(&mut state, AgentsIntent::LoadInBackground);
         let again = reduce(&mut state, AgentsIntent::LoadInBackground);
@@ -376,7 +378,8 @@ mod tests {
     /// The limits read at the start never starts the agent's program.
     #[test]
     fn at_start_each_kind_is_read_after_the_one_before_ended() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
         let now = SystemTime::now();
 
@@ -428,7 +431,8 @@ mod tests {
     /// start goes on only once the running one answers.
     #[test]
     fn a_second_profiles_answer_starts_no_second_sessions_read() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let shown = [(claude(), connected())];
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
         let _ = reduce(&mut state, fresh_profiles_loaded(&shown));
@@ -449,7 +453,8 @@ mod tests {
     /// then its bill.
     #[test]
     fn at_start_a_kind_with_nothing_to_read_is_passed() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
         let profile = claude();
         let mut loaded = billed_claude_loaded();
@@ -499,7 +504,8 @@ mod tests {
     /// show its answer with one "Updated" time.
     #[test]
     fn two_profiles_of_one_account_have_their_limits_read_once() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let loaded = reduce(
@@ -542,7 +548,8 @@ mod tests {
             (codex(), connected(), vec![chatgpt_login()]),
             (codex_work(), connected(), vec![chatgpt_login()]),
         ];
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(
             &mut state,
@@ -570,7 +577,8 @@ mod tests {
     /// admin key, and shows in each profile that pays through it.
     #[test]
     fn two_profiles_of_one_organization_have_its_bill_read_once() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let loaded = reduce(
@@ -655,9 +663,11 @@ mod tests {
 
     #[test]
     fn on_screen_the_prices_are_read_with_an_api_key_profile_only() {
-        let mut with_api_key = AgentsState::new(agents(), env());
+        let mut with_api_key =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut with_api_key, AgentsIntent::Enter);
-        let mut subscriptions = AgentsState::new(agents(), env());
+        let mut subscriptions =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut subscriptions, AgentsIntent::Enter);
 
         let api_key_reads = prices_asked(&mut with_api_key);
@@ -682,7 +692,8 @@ mod tests {
     #[test]
     fn refresh_fetches_the_prices_again_after_a_failed_fetch() {
         for kept_at in [Some(at(10)), None] {
-            let mut state = AgentsState::new(agents(), env());
+            let mut state =
+                AgentsState::new(agents(), crate::testing::registry(), env());
             let _ = reduce(&mut state, AgentsIntent::Enter);
             let _ = prices_asked(&mut state);
             let _ =
@@ -697,7 +708,8 @@ mod tests {
 
     #[test]
     fn refresh_reads_no_prices_after_a_good_fetch_within_the_day() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = prices_asked(&mut state);
         let _ = reduce(&mut state, good_prices(SystemTime::now()));
@@ -711,7 +723,8 @@ mod tests {
     #[test]
     fn prices_fetched_more_than_a_day_ago_are_read_again() {
         let day = std::time::Duration::from_secs(24 * 3600);
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = prices_asked(&mut state);
         let _ = reduce(&mut state, good_prices(SystemTime::now() - day));
@@ -724,7 +737,8 @@ mod tests {
 
     #[test]
     fn opening_the_mode_reads_the_prices_again_after_an_old_failure() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         for intent in [
             AgentsIntent::LoadInBackground,
             fresh_profiles_loaded(&[(claude(), api_key())]),
@@ -762,7 +776,8 @@ mod tests {
     /// The profiles are fresh, the limits and tokens were read long ago.
     #[test]
     fn opening_the_mode_reads_again_what_is_older_than_the_period() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         for intent in [
             AgentsIntent::LoadInBackground,
             fresh_profiles_loaded(&[(claude(), connected())]),
@@ -788,7 +803,8 @@ mod tests {
     /// for at once, and the end of the sessions read asks for nothing more.
     #[test]
     fn opening_the_mode_during_the_start_reads_the_other_kinds_at_once() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
         let _ = reduce(
             &mut state,
@@ -811,7 +827,8 @@ mod tests {
 
     #[test]
     fn opening_the_mode_while_the_first_profiles_read_runs_waits_for_it() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::LoadInBackground);
 
         let opened = reduce(&mut state, AgentsIntent::Enter);
@@ -869,7 +886,8 @@ mod tests {
 
     #[test]
     fn a_limits_read_of_the_start_that_fails_on_screen_is_read_again_at_once() {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         for intent in [
             AgentsIntent::LoadInBackground,
             fresh_profiles_loaded(&[(claude(), connected())]),
@@ -901,7 +919,7 @@ mod tests {
     /// A ChatGPT login only Kilo keeps, found in the made-up Kilo folder.
     fn kilo_login(kilo: &otty_agents::Profile) -> otty_agents::Account {
         otty_agents::Account::new(
-            otty_agents::Provider::OpenAI,
+            otty_agents::ProviderRef::of_id("openai"),
             otty_agents::AccountIdentity::AccountId(String::from(
                 "made-up-kilo-login",
             )),
@@ -943,12 +961,15 @@ mod tests {
         let key =
             otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
         let added = otty_agents::Account::added(
-            otty_agents::Provider::DeepSeek,
+            otty_agents::ProviderRef::of_id("deepseek"),
             key.clone(),
         );
-        let saved = otty_agents::SavedProfiles::default()
-            .with_account_added(otty_agents::Provider::DeepSeek, key);
-        let mut state = AgentsState::new(agents(), env());
+        let saved = otty_agents::SavedProfiles::default().with_account_added(
+            otty_agents::ProviderRef::of_id("deepseek"),
+            key,
+        );
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let loaded = reduce(
@@ -982,7 +1003,7 @@ mod tests {
     #[test]
     fn a_key_of_the_keyring_is_read_only_on_screen() {
         let keyring_key = otty_agents::Account::new(
-            otty_agents::Provider::OpenRouter,
+            otty_agents::ProviderRef::of_id("openrouter"),
             otty_agents::AccountIdentity::KeyFingerprint(
                 otty_agents::KeyFingerprint::of("sk-or-made-up"),
             ),
@@ -990,7 +1011,8 @@ mod tests {
             otty_agents::AccountKind::Money,
             otty_agents::FoundIn::SystemKeyring,
         );
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(
             &mut state,

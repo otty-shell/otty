@@ -18,14 +18,15 @@ impl HiddenProfile {
     /// The hidden entry of `profile`.
     pub(super) fn of(profile: &Profile) -> Self {
         Self {
-            agent: profile.agent(),
+            agent: profile.agent().clone(),
             config_dir: profile.config_dir().to_path_buf(),
         }
     }
 
     /// Whether this is the entry of `profile`.
     pub(super) fn is_of(&self, profile: &Profile) -> bool {
-        profile.agent() == self.agent && profile.config_dir() == self.config_dir
+        *profile.agent() == self.agent
+            && profile.config_dir() == self.config_dir
     }
 }
 
@@ -34,28 +35,36 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::agent::AgentId;
-    use crate::known_agents;
     use crate::profile::Profile;
     use crate::saved_profiles::SavedProfiles;
 
-    const CLAUDE: AgentId = AgentId::new("claude-code");
-    const CODEX: AgentId = AgentId::new("codex");
+    fn claude_id() -> AgentId {
+        AgentId::new("claude-code")
+    }
+
+    fn codex_id() -> AgentId {
+        AgentId::new("codex")
+    }
 
     fn load(text: &str) -> SavedProfiles {
-        SavedProfiles::from_json(text, &known_agents())
+        SavedProfiles::from_json(text)
             .expect("the text is the layout of agents.json")
     }
 
     fn default_claude() -> Profile {
         Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code",
             PathBuf::from("/home/user/.claude"),
         )
     }
 
     fn found_codex() -> Profile {
-        Profile::found(CODEX, "Work", PathBuf::from("/home/user/.codex-work"))
+        Profile::found(
+            codex_id(),
+            "Work",
+            PathBuf::from("/home/user/.codex-work"),
+        )
     }
 
     /// Spec 2026-11-19, Decision 7: a hidden profile is kept by its agent
@@ -67,12 +76,12 @@ mod tests {
             .with_profile_hidden(&default_claude(), true)
             .with_profile_hidden(&found_codex(), true);
         let renamed = Profile::added(
-            CODEX,
+            codex_id(),
             "Codex · Office",
             PathBuf::from("/home/user/.codex-work"),
         );
         let other_folder = Profile::default_for(
-            CODEX,
+            codex_id(),
             "Codex",
             PathBuf::from("/home/user/.codex"),
         );
@@ -115,14 +124,28 @@ mod tests {
         assert!(!text.contains("hidden"), "{text}");
     }
 
+    /// Spec 2026-11-19-agent-plugins, "What the UI shows": a hidden
+    /// profile of an agent with no entry is kept, and is hidden again when
+    /// its entry comes back.
     #[test]
-    fn a_hidden_profile_of_an_unknown_agent_is_left_out() {
+    fn a_hidden_profile_of_an_unknown_agent_is_kept() {
         let text = r#"{
             "hidden_profiles": [
                 { "agent": "future-agent", "config_dir": "/home/user/.future" }
             ]
         }"#;
+        let future = Profile::found(
+            AgentId::new("future-agent"),
+            "Future",
+            PathBuf::from("/home/user/.future"),
+        );
 
-        assert_eq!(load(text), SavedProfiles::default());
+        let loaded = load(text);
+
+        assert!(loaded.is_profile_hidden(&future));
+        assert_eq!(
+            load(&loaded.to_json().expect("the paths are text")),
+            loaded
+        );
     }
 }

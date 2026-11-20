@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::{Element, Size, Subscription, Task, Theme};
-use otty_agents::{Agent, AgentEnv};
+use otty_agents::{Agent, AgentEnv, Registry};
 use otty_app_agents::{AgentList, Agents};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
@@ -91,7 +91,9 @@ impl App {
         let files_home = home_or_temp(home.as_deref());
         let config_dir = config_dir(&files_home);
         let cache_dir = cache_dir(&files_home);
-        let agents: AgentList = Arc::from(otty_agents::known_agents());
+        let known = otty_agents::known_agents();
+        let registry = registry_at_start(&known);
+        let agents: AgentList = Arc::from(registry.listed_agents(known));
         let agent_env = agent_env(files_home, &agents, |variable| {
             std::env::var_os(variable)
         });
@@ -121,6 +123,7 @@ impl App {
             config_dir,
             cache_dir,
             agents,
+            Arc::new(registry),
             agent_env,
             TerminalWorkspace::new(),
         );
@@ -134,8 +137,9 @@ impl App {
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
     /// modes, the saved launches, the home folder, the system shell, the
-    /// config and cache folders, the agents OTTY knows and what they look
-    /// at in the environment. It reads nothing from disk.
+    /// config and cache folders, the agents OTTY knows, the registry that
+    /// names the agents and their providers, and what the agents look at
+    /// in the environment. It reads nothing from disk.
     ///
     /// `terminal` is the terminal feature, which carries how the terminal
     /// of a new pane is started: the app gives the one that starts real
@@ -149,6 +153,7 @@ impl App {
         config_dir: PathBuf,
         cache_dir: PathBuf,
         agents: AgentList,
+        registry: Arc<Registry>,
         agent_env: AgentEnv,
         terminal: TerminalWorkspace,
     ) -> Self {
@@ -187,7 +192,7 @@ impl App {
             quick_launch: QuickLaunches::new(launches),
             default_shell,
             containers,
-            agents: Agents::new(agents, agent_env),
+            agents: Agents::new(agents, registry, agent_env),
         }
     }
 
@@ -275,9 +280,9 @@ fn agent_env(
     let mut env = AgentEnv::new(home);
 
     for agent in agents {
-        let descriptor = agent.descriptor();
-        let names = std::iter::once(descriptor.config_dir_variable())
-            .chain(descriptor.database_variable());
+        let folder = agent.config_folder();
+        let names = std::iter::once(folder.variable())
+            .chain(folder.database_variable());
         for name in names {
             let path = variable(name).filter(|value| !value.is_empty());
             if let Some(path) = path {
@@ -287,6 +292,37 @@ fn agent_env(
     }
 
     env
+}
+
+/// Return the registry OTTY starts with: the built-in entries of `agents`
+/// and of the providers `otty-agents` reads (spec 2026-11-19-agent-plugins,
+/// "Links in the interface"). A debug build leaves out the entries whose
+/// ids `OTTY_HIDE_ENTRIES` lists, such as `deepseek,kilo`, so the owner can
+/// see an agent or a provider no plugin serves.
+fn registry_at_start(agents: &[Box<dyn Agent>]) -> Registry {
+    let registry = Registry::built_in(agents);
+
+    #[cfg(debug_assertions)]
+    let registry = match std::env::var("OTTY_HIDE_ENTRIES") {
+        Ok(ids) => without_entries(registry, &ids),
+        Err(_) => registry,
+    };
+
+    registry
+}
+
+/// `registry` without the agents and the providers whose ids `ids` lists,
+/// split by commas.
+#[cfg(debug_assertions)]
+fn without_entries(registry: Registry, ids: &str) -> Registry {
+    ids.split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .fold(registry, |registry, id| {
+            registry
+                .without_agent(&otty_agents::AgentId::new(id))
+                .without_provider(&otty_agents::ProviderId::new(id))
+        })
 }
 
 /// Return the texts of the files that could not be read at start, in the

@@ -380,6 +380,9 @@ fn app_with_terminal(
         test_config_dir(),
         test_home().join(".cache").join("otty"),
         std::sync::Arc::from(otty_agents::known_agents()),
+        std::sync::Arc::new(otty_agents::Registry::built_in(
+            &otty_agents::known_agents(),
+        )),
         otty_agents::AgentEnv::new(test_home()),
         terminal,
     )

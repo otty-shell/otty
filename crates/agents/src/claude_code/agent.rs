@@ -14,8 +14,9 @@ use super::usage_probe::UsageProbe;
 use super::{accounts, detect, version};
 use crate::account::Account;
 use crate::account_key::AccountKey;
-use crate::agent::{Agent, AgentDescriptor, AgentId};
+use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::bill::BillSource;
+use crate::built_in;
 use crate::command::{AgentCommand, profile_command};
 use crate::config_dir::default_config_dir;
 use crate::env::AgentEnv;
@@ -25,23 +26,22 @@ use crate::https::UreqClient;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
+use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::spend_files::FileSpend;
 use crate::stats::StatsSource;
 
-pub(super) const DESCRIPTOR: AgentDescriptor = AgentDescriptor::new(
-    AgentId::new("claude-code"),
-    "Claude Code",
-    "claude-code",
-    "claude",
-    ".claude",
-    "CLAUDE_CONFIG_DIR",
-    "Anthropic",
-)
-.with_bill()
-.with_stats();
+/// The id Claude Code is saved under.
+pub(super) const ID: &str = "claude-code";
+/// The name shown to the user.
+pub(super) const NAME: &str = "Claude Code";
+/// The program, looked up on `PATH`.
+pub(super) const PROGRAM: &str = "claude";
+/// `~/.claude`, which `CLAUDE_CONFIG_DIR` moves.
+const CONFIG_FOLDER: ConfigFolder =
+    ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR");
 
 /// The ids of the session sources, in the order they are given.
 const SESSION_SOURCES: [SourceId; 1] = [SourceId::SessionFiles];
@@ -60,21 +60,50 @@ const LIMIT_SOURCES: [SourceId; 2] =
 /// ```
 /// use otty_agents::{Agent, ClaudeCode};
 ///
-/// assert_eq!(ClaudeCode::default().descriptor().name(), "Claude Code");
+/// assert_eq!(ClaudeCode::default().entry().name(), "Claude Code");
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ClaudeCode {
+    entry: AgentEntry,
     spend_memory: Arc<FileMemory<FileSpend>>,
     usage_probes: Arc<ProbeMemory>,
 }
 
+impl Default for ClaudeCode {
+    fn default() -> Self {
+        let entry = AgentEntry::new(
+            AgentId::new(ID),
+            NAME,
+            PROGRAM,
+            "Anthropic",
+            Reader::BuiltIn,
+        )
+        .with_icon(built_in::CLAUDE_ICON);
+
+        Self {
+            entry,
+            spend_memory: Arc::default(),
+            usage_probes: Arc::default(),
+        }
+    }
+}
+
 impl Agent for ClaudeCode {
-    fn descriptor(&self) -> &AgentDescriptor {
-        &DESCRIPTOR
+    fn entry(&self) -> &AgentEntry {
+        &self.entry
+    }
+
+    fn config_folder(&self) -> ConfigFolder {
+        CONFIG_FOLDER
+    }
+
+    /// No: the session files hold the tokens, not what they cost.
+    fn writes_cost(&self) -> bool {
+        false
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        default_config_dir(&DESCRIPTOR, env)
+        default_config_dir(CONFIG_FOLDER, env)
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {
@@ -174,11 +203,7 @@ impl Agent for ClaudeCode {
 /// `claude` of `profile`, with `CLAUDE_CONFIG_DIR` when its folder is not
 /// the default one.
 pub(super) fn start_command(profile: &Profile) -> AgentCommand {
-    profile_command(
-        profile,
-        DESCRIPTOR.program(),
-        DESCRIPTOR.config_dir_variable(),
-    )
+    profile_command(profile, PROGRAM, CONFIG_FOLDER.variable())
 }
 
 #[cfg(test)]
@@ -190,7 +215,7 @@ mod tests {
 
     fn default_profile() -> Profile {
         Profile::default_for(
-            DESCRIPTOR.id(),
+            AgentId::new(ID),
             "Claude Code",
             PathBuf::from("/home/user/.claude"),
         )
@@ -267,7 +292,7 @@ mod tests {
     #[test]
     fn a_default_profile_moved_to_another_folder_starts_claude_with_it() {
         let profile = Profile::default_for(
-            DESCRIPTOR.id(),
+            AgentId::new(ID),
             "Claude Code",
             PathBuf::from("/data/claude"),
         )

@@ -155,9 +155,7 @@ fn chips(state: &AgentsState) -> Vec<FilterChipViewModel> {
     let mut chips = Vec::new();
 
     if let Some(agent) = filter.agent() {
-        let name = state
-            .agent(agent)
-            .map_or(agent.as_str(), |agent| agent.descriptor().name());
+        let name = state.agent_name(agent);
         chips.push(FilterChipViewModel {
             label: i18n::filled(Key::TplAgentsChipAgentOnly, &[("name", name)]),
             clear: ProjectFilterChange::Agent(None),
@@ -201,7 +199,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        CODEX, agents, claude, connected, env, now, read, session,
+        agents, claude, codex_id, connected, env, now, read, session,
         two_agents_with_sessions, with_profiles,
     };
     use crate::types::LoadedSessions;
@@ -301,7 +299,8 @@ mod tests {
 
     #[test]
     fn the_note_says_what_is_read_or_that_there_are_no_projects() {
-        let mut loading = AgentsState::new(agents(), env());
+        let mut loading =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut loading, AgentsIntent::Enter);
         let mut empty = with_profiles(&[(claude(), connected())]);
         let reading = with_profiles(&[(claude(), connected())]);
@@ -345,7 +344,7 @@ mod tests {
         let mut state = two_agents_with_sessions();
         search(&mut state, "");
         for change in [
-            ProjectFilterChange::Agent(Some(CODEX)),
+            ProjectFilterChange::Agent(Some(codex_id())),
             ProjectFilterChange::RecentOnly(true),
             ProjectFilterChange::MissingOnly(true),
             ProjectFilterChange::SortByName(true),
@@ -388,7 +387,7 @@ mod tests {
         let mut state = two_agents_with_sessions();
         search(&mut state, "");
 
-        filter(&mut state, ProjectFilterChange::Agent(Some(CODEX)));
+        filter(&mut state, ProjectFilterChange::Agent(Some(codex_id())));
 
         assert_eq!(rows(&section(&state)), [("otty", 1)]);
     }

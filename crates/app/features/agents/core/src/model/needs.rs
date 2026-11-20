@@ -11,6 +11,7 @@ use super::super::need::NeedAction;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
+use super::found_in::found_in_text;
 use super::reset_time::date_time_text;
 use super::user_need::UserNeed;
 
@@ -33,8 +34,9 @@ pub(crate) struct NeedViewModel {
 pub(crate) struct NeedFixViewModel {
     /// The label of the button, such as "Log in".
     pub(crate) label: String,
-    /// What it does.
-    pub(crate) action: NeedAction,
+    /// What it does; `None` for a button shown disabled, as Add plugin…
+    /// is until OTTY has the Plugins page.
+    pub(crate) action: Option<NeedAction>,
 }
 
 /// What the accounts need from the user, in the order of the accounts,
@@ -60,6 +62,7 @@ pub(crate) fn needs_of_account(
     login_expired_need(state, account)
         .into_iter()
         .chain(admin_key_need(state, account))
+        .chain(no_provider_need(state, account))
         .collect()
 }
 
@@ -105,12 +108,51 @@ fn admin_key_need(
     }
 
     Some(NeedViewModel {
-        place: account_name(state.profiles().saved(), account),
+        place: account_name(
+            state.registry(),
+            state.profiles().saved(),
+            account,
+        ),
         title: i18n::t(Key::AgentsNeedAdminKeyTitle).to_string(),
         line: i18n::t(Key::AgentsNeedAdminKeyText).to_string(),
         fix: Some(NeedFixViewModel {
             label: i18n::t(Key::AgentsAddAdminKey).to_string(),
-            action: NeedAction::AddAdminKey(profile.clone()),
+            action: Some(NeedAction::AddAdminKey(profile.clone())),
+        }),
+    })
+}
+
+/// The need of an account whose provider no entry of the registry serves
+/// (spec 2026-11-19-agent-plugins, "What the UI shows"): OTTY lists it by
+/// its host with its tokens and estimate, but reads none of its own
+/// numbers. Add plugin… stays disabled until OTTY has the Plugins page.
+fn no_provider_need(
+    state: &AgentsState,
+    account: &Account,
+) -> Option<NeedViewModel> {
+    if state.registry().provider_of(account.provider()).is_some() {
+        return None;
+    }
+
+    let found_in = match state.profiles().first_with(account) {
+        Some(shown) => state.agent_name(shown.profile().agent()).to_string(),
+        None => found_in_text(account.found_in().first()?, state.env().home()),
+    };
+
+    Some(NeedViewModel {
+        place: account_name(
+            state.registry(),
+            state.profiles().saved(),
+            account,
+        ),
+        title: i18n::t(Key::AgentsNeedNoProviderTitle).to_string(),
+        line: i18n::filled(
+            Key::TplAgentsNeedNoProviderText,
+            &[("host", account.provider().as_str()), ("agent", &found_in)],
+        ),
+        fix: Some(NeedFixViewModel {
+            label: i18n::t(Key::AgentsAddPlugin).to_string(),
+            action: None,
         }),
     })
 }
@@ -132,11 +174,15 @@ fn login_expired_need(
     let agent = state.agent_name(profile.agent());
     let fix = profiles.can_start(profile).then(|| NeedFixViewModel {
         label: i18n::filled(Key::TplAgentsOpenAgent, &[("agent", agent)]),
-        action: NeedAction::OpenAgent(profile.clone()),
+        action: Some(NeedAction::OpenAgent(profile.clone())),
     });
 
     Some(NeedViewModel {
-        place: account_name(state.profiles().saved(), account),
+        place: account_name(
+            state.registry(),
+            state.profiles().saved(),
+            account,
+        ),
         title: i18n::t(Key::AgentsNeedLoginExpiredTitle).to_string(),
         line: i18n::filled(
             Key::TplAgentsNeedLoginExpiredText,
@@ -170,7 +216,7 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
             ),
             fix: Some(NeedFixViewModel {
                 label: i18n::t(Key::AgentsAllowKeyring).to_string(),
-                action: NeedAction::AllowKeyring,
+                action: Some(NeedAction::AllowKeyring),
             }),
         });
     }
@@ -186,7 +232,7 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
         line: i18n::t(line).to_string(),
         fix: Some(NeedFixViewModel {
             label: i18n::t(Key::AgentsTryAgain).to_string(),
-            action: NeedAction::ReadKeyring,
+            action: Some(NeedAction::ReadKeyring),
         }),
     })
 }
@@ -212,7 +258,7 @@ fn profile_need(
         .can_log_in(profile)
         .then(|| NeedFixViewModel {
             label: i18n::t(Key::AgentsLogIn).to_string(),
-            action: NeedAction::LogIn(profile.clone()),
+            action: Some(NeedAction::LogIn(profile.clone())),
         });
 
     Some(NeedViewModel {
@@ -257,7 +303,7 @@ fn format_changed_need(
         line,
         fix: Some(NeedFixViewModel {
             label: i18n::t(Key::AgentsCopyReport).to_string(),
-            action: NeedAction::CopyReport(change.report(agent, &folder)),
+            action: Some(NeedAction::CopyReport(change.report(agent, &folder))),
         }),
     })
 }
@@ -281,7 +327,8 @@ fn format_changed_title(agent: &str, change: &FormatChange) -> String {
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        FormatChange, ProfileStatus, SavedProfiles, SourceError, SourceId,
+        FormatChange, ProfileStatus, ProviderRef, SavedProfiles, SourceError,
+        SourceId,
     };
 
     use super::*;
@@ -289,9 +336,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, at, chatgpt_login, claude, claude_work, codex, codex_work,
-        connected, limits_answer, limits_loaded, organization,
-        saved_with_admin_key, spend_loaded, spend_of, with_accounts,
-        with_profiles,
+        connected, deepseek_key_by_host, limits_answer, limits_loaded,
+        organization, registry_without_deepseek, saved_with_admin_key,
+        spend_loaded, spend_of, with_accounts, with_accounts_in, with_profiles,
     };
     use crate::types::SpendCount;
 
@@ -319,7 +366,7 @@ mod tests {
                 line: i18n::t(Key::AgentsNeedAdminKeyText).to_string(),
                 fix: Some(NeedFixViewModel {
                     label: i18n::t(Key::AgentsAddAdminKey).to_string(),
-                    action: NeedAction::AddAdminKey(claude()),
+                    action: Some(NeedAction::AddAdminKey(claude())),
                 }),
             }]
         );
@@ -332,7 +379,7 @@ mod tests {
                     line: i18n::t(Key::AgentsNotLoggedInHint).to_string(),
                     fix: Some(NeedFixViewModel {
                         label: i18n::t(Key::AgentsLogIn).to_string(),
-                        action: NeedAction::LogIn(codex()),
+                        action: Some(NeedAction::LogIn(codex())),
                     }),
                 },
                 NeedViewModel {
@@ -381,7 +428,7 @@ mod tests {
                         Key::TplAgentsOpenAgent,
                         &[("agent", "Codex")]
                     ),
-                    action: NeedAction::OpenAgent(codex()),
+                    action: Some(NeedAction::OpenAgent(codex())),
                 }),
             }]
         );
@@ -433,9 +480,9 @@ mod tests {
                 ),
                 fix: Some(NeedFixViewModel {
                     label: i18n::t(Key::AgentsCopyReport).to_string(),
-                    action: NeedAction::CopyReport(
+                    action: Some(NeedAction::CopyReport(
                         change.report("Claude Code", "~/.claude")
-                    ),
+                    )),
                 }),
             }]
         );
@@ -470,6 +517,54 @@ mod tests {
                 &[("agent", "Claude Code"), ("tested", "2.1.0")]
             )
         );
+    }
+
+    /// Spec 2026-11-19-agent-plugins, "What the UI shows": a key for a
+    /// host no entry serves is an account by its host that asks for a
+    /// provider plugin, with Add plugin… disabled until the Plugins page.
+    #[test]
+    fn a_key_for_a_host_with_no_entry_asks_for_a_provider_plugin() {
+        let state = with_accounts_in(
+            registry_without_deepseek(),
+            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
+            SavedProfiles::default(),
+        );
+
+        let needs = account_needs(&state);
+
+        assert_eq!(
+            needs,
+            vec![NeedViewModel {
+                place: format!(
+                    "api.deepseek.com · {}",
+                    i18n::filled(Key::TplAgentsAccountKey, &[("last", "seek")])
+                ),
+                title: i18n::t(Key::AgentsNeedNoProviderTitle).to_string(),
+                line: i18n::filled(
+                    Key::TplAgentsNeedNoProviderText,
+                    &[("host", "api.deepseek.com"), ("agent", "Claude Code")]
+                ),
+                fix: Some(NeedFixViewModel {
+                    label: i18n::t(Key::AgentsAddPlugin).to_string(),
+                    action: None,
+                }),
+            }]
+        );
+    }
+
+    /// With the DeepSeek entry, the same key is a DeepSeek account and
+    /// needs nothing.
+    #[test]
+    fn a_key_for_a_host_an_entry_serves_needs_no_plugin() {
+        let state = with_accounts(
+            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
+            SavedProfiles::default(),
+        );
+
+        let accounts = state.profiles().accounts();
+
+        assert!(account_needs(&state).is_empty());
+        assert_eq!(accounts[0].provider(), &ProviderRef::of_id("deepseek"));
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use std::time::SystemTime;
 
-use iced::widget::svg;
 use otty_agents::{Account, Profile, Project};
 use otty_app_domain::folder_path::{
     folder_name, short_folder_path, tilde_path,
@@ -17,6 +16,7 @@ use super::super::state::AgentsState;
 use super::super::stats_dialog::can_show_project_stats;
 use super::account_name::account_name;
 use super::age::age_text;
+use super::entry_icon::EntryIcon;
 use super::profile_page::PaysThroughViewModel;
 use super::reset_time::date_time_text;
 use super::short_number::account_number;
@@ -86,8 +86,8 @@ impl<'a> ProjectViewModel<'a> {
         let rows = shown
             .iter()
             .map(|session| {
-                let icon = state.icon_of(session.entry().profile().agent());
-                cells(session, icon, now)
+                let icon = state.agent_icon(session.entry().profile().agent());
+                cells(session, &icon, now)
             })
             .collect();
         let empty_message = shown
@@ -163,7 +163,7 @@ impl ProjectInfoViewModel {
             .iter()
             .map(|shown| ProjectProfileViewModel {
                 profile: shown.profile().clone(),
-                icon: state.icon_of(shown.profile().agent()),
+                icon: state.agent_icon(shown.profile().agent()),
                 name: shown.profile().name().to_string(),
             })
             .collect();
@@ -173,8 +173,12 @@ impl ProjectInfoViewModel {
             .into_iter()
             .filter(|account| is_paid_through(account, &shown))
             .map(|account| PaysThroughViewModel {
-                provider: account.provider().name(),
-                name: account_name(state.profiles().saved(), &account),
+                icon: state.provider_icon(account.provider()),
+                name: account_name(
+                    state.registry(),
+                    state.profiles().saved(),
+                    &account,
+                ),
                 number: account_number(state, &account),
                 account,
             })
@@ -216,8 +220,8 @@ impl ProjectInfoViewModel {
 pub(crate) struct ProjectProfileViewModel {
     /// The profile, sent when the chip is pressed.
     pub(crate) profile: Profile,
-    /// The name of its agent's icon.
-    pub(crate) icon: &'static str,
+    /// The icon of its agent.
+    pub(crate) icon: EntryIcon,
     /// The profile name.
     pub(crate) name: String,
 }
@@ -244,13 +248,15 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
 }
 
 /// The cells of a session: title, its profile with the agent's `icon` as
-/// a link to the profile, its agent and how long ago it changed.
+/// a link to the profile, its agent and how long ago it changed. The
+/// table draws only SVG icons, so an agent with none shows the icon of
+/// Agents mode.
 fn cells(
     session: &TableSession<'_>,
-    icon: &str,
+    icon: &EntryIcon,
     now: SystemTime,
 ) -> Vec<TableCell> {
-    let icon = svg::Handle::from_memory(icons::agent_icon(icon));
+    let icon = icon.svg_or(icons::MODE_AGENTS);
 
     vec![
         TableCell::plain(session.title()),
@@ -274,7 +280,6 @@ fn is_paid_through(account: &Account, shown: &[&ProfileState]) -> bool {
 mod tests {
     use std::path::PathBuf;
 
-    use iced::widget::svg;
     use otty_agents::{ProfileStatus, SavedProfiles};
     use otty_app_theme::icons;
     use otty_ui_kit::components::tag_search::TagSearchAction;
@@ -335,7 +340,7 @@ mod tests {
         assert_eq!(project.sort, crate::session_sort::newest_first());
         let profile = |icon: &str, name: &str| {
             TableCell::icon_link(
-                svg::Handle::from_memory(icons::agent_icon(icon)),
+                crate::testing::agent_icon(icon).svg_or(icons::MODE_AGENTS),
                 name,
             )
         };
@@ -425,12 +430,12 @@ mod tests {
             [
                 ProjectProfileViewModel {
                     profile: claude(),
-                    icon: "claude-code",
+                    icon: crate::testing::agent_icon("claude-code"),
                     name: String::from("Claude Code"),
                 },
                 ProjectProfileViewModel {
                     profile: codex(),
-                    icon: "codex",
+                    icon: crate::testing::agent_icon("codex"),
                     name: String::from("Codex"),
                 },
             ]

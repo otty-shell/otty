@@ -75,8 +75,6 @@ per-file numbers.
   and icons only from it.
 - **Official plugin**: a plugin whose repository is under
   `github.com/otty-shell/`, the GitHub organization of the OTTY team.
-- **Parity check**: running today's in-core reader and the plugin on the
-  same real files and comparing token and money totals.
 
 Words of spec `2026-11-19-agents-accounts` (Agent, Profile, Provider,
 Account, Source, Need) keep their meaning.
@@ -281,14 +279,16 @@ Grouped by vendor, one plugin each (changed on 2026-11-20):
   organization may be renamed later, so OTTY keeps its name in one
   constant.
 
-### 11. Migration: delete only at parity
+### 11. Migration: a plugin replaces its in-core reader in one issue
 
-Today's in-core code of an agent or a provider is deleted only when its
-plugin gives the same token and money totals on the owner's real files
-(read-only, printing totals only). Codex goes first among the hard cases:
-its reader keeps state across lines, some files are zstd-compressed, and
-its files take 10.8 GB; the spike did not cover it. Kilo, Goose and
-Moonshot have no plugin and need no parity check.
+A plugin replaces the in-core reader of its agent or provider in the same
+issue, and that issue deletes the in-core code. The owner checks the
+result by hand on the real files; nothing is compared with the old
+version, not even from git (2026-11-20). Until then the in-core readers
+stay only as built-in registry entries that keep the app working. Codex
+goes first among the hard cases: its reader keeps state across lines,
+some files are zstd-compressed, and its files take 10.8 GB; the spike did
+not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
 
 ### 12. UI
 
@@ -1074,18 +1074,9 @@ table above.
 
 ### `agents.json`
 
-`agents.json` already saves lowercase ids (`"provider": "openai"`,
-`"agent": "claude-code"`) and keeps an unknown id without reading it
-(tests in `saved_profiles/`). The official plugins' parts use the same ids
-(agents `claude-code`, `codex`, `opencode`; providers `anthropic`,
-`openai`, `deepseek`, `openrouter`), so old entries work with no rewrite.
-Entries with `moonshot`, `kilo` or `goose` stay in the file: such a
-provider shows as an account with no provider plugin, such an agent's
-profiles leave the lists. New entries may use `host:<host>` as the provider for accounts
-of a provider no part serves. The file keeps its version; nothing is
-removed by the migration.
+No compatibility with earlier agents.json: Agents mode was never released.
 
-## Migration and parity check
+## Migration
 
 | Today in `crates/agents/src/` | Goes to |
 | --- | --- |
@@ -1105,20 +1096,12 @@ removed by the migration.
 | `account_numbers/moonshot.rs` | Deleted, not ported (issue 17) |
 | `keyring_entry.rs` (Goose entry, `KEY_VARIABLES`) | Deleted, not ported (issue 17); `system_keyring.rs` becomes the keyring host operation |
 
-**Parity check.** `crates/agents/examples/parity.rs` (issue 07) takes an
-agent id or a provider id and a profile folder, runs the in-core reader
-and the plugin's part on the same files, and prints only: files read,
-answers, token totals per (day, model) and per kind, money totals, records
-seen and understood, and the time each side took. Never a key, a token, a
-prompt or session text. It opens every file read-only. It is run with
-`nice` and one job at a time (the owner's machine freezes under heavy
-parallel work). The in-core code of an agent or provider is deleted in the
-same issue only after the check shows equal totals on the owner's real
-files, and the issue's comments record the totals and times.
+**No parity check.** The issue that brings a plugin part deletes the
+in-core code it replaces; the owner checks the numbers by hand.
 
 Order: registry first (the UI switches over while the core still reads);
-then the engine, SDK and host operations; then the plugin adapters and
-the parity tool; then install and the Plugins page; then the agent parts
+then the engine, SDK and host operations; then the plugin adapters; then
+install and the Plugins page; then the agent parts
 Codex (OpenAI plugin) and Claude Code (Anthropic plugin), then the
 OpenCode plugin; then the provider parts and provider plugins;
 then the cleanup and the docs.

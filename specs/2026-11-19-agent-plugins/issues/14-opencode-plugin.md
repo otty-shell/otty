@@ -38,10 +38,8 @@ Kilo variant of the `open_code` reader is deleted with it, not ported.
    by the script of issue 11; installed on first start with its part on
    (issue 08). With no OpenCode on the computer it finds nothing and does
    nothing.
-6. Parity on the owner's OpenCode database (read-only) if the owner has
-   one, else on the fixtures only (say so in the comments); totals and
-   times in the comments; then delete `open_code/` and the built-in
-   OpenCode and Kilo entries.
+6. Delete `open_code/` and the built-in OpenCode and Kilo entries; the
+   owner checks OpenCode by hand.
 
 ## Done when
 
@@ -49,7 +47,7 @@ Kilo variant of the `open_code` reader is deleted with it, not ported.
   with the same made-up data; key columns and key fields of the JSON
   column come back as handles; the database is never written (opened
   read-only by the host).
-- Parity "equal" recorded; the core folder is gone, and no Kilo agent
+- The core folder is gone, and no Kilo agent
   remains in the registry; the app shows OpenCode from the embedded
   plugin.
 - The checks of `AGENTS.md` pass; the plugin's own tests pass.

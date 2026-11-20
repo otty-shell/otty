@@ -13,7 +13,7 @@ use super::spend::DatabaseSpend;
 use super::stats::DatabaseStats;
 use crate::account::{Account, AccountKind};
 use crate::account_key::AccountKey;
-use crate::agent::{Agent, AgentDescriptor};
+use crate::agent::{Agent, AgentEntry, ConfigFolder};
 use crate::bill::BillSource;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -39,11 +39,12 @@ const SESSION_SOURCES: [SourceId; 1] = [SourceId::AgentDatabase];
 /// ```
 /// use otty_agents::{Agent, OpenCodeAgent};
 ///
-/// assert_eq!(OpenCodeAgent::kilo().descriptor().name(), "Kilo");
-/// assert_eq!(OpenCodeAgent::opencode().descriptor().program(), "opencode");
+/// assert_eq!(OpenCodeAgent::kilo().entry().name(), "Kilo");
+/// assert_eq!(OpenCodeAgent::opencode().entry().program(), "opencode");
 /// ```
 #[derive(Debug)]
 pub struct OpenCodeAgent {
+    entry: AgentEntry,
     location: Arc<DatabaseLocation>,
 }
 
@@ -65,6 +66,7 @@ impl OpenCodeAgent {
 
     fn of(fork: &'static Fork) -> Self {
         Self {
+            entry: fork.entry(),
             location: Arc::new(DatabaseLocation::new(fork)),
         }
     }
@@ -78,8 +80,17 @@ impl OpenCodeAgent {
 }
 
 impl Agent for OpenCodeAgent {
-    fn descriptor(&self) -> &AgentDescriptor {
-        self.fork().descriptor()
+    fn entry(&self) -> &AgentEntry {
+        &self.entry
+    }
+
+    fn config_folder(&self) -> ConfigFolder {
+        self.fork().config_folder()
+    }
+
+    /// Yes: the database keeps what each answer cost.
+    fn writes_cost(&self) -> bool {
+        true
     }
 
     /// The agent's folder in `XDG_DATA_HOME`, or in `~/.local/share`.
@@ -220,14 +231,14 @@ mod tests {
 
     fn default_kilo() -> Profile {
         Profile::default_for(
-            KILO.descriptor().id(),
+            KILO.id(),
             "Kilo",
             PathBuf::from("/home/user/.local/share/kilo"),
         )
     }
 
     fn added(fork: &Fork, folder: &Path) -> Profile {
-        Profile::added(fork.descriptor().id(), "Test", folder.to_path_buf())
+        Profile::added(fork.id(), "Test", folder.to_path_buf())
     }
 
     #[test]
@@ -350,6 +361,6 @@ mod tests {
         assert!(kilo.spend_counter().is_some());
         assert!(kilo.stats_source().is_some());
         assert!(kilo.bill_source().is_none());
-        assert!(kilo.descriptor().writes_cost());
+        assert!(kilo.writes_cost());
     }
 }

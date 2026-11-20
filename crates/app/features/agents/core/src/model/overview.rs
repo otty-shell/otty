@@ -47,7 +47,7 @@ pub(crate) struct AccountTableRowViewModel {
     /// The provider and the login, such as "OpenAI · you@example.com".
     pub(crate) name: String,
     /// The name of the provider, such as "OpenAI".
-    pub(crate) provider: &'static str,
+    pub(crate) provider: String,
     /// Its number with its word, such as "42 % used", or "—".
     pub(crate) now: String,
     /// The color of the number: a state that needs the user is a badge.
@@ -62,8 +62,12 @@ impl AccountTableRowViewModel {
             .unwrap_or_else(|| (UNKNOWN.to_string(), SessionTone::Muted));
 
         Self {
-            name: account_name(state.profiles().saved(), &account),
-            provider: account.provider().name(),
+            name: account_name(
+                state.registry(),
+                state.profiles().saved(),
+                &account,
+            ),
+            provider: state.provider_name(account.provider()).to_string(),
             now,
             tone,
             is_hidden: state.profiles().is_account_hidden(&account),
@@ -111,7 +115,7 @@ pub(crate) struct ProfileTableRowViewModel {
     /// The profile name.
     pub(crate) name: String,
     /// The name of its agent, such as "Claude Code".
-    pub(crate) agent: &'static str,
+    pub(crate) agent: String,
     /// The version of the agent's program, or "—".
     pub(crate) version: String,
     /// The tokens it spent today with their word, the state that needs
@@ -133,7 +137,7 @@ impl ProfileTableRowViewModel {
         Self {
             profile: profile.clone(),
             name: profile.name().to_string(),
-            agent: state.agent_name(profile.agent()),
+            agent: state.agent_name(profile.agent()).to_string(),
             version: version.to_string(),
             today,
             tone,
@@ -147,7 +151,7 @@ impl ProfileTableRowViewModel {
         Self {
             profile: profile.clone(),
             name: profile.name().to_string(),
-            agent: state.agent_name(profile.agent()),
+            agent: state.agent_name(profile.agent()).to_string(),
             version: UNKNOWN.to_string(),
             today: hidden_word(),
             tone: SessionTone::Muted,
@@ -178,7 +182,8 @@ mod tests {
     /// Codex logged in to the [`chatgpt_login`] with 42 % used, and Codex ·
     /// Work not logged in; Claude Code 2.1.328 spent 1.8M tokens today.
     fn found() -> AgentsState {
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let loaded = profiles_with_accounts_loaded(
             &[
@@ -231,7 +236,7 @@ mod tests {
                 AccountTableRowViewModel {
                     account: organization(),
                     name: String::from("Anthropic · dev@example.com"),
-                    provider: "Anthropic",
+                    provider: String::from("Anthropic"),
                     now: String::from(UNKNOWN),
                     tone: SessionTone::Muted,
                     is_hidden: false,
@@ -239,7 +244,7 @@ mod tests {
                 AccountTableRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
                     name: String::from("OpenAI · you@example.com"),
-                    provider: "OpenAI",
+                    provider: String::from("OpenAI"),
                     now: i18n::with_count(Key::TplAgentsPercentUsed, 42),
                     tone: SessionTone::Muted,
                     is_hidden: false,
@@ -259,7 +264,7 @@ mod tests {
             .needs
             .iter()
             .filter_map(|need| need.fix.as_ref())
-            .map(|fix| fix.action.clone())
+            .filter_map(|fix| fix.action.clone())
             .collect();
         assert_eq!(actions, vec![NeedAction::AddAdminKey(claude())]);
         assert_eq!(vm.needs.len(), 1);
@@ -277,7 +282,7 @@ mod tests {
                 ProfileTableRowViewModel {
                     profile: claude(),
                     name: String::from("Claude Code"),
-                    agent: "Claude Code",
+                    agent: String::from("Claude Code"),
                     version: String::from("2.1.328"),
                     today: i18n::filled(
                         Key::TplAgentsAmountToday,
@@ -289,7 +294,7 @@ mod tests {
                 ProfileTableRowViewModel {
                     profile: codex(),
                     name: String::from("Codex"),
-                    agent: "Codex",
+                    agent: String::from("Codex"),
                     version: String::from(UNKNOWN),
                     today: String::from(UNKNOWN),
                     tone: SessionTone::Muted,
@@ -298,7 +303,7 @@ mod tests {
                 ProfileTableRowViewModel {
                     profile: codex_work(),
                     name: String::from("Codex · Work"),
-                    agent: "Codex",
+                    agent: String::from("Codex"),
                     version: String::from(UNKNOWN),
                     today: i18n::t(Key::AgentsStateNeedsLogin).to_string(),
                     tone: SessionTone::Failed,

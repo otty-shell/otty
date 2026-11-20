@@ -5,13 +5,15 @@ use std::path::PathBuf;
 
 use crate::admin_key::AdminKeyRef;
 use crate::key_fingerprint::{KeyFingerprint, SeenKey};
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
+use crate::registry::Registry;
 use crate::spend::ModelTokens;
 
 /// What tells one account at a provider from another (spec Decision 2).
 ///
 /// Two accounts are the same when they are at the same provider and have
-/// the same identity.
+/// the same identity (spec 2026-11-19-agent-plugins, "Identity and links do
+/// not depend on a provider plugin").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AccountIdentity {
     /// The id of a login, such as the account id of a Claude login or of a
@@ -73,7 +75,7 @@ pub enum FoundIn {
 /// only by its [`KeyFingerprint`], and the token stays in the agent's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
-    provider: Provider,
+    provider: ProviderRef,
     identity: AccountIdentity,
     login: AccountLogin,
     plan: Option<String>,
@@ -82,9 +84,10 @@ pub struct Account {
 }
 
 impl Account {
-    /// The provider of the account.
-    pub fn provider(&self) -> Provider {
-        self.provider
+    /// The provider of the account: its id, or the host of the server its
+    /// key is for when no id was named and no entry serves that host.
+    pub fn provider(&self) -> &ProviderRef {
+        &self.provider
     }
 
     /// What tells the account from the others of its provider.
@@ -141,62 +144,18 @@ impl Account {
         !matches!(self.identity, AccountIdentity::KeyFingerprint(_))
     }
 
-    /// The page of the provider where the user sees the account's own
-    /// usage, opened in the browser: the plan's page for a subscription,
-    /// the console's usage page for a key or an organization.
-    ///
-    /// ```
-    /// use std::path::PathBuf;
-    ///
-    /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
-    /// };
-    ///
-    /// let login = Account::new(
-    ///     Provider::OpenAI,
-    ///     AccountIdentity::AccountId("made-up-account".into()),
-    ///     AccountLogin::Unnamed,
-    ///     AccountKind::Limits,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
-    /// );
-    ///
-    /// assert_eq!(
-    ///     login.usage_page(),
-    ///     "https://chatgpt.com/codex/settings/usage"
-    /// );
-    /// ```
-    pub fn usage_page(&self) -> &'static str {
-        let is_plan = self.kind != AccountKind::Money;
-
-        match self.provider {
-            Provider::Anthropic if is_plan => {
-                "https://claude.ai/settings/usage"
-            },
-            Provider::Anthropic => {
-                "https://console.anthropic.com/settings/usage"
-            },
-            Provider::OpenAI if is_plan => {
-                "https://chatgpt.com/codex/settings/usage"
-            },
-            Provider::OpenAI => "https://platform.openai.com/usage",
-            Provider::DeepSeek => "https://platform.deepseek.com/usage",
-            Provider::OpenRouter => "https://openrouter.ai/activity",
-            Provider::Moonshot => "https://platform.moonshot.ai/console",
-            Provider::Kilo => "https://app.kilo.ai/usage",
-        }
-    }
-
     /// An account at `provider` found in `found_in`, with no plan.
     ///
     /// ```
     /// use std::path::PathBuf;
     ///
     /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+    ///     ProviderRef,
     /// };
     ///
     /// let account = Account::new(
-    ///     Provider::OpenAI,
+    ///     ProviderRef::of_id("openai"),
     ///     AccountIdentity::AccountId("made-up-account".into()),
     ///     AccountLogin::Email("you@example.com".into()),
     ///     AccountKind::Limits,
@@ -208,7 +167,7 @@ impl Account {
     /// assert_eq!(account.found_in().len(), 1);
     /// ```
     pub fn new(
-        provider: Provider,
+        provider: ProviderRef,
         identity: AccountIdentity,
         login: AccountLogin,
         kind: AccountKind,
@@ -230,16 +189,16 @@ impl Account {
     /// key, an admin key, reads.
     ///
     /// ```
-    /// use otty_agents::{Account, AdminKeyRef, FoundIn, Provider};
+    /// use otty_agents::{Account, AdminKeyRef, FoundIn, ProviderRef};
     ///
     /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
-    /// let account = Account::added(Provider::DeepSeek, key.clone());
+    /// let account = Account::added(ProviderRef::of_id("deepseek"), key.clone());
     ///
     /// assert_eq!(account.added_key(), Some(&key));
     /// assert_eq!(account.found_in(), [FoundIn::AddedByUser]);
     /// assert!(account.can_be_saved());
     /// ```
-    pub fn added(provider: Provider, key: AdminKeyRef) -> Self {
+    pub fn added(provider: ProviderRef, key: AdminKeyRef) -> Self {
         Self::new(
             provider,
             AccountIdentity::AddedKey(key.clone()),
@@ -266,19 +225,21 @@ impl Account {
     /// does per session, or the tokens went to its provider and the profile
     /// has no other account there. The tokens of a profile with several
     /// accounts of one provider that does not write which one paid are not
-    /// split between them, and count for none.
+    /// split between them, and count for none. A provider named by its host
+    /// is the one of `registry` that serves the host.
     ///
     /// ```
     /// use std::path::PathBuf;
     ///
     /// use otty_agents::{
     ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-    ///     ModelTokens, Provider, TokenCount,
+    ///     ModelTokens, ProviderRef, Registry, TokenCount,
     /// };
     ///
+    /// let registry = Registry::default();
     /// let login = |id: &str| {
     ///     Account::new(
-    ///         Provider::OpenAI,
+    ///         ProviderRef::of_id("openai"),
     ///         AccountIdentity::AccountId(id.into()),
     ///         AccountLogin::Unnamed,
     ///         AccountKind::Limits,
@@ -286,17 +247,25 @@ impl Account {
     ///     )
     /// };
     /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
-    ///     .with_provider(Some(Provider::OpenAI));
+    ///     .with_provider(Some(ProviderRef::of_id("openai")));
     ///
-    /// assert!(login("one").pays_for(&tokens, &[login("one")]));
-    /// assert!(!login("one").pays_for(&tokens, &[login("one"), login("two")]));
+    /// assert!(login("one").pays_for(&tokens, &[login("one")], &registry));
+    /// assert!(!login("one").pays_for(
+    ///     &tokens,
+    ///     &[login("one"), login("two")],
+    ///     &registry
+    /// ));
     /// ```
     pub fn pays_for(
         &self,
         tokens: &ModelTokens,
         profile_accounts: &[Account],
+        registry: &Registry,
     ) -> bool {
-        if tokens.provider() != Some(self.provider) {
+        let is_of_provider = tokens.provider().is_some_and(|provider| {
+            registry.is_same_provider(provider, &self.provider)
+        });
+        if !is_of_provider {
             return false;
         }
 
@@ -304,9 +273,9 @@ impl Account {
             return *written == self.identity;
         }
 
-        let mut of_provider = profile_accounts
-            .iter()
-            .filter(|found| found.provider == self.provider);
+        let mut of_provider = profile_accounts.iter().filter(|found| {
+            registry.is_same_provider(&found.provider, &self.provider)
+        });
 
         match (of_provider.next(), of_provider.next()) {
             (Some(only), None) => only.is_same_account(self),
@@ -317,7 +286,7 @@ impl Account {
     /// The account of the key `key` at `provider`, paid per token, found
     /// in `found_in`.
     pub(crate) fn of_key(
-        provider: Provider,
+        provider: ProviderRef,
         key: &SeenKey,
         found_in: FoundIn,
     ) -> Self {
@@ -328,6 +297,13 @@ impl Account {
             AccountKind::Money,
             found_in,
         )
+    }
+
+    /// The same account with its provider named as `registry` names it: a
+    /// host some entry serves becomes the id of that entry.
+    fn with_provider_resolved(mut self, registry: &Registry) -> Self {
+        self.provider = registry.resolve(&self.provider);
+        self
     }
 
     /// Takes in `copy`, another copy of this account found elsewhere: its
@@ -351,7 +327,10 @@ impl Account {
 
 /// The accounts of all profiles with each account once (spec Decision 2):
 /// the accounts at the same provider with the same identity are one, found
-/// in every place of them.
+/// in every place of them. A provider named by the host of its server is
+/// first named as `registry` names it, so a key found for a host is one
+/// account with the same key found for the id of the provider that serves
+/// the host; with no such provider it stays known by its host.
 ///
 /// The accounts keep the order they come in. A merged account keeps what
 /// the first of its copies tells, with the plan and the email filled in
@@ -362,12 +341,12 @@ impl Account {
 ///
 /// use otty_agents::{
 ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-///     KeyFingerprint, Provider, merge_accounts,
+///     KeyFingerprint, ProviderRef, Registry, merge_accounts,
 /// };
 ///
 /// let key_in = |folder: &str| {
 ///     Account::new(
-///         Provider::DeepSeek,
+///         ProviderRef::Host("api.deepseek.com".into()),
 ///         AccountIdentity::KeyFingerprint(KeyFingerprint::of("sk-made-up")),
 ///         AccountLogin::Key(None),
 ///         AccountKind::Money,
@@ -375,12 +354,28 @@ impl Account {
 ///     )
 /// };
 ///
-/// let accounts = merge_accounts(vec![key_in("/a"), key_in("/b")]);
+/// let accounts =
+///     merge_accounts(vec![key_in("/a"), key_in("/b")], &Registry::default());
 ///
 /// assert_eq!(accounts.len(), 1);
 /// assert_eq!(accounts[0].found_in().len(), 2);
 /// ```
-pub fn merge_accounts(accounts: Vec<Account>) -> Vec<Account> {
+pub fn merge_accounts(
+    accounts: Vec<Account>,
+    registry: &Registry,
+) -> Vec<Account> {
+    let resolved = accounts
+        .into_iter()
+        .map(|account| account.with_provider_resolved(registry))
+        .collect();
+
+    join_copies(resolved)
+}
+
+/// `accounts` with the copies of each account made one, as
+/// [`merge_accounts`] does, with each provider named as it is: what a
+/// reader of this crate does with the accounts of one profile.
+pub(crate) fn join_copies(accounts: Vec<Account>) -> Vec<Account> {
     let mut merged: Vec<Account> = Vec::new();
 
     for account in accounts {
@@ -405,7 +400,7 @@ mod tests {
 
     fn chatgpt(account_id: &str, folder: &str) -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(account_id.into()),
             AccountLogin::Email(format!("{account_id}@example.com")),
             AccountKind::Limits,
@@ -413,7 +408,7 @@ mod tests {
         )
     }
 
-    fn key(provider: Provider, key: &str, folder: &str) -> Account {
+    fn key(provider: ProviderRef, key: &str, folder: &str) -> Account {
         Account::new(
             provider,
             AccountIdentity::KeyFingerprint(KeyFingerprint::of(key)),
@@ -438,7 +433,7 @@ mod tests {
     /// folder is one account.
     #[test]
     fn the_same_login_in_two_folders_is_one_account() {
-        let accounts = merge_accounts(vec![
+        let accounts = join_copies(vec![
             chatgpt("made-up-account", "/home/user/.codex"),
             chatgpt("made-up-account", "/home/user/.codex-work"),
         ]);
@@ -455,7 +450,7 @@ mod tests {
 
     #[test]
     fn two_different_chatgpt_logins_stay_two() {
-        let accounts = merge_accounts(vec![
+        let accounts = join_copies(vec![
             chatgpt("made-up-one", "/home/user/.codex"),
             chatgpt("made-up-two", "/home/user/.codex-work"),
         ]);
@@ -473,19 +468,19 @@ mod tests {
 
     #[test]
     fn the_same_key_in_two_places_is_one_account() {
-        let accounts = merge_accounts(vec![
+        let accounts = join_copies(vec![
             key(
-                Provider::DeepSeek,
+                ProviderRef::of_id("deepseek"),
                 "sk-made-up-key-0001",
                 "/home/user/.claude",
             ),
             key(
-                Provider::DeepSeek,
+                ProviderRef::of_id("deepseek"),
                 "sk-made-up-key-0002",
                 "/home/user/.claude",
             ),
             key(
-                Provider::DeepSeek,
+                ProviderRef::of_id("deepseek"),
                 "sk-made-up-key-0001",
                 "/home/user/.claude-deepseek",
             ),
@@ -498,9 +493,17 @@ mod tests {
 
     #[test]
     fn the_same_identity_at_two_providers_is_two_accounts() {
-        let accounts = merge_accounts(vec![
-            key(Provider::DeepSeek, "sk-made-up-key", "/home/user/.claude"),
-            key(Provider::Moonshot, "sk-made-up-key", "/home/user/.claude"),
+        let accounts = join_copies(vec![
+            key(
+                ProviderRef::of_id("deepseek"),
+                "sk-made-up-key",
+                "/home/user/.claude",
+            ),
+            key(
+                ProviderRef::of_id("moonshot"),
+                "sk-made-up-key",
+                "/home/user/.claude",
+            ),
         ]);
 
         assert_eq!(accounts.len(), 2);
@@ -508,7 +511,7 @@ mod tests {
 
     #[test]
     fn a_place_found_twice_is_listed_once() {
-        let accounts = merge_accounts(vec![
+        let accounts = join_copies(vec![
             chatgpt("made-up-account", "/home/user/.codex"),
             chatgpt("made-up-account", "/home/user/.codex"),
         ]);
@@ -519,7 +522,7 @@ mod tests {
     #[test]
     fn a_merged_account_fills_in_the_plan_and_the_email_it_lacks() {
         let unnamed = Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId("made-up-account".into()),
             AccountLogin::Unnamed,
             AccountKind::Limits,
@@ -528,7 +531,7 @@ mod tests {
         let named = chatgpt("made-up-account", "/home/user/.codex-work")
             .with_plan(Some("Pro".into()));
 
-        let accounts = merge_accounts(vec![unnamed, named]);
+        let accounts = join_copies(vec![unnamed, named]);
 
         assert_eq!(accounts[0].plan(), Some("Pro"));
         assert_eq!(
@@ -539,7 +542,7 @@ mod tests {
 
     fn organization(id: &str, folder: &str) -> Account {
         Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::OrganizationId(id.into()),
             AccountLogin::Email("dev@example.com".into()),
             AccountKind::Money,
@@ -553,7 +556,7 @@ mod tests {
         let work = chatgpt("made-up-account", "/home/user/.codex-work");
         let other = chatgpt("made-up-other", "/home/user/.codex");
         let same_id_elsewhere = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::AccountId("made-up-account".into()),
             AccountLogin::Unnamed,
             AccountKind::Limits,
@@ -571,7 +574,11 @@ mod tests {
     fn only_an_organization_has_an_organization_id() {
         let organization = organization("made-up-org", "/home/user/.claude");
         let login = chatgpt("made-up-account", "/home/user/.codex");
-        let key = key(Provider::Anthropic, "sk-made-up", "/home/user/.claude");
+        let key = key(
+            ProviderRef::of_id("anthropic"),
+            "sk-made-up",
+            "/home/user/.claude",
+        );
 
         assert_eq!(organization.organization_id(), Some("made-up-org"));
         assert_eq!(login.organization_id(), None);
@@ -583,14 +590,14 @@ mod tests {
     #[test]
     fn only_an_account_with_an_id_an_organization_or_an_email_can_be_saved() {
         let email = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::Email("me@example.com".into()),
             AccountLogin::Email("me@example.com".into()),
             AccountKind::Limits,
             FoundIn::ProfileFolder("/home/user/.claude".into()),
         );
         let organization = Account::new(
-            Provider::Anthropic,
+            ProviderRef::of_id("anthropic"),
             AccountIdentity::OrganizationId("made-up-org".into()),
             AccountLogin::Unnamed,
             AccountKind::Money,
@@ -598,7 +605,7 @@ mod tests {
         );
 
         let added = Account::added(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
         );
 
@@ -607,8 +614,12 @@ mod tests {
         assert!(organization.can_be_saved());
         assert!(added.can_be_saved());
         assert!(
-            !key(Provider::DeepSeek, "sk-made-up-key", "/home/user/.claude")
-                .can_be_saved()
+            !key(
+                ProviderRef::of_id("deepseek"),
+                "sk-made-up-key",
+                "/home/user/.claude"
+            )
+            .can_be_saved()
         );
     }
 
@@ -619,18 +630,22 @@ mod tests {
     fn an_added_account_is_known_by_the_place_of_its_key() {
         let in_file = || {
             Account::added(
-                Provider::DeepSeek,
+                ProviderRef::of_id("deepseek"),
                 AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
             )
         };
         let in_variable = Account::added(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
         );
-        let found = key(Provider::DeepSeek, "sk-made-up", "/home/user/.claude");
+        let found = key(
+            ProviderRef::of_id("deepseek"),
+            "sk-made-up",
+            "/home/user/.claude",
+        );
 
         let accounts =
-            merge_accounts(vec![in_file(), in_variable, in_file(), found]);
+            join_copies(vec![in_file(), in_variable, in_file(), found]);
 
         assert_eq!(accounts.len(), 3);
         assert_eq!(accounts[0].kind(), AccountKind::Money);
@@ -644,55 +659,83 @@ mod tests {
         assert_eq!(accounts[2].added_key(), None);
     }
 
-    /// Open usage page: a subscription opens the page of its plan, a key
-    /// or an organization the usage page of the provider's console.
-    #[test]
-    fn each_account_opens_the_usage_page_of_its_provider() {
-        let claude_max = Account::new(
-            Provider::Anthropic,
-            AccountIdentity::AccountId("made-up-account".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Limits,
-            FoundIn::ProfileFolder("/home/user/.claude".into()),
-        );
-        let cases = [
-            (claude_max, "https://claude.ai/settings/usage"),
-            (
-                key(
-                    Provider::Anthropic,
-                    "sk-ant-made-up",
-                    "/home/user/.claude",
-                ),
-                "https://console.anthropic.com/settings/usage",
-            ),
-            (
-                chatgpt("made-up-account", "/home/user/.codex"),
-                "https://chatgpt.com/codex/settings/usage",
-            ),
-            (
-                key(Provider::OpenAI, "sk-made-up", "/home/user/.codex"),
-                "https://platform.openai.com/usage",
-            ),
-            (
-                key(Provider::DeepSeek, "sk-made-up", "/home/user/.claude"),
-                "https://platform.deepseek.com/usage",
-            ),
-            (
-                key(Provider::OpenRouter, "sk-made-up", "/home/user/.claude"),
-                "https://openrouter.ai/activity",
-            ),
-            (
-                key(Provider::Moonshot, "sk-made-up", "/home/user/.claude"),
-                "https://platform.moonshot.ai/console",
-            ),
-            (
-                key(Provider::Kilo, "sk-made-up", "/home/user/.claude"),
-                "https://app.kilo.ai/usage",
-            ),
-        ];
+    fn deepseek_host() -> ProviderRef {
+        ProviderRef::Host(String::from("api.deepseek.com"))
+    }
 
-        for (account, page) in cases {
-            assert_eq!(account.usage_page(), page, "{account:?}");
-        }
+    fn built_in() -> Registry {
+        Registry::built_in(&crate::known_agents())
+    }
+
+    /// Spec "What the UI shows": a key for a host no entry serves is an
+    /// account known by that host.
+    #[test]
+    fn a_key_for_a_host_no_entry_serves_stays_known_by_the_host() {
+        let registry = built_in()
+            .without_provider(&crate::provider::ProviderId::new("deepseek"));
+
+        let accounts = merge_accounts(
+            vec![key(deepseek_host(), "sk-made-up", "/home/user/.claude")],
+            &registry,
+        );
+
+        assert_eq!(accounts[0].provider(), &deepseek_host());
+    }
+
+    /// Spec "Identity and links do not depend on a provider plugin": the
+    /// same key found in two agents is one account, with an entry for its
+    /// host or without one.
+    #[test]
+    fn the_same_key_in_two_agents_is_one_account_with_or_without_an_entry() {
+        let claude = key(deepseek_host(), "sk-made-up", "/home/user/.claude");
+        let kilo_by_host = key(
+            deepseek_host(),
+            "sk-made-up",
+            "/home/user/.local/share/kilo",
+        );
+        let kilo_by_id = key(
+            ProviderRef::of_id("deepseek"),
+            "sk-made-up",
+            "/home/user/.local/share/kilo",
+        );
+        let without = built_in()
+            .without_provider(&crate::provider::ProviderId::new("deepseek"));
+
+        let with_entry =
+            merge_accounts(vec![claude.clone(), kilo_by_id], &built_in());
+        let without_entry =
+            merge_accounts(vec![claude, kilo_by_host], &without);
+
+        assert_eq!(with_entry.len(), 1);
+        assert_eq!(with_entry[0].provider(), &ProviderRef::of_id("deepseek"));
+        assert_eq!(with_entry[0].found_in().len(), 2);
+        assert_eq!(without_entry.len(), 1);
+        assert_eq!(without_entry[0].provider(), &deepseek_host());
+        assert_eq!(without_entry[0].found_in().len(), 2);
+    }
+
+    /// The tokens of a profile whose server is named by its host are paid
+    /// by its key, whether or not an entry serves the host.
+    #[test]
+    fn tokens_for_a_host_are_paid_by_the_key_of_the_provider_of_the_host() {
+        let tokens = ModelTokens::new(
+            Some("deepseek-chat"),
+            crate::token_count::TokenCount::new(10, 0, 0),
+            1,
+        )
+        .with_provider(Some(deepseek_host()));
+        let found = key(deepseek_host(), "sk-made-up", "/home/user/.claude");
+        let registry = built_in();
+        let resolved = merge_accounts(vec![found.clone()], &registry);
+        let without = registry
+            .clone()
+            .without_provider(&crate::provider::ProviderId::new("deepseek"));
+
+        assert!(resolved[0].pays_for(&tokens, &resolved, &registry));
+        assert!(found.pays_for(
+            &tokens,
+            std::slice::from_ref(&found),
+            &without
+        ));
     }
 }

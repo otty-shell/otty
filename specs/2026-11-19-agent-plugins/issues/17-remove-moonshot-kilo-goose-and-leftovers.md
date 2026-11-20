@@ -22,9 +22,7 @@ Kilo, Kilo Gateway and Goose are not ported (Decision 10, owner
    and any Goose detection or constant. The generic keyring host
    operation (issue 05) stays. The keyring Allow in Agents mode is asked
    only when an installed part declares a keyring entry.
-4. `agents.json` entries with `moonshot`, `kilo` or `goose` stay in the
-   file: a provider shows as an account with no provider plugin, an
-   agent's profiles leave the lists.
+4. No compatibility with earlier agents.json: Agents mode was never released.
 5. Delete the built-in registry entries and whatever is left of
    `claude_code/`, `codex/`, `open_code/`, `account_numbers/`, and the
    agent icons in `assets/svg/` that only the built-in entries used (the
@@ -44,11 +42,9 @@ Kilo, Kilo Gateway and Goose are not ported (Decision 10, owner
 
 ## Done when
 
-- Tests first: the Moonshot and Kilo `agents.json` provider entries give
-  accounts with no provider plugin; saved Kilo and Goose profiles are
-  kept in the file and not listed; an account added by hand for a
-  provider with no plugin is listed and not read; no keyring Allow is
-  asked with only the official plugins installed.
+- Tests first: an account added by hand for a provider with no plugin
+  is listed and not read; no keyring Allow is asked with only the
+  official plugins installed.
 - The search of step 7 has no unexplained hit.
 - The checks of `AGENTS.md` pass.
 

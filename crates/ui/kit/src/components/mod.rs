@@ -45,6 +45,7 @@ pub mod inspector_tabs;
 pub mod kbd;
 pub mod key_value_field;
 pub mod key_value_list;
+pub mod letter_icon;
 pub mod log_view;
 pub mod mapping_field;
 pub mod menu;

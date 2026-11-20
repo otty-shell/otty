@@ -50,7 +50,7 @@ pub(crate) fn view(
                 i18n::t(Key::AgentsColumnProvider),
                 palette.text_muted()
             ),
-            small_text(vm.provider.name, palette.text_body()),
+            small_text(vm.provider.name.clone(), palette.text_body()),
         ]
     } else {
         let picked = vm
@@ -61,11 +61,15 @@ pub(crate) fn view(
             .providers
             .iter()
             .map(|option| {
-                NoteSelectOption::new(option.name).with_note(option.note)
+                NoteSelectOption::new(option.name.clone())
+                    .with_note(option.note)
             })
             .collect();
-        let providers: Vec<_> =
-            vm.providers.iter().map(|option| option.provider).collect();
+        let providers: Vec<_> = vm
+            .providers
+            .iter()
+            .map(|option| option.provider.clone())
+            .collect();
         column![
             small_text(
                 i18n::t(Key::AgentsColumnProvider),
@@ -75,7 +79,9 @@ pub(crate) fn view(
                 .open(vm.is_provider_list_open)
                 .on_toggle(send(AddAccountIntent::ProviderListToggled))
                 .on_pick(move |index| {
-                    send(AddAccountIntent::ProviderPicked(providers[index]))
+                    send(AddAccountIntent::ProviderPicked(
+                        providers[index].clone(),
+                    ))
                 }),
         ]
     };
@@ -133,7 +139,7 @@ pub(crate) fn view(
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
-    use otty_agents::Provider;
+    use otty_agents::ProviderRef;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
@@ -141,8 +147,8 @@ mod tests {
 
     fn deepseek() -> ProviderOption {
         ProviderOption {
-            provider: Provider::DeepSeek,
-            name: "DeepSeek",
+            provider: ProviderRef::of_id("deepseek"),
+            name: String::from("DeepSeek"),
             note: "Money left",
         }
     }

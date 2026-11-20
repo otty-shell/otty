@@ -169,7 +169,7 @@ mod tests {
     use crate::open_code::testing::{
         MadeUpDatabase, first_shape_answer, first_shape_question,
     };
-    use crate::provider::Provider;
+    use crate::provider::ProviderRef;
     use crate::testing::{NOW, TempDir, utc_now};
     use crate::token_count::TokenCount;
 
@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(today.models().len(), 1);
         let gpt = &today.models()[0];
         assert_eq!(gpt.model(), Some("gpt-5.5"));
-        assert_eq!(gpt.provider(), Some(Provider::OpenAI));
+        assert_eq!(gpt.provider(), Some(&ProviderRef::of_id("openai")));
         assert_eq!(gpt.account(), None, "the agent does not write the account");
         assert_eq!(gpt.tokens(), TokenCount::new(30, 200, 6));
         assert_eq!(gpt.requests(), 2);

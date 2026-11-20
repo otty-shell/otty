@@ -49,8 +49,8 @@ impl MenuViewModel {
                     .agents()
                     .iter()
                     .map(|agent| {
-                        let descriptor = agent.descriptor();
-                        (descriptor.id(), descriptor.name())
+                        let id = agent.entry().id();
+                        (id.clone(), state.agent_name(id).to_string())
                     })
                     .collect();
 
@@ -143,7 +143,7 @@ pub(crate) struct FilterMenuViewModel {
     /// Where the menu opens.
     pub(crate) place: MenuPlace,
     /// Every agent OTTY knows: its id and its name.
-    pub(crate) agents: Vec<(AgentId, &'static str)>,
+    pub(crate) agents: Vec<(AgentId, String)>,
     /// The choices that are on.
     pub(crate) filter: ProjectFilter,
 }
@@ -292,8 +292,8 @@ mod tests {
     use crate::project_filter::ProjectFilterChange;
     use crate::reducer::reduce;
     use crate::testing::{
-        CLAUDE, CODEX, agents, api_key, chatgpt_login, claude, claude_work,
-        codex, codex_work, connected, env, organization,
+        agents, api_key, chatgpt_login, claude, claude_id, claude_work, codex,
+        codex_id, codex_work, connected, env, organization,
         profiles_with_hidden_loaded, read, session, two_agents_with_sessions,
         with_accounts, with_profiles,
     };
@@ -452,10 +452,10 @@ mod tests {
             Some(MenuViewModel::ProjectFilter(FilterMenuViewModel {
                 place: place(),
                 agents: vec![
-                    (CLAUDE, "Claude Code"),
-                    (CODEX, "Codex"),
-                    (AgentId::new("kilo"), "Kilo"),
-                    (AgentId::new("opencode"), "OpenCode"),
+                    (claude_id(), String::from("Claude Code")),
+                    (codex_id(), String::from("Codex")),
+                    (AgentId::new("kilo"), String::from("Kilo")),
+                    (AgentId::new("opencode"), String::from("OpenCode")),
                 ],
                 filter,
             }))
@@ -550,7 +550,7 @@ mod tests {
     #[test]
     fn the_menu_of_a_found_profile_has_no_remove() {
         let found = Profile::found(
-            claude().agent(),
+            claude().agent().clone(),
             "Work",
             std::path::PathBuf::from("/home/user/.claude-work"),
         );
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn the_menu_of_a_key_can_not_rename_or_hide_it() {
         let key = Account::new(
-            otty_agents::Provider::DeepSeek,
+            otty_agents::ProviderRef::of_id("deepseek"),
             otty_agents::AccountIdentity::KeyFingerprint(
                 otty_agents::KeyFingerprint::of("sk-made-up-deepseek-key"),
             ),
@@ -655,11 +655,11 @@ mod tests {
     #[test]
     fn the_menu_of_an_added_account_edits_its_key_and_removes_it() {
         let added = Account::added(
-            otty_agents::Provider::DeepSeek,
+            otty_agents::ProviderRef::of_id("deepseek"),
             otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         );
         let saved = SavedProfiles::default().with_account_added(
-            otty_agents::Provider::DeepSeek,
+            otty_agents::ProviderRef::of_id("deepseek"),
             otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         );
         let mut state = with_accounts(
@@ -686,7 +686,8 @@ mod tests {
         let saved = SavedProfiles::default()
             .with_account_hidden(&chatgpt_login(), true)
             .with_profile_hidden(&codex_work(), true);
-        let mut state = AgentsState::new(agents(), env());
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let _ = reduce(
             &mut state,

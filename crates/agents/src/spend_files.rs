@@ -22,7 +22,7 @@ use crate::error::SourceError;
 use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
 use crate::record_format::{RecordCounts, RecordFormat, format_change};
 use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
@@ -105,7 +105,7 @@ impl CountedAnswer {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileSpend {
     project: Option<PathBuf>,
-    provider: Option<Provider>,
+    provider: Option<ProviderRef>,
     account: Option<AccountIdentity>,
     answers: Vec<CountedAnswer>,
     records: RecordCounts,
@@ -118,8 +118,8 @@ impl FileSpend {
     }
 
     /// The provider of the session, when the agent writes it.
-    pub(crate) fn provider(&self) -> Option<Provider> {
-        self.provider
+    pub(crate) fn provider(&self) -> Option<&ProviderRef> {
+        self.provider.as_ref()
     }
 
     /// The account of the session, when the agent writes it.
@@ -153,7 +153,10 @@ impl FileSpend {
     }
 
     /// The same file, of a session served by `provider`.
-    pub(crate) fn with_provider(mut self, provider: Option<Provider>) -> Self {
+    pub(crate) fn with_provider(
+        mut self,
+        provider: Option<ProviderRef>,
+    ) -> Self {
         self.provider = provider;
         self
     }
@@ -189,7 +192,7 @@ pub(crate) fn count_spend(
     config_dir: &Path,
     paths: Vec<PathBuf>,
     now: &LocalNow,
-    profile_provider: Option<Provider>,
+    profile_provider: Option<&ProviderRef>,
     format: RecordFormat,
     read_file: impl Fn(&Path) -> FileSpend,
 ) -> Result<Spend, SourceError> {

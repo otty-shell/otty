@@ -19,7 +19,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::ProfilePageViewModel;
-use super::{blocks, chips, needs, sources, usage_block};
+use super::{blocks, chips, entry_icon, needs, sources, usage_block};
 
 /// Edge of the agent logo before the profile name.
 pub(super) const LOGO_SIZE: f32 = 26.0;
@@ -102,12 +102,7 @@ fn header<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
-    let logo = svg(svg::Handle::from_memory(icons::agent_icon(vm.icon)))
-        .width(LOGO_SIZE)
-        .height(LOGO_SIZE)
-        .style(move |_, _| svg::Style {
-            color: Some(strong),
-        });
+    let logo = entry_icon::view(vm.icon.clone(), LOGO_SIZE, strong, palette);
     let name = EllipsisText::new(
         vm.name.clone(),
         typography::TITLE.size(),
@@ -151,7 +146,7 @@ mod tests {
     use iced_test::Simulator;
     use otty_agents::{
         Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        Provider,
+        ProviderRef,
     };
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::screen_area::ScreenArea;
@@ -184,7 +179,7 @@ mod tests {
 
     fn chatgpt() -> Account {
         Account::new(
-            Provider::OpenAI,
+            ProviderRef::of_id("openai"),
             AccountIdentity::AccountId(String::from("made-up-account")),
             AccountLogin::Email(String::from("you@example.com")),
             AccountKind::Limits,
@@ -195,7 +190,7 @@ mod tests {
     fn page() -> ProfilePageViewModel {
         ProfilePageViewModel {
             profile: work(),
-            icon: "codex",
+            icon: crate::testing::agent_icon("codex"),
             name: String::from("Codex · Work"),
             needs: vec![NeedViewModel {
                 place: String::from("Codex · Work"),
@@ -203,7 +198,7 @@ mod tests {
                 line: String::from("Log in to use it."),
                 fix: Some(NeedFixViewModel {
                     label: i18n::t(Key::AgentsLogIn).to_string(),
-                    action: NeedAction::LogIn(work()),
+                    action: Some(NeedAction::LogIn(work())),
                 }),
             }],
             info: Some(String::from("Codex has no sessions yet.")),
@@ -211,7 +206,7 @@ mod tests {
             usage: Some(usage_block()),
             pays_through: vec![PaysThroughViewModel {
                 account: chatgpt(),
-                provider: "OpenAI",
+                icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
                 number: Some((String::from("42 % used"), SessionTone::Muted)),
             }],

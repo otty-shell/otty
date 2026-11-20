@@ -7,6 +7,7 @@ use otty_ui_kit::components::session_row::SessionTone;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
+use super::entry_icon::EntryIcon;
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::{account_number, hidden_word, profile_number};
 
@@ -101,8 +102,8 @@ pub(crate) struct AccountRowViewModel {
     pub(crate) account: Account,
     /// Whether the account is the one selected.
     pub(crate) is_selected: bool,
-    /// The name of its provider, which names its logo.
-    pub(crate) provider: &'static str,
+    /// The icon of its provider.
+    pub(crate) icon: EntryIcon,
     /// The provider and the login, such as "OpenAI · you@example.com".
     pub(crate) name: String,
     /// Its number with its word, such as "42 % used"; `None` while
@@ -127,8 +128,12 @@ impl AccountRowViewModel {
 
         Self {
             is_selected,
-            provider: account.provider().name(),
-            name: account_name(state.profiles().saved(), &account),
+            icon: state.provider_icon(account.provider()),
+            name: account_name(
+                state.registry(),
+                state.profiles().saved(),
+                &account,
+            ),
             number,
             tone,
             account,
@@ -188,8 +193,8 @@ pub(crate) struct ProfileRowViewModel {
     pub(crate) profile: Profile,
     /// Whether the profile is the one selected.
     pub(crate) is_selected: bool,
-    /// The name of the agent's icon.
-    pub(crate) icon: &'static str,
+    /// The icon of its agent.
+    pub(crate) icon: EntryIcon,
     /// The profile name.
     pub(crate) name: String,
     /// Its number with its word, such as "1.8M today", or the state that
@@ -213,7 +218,7 @@ impl ProfileRowViewModel {
         Self {
             profile: profile.clone(),
             is_selected,
-            icon: state.icon_of(profile.agent()),
+            icon: state.agent_icon(profile.agent()),
             name: profile.name().to_string(),
             number,
             tone,
@@ -229,7 +234,7 @@ impl ProfileRowViewModel {
         Self {
             profile: profile.clone(),
             is_selected,
-            icon: state.icon_of(profile.agent()),
+            icon: state.agent_icon(profile.agent()),
             name: profile.name().to_string(),
             number: Some(hidden_word()),
             tone: SessionTone::Muted,
@@ -301,7 +306,7 @@ mod tests {
                 AccountRowViewModel {
                     account: organization(),
                     is_selected: false,
-                    provider: "Anthropic",
+                    icon: crate::testing::provider_icon("anthropic"),
                     name: String::from("Anthropic · dev@example.com"),
                     number: None,
                     tone: SessionTone::Muted,
@@ -309,7 +314,7 @@ mod tests {
                 AccountRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
                     is_selected: false,
-                    provider: "OpenAI",
+                    icon: crate::testing::provider_icon("openai"),
                     name: String::from("OpenAI · you@example.com"),
                     number: Some(i18n::with_count(
                         Key::TplAgentsPercentUsed,
@@ -367,7 +372,7 @@ mod tests {
                 ProfileRowViewModel {
                     profile: claude(),
                     is_selected: true,
-                    icon: "claude-code",
+                    icon: crate::testing::agent_icon("claude-code"),
                     name: String::from("Claude Code"),
                     number: Some(i18n::filled(
                         Key::TplAgentsAmountToday,
@@ -378,7 +383,7 @@ mod tests {
                 ProfileRowViewModel {
                     profile: codex(),
                     is_selected: false,
-                    icon: "codex",
+                    icon: crate::testing::agent_icon("codex"),
                     name: String::from("Codex"),
                     number: Some(
                         i18n::t(Key::AgentsStateNeedsLogin).to_string()
@@ -428,7 +433,11 @@ mod tests {
 
     #[test]
     fn before_the_first_read_the_sections_say_so_and_can_not_add() {
-        let mut state = crate::state::AgentsState::new(agents(), env());
+        let mut state = crate::state::AgentsState::new(
+            agents(),
+            crate::testing::registry(),
+            env(),
+        );
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
         let vm = LeftPanelViewModel::from_state(&state, now());

@@ -64,9 +64,12 @@
 //! [`SavedProfiles::with_admin_keys_moved`] once the accounts of the
 //! profiles are known, and stays in its entry until then.
 //!
-//! Every part may be missing. A file from a newer version loads without
-//! the entries of an agent or a provider this version does not know, and
-//! an unknown field is skipped. So is what older versions wrote and this
+//! Every part may be missing. The entries of an agent or a provider no
+//! entry of the registry names are kept as they are and not read, so they
+//! come back when the entry does (spec 2026-11-19-agent-plugins,
+//! "`agents.json`"). An account of a provider no entry serves may be
+//! written by the host of its server, `"provider": "host:api.deepseek.com"`.
+//! An unknown field is skipped. So is what older versions wrote and this
 //! one no longer keeps: `hidden` in a profile entry (hidden profiles are
 //! listed apart now), `program` (the program is found by its name) and
 //! `monthly_budget` (OTTY only shows, spec Decision 5).
@@ -84,9 +87,10 @@ use self::hidden_profiles::HiddenProfile;
 use self::saved_accounts::SavedAccount;
 use crate::account::Account;
 use crate::admin_key::AdminKeyRef;
-use crate::agent::{Agent, AgentId};
+use crate::agent::AgentId;
 use crate::profile::Profile;
-use crate::provider::Provider;
+use crate::provider::ProviderRef;
+use crate::registry::Registry;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
@@ -96,7 +100,7 @@ use crate::provider::Provider;
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_agents::{AgentId, Profile, SavedProfiles, known_agents};
+/// use otty_agents::{AgentId, Profile, SavedProfiles};
 ///
 /// let saved = SavedProfiles::default().with_added(Profile::added(
 ///     AgentId::new("codex"),
@@ -105,7 +109,7 @@ use crate::provider::Provider;
 /// ));
 ///
 /// let text = saved.to_json().expect("the paths are text");
-/// let loaded = SavedProfiles::from_json(&text, &known_agents());
+/// let loaded = SavedProfiles::from_json(&text);
 ///
 /// assert_eq!(loaded.expect("the text was just written"), saved);
 /// ```
@@ -125,11 +129,11 @@ impl SavedProfiles {
     /// anything.
     pub fn default_changes_of(
         &self,
-        agent: AgentId,
+        agent: &AgentId,
     ) -> Option<&DefaultProfileChanges> {
         self.default_changes
             .iter()
-            .find(|changes| changes.agent == agent)
+            .find(|changes| changes.agent == *agent)
     }
 
     /// The profiles the user added, in the order they were added.
@@ -187,13 +191,11 @@ impl SavedProfiles {
 
     /// The content read from the text of `agents.json`.
     ///
-    /// An empty text is no changes. The entries of an agent not in
-    /// `agents` are left out, and unknown fields are skipped. Only text
-    /// that is not this layout at all is an error.
-    pub fn from_json(
-        text: &str,
-        agents: &[Box<dyn Agent>],
-    ) -> Result<Self, SavedProfilesError> {
+    /// An empty text is no changes. The entries of every agent and
+    /// provider are kept, whether or not an entry of the registry names
+    /// them, and unknown fields are skipped. Only text that is not this
+    /// layout at all is an error.
+    pub fn from_json(text: &str) -> Result<Self, SavedProfilesError> {
         if text.trim().is_empty() {
             return Ok(Self::default());
         }
@@ -201,7 +203,7 @@ impl SavedProfiles {
         let file: FileContent =
             serde_json::from_str(text).map_err(SavedProfilesError::Read)?;
 
-        Ok(file.into_saved(agents))
+        Ok(file.into_saved())
     }
 
     /// The text of `agents.json`.
@@ -256,7 +258,7 @@ impl SavedProfiles {
     ///
     /// let saved =
     ///     SavedProfiles::default().with_default_edited("Codex", &codex, renamed);
-    /// let changes = saved.default_changes_of(AgentId::new("codex"));
+    /// let changes = saved.default_changes_of(&AgentId::new("codex"));
     ///
     /// assert_eq!(
     ///     changes.and_then(|changes| changes.name()),
@@ -276,7 +278,7 @@ impl SavedProfiles {
             .and_then(DefaultProfileChanges::config_dir)
             .map(Path::to_path_buf);
 
-        let mut changes = DefaultProfileChanges::new(agent);
+        let mut changes = DefaultProfileChanges::new(agent.clone());
         if edited.name() != agent_name {
             changes = changes.with_name(edited.name());
         }
@@ -319,7 +321,7 @@ impl SavedProfiles {
     /// so the agent and the name find one profile.
     pub fn with_added_replaced(
         mut self,
-        agent: AgentId,
+        agent: &AgentId,
         name: &str,
         profile: Profile,
     ) -> Self {
@@ -344,7 +346,7 @@ impl SavedProfiles {
 
     /// The same content without the added profile of `agent` named `name`.
     /// Only the entry goes: its config folder stays where it is.
-    pub fn without_added(mut self, agent: AgentId, name: &str) -> Self {
+    pub fn without_added(mut self, agent: &AgentId, name: &str) -> Self {
         self.added
             .retain(|saved| !(saved.agent() == agent && saved.name() == name));
         self.old_admin_keys
@@ -362,11 +364,11 @@ impl SavedProfiles {
     ///
     /// use otty_agents::{
     ///     Account, AccountIdentity, AccountKind, AccountLogin, AdminKeyRef,
-    ///     FoundIn, Provider, SavedProfiles,
+    ///     FoundIn, ProviderRef, SavedProfiles,
     /// };
     ///
     /// let organization = Account::new(
-    ///     Provider::Anthropic,
+    ///     ProviderRef::of_id("anthropic"),
     ///     AccountIdentity::OrganizationId("made-up-org".into()),
     ///     AccountLogin::Email("dev@example.com".into()),
     ///     AccountKind::Money,
@@ -400,12 +402,12 @@ impl SavedProfiles {
     /// use std::path::PathBuf;
     ///
     /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, Provider,
-    ///     SavedProfiles,
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+    ///     ProviderRef, SavedProfiles,
     /// };
     ///
     /// let login = Account::new(
-    ///     Provider::OpenAI,
+    ///     ProviderRef::of_id("openai"),
     ///     AccountIdentity::AccountId("made-up-account".into()),
     ///     AccountLogin::Email("you@example.com".into()),
     ///     AccountKind::Limits,
@@ -442,21 +444,21 @@ impl SavedProfiles {
     /// place stays as it is.
     ///
     /// ```
-    /// use otty_agents::{Account, AdminKeyRef, Provider, SavedProfiles};
+    /// use otty_agents::{Account, AdminKeyRef, ProviderRef, SavedProfiles};
     ///
     /// let key = AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into());
     ///
     /// let saved = SavedProfiles::default()
-    ///     .with_account_added(Provider::DeepSeek, key.clone());
+    ///     .with_account_added(ProviderRef::of_id("deepseek"), key.clone());
     ///
     /// assert_eq!(
     ///     saved.added_accounts(),
-    ///     [Account::added(Provider::DeepSeek, key)]
+    ///     [Account::added(ProviderRef::of_id("deepseek"), key)]
     /// );
     /// ```
     pub fn with_account_added(
         mut self,
-        provider: Provider,
+        provider: ProviderRef,
         key: AdminKeyRef,
     ) -> Self {
         let account = Account::added(provider, key);
@@ -482,7 +484,7 @@ impl SavedProfiles {
             return self;
         }
 
-        let moved = Account::added(account.provider(), key);
+        let moved = Account::added(account.provider().clone(), key);
         self.accounts.retain(|saved| !saved.is_of(&moved));
         if let Some(saved) =
             self.accounts.iter_mut().find(|saved| saved.is_of(account))
@@ -559,6 +561,19 @@ impl SavedProfiles {
         self
     }
 
+    /// The same content with each account kept by the host of its server
+    /// kept by the id of the provider of `registry` that serves the host,
+    /// so it is the choice of the account found for that id (spec
+    /// 2026-11-19-agent-plugins, "Identity and links do not depend on a
+    /// provider plugin"). The text written then names the id.
+    pub fn with_providers_resolved(mut self, registry: &Registry) -> Self {
+        for saved in &mut self.accounts {
+            saved.provider = registry.resolve(&saved.provider);
+        }
+
+        self
+    }
+
     /// The choices kept for `account`, if any.
     fn saved_account(&self, account: &Account) -> Option<&SavedAccount> {
         self.accounts.iter().find(|saved| saved.is_of(account))
@@ -604,8 +619,8 @@ pub struct DefaultProfileChanges {
 
 impl DefaultProfileChanges {
     /// The agent whose default profile is changed.
-    pub fn agent(&self) -> AgentId {
-        self.agent
+    pub fn agent(&self) -> &AgentId {
+        &self.agent
     }
 
     /// The name the user gave the profile.
@@ -665,11 +680,15 @@ pub enum SavedProfilesError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::known_agents;
     use crate::testing::organization;
 
-    const CLAUDE: AgentId = AgentId::new("claude-code");
-    const CODEX: AgentId = AgentId::new("codex");
+    fn claude_id() -> AgentId {
+        AgentId::new("claude-code")
+    }
+
+    fn codex_id() -> AgentId {
+        AgentId::new("codex")
+    }
 
     /// A made-up admin key, never a real one.
     const MADE_UP_KEY: &str = "sk-ant-admin01-made-up-for-tests";
@@ -677,20 +696,21 @@ mod tests {
     fn content() -> SavedProfiles {
         SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CLAUDE)
+                DefaultProfileChanges::new(claude_id())
                     .with_name("Claude Code · Home")
                     .with_config_dir(PathBuf::from("/data/claude")),
             )
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
+                DefaultProfileChanges::new(codex_id())
+                    .with_name("Codex · Home"),
             )
             .with_added(Profile::added(
-                CLAUDE,
+                claude_id(),
                 "Claude Code · Work",
                 PathBuf::from("/home/user/.claude-work"),
             ))
             .with_added(Profile::added(
-                CODEX,
+                codex_id(),
                 "Codex · Work",
                 PathBuf::from("/home/user/.codex-work"),
             ))
@@ -703,14 +723,14 @@ mod tests {
     }
 
     fn load(text: &str) -> SavedProfiles {
-        SavedProfiles::from_json(text, &known_agents())
+        SavedProfiles::from_json(text)
             .expect("the text is the layout of agents.json")
     }
 
     /// The default Claude Code profile in `/home/user/.claude`.
     fn default_claude() -> Profile {
         Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code",
             PathBuf::from("/home/user/.claude"),
         )
@@ -719,7 +739,7 @@ mod tests {
     #[test]
     fn an_edited_default_profile_keeps_only_what_differs_from_the_agent() {
         let renamed_and_moved = Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Home",
             PathBuf::from("/data/claude"),
         );
@@ -738,12 +758,12 @@ mod tests {
         assert_eq!(
             kept,
             SavedProfiles::default()
-                .with_default_changes(DefaultProfileChanges::new(CLAUDE))
+                .with_default_changes(DefaultProfileChanges::new(claude_id()))
         );
         assert_eq!(
             changed,
             SavedProfiles::default().with_default_changes(
-                DefaultProfileChanges::new(CLAUDE)
+                DefaultProfileChanges::new(claude_id())
                     .with_name("Claude Code · Home")
                     .with_config_dir(PathBuf::from("/data/claude"))
             )
@@ -756,16 +776,16 @@ mod tests {
     #[test]
     fn an_edit_that_keeps_the_folder_keeps_the_folder_moved_before() {
         let moved = Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code",
             PathBuf::from("/data/claude"),
         );
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(CLAUDE)
+            DefaultProfileChanges::new(claude_id())
                 .with_config_dir(PathBuf::from("/data/claude")),
         );
         let renamed = Profile::default_for(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Home",
             PathBuf::from("/data/claude"),
         );
@@ -775,7 +795,7 @@ mod tests {
         assert_eq!(
             edited,
             SavedProfiles::default().with_default_changes(
-                DefaultProfileChanges::new(CLAUDE)
+                DefaultProfileChanges::new(claude_id())
                     .with_name("Claude Code · Home")
                     .with_config_dir(PathBuf::from("/data/claude"))
             )
@@ -846,10 +866,11 @@ mod tests {
 
         let expected = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
+                DefaultProfileChanges::new(codex_id())
+                    .with_name("Codex · Home"),
             )
             .with_added(Profile::added(
-                CLAUDE,
+                claude_id(),
                 "Claude Code · Work",
                 PathBuf::from("/home/user/.claude-work"),
             ));
@@ -887,11 +908,11 @@ mod tests {
 
         let expected = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CLAUDE)
+                DefaultProfileChanges::new(claude_id())
                     .with_name("Claude Code · Home"),
             )
             .with_added(Profile::added(
-                CODEX,
+                codex_id(),
                 "Codex · Work",
                 PathBuf::from("/home/user/.codex-work"),
             ));
@@ -957,8 +978,12 @@ mod tests {
         assert_eq!(load("{}"), SavedProfiles::default());
     }
 
+    /// Spec 2026-11-19-agent-plugins, "`agents.json`": the entries of an
+    /// agent or a provider no entry of the registry names, such as one a
+    /// plugin served before or `moonshot`, are kept and written back, so
+    /// they come back with their entry; an unknown field is skipped.
     #[test]
-    fn an_unknown_agent_or_field_is_left_out() {
+    fn the_entries_of_an_unknown_agent_or_provider_are_kept() {
         let text = r#"{
             "default_profiles": {
                 "future-agent": { "name": "Future" },
@@ -977,28 +1002,103 @@ mod tests {
                     "colour": "blue"
                 }
             ],
+            "accounts": [
+                {
+                    "provider": "moonshot",
+                    "key": { "env_var": "MOONSHOT_API_KEY" },
+                    "name": "Kimi"
+                },
+                { "provider": "future", "account_id": "made-up", "hidden": true }
+            ],
+            "hidden_profiles": [
+                { "agent": "goose", "config_dir": "/home/user/.config/goose" }
+            ],
             "theme": "dark"
         }"#;
+        let future = AgentId::new("future-agent");
+        let goose = Profile::found(
+            AgentId::new("goose"),
+            "Goose",
+            PathBuf::from("/home/user/.config/goose"),
+        );
+        let kimi = Account::added(
+            ProviderRef::of_id("moonshot"),
+            AdminKeyRef::EnvVar(String::from("MOONSHOT_API_KEY")),
+        );
+        let future_login = crate::testing::chatgpt_login("made-up");
+        let future_login = Account::new(
+            ProviderRef::of_id("future"),
+            future_login.identity().clone(),
+            future_login.login().clone(),
+            future_login.kind(),
+            future_login.found_in()[0].clone(),
+        );
 
-        let expected = SavedProfiles::default()
-            .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_name("Codex · Home"),
+        let loaded = load(text);
+
+        let changes = loaded.default_changes_of(&future);
+        assert_eq!(
+            changes.and_then(DefaultProfileChanges::name),
+            Some("Future")
+        );
+        let added: Vec<_> = loaded
+            .added()
+            .iter()
+            .map(|profile| profile.name())
+            .collect();
+        assert_eq!(added, ["Future · Work", "Claude Code · Work"]);
+        assert_eq!(loaded.account_name(&kimi), Some("Kimi"));
+        assert!(loaded.is_account_hidden(&future_login));
+        assert!(loaded.is_profile_hidden(&goose));
+        let written = loaded.to_json().expect("the paths are text");
+        assert_eq!(load(&written), loaded);
+        assert!(!written.contains("colour"), "{written}");
+    }
+
+    /// Spec 2026-11-19-agent-plugins, "`agents.json`": an account of a
+    /// provider no entry serves may be kept by the host of its server;
+    /// once an entry serves the host, it is the choice of the account found
+    /// for its id.
+    #[test]
+    fn an_account_kept_by_host_is_the_account_of_the_provider_of_the_host() {
+        let text = r#"{
+            "accounts": [
+                {
+                    "provider": "host:api.deepseek.com",
+                    "account_id": "made-up",
+                    "name": "Gateway"
+                }
+            ]
+        }"#;
+        let login = |provider: ProviderRef| {
+            let found = crate::testing::chatgpt_login("made-up");
+            Account::new(
+                provider,
+                found.identity().clone(),
+                found.login().clone(),
+                found.kind(),
+                found.found_in()[0].clone(),
             )
-            .with_added(Profile::added(
-                CLAUDE,
-                "Claude Code · Work",
-                PathBuf::from("/home/user/.claude-work"),
-            ));
-        assert_eq!(load(text), expected);
+        };
+        let by_host =
+            login(ProviderRef::Host(String::from("api.deepseek.com")));
+        let by_id = login(ProviderRef::of_id("deepseek"));
+        let registry = Registry::built_in(&crate::known_agents());
+
+        let loaded = load(text);
+        let resolved = loaded.clone().with_providers_resolved(&registry);
+
+        assert_eq!(loaded.account_name(&by_host), Some("Gateway"));
+        assert_eq!(loaded.account_name(&by_id), None);
+        assert_eq!(resolved.account_name(&by_id), Some("Gateway"));
+        let written = loaded.to_json().expect("the paths are text");
+        assert!(written.contains(r#""provider": "host:api.deepseek.com""#));
     }
 
     #[test]
     fn a_text_that_is_not_this_layout_is_an_error() {
-        let agents = known_agents();
-
-        let broken = SavedProfiles::from_json("{ not json", &agents);
-        let wrong_type =
-            SavedProfiles::from_json(r#"{"added_profiles":7}"#, &agents);
+        let broken = SavedProfiles::from_json("{ not json");
+        let wrong_type = SavedProfiles::from_json(r#"{"added_profiles":7}"#);
 
         assert!(matches!(broken, Err(SavedProfilesError::Read(_))));
         assert!(matches!(wrong_type, Err(SavedProfilesError::Read(_))));
@@ -1012,7 +1112,7 @@ mod tests {
 
         let path = PathBuf::from(OsStr::from_bytes(b"/home/user/.claude-\xff"));
         let saved = SavedProfiles::default().with_added(Profile::added(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Work",
             path,
         ));
@@ -1023,13 +1123,13 @@ mod tests {
     #[test]
     fn an_added_profile_is_replaced_in_its_place() {
         let edited = Profile::added(
-            CLAUDE,
+            claude_id(),
             "Claude Code · Office",
             PathBuf::from("/data/claude-office"),
         );
 
         let saved = content().with_added_replaced(
-            CLAUDE,
+            &claude_id(),
             "Claude Code · Work",
             edited.clone(),
         );
@@ -1041,11 +1141,14 @@ mod tests {
 
     #[test]
     fn replacing_a_profile_that_is_not_saved_adds_it() {
-        let profile =
-            Profile::added(CODEX, "Codex · New", PathBuf::from("/data/codex"));
+        let profile = Profile::added(
+            codex_id(),
+            "Codex · New",
+            PathBuf::from("/data/codex"),
+        );
 
         let saved = SavedProfiles::default().with_added_replaced(
-            CODEX,
+            &codex_id(),
             "Codex · Gone",
             profile.clone(),
         );
@@ -1056,14 +1159,14 @@ mod tests {
     #[test]
     fn an_added_profile_is_removed_by_its_agent_and_name() {
         let saved = content()
-            .without_added(CODEX, "Claude Code · Work")
-            .without_added(CLAUDE, "Claude Code · Work");
+            .without_added(&codex_id(), "Claude Code · Work")
+            .without_added(&claude_id(), "Claude Code · Work");
 
         let names: Vec<_> = saved.added().iter().map(Profile::name).collect();
         assert_eq!(names, ["Codex · Work"]);
         assert_eq!(
-            saved.default_changes_of(CODEX),
-            content().default_changes_of(CODEX)
+            saved.default_changes_of(&codex_id()),
+            content().default_changes_of(&codex_id())
         );
     }
 
@@ -1071,22 +1174,22 @@ mod tests {
     fn new_changes_of_an_agent_replace_its_earlier_ones() {
         let saved = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX).with_name("Codex · Old"),
+                DefaultProfileChanges::new(codex_id()).with_name("Codex · Old"),
             )
             .with_default_changes(
-                DefaultProfileChanges::new(CODEX)
+                DefaultProfileChanges::new(codex_id())
                     .with_config_dir(PathBuf::from("/data/codex")),
             );
 
-        let changes = saved.default_changes_of(CODEX);
+        let changes = saved.default_changes_of(&codex_id());
 
         assert_eq!(
             changes,
             Some(
-                &DefaultProfileChanges::new(CODEX)
+                &DefaultProfileChanges::new(codex_id())
                     .with_config_dir(PathBuf::from("/data/codex"))
             )
         );
-        assert_eq!(saved.default_changes_of(CLAUDE), None);
+        assert_eq!(saved.default_changes_of(&claude_id()), None);
     }
 }

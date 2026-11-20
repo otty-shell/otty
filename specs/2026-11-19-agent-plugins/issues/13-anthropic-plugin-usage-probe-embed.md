@@ -30,8 +30,8 @@ is a hidden terminal plus a declared write of the `claude-code` part.
    by the script of issue 11 while the plugin lives in this repository.
 5. Delete `crates/agents/src/claude_code/` except `usage.rs`,
    `usage_answer.rs` and `cost_report.rs`, which move to
-   `account_numbers/` until issue 15; delete the built-in entry. Only
-   after a full parity run (tokens, money, limits) on real files.
+   `account_numbers/` until issue 15; delete the built-in entry. The
+   owner checks tokens, money and limits by hand.
 
 ## Done when
 
@@ -39,7 +39,7 @@ is a hidden terminal plus a declared write of the `claude-code` part.
   tests of `usage_screen.rs`); the trust question answered; the probe
   sequence with a mock terminal; cleanup removes only the probe's files
   and refuses any other path.
-- Parity "equal" recorded; the core folder is gone except the moved
+- The core folder is gone except the moved
   files; the app shows Claude Code from the embedded Anthropic plugin.
 - The checks of `AGENTS.md` pass; the plugin's own tests pass.
 

@@ -1,13 +1,13 @@
 //! The Add account dialog (spec 2026-11-19, Decision 7), the last resort
-//! for a key no agent uses: a provider (the money left of a DeepSeek,
-//! OpenRouter or Moonshot key, or the bill of an Anthropic or OpenAI
-//! organization with an admin key) and where its key is kept, a file or an
+//! for a key no agent uses: a provider the registry offers (the money left
+//! of a key, or the bill of an organization with an admin key) and where
+//! its key is kept, a file or an
 //! environment variable. OTTY saves only the path or the variable name in
 //! `agents.json`, never the key. Edit key… of an account the user added
 //! opens the same dialog with its provider fixed. The dialog waits for the
 //! save, and a failed save shows in it.
 
-use otty_agents::{Account, AdminKeyRef, Provider};
+use otty_agents::{Account, AdminKeyRef, ProviderRef, Registry};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::AgentsOutcome;
@@ -22,7 +22,7 @@ pub enum AddAccountIntent {
     /// The provider drop-down was pressed: open or close its list.
     ProviderListToggled,
     /// A provider of the list was picked.
-    ProviderPicked(Provider),
+    ProviderPicked(ProviderRef),
     /// Where the key is kept was picked: a file or a variable.
     KeyChoicePicked(AdminKeyChoice),
     /// The path of the key file or the name of the variable changed.
@@ -38,7 +38,7 @@ pub enum AddAccountIntent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AddAccountDialog {
     editing: Option<Account>,
-    provider: Provider,
+    provider: ProviderRef,
     is_provider_list_open: bool,
     key: KeyPlaceField,
     error: Option<String>,
@@ -52,8 +52,8 @@ impl AddAccountDialog {
     }
 
     /// The provider picked.
-    pub(crate) fn provider(&self) -> Provider {
-        self.provider
+    pub(crate) fn provider(&self) -> &ProviderRef {
+        &self.provider
     }
 
     /// Whether the list of the providers is open.
@@ -76,13 +76,8 @@ impl AddAccountDialog {
         self.is_saving
     }
 
-    /// The dialog that adds an account, at the first provider OTTY lists.
-    fn add() -> Self {
-        let provider = Provider::addable()
-            .first()
-            .copied()
-            .unwrap_or(Provider::DeepSeek);
-
+    /// The dialog that adds an account at `provider`.
+    fn add(provider: ProviderRef) -> Self {
         Self {
             editing: None,
             provider,
@@ -96,12 +91,11 @@ impl AddAccountDialog {
     /// The dialog that edits the key of `account`, an account the user
     /// added, at its provider and its place.
     fn edit(account: Account, key: &AdminKeyRef) -> Self {
-        Self {
-            provider: account.provider(),
-            key: KeyPlaceField::new(Some(key)),
-            editing: Some(account),
-            ..Self::add()
-        }
+        let mut dialog = Self::add(account.provider().clone());
+
+        dialog.key = KeyPlaceField::new(Some(key));
+        dialog.editing = Some(account);
+        dialog
     }
 
     /// Show `text` as why the save failed, and let the dialog save again.
@@ -111,10 +105,16 @@ impl AddAccountDialog {
     }
 }
 
-/// Open the dialog that adds an account.
+/// Open the dialog that adds an account, at the first provider the
+/// registry offers; with none offered it does not open.
 pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
-    state.open_add_account(AddAccountDialog::add());
+    let first = state.registry().addable_providers().first().copied();
+    let Some(first) = first else {
+        return Vec::new();
+    };
 
+    let provider = ProviderRef::Id(first.id().clone());
+    state.open_add_account(AddAccountDialog::add(provider));
     Vec::new()
 }
 
@@ -171,6 +171,7 @@ pub(crate) fn reduce(
         let _ = state.take_add_account();
         return Vec::new();
     }
+    let registry = std::sync::Arc::clone(state.registry_arc());
     let Some(dialog) = state.add_account_mut() else {
         return Vec::new();
     };
@@ -181,9 +182,7 @@ pub(crate) fn reduce(
                 dialog.editing.is_none() && !dialog.is_provider_list_open;
         },
         AddAccountIntent::ProviderPicked(provider) => {
-            if dialog.editing.is_none()
-                && Provider::addable().contains(&provider)
-            {
+            if dialog.editing.is_none() && is_addable(&registry, &provider) {
                 dialog.provider = provider;
             }
             dialog.is_provider_list_open = false;
@@ -233,7 +232,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         return vec![unread_file()];
     };
 
-    let account = Account::added(dialog.provider, key.clone());
+    let account = Account::added(dialog.provider.clone(), key.clone());
     let is_own_place = dialog
         .editing
         .as_ref()
@@ -253,7 +252,9 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 
     let changed = match &dialog.editing {
         Some(editing) => saved.clone().with_added_key(editing, key),
-        None => saved.clone().with_account_added(dialog.provider, key),
+        None => saved
+            .clone()
+            .with_account_added(dialog.provider.clone(), key),
     };
 
     if let Some(dialog) = state.add_account_mut() {
@@ -263,6 +264,14 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     state.profiles_mut().apply_saved(changed.clone());
     state.select_account(account);
     vec![save(changed)]
+}
+
+/// Whether Add account offers `provider` in `registry`.
+fn is_addable(registry: &Registry, provider: &ProviderRef) -> bool {
+    registry
+        .addable_providers()
+        .iter()
+        .any(|entry| provider.as_id() == Some(entry.id()))
 }
 
 #[cfg(test)]
@@ -315,7 +324,8 @@ mod tests {
         let outcomes = send(&mut state, AddAccountIntent::Submitted);
 
         let saved = saved_of(&outcomes).expect("the account is saved");
-        let added = Account::added(Provider::DeepSeek, deepseek_file());
+        let added =
+            Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
         assert_eq!(saved.added_accounts(), std::slice::from_ref(&added));
         assert_eq!(state.selected_account(), Some(added));
         assert!(state.add_account().is_some_and(AddAccountDialog::is_saving));
@@ -333,7 +343,7 @@ mod tests {
         let _ = send(&mut state, AddAccountIntent::ProviderListToggled);
         let _ = send(
             &mut state,
-            AddAccountIntent::ProviderPicked(Provider::OpenAI),
+            AddAccountIntent::ProviderPicked(ProviderRef::of_id("openai")),
         );
         let _ = send(
             &mut state,
@@ -348,7 +358,7 @@ mod tests {
         assert_eq!(
             saved_of(&outcomes).map(SavedProfiles::added_accounts),
             Some(vec![Account::added(
-                Provider::OpenAI,
+                ProviderRef::of_id("openai"),
                 AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY"))
             )])
         );
@@ -373,8 +383,10 @@ mod tests {
 
     #[test]
     fn a_place_already_added_is_not_added_twice() {
-        let saved = SavedProfiles::default()
-            .with_account_added(Provider::DeepSeek, deepseek_file());
+        let saved = SavedProfiles::default().with_account_added(
+            ProviderRef::of_id("deepseek"),
+            deepseek_file(),
+        );
         let mut state = state_with(saved);
         let _ = reduce_all(&mut state, AgentsIntent::OpenAddAccount);
         let _ = send(
@@ -395,9 +407,10 @@ mod tests {
 
     #[test]
     fn edit_key_moves_the_account_and_keeps_its_page() {
-        let added = Account::added(Provider::DeepSeek, deepseek_file());
+        let added =
+            Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
         let saved = SavedProfiles::default()
-            .with_account_added(Provider::DeepSeek, deepseek_file())
+            .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
             .with_account_name(&added, Some(String::from("Mine")));
         let mut state = state_with(saved);
         state.select_account(added.clone());
@@ -409,7 +422,7 @@ mod tests {
 
         let _ = send(
             &mut state,
-            AddAccountIntent::ProviderPicked(Provider::Moonshot),
+            AddAccountIntent::ProviderPicked(ProviderRef::of_id("moonshot")),
         );
         let _ = send(
             &mut state,
@@ -422,7 +435,7 @@ mod tests {
         let outcomes = send(&mut state, AddAccountIntent::Submitted);
 
         let moved = Account::added(
-            Provider::DeepSeek,
+            ProviderRef::of_id("deepseek"),
             AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         );
         let saved = saved_of(&outcomes).expect("the key is saved");
@@ -433,9 +446,12 @@ mod tests {
 
     #[test]
     fn remove_forgets_the_account_and_shows_all_accounts() {
-        let added = Account::added(Provider::DeepSeek, deepseek_file());
-        let saved = SavedProfiles::default()
-            .with_account_added(Provider::DeepSeek, deepseek_file());
+        let added =
+            Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
+        let saved = SavedProfiles::default().with_account_added(
+            ProviderRef::of_id("deepseek"),
+            deepseek_file(),
+        );
         let mut state = state_with(saved);
         state.select_account(added.clone());
         open_account_menu(&mut state, added);
