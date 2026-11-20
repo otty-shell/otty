@@ -11,7 +11,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::test_host::files::io_error;
-use crate::test_host::{HostState, sqlite};
+use crate::test_host::{HostState, keyring, sqlite};
 use crate::{HostError, Key, KeyPlace};
 
 /// SHA-256 of `key` without the spaces around it, lowercase hex, as OTTY
@@ -56,11 +56,7 @@ pub(super) fn open(
             .var(name)
             .map(str::to_string)
             .ok_or_else(|| HostError::NotFound(name.clone()))?,
-        KeyPlace::Keyring(_) => {
-            return Err(HostError::NotFound(
-                "the test host has no keyring entry".to_string(),
-            ));
-        },
+        KeyPlace::Keyring(entry) => keyring::key_text(state, entry)?,
         KeyPlace::SqliteField(field) => sqlite::key_field(field)?,
     };
 

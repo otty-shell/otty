@@ -28,8 +28,10 @@ globset = { version = "0.4.21", default-features = false }
 # The manifest of the plugin under test and the permissions of its parts,
 # the same checks as the host makes.
 otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
-# SQLite fixture files, opened read-only as the host opens them.
-rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
+# SQLite fixture files, opened read-only as the host opens them. `hooks`
+# (approved by the owner 2026-11-20) gives the authorizer that refuses a
+# key column read as text, as the host refuses it.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks"] }
 # JSON key files and canned answers of the fixtures.
 serde_json = { workspace = true }
 # The fingerprint of a made-up key, SHA-256 as the host computes it.

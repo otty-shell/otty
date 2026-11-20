@@ -11,6 +11,10 @@ It is a separate crate so that running untrusted code stays in one place
 that knows no agent and no provider. It must not depend on `iced`, on any
 crate under `crates/app/`, or on `otty-agents`; `otty-agents` uses it.
 
+Plugins never see a key: the host gives them key handles and fills a key
+into a request itself. The network and the system keyring sit behind
+traits, so the tests use mocks and never reach them.
+
 The bindings read the WIT files of `otty-plugin-sdk`. Each contract version
 has its own module, such as `agent::v0_1` and `provider::v0_1`, and
 `contract.rs` is the one place that maps a version of a manifest's `[api]`

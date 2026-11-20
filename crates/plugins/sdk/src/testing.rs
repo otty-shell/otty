@@ -46,6 +46,20 @@ fields = ["/key"]
 [[agent.permissions.keys]]
 env = ["MADE_UP_KEY"]
 
+[[agent.permissions.keyring]]
+service = "made-up"
+user = "work"
+fields = ["/key"]
+
+[[agent.permissions.keyring]]
+service = "made-up"
+user = "plain"
+
+[[agent.permissions.keyring]]
+service = "made-up"
+user = "home"
+fields = ["/key"]
+
 [[provider]]
 id = "made-up-cloud"
 name = "Made-up cloud"

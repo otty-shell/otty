@@ -13,6 +13,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use crate::agent::AgentCalls;
 use crate::engine::TICK;
 use crate::memory_cap::MemoryCap;
+use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 use crate::plugin_log::PluginLog;
 use crate::provider::ProviderCalls;
@@ -51,6 +52,7 @@ pub struct CallState {
     permissions: Arc<Permissions>,
     env: Environment,
     log: PluginLog,
+    outside: Arc<Outside>,
     deadline: Instant,
 }
 
@@ -73,6 +75,11 @@ impl CallState {
     /// The log of the plugin.
     pub fn log(&self) -> &PluginLog {
         &self.log
+    }
+
+    /// The network and the system keyring.
+    pub(crate) fn outside(&self) -> &Outside {
+        &self.outside
     }
 
     /// The resources the host gave the plugin in this batch, such as key
@@ -206,6 +213,7 @@ impl<'plugin> CallBatch<'plugin> {
             permissions: Arc::clone(&self.permissions),
             env: self.plugin.env().clone(),
             log: self.plugin.log().clone(),
+            outside: Arc::clone(self.plugin.outside()),
             deadline: Instant::now() + CallKind::Quick.deadline(),
         };
 

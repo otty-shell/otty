@@ -165,6 +165,46 @@ impl Permissions {
             .any(|rule| rule.service() == service && rule.user() == user)
     }
 
+    /// The JSON fields that hold keys in the keyring entry of `service`
+    /// and `user`; none when the whole entry is the key or the part does
+    /// not declare the entry.
+    pub fn keyring_fields(
+        &self,
+        service: &str,
+        user: &str,
+    ) -> Vec<JsonPointer> {
+        self.keyring
+            .iter()
+            .filter(|rule| rule.service() == service && rule.user() == user)
+            .flat_map(|rule| rule.fields().iter().cloned())
+            .collect()
+    }
+
+    /// Whether `column` of `table` in the database `database` holds keys,
+    /// as a whole or in its JSON fields: such a column is read only as
+    /// key handles, never as text.
+    pub fn is_key_column(
+        &self,
+        database: &Path,
+        table: &str,
+        column: &str,
+    ) -> bool {
+        is_plain_absolute(database)
+            && self.keys.iter().any(|key| match key {
+                KeyMatcher::SqliteColumn {
+                    databases,
+                    table: key_table,
+                    column: key_column,
+                    ..
+                } => {
+                    databases.is_match(database)
+                        && key_table == table
+                        && key_column == column
+                },
+                _ => false,
+            })
+    }
+
     /// Whether the part may open a key handle at `place`.
     pub fn may_open_key(&self, place: &KeyPlace) -> bool {
         match place {
@@ -347,7 +387,7 @@ mod tests {
     use super::*;
     use crate::manifest::Manifest;
     use crate::part::PartRef;
-    use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST};
+    use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST, edited};
 
     fn env() -> Environment {
         Environment::new(PathBuf::from("/home/user"))
@@ -465,6 +505,51 @@ mod tests {
 
         assert!(codex.may_read_var("CODEX_HOME"));
         assert!(!codex.may_read_var("HOME"));
+    }
+
+    #[test]
+    fn a_keyring_entry_names_its_key_fields() {
+        let manifest = edited(
+            OPENCODE_MANIFEST,
+            "[[agent.permissions.keys]]",
+            "[[agent.permissions.keyring]]\n\
+             service = \"made-up\"\n\
+             user = \"work\"\n\
+             fields = [\"/key\", \"/*/token\"]\n\n\
+             [[agent.permissions.keyring]]\n\
+             service = \"made-up\"\n\
+             user = \"plain\"\n\n\
+             [[agent.permissions.keys]]",
+        );
+        let opencode = permissions_of(&manifest, &PartRef::agent("opencode"));
+
+        let fields = |user: &str| -> Vec<String> {
+            opencode
+                .keyring_fields("made-up", user)
+                .iter()
+                .map(|field| field.as_str().to_string())
+                .collect()
+        };
+
+        assert_eq!(fields("work"), ["/key", "/*/token"]);
+        assert!(fields("plain").is_empty());
+        assert!(fields("other").is_empty());
+    }
+
+    #[test]
+    fn a_key_column_is_known_with_or_without_key_fields() {
+        let opencode =
+            permissions_of(OPENCODE_MANIFEST, &PartRef::agent("opencode"));
+        let database = Path::new("/data/xdg/opencode/opencode.db");
+
+        assert!(opencode.is_key_column(database, "credential", "value"));
+        assert!(!opencode.is_key_column(database, "credential", "id"));
+        assert!(!opencode.is_key_column(database, "message", "value"));
+        assert!(!opencode.is_key_column(
+            Path::new("/data/xdg/other/x.db"),
+            "credential",
+            "value"
+        ));
     }
 
     #[test]

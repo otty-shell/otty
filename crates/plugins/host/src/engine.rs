@@ -16,6 +16,7 @@ use crate::calls::CallState;
 use crate::contract::{ContractExports, ExportedApi};
 use crate::imports::refused_imports;
 use crate::operations::v0_1::Operations;
+use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 
 /// How often the epoch moves on: a call's deadline is counted in these
@@ -31,8 +32,25 @@ pub struct PluginEngine {
 
 impl PluginEngine {
     /// An engine whose compiled plugins are kept in `cache_folder`, such
-    /// as `~/.cache/otty/plugins/`.
+    /// as `~/.cache/otty/plugins/`. Its plugins reach the network and,
+    /// once the user allows it, the system keyring.
     pub fn new(cache_folder: PathBuf) -> Result<Self, EngineError> {
+        Self::with_outside(cache_folder, Outside::real())
+    }
+
+    /// Lets plugins read the keyring entries their parts declare, or
+    /// stops them, as the user chose in Agents mode. Until then every
+    /// keyring read is refused.
+    pub fn set_keyring_allowed(&self, allowed: bool) {
+        self.shared.outside.set_keyring_allowed(allowed);
+    }
+
+    /// An engine whose plugins reach the network and the keyring through
+    /// `outside`, such as mocks in tests.
+    pub(crate) fn with_outside(
+        cache_folder: PathBuf,
+        outside: Outside,
+    ) -> Result<Self, EngineError> {
         let mut config = Config::new();
         config.epoch_interruption(true);
         let engine = Engine::new(&config)
@@ -51,6 +69,7 @@ impl PluginEngine {
             engine,
             linker,
             cache: CompiledCache::new(cache_folder),
+            outside: Arc::new(outside),
         });
         start_ticker(Arc::downgrade(&shared))?;
 
@@ -125,11 +144,16 @@ pub(crate) struct EngineShared {
     engine: Engine,
     linker: Linker<CallState>,
     cache: CompiledCache,
+    outside: Arc<Outside>,
 }
 
 impl EngineShared {
     pub(crate) fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    pub(crate) fn outside(&self) -> &Arc<Outside> {
+        &self.outside
     }
 }
 

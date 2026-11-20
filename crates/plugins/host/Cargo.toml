@@ -12,17 +12,32 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
+# Reads the middle part of a JWT for `key.jwt-claims`. The same major
+# version and features as ureq and otty-agents use, so no second copy is
+# built.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# `keyring.read` and key handles in a keyring entry, only after the user
+# allowed it. The features otty-agents uses: the Secret Service over zbus
+# on Linux, the Keychain on macOS. OTTY never writes an entry.
+keyring = "4.2.0"
 # A warning when a compiled plugin can not be kept in the cache.
 log = { workspace = true }
 # The manifest and the permissions of each part.
 otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
+# Key handles in a SQLite column, read from a database opened read-only.
+# The same version and features as otty-agents.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
 # The contract versions a component exports, semver (approved by the owner
 # 2026-11-20).
 semver = "1.0.28"
 # The SHA-256 that names a compiled plugin in the cache. The version
 # otty-agents uses, so no second copy is built.
 sha2 = { version = "0.11.1", default-features = false }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+# `http.send`: HTTPS with rustls, ring and the webpki roots, as otty-agents
+# sends its requests; no OpenSSL, no gzip.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 # wasmtime 48 (LTS) with the compiler, the component model and nothing else
 # from its default features (spec Decision 8). The spike measured the
 # binary at +16.5 MB stripped with these features.
@@ -35,3 +50,6 @@ wasmtime = { version = "48.0.10", default-features = false, features = [
 # WASI 0.2 linked with an empty context, so the standard library of a
 # `wasm32-wasip2` plugin works but sees no file, network or variable.
 wasmtime-wasi = { version = "48.0.10", default-features = false, features = ["p2"] }
+
+[dev-dependencies]
+mockall = { workspace = true }

@@ -15,6 +15,7 @@ use crate::cache::LoadKind;
 use crate::calls::{CallBatch, CallError, CallState};
 use crate::contract::ContractExports;
 use crate::engine::EngineShared;
+use crate::outside::Outside;
 use crate::plugin_log::PluginLog;
 use crate::provider::ProviderExports;
 
@@ -50,6 +51,10 @@ impl LoadedPlugin {
 
     pub(crate) fn engine(&self) -> &Engine {
         self.shared.engine()
+    }
+
+    pub(crate) fn outside(&self) -> &Arc<Outside> {
+        self.shared.outside()
     }
 
     pub(crate) fn instance_pre(&self) -> &InstancePre<CallState> {

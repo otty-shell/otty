@@ -14,13 +14,19 @@
 //! assert!(home.ends_with("fixtures"));
 //! ```
 //!
-//! What it does not do as OTTY does: it decodes no zstd file, gives key
-//! columns of a SQLite database as plain values, has no keyring entry,
-//! and runs no program and no terminal (they are refused after the
-//! permission check).
+//! Key columns of a SQLite database are refused in a query, as OTTY
+//! refuses them: a plugin selects the `rowid` and opens the key with
+//! [`keys::open`](crate::keys::open). Keyring entries are made up with
+//! [`TestHost::with_keyring_entry`] and read only after
+//! [`TestHost::with_keyring_allowed`], as OTTY reads them only after the
+//! user's Allow.
+//!
+//! What it does not do as OTTY does: it decodes no zstd file and runs no
+//! program and no terminal (they are refused after the permission check).
 
 mod files;
 mod http;
+mod keyring;
 mod keys;
 mod sqlite;
 
@@ -98,6 +104,8 @@ impl TestHost {
             home,
             vars: Vec::new(),
             now_ms: None,
+            keyring: Vec::new(),
+            keyring_allowed: false,
             keys: Vec::new(),
             answers: Vec::new(),
             requests: Vec::new(),
@@ -117,6 +125,32 @@ impl TestHost {
             .borrow_mut()
             .vars
             .push((name.to_string(), value.to_string()));
+
+        self
+    }
+
+    /// The same host with the made-up system keyring entry of `service`
+    /// and `user` holding `text`. A part reads it only when it declares it
+    /// and once the keyring is allowed.
+    pub fn with_keyring_entry(
+        self,
+        service: &str,
+        user: &str,
+        text: &str,
+    ) -> Self {
+        self.state.borrow_mut().keyring.push((
+            service.to_string(),
+            user.to_string(),
+            text.to_string(),
+        ));
+
+        self
+    }
+
+    /// The same host with the keyring allowed, as after the user's Allow
+    /// in Agents mode. Until then every keyring read is refused.
+    pub fn with_keyring_allowed(self) -> Self {
+        self.state.borrow_mut().keyring_allowed = true;
 
         self
     }
@@ -231,6 +265,8 @@ struct HostState {
     home: PathBuf,
     vars: Vec<(String, String)>,
     now_ms: Option<i64>,
+    keyring: Vec<(String, String, String)>,
+    keyring_allowed: bool,
     keys: Vec<String>,
     answers: Vec<CannedAnswer>,
     requests: Vec<SentRequest>,
@@ -262,6 +298,31 @@ impl HostState {
             .iter()
             .find(|(set, _)| set == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    /// The text of the keyring entry of `service` and `user`; refused
+    /// until the keyring is allowed.
+    fn keyring_entry(
+        &self,
+        service: &str,
+        user: &str,
+    ) -> Result<Option<String>, HostError> {
+        if !self.keyring_allowed {
+            return Err(HostError::NotAllowed(
+                "the system keyring: the user has not allowed OTTY to read it"
+                    .to_string(),
+            ));
+        }
+
+        let text = self
+            .keyring
+            .iter()
+            .find(|(entry_service, entry_user, _)| {
+                entry_service == service && entry_user == user
+            })
+            .map(|(_, _, text)| text.clone());
+
+        Ok(text)
     }
 
     /// A handle to `value`.
@@ -403,12 +464,8 @@ pub(crate) fn read_keyring(
     service: &str,
     user: &str,
 ) -> Result<Option<JsonWithKeys>, HostError> {
-    with_host(|_, permissions| {
-        if !permissions.may_read_keyring(service, user) {
-            return Err(HostError::NotAllowed(format!("{service} {user}")));
-        }
-
-        Ok(None)
+    with_host(|state, permissions| {
+        keyring::read(state, permissions, service, user)
     })
 }
 
@@ -486,7 +543,9 @@ mod tests {
     use crate::http::Request;
     use crate::sqlite::{Param, Value};
     use crate::testing::MadeUpPlugin;
-    use crate::{JsonField, SqliteField, env, files, keys, programs};
+    use crate::{
+        JsonField, KeyringEntry, SqliteField, env, files, keys, programs,
+    };
 
     const AGENT: &str = "made-up-agent";
     const PROVIDER: &str = "made-up-cloud";
@@ -811,6 +870,106 @@ mod tests {
                 "27c8d30ec451e808415d2307396308459e728ccef0adc5a41908fccae8a2e1ae"
             )
         );
+    }
+
+    #[test]
+    fn a_key_column_is_refused_in_a_query_and_opened_by_its_row() {
+        let plugin = MadeUpPlugin::new();
+        let database = plugin.write(".made-up/keys.db", b"");
+        let connection =
+            rusqlite::Connection::open(&database).expect("a database");
+        connection
+            .execute_batch(
+                "CREATE TABLE credential (provider TEXT, value TEXT);
+                 INSERT INTO credential VALUES
+                     ('made-up-cloud', '{\"key\": \"ex-made-up-key\"}');",
+            )
+            .expect("the fixture");
+        drop(connection);
+        let host = TestHost::new(plugin.folder());
+        let path = text(&database);
+
+        let (as_text, every_column, rows) = host.as_agent(AGENT, || {
+            (
+                crate::sqlite::query(
+                    &path,
+                    "SELECT value FROM credential",
+                    &[],
+                ),
+                crate::sqlite::query(&path, "SELECT * FROM credential", &[]),
+                crate::sqlite::query(
+                    &path,
+                    "SELECT rowid, provider FROM credential",
+                    &[],
+                ),
+            )
+        });
+
+        assert!(matches!(as_text, Err(HostError::NotAllowed(_))));
+        assert!(matches!(every_column, Err(HostError::NotAllowed(_))));
+        let rows = rows.expect("the rows");
+        assert!(matches!(
+            &rows[0][..],
+            [Value::Integer(1), Value::Text(provider)] if provider == "made-up-cloud"
+        ));
+    }
+
+    #[test]
+    fn a_keyring_entry_is_read_only_after_the_allow_with_keys_as_handles() {
+        let plugin = MadeUpPlugin::new();
+        let entry = r#"{"key": "ex-made-up-key", "name": "Work"}"#;
+        let refused = TestHost::new(plugin.folder())
+            .with_keyring_entry("made-up", "work", entry)
+            .as_agent(AGENT, || {
+                crate::keyring::read("made-up", "work").map(|_| ())
+            });
+        let host = TestHost::new(plugin.folder())
+            .with_keyring_entry("made-up", "work", entry)
+            .with_keyring_entry("made-up", "plain", "ex-made-up-key")
+            .with_keyring_allowed();
+
+        let (work, plain, missing, undeclared, opened) =
+            host.as_agent(AGENT, || {
+                let work = crate::keyring::read("made-up", "work")
+                    .expect("an entry")
+                    .expect("there");
+                let plain = crate::keyring::read("made-up", "plain")
+                    .expect("an entry")
+                    .expect("there");
+                let opened = keys::open(&KeyPlace::Keyring(KeyringEntry {
+                    service: "made-up".to_string(),
+                    user: "work".to_string(),
+                    pointer: Some("/key".to_string()),
+                }))
+                .and_then(|key| key.fingerprint());
+
+                (
+                    (
+                        work.json().to_string(),
+                        work.key(0).expect("a key").fingerprint(),
+                    ),
+                    (
+                        plain.json().to_string(),
+                        plain.key(0).expect("a key").fingerprint(),
+                    ),
+                    crate::keyring::read("made-up", "home").map(|entry| {
+                        entry.map(|entry| entry.json().to_string())
+                    }),
+                    crate::keyring::read("made-up", "other").map(|_| ()),
+                    opened,
+                )
+            });
+
+        let fingerprint =
+            "27c8d30ec451e808415d2307396308459e728ccef0adc5a41908fccae8a2e1ae";
+        assert!(matches!(refused, Err(HostError::NotAllowed(_))));
+        assert_eq!(work.0, r#"{"key":{"$key":0},"name":"Work"}"#);
+        assert_eq!(work.1.as_deref(), Ok(fingerprint));
+        assert_eq!(plain.0, r#"{"$key":0}"#);
+        assert_eq!(plain.1.as_deref(), Ok(fingerprint));
+        assert_eq!(missing, Ok(None));
+        assert!(matches!(undeclared, Err(HostError::NotAllowed(_))));
+        assert_eq!(opened.as_deref(), Ok(fingerprint));
     }
 
     #[test]

@@ -209,7 +209,7 @@ fn has_marker(line: &[u8], markers: &[Vec<u8>]) -> bool {
 
 /// Replaces each text value of `value` at one of `fields` by `{"$key":
 /// n}`, where `n` is what `add_key` gives for the text.
-fn replace_keys(
+pub(super) fn replace_keys(
     value: &mut Value,
     pointer: &str,
     fields: &[JsonPointer],

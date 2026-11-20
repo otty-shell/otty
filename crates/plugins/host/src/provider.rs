@@ -141,16 +141,38 @@ mod tests {
     use otty_plugin_manifest::PartRef;
 
     use super::*;
-    use crate::engine::PluginEngine;
-    use crate::operations::v0_1::otty::host::types::{HostError, Identity};
-    use crate::testing::{TempDir, load_template, template_env};
+    use crate::https::MockHttpsSend;
+    use crate::operations::v0_1::otty::host::http::Response;
+    use crate::operations::v0_1::otty::host::types::Identity;
+    use crate::system_keyring::MockKeyringRead;
+    use crate::testing::{TempDir, engine_with, load_template, template_env};
+
+    const KEY: &str = "ex-made-up-key-0001";
 
     #[test]
-    fn the_template_provider_gets_a_key_handle_and_asks_the_host() {
+    fn the_template_provider_reads_the_balance_with_its_key_handle() {
         let cache = TempDir::new();
-        let engine =
-            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let mut https = MockHttpsSend::new();
+        https
+            .expect_send()
+            .withf(|sent| {
+                sent.url == "https://api.example.com/v1/balance"
+                    && sent.headers.iter().any(|(name, value)| {
+                        name == "authorization"
+                            && *value == format!("Bearer {KEY}")
+                    })
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(Response {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: br#"{"balance": 12.5, "currency": "USD"}"#.to_vec(),
+                })
+            });
+        let engine = engine_with(&cache, https, MockKeyringRead::new());
+        let env = template_env().with_var("EXAMPLE_CLOUD_KEY", KEY);
+        let plugin = load_template(&engine, &env);
         let mut batch = plugin
             .start_calls(&PartRef::provider("example-cloud"))
             .expect("a listed part");
@@ -169,13 +191,11 @@ mod tests {
             .expect("a provider part")
             .numbers(&account, &key);
 
-        // Until issue 05 brings `http.send`, the host refuses it, and the
-        // part's answer says so: the call, the key handle and the answer
-        // made the round trip.
-        let Ok(Err(ReadError::Host(HostError::Failed(reason)))) = numbers
-        else {
-            panic!("the part's own answer: {numbers:?}");
+        let Ok(Ok(numbers)) = numbers else {
+            panic!("the part's answer: {numbers:?}");
         };
-        assert_eq!(reason, "http.send is not in this OTTY yet");
+        let left = numbers.left.expect("the money left");
+        assert_eq!(left.amount, 12.5);
+        assert_eq!(left.currency, "USD");
     }
 }

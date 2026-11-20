@@ -4521,11 +4521,17 @@ dependencies = [
 name = "otty-plugin-host"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "keyring",
  "log",
+ "mockall",
  "otty-plugin-manifest",
+ "rusqlite",
  "semver",
+ "serde_json",
  "sha2 0.11.1",
  "thiserror 2.0.18",
+ "ureq",
  "wasmtime",
  "wasmtime-wasi",
 ]

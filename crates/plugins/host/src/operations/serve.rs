@@ -14,6 +14,7 @@ use wasmtime::component::Resource;
 
 use crate::calls::CallState;
 use crate::keys::KeyHandle;
+use crate::operations;
 use crate::operations::v0_1::otty::host::files::{Batch, FileInfo};
 use crate::operations::v0_1::otty::host::http::{Request, Response};
 use crate::operations::v0_1::otty::host::keys::{JsonWithKeys, KeyPlace};
@@ -35,24 +36,24 @@ impl types::Host for CallState {}
 impl keys::HostKey for CallState {
     fn fingerprint(
         &mut self,
-        _key: Resource<KeyHandle>,
+        key: Resource<KeyHandle>,
     ) -> Result<String, HostError> {
-        Err(not_yet("key.fingerprint"))
+        operations::keys::fingerprint(self, &key)
     }
 
     fn has_prefix(
         &mut self,
-        _key: Resource<KeyHandle>,
-        _text: String,
+        key: Resource<KeyHandle>,
+        text: String,
     ) -> Result<bool, HostError> {
-        Err(not_yet("key.has-prefix"))
+        operations::keys::has_prefix(self, &key, &text)
     }
 
     fn jwt_claims(
         &mut self,
-        _key: Resource<KeyHandle>,
+        key: Resource<KeyHandle>,
     ) -> Result<Option<String>, HostError> {
-        Err(not_yet("key.jwt-claims"))
+        operations::keys::jwt_claims(self, &key)
     }
 
     fn drop(&mut self, key: Resource<KeyHandle>) -> wasmtime::Result<()> {
@@ -65,9 +66,9 @@ impl keys::HostKey for CallState {
 impl keys::Host for CallState {
     fn open(
         &mut self,
-        _place: KeyPlace,
+        place: KeyPlace,
     ) -> Result<Resource<KeyHandle>, HostError> {
-        Err(not_yet("keys.open"))
+        operations::keys::open(self, place)
     }
 }
 
@@ -116,9 +117,9 @@ impl files::Host for CallState {
 
     fn read_json_with_keys(
         &mut self,
-        _path: String,
+        path: String,
     ) -> Result<JsonWithKeys, HostError> {
-        Err(not_yet("files.read-json-with-keys"))
+        operations::keys::read_json_with_keys(self, &path)
     }
 
     fn remove(&mut self, _path: String) -> Result<(), HostError> {
@@ -138,8 +139,8 @@ impl sqlite::Host for CallState {
 }
 
 impl http::Host for CallState {
-    fn send(&mut self, _request: Request) -> Result<Response, HostError> {
-        Err(not_yet("http.send"))
+    fn send(&mut self, request: Request) -> Result<Response, HostError> {
+        operations::http::send(self, request)
     }
 }
 
@@ -238,10 +239,10 @@ impl terminal::Host for CallState {}
 impl keyring::Host for CallState {
     fn read(
         &mut self,
-        _service: String,
-        _user: String,
+        service: String,
+        user: String,
     ) -> Result<Option<JsonWithKeys>, HostError> {
-        Err(not_yet("keyring.read"))
+        operations::keyring::read(self, &service, &user)
     }
 }
 

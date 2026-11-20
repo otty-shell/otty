@@ -4,10 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use otty_plugin_manifest::{Environment, Manifest};
+use otty_plugin_manifest::{Environment, Manifest, PartRef};
 
+use crate::calls::{CallKind, CallState};
 use crate::engine::PluginEngine;
+use crate::https::MockHttpsSend;
+use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
+use crate::system_keyring::MockKeyringRead;
 
 /// The manifest of a test plugin with one agent part, `[api] agent =
 /// "0.1"`, the contract every test plugin exports.
@@ -28,6 +32,75 @@ icon = "test.svg"
 
 [agent.permissions]
 read = ["~/.test-agent/**"]
+"#;
+
+/// The manifest of a test plugin whose agent part declares keys in every
+/// kind of place, and two provider parts, each with its own host. The
+/// template plugin's `.wasm` loads with it: it exports both contracts.
+pub(crate) const KEYS_PLUGIN_MANIFEST: &str = r#"
+[plugin]
+id = "test-plugin"
+name = "Test plugin"
+version = "1.0.0"
+wasm = "plugin.wasm"
+
+[api]
+agent = "0.1"
+provider = "0.1"
+
+[[agent]]
+id = "test-agent"
+name = "Test agent"
+icon = "test.svg"
+
+[agent.permissions]
+read = ["~/.test-agent/**"]
+sqlite = ["~/.test-agent/*.db"]
+
+[[agent.permissions.keys]]
+files = ["~/.test-agent/auth.json"]
+fields = ["/*/key", "/token"]
+
+[[agent.permissions.keys]]
+sqlite = ["~/.test-agent/*.db"]
+table = "credential"
+column = "value"
+fields = ["/key"]
+
+[[agent.permissions.keys]]
+sqlite = ["~/.test-agent/*.db"]
+table = "api_key"
+column = "secret"
+
+[[agent.permissions.keys]]
+env = ["TEST_AGENT_KEY"]
+
+[[agent.permissions.keyring]]
+service = "test-agent"
+user = "work"
+fields = ["/key"]
+
+[[agent.permissions.keyring]]
+service = "test-agent"
+user = "plain"
+
+[[provider]]
+id = "test-cloud"
+name = "Test cloud"
+icon = "cloud.svg"
+hosts = ["example.com"]
+
+[provider.permissions]
+http = ["api.example.com"]
+
+[[provider]]
+id = "other-cloud"
+name = "Other cloud"
+icon = "other.svg"
+hosts = ["example.org"]
+
+[provider.permissions]
+http = ["api.example.org"]
 "#;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -116,4 +189,44 @@ pub(crate) fn load_fixture(engine: &PluginEngine, name: &str) -> LoadedPlugin {
     engine
         .load(manifest, &fixture(name), &test_env())
         .expect("the test plugin loads")
+}
+
+/// An engine whose plugins reach `https` and `keyring` in place of the
+/// network and the system keyring.
+pub(crate) fn engine_with(
+    cache: &TempDir,
+    https: MockHttpsSend,
+    keyring: MockKeyringRead,
+) -> PluginEngine {
+    let outside = Outside::new(Box::new(https), Box::new(keyring));
+
+    PluginEngine::with_outside(cache.path().to_path_buf(), outside)
+        .expect("engine")
+}
+
+/// The template plugin's `.wasm` loaded with [`KEYS_PLUGIN_MANIFEST`] by
+/// `engine` for `env`.
+pub(crate) fn load_keys_plugin(
+    engine: &PluginEngine,
+    env: &Environment,
+) -> LoadedPlugin {
+    let manifest = Manifest::parse(KEYS_PLUGIN_MANIFEST).expect("valid");
+
+    engine
+        .load(manifest, &fixture("template"), env)
+        .expect("the test plugin loads")
+}
+
+/// Runs `run` with the call state of one call into `part` of `plugin`,
+/// as a host operation of that call gets it.
+pub(crate) fn in_call<T>(
+    plugin: &LoadedPlugin,
+    part: &PartRef,
+    run: impl FnOnce(&mut CallState) -> T,
+) -> T {
+    let mut batch = plugin.start_calls(part).expect("a listed part");
+
+    batch
+        .call(CallKind::Quick, |store, _| Ok(run(store.data_mut())))
+        .expect("the call")
 }

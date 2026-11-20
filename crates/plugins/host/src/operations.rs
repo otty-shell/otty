@@ -3,5 +3,8 @@
 //!
 //! [`CallState`]: crate::CallState
 
+mod http;
+mod keyring;
+mod keys;
 mod serve;
 pub mod v0_1;

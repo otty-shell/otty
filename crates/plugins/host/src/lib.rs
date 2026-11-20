@@ -21,19 +21,29 @@
 //! [`provider`]; each version the host keeps has its own bindings, such
 //! as [`agent::v0_1`]. The host operations a plugin imports are
 //! [`operations`]; until issues 04 to 06 most of them refuse every call.
+//!
+//! A plugin never holds a key, only a [`KeyHandle`]: where the key sits.
+//! The host reads the key there for each use (its fingerprint, a prefix,
+//! the claims of a JWT, a request header) and drops it right after.
+//! `http.send` reaches only the hosts of the called part, and
+//! `keyring.read` only its entries once the user allowed the keyring
+//! ([`PluginEngine::set_keyring_allowed`]).
 
 pub mod agent;
 mod cache;
 mod calls;
 mod contract;
 mod engine;
+mod https;
 mod imports;
 mod keys;
 mod memory_cap;
 pub mod operations;
+mod outside;
 mod plugin;
 mod plugin_log;
 pub mod provider;
+mod system_keyring;
 #[cfg(test)]
 mod testing;
 
