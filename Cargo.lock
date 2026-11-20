@@ -4523,11 +4523,13 @@ name = "otty-plugin-host"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "globset",
  "keyring",
  "log",
  "mockall",
  "otty-plugin-manifest",
  "rusqlite",
+ "ruzstd",
  "semver",
  "serde_json",
  "sha2 0.11.1",
@@ -4572,6 +4574,7 @@ dependencies = [
  "globset",
  "otty-plugin-manifest",
  "rusqlite",
+ "ruzstd",
  "serde_json",
  "sha2 0.11.1",
  "wit-bindgen 0.57.1",

@@ -58,3 +58,30 @@ In `otty-plugin-host`, each operation checked on every call against the
 `crates/plugins/host/Cargo.toml`.
 
 ## Comments
+
+### 2026-11-20: implementation notes
+
+- `files.list` walks folder by folder along the glob and lists the files
+  the part may read, read with keys, or query, as the SDK test host does.
+  A glob that is not absolute or holds `..` is refused; files outside the
+  part's globs are left out, not refused. Symlinks to folders are not
+  followed.
+- Symlinks: a path is reachable only when the real file it leads to also
+  matches the part's globs, checked as if written from the home folder or
+  the variable folder it lies in (a symlinked `/home` keeps working; an
+  agent folder the user symlinked into a dotfiles folder does not).
+- `files.read-lines`: at most 1 MiB asked per batch; a line longer than
+  16 MiB is left out and counted as skipped. The decoder of the last
+  zstd file stays open for the next batch of the same call batch. Only
+  single-frame zstd files are decoded, as in `otty-agents`.
+- Note for issue 17: nothing was moved out of `otty-agents`. Its in-core
+  readers still use `ruzstd` (`codex/session_file.rs`) and `rusqlite`
+  (`open_code/database.rs`); the host has its own code for both.
+- Open: `memchr` was not added (not in the coordinator's list of approved
+  dependencies; the permission check refused it). The marker search looks
+  for the first byte and then compares the rest, as the spike's faster
+  version did; swapping in `memchr::memmem::Finder` is local to `holds`
+  in `operations/lines.rs`.
+- Open: the bench note. Building a bench outside the worktree was refused
+  in this run, so `read-lines` on the spike's 100 MB fixture is not
+  measured yet.

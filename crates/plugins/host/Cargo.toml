@@ -16,6 +16,8 @@ rust-version = { workspace = true }
 # version and features as ureq and otty-agents use, so no second copy is
 # built.
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# Matches the globs of `files.list` against the folders it walks.
+globset = { version = "0.4.21", default-features = false }
 # `keyring.read` and key handles in a keyring entry, only after the user
 # allowed it. The features otty-agents uses: the Secret Service over zbus
 # on Linux, the Keychain on macOS. OTTY never writes an entry.
@@ -24,9 +26,14 @@ keyring = "4.2.0"
 log = { workspace = true }
 # The manifest and the permissions of each part.
 otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
-# Key handles in a SQLite column, read from a database opened read-only.
-# The same version and features as otty-agents.
-rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
+# The read-only queries of `sqlite.query` and key handles in a SQLite
+# column, built as otty-agents builds it: SQLite from its C source, no
+# statement cache. `hooks` (approved by the owner 2026-11-20) gives the
+# authorizer that refuses `ATTACH` and key columns read as text.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks"] }
+# Decodes zstd files for `files.read-lines`; the version otty-agents uses
+# (spec "Crates and dependencies": moved from otty-agents, approved).
+ruzstd = "0.9.1"
 # The contract versions a component exports, semver (approved by the owner
 # 2026-11-20).
 semver = "1.0.28"

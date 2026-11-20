@@ -19,13 +19,25 @@ const MOST_FILES: usize = 100_000;
 /// The most bytes `read` gives.
 const READ_CAP: u32 = 4 * 1024 * 1024;
 
+/// The first bytes of a zstd frame: such a file is decoded, as the host
+/// decodes it.
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+
 /// The files under `home` whose paths match `glob` and that the part may
-/// read, read with its keys replaced, or query.
+/// read, read with its keys replaced, or query. A glob that is not
+/// absolute or holds `..` is refused.
 pub(super) fn list(
     home: &Path,
     permissions: &Permissions,
     glob: &str,
 ) -> Result<Vec<FileInfo>, HostError> {
+    let is_plain_absolute = glob
+        .strip_prefix('/')
+        .is_some_and(|relative| !relative.split('/').any(|part| part == ".."));
+    if !is_plain_absolute {
+        return Err(not_allowed(Path::new(glob)));
+    }
+
     let matcher = GlobBuilder::new(glob)
         .literal_separator(true)
         .build()
@@ -77,7 +89,8 @@ pub(super) fn read(
 }
 
 /// Complete lines of `path` from `offset`, about `max_bytes` of them, only
-/// those holding one of `markers`.
+/// those holding one of `markers`. A zstd file is decoded; offsets then
+/// count decoded bytes.
 pub(super) fn read_lines(
     permissions: &Permissions,
     path: &str,
@@ -91,6 +104,7 @@ pub(super) fn read_lines(
     }
 
     let bytes = fs::read(&path).map_err(|error| io_error(&error, &path))?;
+    let bytes = decoded(bytes).map_err(|error| io_error(&error, &path))?;
     let start = usize::try_from(offset)
         .unwrap_or(usize::MAX)
         .min(bytes.len());
@@ -195,6 +209,20 @@ fn file_info(path: &Path) -> Option<FileInfo> {
         size: metadata.len(),
         changed_ms,
     })
+}
+
+/// `bytes` decoded when they start with the zstd magic bytes.
+fn decoded(bytes: Vec<u8>) -> io::Result<Vec<u8>> {
+    if !bytes.starts_with(&ZSTD_MAGIC) {
+        return Ok(bytes);
+    }
+
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(bytes.as_slice())
+        .map_err(io::Error::other)?;
+    let mut plain = Vec::new();
+    decoder.read_to_end(&mut plain)?;
+
+    Ok(plain)
 }
 
 fn has_marker(line: &[u8], markers: &[Vec<u8>]) -> bool {

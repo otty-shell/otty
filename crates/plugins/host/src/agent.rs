@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn the_template_finds_its_default_profile_in_the_home_folder() {
+    fn the_template_finds_its_profiles_in_the_home_folder() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
@@ -313,7 +313,14 @@ mod tests {
             .iter()
             .map(|place| (place.folder.as_str(), place.is_default))
             .collect();
-        assert_eq!(listed, [(default_profile().folder.as_str(), true)]);
+        let work = template_env().home().join(".example-agent-work");
+        assert_eq!(
+            listed,
+            [
+                (default_profile().folder.as_str(), true),
+                (work.display().to_string().as_str(), false)
+            ]
+        );
     }
 
     #[test]
@@ -333,8 +340,8 @@ mod tests {
             .profiles()
             .expect("the profiles");
 
-        assert_eq!(places.len(), 1);
         assert_eq!(places[0].folder, "/data/agent");
+        assert!(places[0].is_default);
     }
 
     #[test]
@@ -370,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn a_host_operation_of_a_later_issue_is_refused_in_plain_words() {
+    fn the_template_reads_its_sessions_through_the_host() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
@@ -382,18 +389,20 @@ mod tests {
         let sessions = batch
             .agent()
             .expect("an agent part")
-            .sessions(&default_profile());
+            .sessions(&default_profile())
+            .expect("the call ran")
+            .expect("the sessions");
 
+        let found: Vec<(&str, &str)> = sessions
+            .iter()
+            .map(|session| (session.id.as_str(), session.title.as_str()))
+            .collect();
         assert_eq!(
-            format!("{sessions:?}"),
-            format!(
-                "{:?}",
-                Ok::<Result<Vec<Session>, ReadError>, CallError>(Err(
-                    ReadError::Host(HostError::Failed(
-                        "files.list is not in this OTTY yet".to_string()
-                    ))
-                ))
-            )
+            found,
+            [
+                ("s2", "Write the release notes"),
+                ("s1", "Fix the cart total")
+            ]
         );
     }
 

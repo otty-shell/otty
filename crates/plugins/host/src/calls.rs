@@ -15,6 +15,7 @@ use crate::call_programs::CallPrograms;
 use crate::call_terminals::CallTerminals;
 use crate::engine::TICK;
 use crate::memory_cap::MemoryCap;
+use crate::operations::ZstdCursor;
 use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 use crate::plugin_log::PluginLog;
@@ -58,6 +59,7 @@ pub struct CallState {
     deadline: Instant,
     programs: CallPrograms,
     terminals: CallTerminals,
+    zstd_cursor: ZstdCursor,
 }
 
 impl CallState {
@@ -106,6 +108,12 @@ impl CallState {
     /// hidden terminal, which makes a limit source slow.
     pub(crate) fn has_started_programs(&self) -> bool {
         self.programs.has_started() || self.terminals.has_started()
+    }
+
+    /// The zstd file `files.read-lines` read last, kept open for its next
+    /// batch.
+    pub(crate) fn zstd_cursor(&mut self) -> &mut ZstdCursor {
+        &mut self.zstd_cursor
     }
 
     /// Moves the running call's deadline later by `wait`: a host operation
@@ -256,6 +264,7 @@ impl<'plugin> CallBatch<'plugin> {
                 self.plugin.starters().terminals(),
                 Arc::clone(&self.permissions),
             ),
+            zstd_cursor: ZstdCursor::default(),
         };
 
         let mut store = Store::new(self.plugin.engine(), state);

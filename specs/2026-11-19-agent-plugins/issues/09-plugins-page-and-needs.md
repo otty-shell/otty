@@ -76,3 +76,4 @@ account and a profile; see the five official plugins listed as "Official
 · built in".
 
 ## Comments
+- 2026-11-20, issue 08 (left for this issue): wire the real `Places` (XDG folders), the built-in readers list and the once-a-day update trigger into the app. When an update adds a part whose id another plugin serves, there is no dialog yet (the new part stays off) — show the same "Use: [A] / [B]" choice. When a plugin is removed, turn back on the other plugins' parts that had lost to it. Releases are read only from the first page (100); fine for now.

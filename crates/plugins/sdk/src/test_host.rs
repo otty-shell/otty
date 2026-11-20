@@ -14,18 +14,19 @@
 //! assert!(home.ends_with("fixtures"));
 //! ```
 //!
-//! Key columns of a SQLite database are refused in a query, as OTTY
-//! refuses them: a plugin selects the `rowid` and opens the key with
-//! [`keys::open`](crate::keys::open). Keyring entries are made up with
-//! [`TestHost::with_keyring_entry`] and read only after
+//! Zstd files are decoded for `files::read_lines`, as OTTY decodes them.
+//! `ATTACH` and key columns of a SQLite database are refused in a query,
+//! as OTTY refuses them: a plugin selects the `rowid` and opens the key
+//! with [`keys::open`](crate::keys::open). Keyring entries are made up
+//! with [`TestHost::with_keyring_entry`] and read only after
 //! [`TestHost::with_keyring_allowed`], as OTTY reads them only after the
 //! user's Allow.
 //!
-//! What it does not do as OTTY does: it decodes no zstd file and runs no
-//! program and no terminal: a declared program answers with the output,
-//! lines or screens the test gave for it ([`TestHost::answer_run`],
-//! [`TestHost::answer_talk`], [`TestHost::answer_terminal`]), and never
-//! runs out of time.
+//! What it does not do as OTTY does: it runs no program and no terminal:
+//! a declared program answers with the output, lines or screens the test
+//! gave for it ([`TestHost::answer_run`], [`TestHost::answer_talk`],
+//! [`TestHost::answer_terminal`]). Neither a program nor a query runs
+//! out of time.
 
 mod files;
 mod http;
@@ -740,6 +741,46 @@ mod tests {
     }
 
     #[test]
+    fn a_zstd_file_gives_the_same_lines_as_its_plain_copy() {
+        let plugin = MadeUpPlugin::new();
+        let content = b"{\"answer\":1}\n{\"user\":2}\n{\"answer\":3}\n";
+        let compressed = ruzstd::encoding::compress_to_vec(
+            &content[..],
+            ruzstd::encoding::CompressionLevel::Fastest,
+        );
+        let plain = plugin.write(".made-up/plain.jsonl", content);
+        let packed = plugin.write(".made-up/packed.jsonl.zst", &compressed);
+        let host = TestHost::new(plugin.folder());
+        let markers = vec![b"\"answer\"".to_vec()];
+
+        let (plain, packed) = host.as_agent(AGENT, || {
+            let read = |path: &Path| {
+                files::read_lines(&text(path), 0, 1024, &markers)
+                    .expect("a batch")
+            };
+
+            (read(&plain), read(&packed))
+        });
+
+        assert_eq!(packed.lines, plain.lines);
+        assert_eq!(packed.skipped, 1);
+        assert_eq!(packed.next_offset, content.len() as u64);
+    }
+
+    #[test]
+    fn a_glob_with_dot_dot_or_not_absolute_is_refused() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let up = format!("{}/.made-up/../*", text(&host.home()));
+
+        let (up_listed, relative_listed) = host
+            .as_agent(AGENT, || (files::list(&up), files::list(".made-up/*")));
+
+        assert!(matches!(up_listed, Err(HostError::NotAllowed(_))));
+        assert!(matches!(relative_listed, Err(HostError::NotAllowed(_))));
+    }
+
+    #[test]
     fn a_key_file_comes_with_handles_in_place_of_its_keys() {
         let plugin = MadeUpPlugin::new();
         let auth = plugin.write(
@@ -1008,6 +1049,45 @@ mod tests {
             &rows[0][..],
             [Value::Integer(1), Value::Text(provider)] if provider == "made-up-cloud"
         ));
+    }
+
+    #[test]
+    fn attach_and_a_key_column_in_other_case_are_refused_as_the_host_does() {
+        let plugin = MadeUpPlugin::new();
+        let database = plugin.write(".made-up/keys.db", b"");
+        let other = plugin.write(".made-up/other.db", b"");
+        let connection =
+            rusqlite::Connection::open(&database).expect("a database");
+        connection
+            .execute_batch(
+                "CREATE TABLE Credential (provider TEXT, Value TEXT);
+                 INSERT INTO Credential VALUES ('made-up-cloud', 'x');",
+            )
+            .expect("the fixture");
+        drop(connection);
+        let host = TestHost::new(plugin.folder());
+        let path = text(&database);
+        let attach = format!("ATTACH DATABASE '{}' AS other", text(&other));
+
+        let (attached, as_text) = host.as_agent(AGENT, || {
+            (
+                crate::sqlite::query(&path, &attach, &[]),
+                crate::sqlite::query(
+                    &path,
+                    "SELECT VALUE FROM credential",
+                    &[],
+                ),
+            )
+        });
+
+        assert!(
+            matches!(&attached, Err(HostError::NotAllowed(what)) if what.contains("ATTACH")),
+            "{attached:?}"
+        );
+        assert!(
+            matches!(&as_text, Err(HostError::NotAllowed(what)) if what.contains("key column")),
+            "{as_text:?}"
+        );
     }
 
     #[test]

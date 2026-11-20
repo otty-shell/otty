@@ -25,6 +25,33 @@ impl Environment {
         self.vars.get(name).map(String::as_str)
     }
 
+    /// Every variable that is set, as its name and value, by name.
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use otty_plugin_manifest::Environment;
+    ///
+    /// let env = Environment::new(PathBuf::from("/home/user"))
+    ///     .with_var("XDG_DATA_HOME", "/data/xdg")
+    ///     .with_var("CODEX_HOME", "/data/codex");
+    ///
+    /// let vars: Vec<(&str, &str)> = env.vars().collect();
+    ///
+    /// assert_eq!(
+    ///     vars,
+    ///     [
+    ///         ("CODEX_HOME", "/data/codex"),
+    ///         ("XDG_DATA_HOME", "/data/xdg")
+    ///     ]
+    /// );
+    /// ```
+    pub fn vars(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.vars
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+    }
+
     /// The environment with the home folder `home` and no variable set.
     ///
     /// ```

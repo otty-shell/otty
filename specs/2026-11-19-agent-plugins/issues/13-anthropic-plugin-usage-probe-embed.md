@@ -50,3 +50,4 @@ is left in `~/.claude/projects/`; Profile info says "Read by: Anthropic
 <version>".
 
 ## Comments
+- 2026-11-20, issue 06: a plugin cannot learn the working folder OTTY starts a hidden terminal in, but Claude Code names its probe session files by that folder and the plugin must delete them (and its `write` glob must spell the folder out). Add a way for the plugin to know it (e.g. the host reports the terminal's folder, or the plugin passes the folder when it starts the terminal and the host checks it) — a small contract change, rebuild the test fixtures.

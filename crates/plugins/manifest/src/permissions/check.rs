@@ -130,6 +130,29 @@ impl Permissions {
             .collect()
     }
 
+    /// The table and column of each key column the part declares in the
+    /// SQLite database `database`. A query may not read them as text.
+    pub fn key_columns(&self, database: &Path) -> Vec<(String, String)> {
+        if !is_plain_absolute(database) {
+            return Vec::new();
+        }
+
+        self.keys
+            .iter()
+            .filter_map(|key| match key {
+                KeyMatcher::SqliteColumn {
+                    databases,
+                    table,
+                    column,
+                    ..
+                } if databases.is_match(database) => {
+                    Some((table.clone(), column.clone()))
+                },
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Whether the part may read the variable `name` as text. A variable
     /// that holds a key is read only through a key handle.
     pub fn may_read_var(&self, name: &str) -> bool {
@@ -178,31 +201,6 @@ impl Permissions {
             .filter(|rule| rule.service() == service && rule.user() == user)
             .flat_map(|rule| rule.fields().iter().cloned())
             .collect()
-    }
-
-    /// Whether `column` of `table` in the database `database` holds keys,
-    /// as a whole or in its JSON fields: such a column is read only as
-    /// key handles, never as text.
-    pub fn is_key_column(
-        &self,
-        database: &Path,
-        table: &str,
-        column: &str,
-    ) -> bool {
-        is_plain_absolute(database)
-            && self.keys.iter().any(|key| match key {
-                KeyMatcher::SqliteColumn {
-                    databases,
-                    table: key_table,
-                    column: key_column,
-                    ..
-                } => {
-                    databases.is_match(database)
-                        && key_table == table
-                        && key_column == column
-                },
-                _ => false,
-            })
     }
 
     /// Whether the part may open a key handle at `place`.
@@ -500,6 +498,25 @@ mod tests {
     }
 
     #[test]
+    fn a_database_names_its_key_columns() {
+        let opencode =
+            permissions_of(OPENCODE_MANIFEST, &PartRef::agent("opencode"));
+        let codex = permissions_of(OPENAI_MANIFEST, &PartRef::agent("codex"));
+        let database = Path::new("/data/xdg/opencode/opencode.db");
+
+        assert_eq!(
+            opencode.key_columns(database),
+            [("credential".to_string(), "value".to_string())]
+        );
+        assert!(
+            opencode
+                .key_columns(Path::new("/data/xdg/other/x.db"))
+                .is_empty()
+        );
+        assert!(codex.key_columns(database).is_empty());
+    }
+
+    #[test]
     fn variables_are_read_only_when_listed() {
         let codex = permissions_of(OPENAI_MANIFEST, &PartRef::agent("codex"));
 
@@ -534,22 +551,6 @@ mod tests {
         assert_eq!(fields("work"), ["/key", "/*/token"]);
         assert!(fields("plain").is_empty());
         assert!(fields("other").is_empty());
-    }
-
-    #[test]
-    fn a_key_column_is_known_with_or_without_key_fields() {
-        let opencode =
-            permissions_of(OPENCODE_MANIFEST, &PartRef::agent("opencode"));
-        let database = Path::new("/data/xdg/opencode/opencode.db");
-
-        assert!(opencode.is_key_column(database, "credential", "value"));
-        assert!(!opencode.is_key_column(database, "credential", "id"));
-        assert!(!opencode.is_key_column(database, "message", "value"));
-        assert!(!opencode.is_key_column(
-            Path::new("/data/xdg/other/x.db"),
-            "credential",
-            "value"
-        ));
     }
 
     #[test]

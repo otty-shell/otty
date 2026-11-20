@@ -1,5 +1,5 @@
-//! The log of one plugin: what it writes to stderr (and, with issue 04,
-//! through `log.write`), at most 64 KiB, the oldest bytes dropped first.
+//! The log of one plugin: what it writes to stderr and through
+//! `log.write`, at most 64 KiB, the oldest bytes dropped first.
 
 use std::collections::VecDeque;
 use std::fs::File;

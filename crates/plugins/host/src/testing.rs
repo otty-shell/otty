@@ -10,6 +10,7 @@ use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 use crate::calls::{CallKind, CallState};
 use crate::engine::PluginEngine;
 use crate::https::MockHttpsSend;
+use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 use crate::system_keyring::MockKeyringRead;
@@ -138,6 +139,75 @@ pub(crate) fn edited(text: &str, from: &str, to: &str) -> String {
     assert!(text.contains(from), "the text holds {from:?}");
 
     text.replacen(from, to, 1)
+}
+
+/// The manifest of the host operation tests on files and databases: two
+/// agent parts, `alpha` and `beta`, each with its own folder in the home
+/// folder and its own variables.
+pub(crate) const FILES_MANIFEST: &str = r#"
+[plugin]
+id = "files-test"
+name = "Files test"
+version = "1.0.0"
+wasm = "plugin.wasm"
+
+[api]
+agent = "0.1"
+
+[[agent]]
+id = "alpha"
+name = "Alpha"
+icon = "alpha.svg"
+
+[agent.permissions]
+read = ["~/.alpha/**", "{ALPHA_HOME}/**"]
+sqlite = ["~/.alpha/*.db"]
+env = ["ALPHA_HOME", "ALPHA_TOKEN"]
+
+[[agent.permissions.keys]]
+files = ["~/.alpha/auth.json"]
+fields = ["/key"]
+
+[[agent.permissions.keys]]
+sqlite = ["~/.alpha/*.db"]
+table = "credential"
+column = "value"
+
+[[agent.permissions.keys]]
+env = ["ALPHA_TOKEN"]
+
+[[agent]]
+id = "beta"
+name = "Beta"
+icon = "beta.svg"
+
+[agent.permissions]
+read = ["~/.beta/**"]
+env = ["BETA_HOME"]
+"#;
+
+/// The permissions of the part `id` of [`FILES_MANIFEST`] in `env`.
+pub(crate) fn files_permissions(id: &str, env: &Environment) -> Permissions {
+    let manifest = Manifest::parse(FILES_MANIFEST).expect("valid");
+    let declared = manifest
+        .permissions_of(&PartRef::agent(id))
+        .expect("a listed part");
+
+    Permissions::new(declared, env)
+}
+
+/// `result` with its host error in debug form, to compare: the host
+/// errors of the bindings have no `PartialEq`.
+pub(crate) fn debug_err<T>(result: Result<T, HostError>) -> Result<T, String> {
+    result.map_err(|error| format!("{error:?}"))
+}
+
+/// Writes `bytes` to `path`, making its folders.
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) {
+    let folder = path.parent().expect("a folder");
+
+    std::fs::create_dir_all(folder).expect("create the folder");
+    std::fs::write(path, bytes).expect("write the file");
 }
 
 /// The built test plugin `name`, such as `spin`, from `tests/fixtures/`.

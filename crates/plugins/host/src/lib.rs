@@ -20,7 +20,7 @@
 //! a contract with the types of its newest version, [`agent`] and
 //! [`provider`]; each version the host keeps has its own bindings, such
 //! as [`agent::v0_1`]. The host operations a plugin imports are
-//! [`operations`]; until issue 04 some of them refuse every call.
+//! [`operations`].
 //!
 //! A plugin never holds a key, only a [`KeyHandle`]: where the key sits.
 //! The host reads the key there for each use (its fingerprint, a prefix,

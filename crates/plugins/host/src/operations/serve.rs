@@ -1,14 +1,13 @@
 //! How the host serves the operations of `otty:host@0.1.0` to the part
 //! being called. Each one checks the permissions of that part only.
 //!
-//! Until issues 04 and 05 bring them, most operations refuse every call
-//! with "not in this OTTY yet". Only the simplest ones work already:
-//! `env`, `clock`, `log` and `files.read`. `programs`, `terminal` and
-//! `files.remove` are served in modules of their own.
+//! Every operation works. The bodies of files, lines, SQLite, `env`,
+//! keys, HTTP, the keyring and `files.remove` live in modules next to
+//! this one; `programs` and `terminal` are served in modules of their
+//! own.
 
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use wasmtime::component::Resource;
@@ -16,7 +15,11 @@ use wasmtime::component::Resource;
 use crate::calls::CallState;
 use crate::keys::KeyHandle;
 use crate::operations;
+use crate::operations::lines::read_lines;
+use crate::operations::listing::list;
 use crate::operations::remove;
+use crate::operations::small_file::read_small_file;
+use crate::operations::sqlite_query::{QUERY_TIMEOUT, query};
 use crate::operations::v0_1::otty::host::files::{Batch, FileInfo};
 use crate::operations::v0_1::otty::host::http::{Request, Response};
 use crate::operations::v0_1::otty::host::keys::{JsonWithKeys, KeyPlace};
@@ -26,9 +29,7 @@ use crate::operations::v0_1::otty::host::types::HostError;
 use crate::operations::v0_1::otty::host::{
     clock, env, files, http, keyring, keys, log, sqlite, types,
 };
-
-/// The most bytes `files.read` gives (spec "Host operations").
-const READ_CAP: u32 = 4 * 1024 * 1024;
+use crate::operations::variables::variable;
 
 impl types::Host for CallState {}
 
@@ -72,8 +73,8 @@ impl keys::Host for CallState {
 }
 
 impl files::Host for CallState {
-    fn list(&mut self, _glob: String) -> Result<Vec<FileInfo>, HostError> {
-        Err(not_yet("files.list"))
+    fn list(&mut self, glob: String) -> Result<Vec<FileInfo>, HostError> {
+        list(self.permissions(), self.env(), &glob)
     }
 
     fn read(
@@ -81,37 +82,29 @@ impl files::Host for CallState {
         path: String,
         max_bytes: u32,
     ) -> Result<Vec<u8>, HostError> {
-        let path = PathBuf::from(path);
-        if !self.permissions().may_read(&path) {
-            return Err(HostError::NotAllowed(path.display().to_string()));
-        }
-
-        let limit = max_bytes.min(READ_CAP);
-        let mut bytes = Vec::new();
-        File::open(&path)
-            .and_then(|file| {
-                file.take(u64::from(limit) + 1).read_to_end(&mut bytes)
-            })
-            .map_err(|error| io_error(&error, &path))?;
-
-        if bytes.len() > limit as usize {
-            return Err(HostError::TooBig(format!(
-                "{} is more than {limit} bytes",
-                path.display()
-            )));
-        }
-
-        Ok(bytes)
+        read_small_file(self.permissions(), self.env(), &path, max_bytes)
     }
 
     fn read_lines(
         &mut self,
-        _path: String,
-        _offset: u64,
-        _max_bytes: u32,
-        _markers: Vec<Vec<u8>>,
+        path: String,
+        offset: u64,
+        max_bytes: u32,
+        markers: Vec<Vec<u8>>,
     ) -> Result<Batch, HostError> {
-        Err(not_yet("files.read-lines"))
+        let mut cursor = std::mem::take(self.zstd_cursor());
+        let batch = read_lines(
+            self.permissions(),
+            self.env(),
+            &mut cursor,
+            &path,
+            offset,
+            max_bytes,
+            &markers,
+        );
+        *self.zstd_cursor() = cursor;
+
+        batch
     }
 
     fn read_json_with_keys(
@@ -129,11 +122,18 @@ impl files::Host for CallState {
 impl sqlite::Host for CallState {
     fn query(
         &mut self,
-        _database: String,
-        _sql: String,
-        _params: Vec<Param>,
+        database: String,
+        sql: String,
+        params: Vec<Param>,
     ) -> Result<Vec<Vec<Value>>, HostError> {
-        Err(not_yet("sqlite.query"))
+        query(
+            self.permissions(),
+            self.env(),
+            &database,
+            &sql,
+            &params,
+            QUERY_TIMEOUT,
+        )
     }
 }
 
@@ -155,11 +155,7 @@ impl keyring::Host for CallState {
 
 impl env::Host for CallState {
     fn var(&mut self, name: String) -> Option<String> {
-        if !self.permissions().may_read_var(&name) {
-            return None;
-        }
-
-        self.env().var(&name).map(str::to_string)
+        variable(self.permissions(), self.env(), &name)
     }
 
     fn home(&mut self) -> String {
@@ -190,13 +186,8 @@ impl log::Host for CallState {
     }
 }
 
-/// The refusal of an operation that arrives with a later issue.
-fn not_yet(operation: &str) -> HostError {
-    HostError::Failed(format!("{operation} is not in this OTTY yet"))
-}
-
 /// An I/O error of `path` in the words of a host error.
-fn io_error(error: &io::Error, path: &std::path::Path) -> HostError {
+pub(super) fn io_error(error: &io::Error, path: &Path) -> HostError {
     match error.kind() {
         io::ErrorKind::NotFound => {
             HostError::NotFound(path.display().to_string())

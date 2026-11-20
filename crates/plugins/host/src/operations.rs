@@ -6,8 +6,16 @@
 mod http;
 mod keyring;
 mod keys;
+mod lines;
+mod listing;
 mod programs;
+mod real_path;
 mod remove;
 mod serve;
+mod small_file;
+mod sqlite_query;
 mod terminal;
 pub mod v0_1;
+mod variables;
+
+pub(crate) use crate::operations::lines::ZstdCursor;

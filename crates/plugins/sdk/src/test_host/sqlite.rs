@@ -1,11 +1,12 @@
 //! SQLite fixture files, opened read-only as OTTY opens them.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use otty_plugin_manifest::Permissions;
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{Connection, ErrorCode, OpenFlags};
+use rusqlite::{Connection, OpenFlags};
 use serde_json::Value as Json;
 
 use crate::sqlite::{Param, Value};
@@ -14,6 +15,9 @@ use crate::{HostError, SqliteField};
 
 /// The most rows one query gives (spec "Host operations").
 const MOST_ROWS: usize = 50_000;
+
+/// What the authorizer refused, for the error the plugin gets.
+type Refusals = Arc<Mutex<Option<String>>>;
 
 /// The rows of one read-only `SELECT` on `database`.
 pub(super) fn query(
@@ -28,17 +32,24 @@ pub(super) fn query(
     }
 
     let mut connection = open(&path)?;
-    refuse_key_columns(&mut connection, &path, permissions)?;
-    let mut statement = connection.prepare(sql).map_err(|error| {
-        if error.sqlite_error_code()
-            == Some(ErrorCode::AuthorizationForStatementDenied)
-        {
-            return HostError::NotAllowed(format!(
-                "a key column of {database}: open its key with keys::open"
-            ));
-        }
+    let refusals = Refusals::default();
+    refuse_attach_and_key_columns(
+        &mut connection,
+        permissions.key_columns(&path),
+        Arc::clone(&refusals),
+    )?;
 
-        failed(error)
+    let mut statement = connection.prepare(sql).map_err(|error| {
+        let refused = refusals
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        match refused {
+            Some(what) => {
+                HostError::NotAllowed(format!("{what} of {database}"))
+            },
+            None => failed(error),
+        }
     })?;
     if !statement.readonly() {
         return Err(HostError::NotAllowed(format!("not read-only: {sql}")));
@@ -103,34 +114,53 @@ pub(super) fn key_field(field: &SqliteField) -> Result<String, HostError> {
         })
 }
 
-/// Makes `connection` refuse any statement that reads a column of
-/// `database` the part declares as a key, as the host refuses it.
-fn refuse_key_columns(
+/// Makes `connection` refuse `ATTACH` and any statement that reads one of
+/// `key_columns`, as the host refuses them, noting what it refused in
+/// `refusals`. SQL names compare with no regard to case.
+fn refuse_attach_and_key_columns(
     connection: &mut Connection,
-    database: &Path,
-    permissions: &Permissions,
+    key_columns: Vec<(String, String)>,
+    refusals: Refusals,
 ) -> Result<(), HostError> {
-    let database = database.to_path_buf();
-    let permissions = permissions.clone();
-
     connection
         .authorizer(Some(move |context: AuthContext<'_>| {
-            match context.action {
+            let refused = match context.action {
+                AuthAction::Attach { .. } => Some("ATTACH".to_string()),
                 AuthAction::Read {
                     table_name,
                     column_name,
-                } if permissions.is_key_column(
-                    &database,
-                    table_name,
-                    column_name,
-                ) =>
-                {
+                } if is_key_column(&key_columns, table_name, column_name) => {
+                    Some(format!(
+                        "the key column {table_name}.{column_name} \
+                         (open its key with keys::open)"
+                    ))
+                },
+                _ => None,
+            };
+
+            match refused {
+                Some(what) => {
+                    *refusals.lock().unwrap_or_else(PoisonError::into_inner) =
+                        Some(what);
+
                     Authorization::Deny
                 },
-                _ => Authorization::Allow,
+                None => Authorization::Allow,
             }
         }))
         .map_err(failed)
+}
+
+/// Whether `table.column` is one of `key_columns`.
+fn is_key_column(
+    key_columns: &[(String, String)],
+    table: &str,
+    column: &str,
+) -> bool {
+    key_columns.iter().any(|(key_table, key_column)| {
+        key_table.eq_ignore_ascii_case(table)
+            && key_column.eq_ignore_ascii_case(column)
+    })
 }
 
 fn open(path: &Path) -> Result<Connection, HostError> {
