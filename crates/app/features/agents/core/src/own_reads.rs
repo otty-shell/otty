@@ -26,19 +26,9 @@ pub(crate) struct OwnRead {
 }
 
 impl OwnRead {
-    /// The account read.
-    pub(crate) fn account(&self) -> &Account {
-        &self.account
-    }
-
     /// Why the latest read failed, when it did.
     pub(crate) fn failure(&self) -> Option<&SourceError> {
         self.failure.as_ref()
-    }
-
-    /// Whether a read is on its way and when the latest one ended.
-    pub(crate) fn reads(&self) -> &ReadState {
-        &self.reads
     }
 
     /// The last good money left or key limit and when it was read.
@@ -61,24 +51,24 @@ impl OwnRead {
         }
     }
 
-    /// The limits of a subscription login read by `source`, kept the way
-    /// the limits of a profile are, so they are drawn the same way; `None`
-    /// before any read.
-    pub(crate) fn limits(&self, source: SourceId) -> Option<ProfileLimits> {
+    /// The limits of a subscription login its provider part read, kept
+    /// the way the limits of a profile are, so they are drawn the same
+    /// way; `None` before any read.
+    pub(crate) fn limits(&self) -> Option<ProfileLimits> {
         let mut limits = ProfileLimits::default();
 
         if let Some((AccountNumbers::Limits(answer), read_at)) = &self.last_good
         {
             let read = LimitsRead::Answered(answer.clone());
-            limits.apply(read, vec![source], *read_at);
+            limits.apply(read, *read_at);
         }
         if let Some(failure) = &self.failure {
             let read_at = self.reads.read_at()?;
             let read = LimitsRead::Failed(vec![SourceFailure::new(
-                source,
+                SourceId::ProviderPart,
                 failure.clone(),
             )]);
-            limits.apply(read, vec![source], read_at);
+            limits.apply(read, read_at);
         }
 
         limits.reads().read_at().map(|_| limits)
@@ -110,6 +100,14 @@ impl OwnRead {
             },
             Err(failure) => self.failure = Some(failure),
         }
+    }
+}
+
+#[cfg(test)]
+impl OwnRead {
+    /// Whether a read is on its way and when the latest one ended.
+    fn reads(&self) -> &ReadState {
+        &self.reads
     }
 }
 
@@ -268,7 +266,7 @@ mod tests {
         let place = KeyPlace::ProfileFiles(crate::testing::codex());
         let _ = reads.start(vec![(chatgpt_login(), place)], Which::Every);
         let answer = crate::testing::limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
+            otty_agents::SourceId::ProviderPart,
             Ok(five_hour_limits(42.0)),
         )]);
         let LimitsRead::Answered(answer) = answer else {
@@ -279,18 +277,13 @@ mod tests {
             Ok(AccountNumbers::Limits(answer)),
             at(10),
         ));
-        let source = crate::testing::named_source("ChatGPT usage API");
-        let answered = reads
-            .of(&chatgpt_login())
-            .and_then(|read| read.limits(source));
+        let answered = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
         reads.apply(loaded(
             chatgpt_login(),
             Err(SourceError::NotLoggedIn),
             at(20),
         ));
-        let expired = reads
-            .of(&chatgpt_login())
-            .and_then(|read| read.limits(source));
+        let expired = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
 
         assert!(
             answered

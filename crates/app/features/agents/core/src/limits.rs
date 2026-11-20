@@ -10,14 +10,13 @@ use super::freshness::{ReadState, Which};
 use super::types::LimitsRead;
 
 /// The limits of one profile: the last good answer and when it was read,
-/// why the latest read failed, the sources the latest read walked, the
-/// bookkeeping of the reads, and whether a read on its way may start the
-/// agent's program, as is or in a hidden terminal.
+/// why the latest read failed, the bookkeeping of the reads, and whether a
+/// read on its way may start the agent's program, as is or in a hidden
+/// terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileLimits {
     last_good: Option<(Answer<Limits>, SystemTime)>,
     failures: Option<Vec<SourceFailure>>,
-    sources: Vec<SourceId>,
     has_sources: bool,
     reads: ReadState,
     may_start_programs: bool,
@@ -25,7 +24,7 @@ pub(crate) struct ProfileLimits {
 }
 
 impl ProfileLimits {
-    /// The last answer of a source and when it was read; it stays when a
+    /// The last answer of a part and when it was read; it stays when a
     /// later read fails.
     pub(crate) fn last_good(&self) -> Option<(&Answer<Limits>, SystemTime)> {
         self.last_good
@@ -33,19 +32,14 @@ impl ProfileLimits {
             .map(|(answer, read_at)| (answer, *read_at))
     }
 
-    /// Why each source failed at the latest read, when no source answered.
+    /// Why each part failed at the latest read, when no part answered.
     pub(crate) fn failures(&self) -> Option<&[SourceFailure]> {
         self.failures.as_deref()
     }
 
-    /// The ids of every source of the agent at the latest read, best
-    /// first, those after the one that answered too.
-    pub(crate) fn sources(&self) -> &[SourceId] {
-        &self.sources
-    }
-
-    /// Whether the agent has a way to read limits. `false` once a read
-    /// found no source at all: the mode then draws no limits.
+    /// Whether anything reads the limits of the profile. `false` once a
+    /// read found that neither a provider part nor the agent part reads
+    /// them: the mode then draws no limits.
     pub(crate) fn has_sources(&self) -> bool {
         self.has_sources
     }
@@ -56,7 +50,7 @@ impl ProfileLimits {
     }
 
     /// Whether the login of the account expired (spec 2026-11-19,
-    /// Decision 3): no source answered at the latest read, and one of them
+    /// Decision 3): no part answered at the latest read, and one of them
     /// said the login is missing or expired. OTTY never renews it; the
     /// agent does when it runs, or asks to log in again.
     pub(crate) fn is_login_expired(&self) -> bool {
@@ -93,22 +87,26 @@ impl ProfileLimits {
         true
     }
 
-    /// Take the result of a read over `sources` that ended at `read_at`.
-    /// An answer replaces the last good one. A failure keeps it and says
-    /// why. A read that could not start the agent's program waits for it
-    /// when a source failed before the answer, or every source failed:
-    /// the program, which did not start, may answer better.
-    pub(crate) fn apply(
-        &mut self,
-        limits: LimitsRead,
-        sources: Vec<SourceId>,
-        read_at: SystemTime,
-    ) {
-        let has_a_failure = !limits.failures().is_empty();
+    /// Take the result of a read that ended at `read_at`. An answer
+    /// replaces the last good one. A failure keeps it and says why. A read
+    /// that could not start the agent's program waits for it unless the
+    /// provider part answered: the agent part, which may read the
+    /// program, may answer better with it, or answer at all.
+    pub(crate) fn apply(&mut self, limits: LimitsRead, read_at: SystemTime) {
+        let is_provider_answer = matches!(
+            &limits,
+            LimitsRead::Answered(answer)
+                if answer.source() == SourceId::ProviderPart
+        );
+        let agent_part_was_asked = match &limits {
+            LimitsRead::Answered(_) => !is_provider_answer,
+            LimitsRead::Failed(_) => true,
+            LimitsRead::NoSources => false,
+        };
 
         self.reads.end_at(read_at);
-        self.sources = sources;
-        self.waits_for_programs = has_a_failure && !self.may_start_programs;
+        self.waits_for_programs =
+            agent_part_was_asked && !self.may_start_programs;
 
         match limits {
             LimitsRead::Answered(answer) => {
@@ -129,12 +127,11 @@ impl ProfileLimits {
 }
 
 impl Default for ProfileLimits {
-    /// Nothing read yet, from an agent that may have sources.
+    /// Nothing read yet, of a profile whose limits something may read.
     fn default() -> Self {
         Self {
             last_good: None,
             failures: None,
-            sources: Vec::new(),
             has_sources: true,
             reads: ReadState::default(),
             may_start_programs: true,
@@ -150,6 +147,14 @@ mod tests {
     use super::*;
     use crate::testing::{at, five_hour_limits, limits_answer};
 
+    /// The limits the provider part answered with `percent` used.
+    fn from_provider(percent: f64) -> LimitsRead {
+        limits_answer(vec![(
+            SourceId::ProviderPart,
+            Ok(five_hour_limits(percent)),
+        )])
+    }
+
     #[test]
     fn a_read_starts_once_until_it_ends() {
         let mut limits = ProfileLimits::default();
@@ -158,14 +163,7 @@ mod tests {
         assert!(!limits.start_reading(true));
         assert!(limits.reads().is_reading());
 
-        limits.apply(
-            limits_answer(vec![(
-                crate::testing::named_source("ChatGPT usage API"),
-                Ok(five_hour_limits(42.0)),
-            )]),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(10),
-        );
+        limits.apply(from_provider(42.0), at(10));
 
         assert!(!limits.reads().is_reading());
         assert!(limits.start_reading(true));
@@ -176,24 +174,12 @@ mod tests {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let never = limits.is_wanted(Which::Stale(now));
-        let answer = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
-        )]);
 
         let _ = limits.start_reading(true);
-        limits.apply(
-            answer.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(10),
-        );
+        limits.apply(from_provider(42.0), at(10));
         let old = limits.is_wanted(Which::Stale(now));
         let _ = limits.start_reading(true);
-        limits.apply(
-            answer,
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            now,
-        );
+        limits.apply(from_provider(42.0), now);
 
         assert!(never);
         assert!(old);
@@ -203,93 +189,54 @@ mod tests {
     }
 
     /// A read while Agents mode was away did not start the hidden
-    /// terminal; when no source answered, the terminal may answer on
+    /// terminal; when no part answered, the terminal may answer on
     /// screen, so the limits wait for it although the read is fresh.
     #[test]
     fn a_failed_read_without_the_hidden_terminal_waits_for_it() {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let failed = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
+            SourceId::AgentPart,
             Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
-        )]);
-        let answered = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
         )]);
 
         let _ = limits.start_reading(false);
-        limits.apply(
-            failed.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            now,
-        );
+        limits.apply(failed.clone(), now);
         let waits = limits.is_wanted(Which::WaitingForPrograms);
         let stale = limits.is_wanted(Which::Stale(now));
         let _ = limits.start_reading(false);
-        limits.apply(
-            answered,
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            now,
-        );
+        limits.apply(from_provider(42.0), now);
         let answered_waits = limits.is_wanted(Which::WaitingForPrograms);
         let _ = limits.start_reading(true);
-        limits.apply(
-            failed,
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            now,
-        );
+        limits.apply(failed, now);
 
         assert!(waits);
         assert!(stale);
-        assert!(!answered_waits, "an answer needs no terminal");
+        assert!(!answered_waits, "the provider part needs no program");
         assert!(!limits.is_wanted(Which::WaitingForPrograms));
         assert!(!limits.is_wanted(Which::Stale(now)));
     }
 
-    /// Codex: the usage request failed and `codex app-server` did not start
-    /// while Agents mode was away, so the latest session answered. On
-    /// screen `app-server` may give fresher numbers, so the limits wait for
-    /// it; an answer of the first source needs no program.
+    /// Codex: the provider part failed and `codex app-server` did not
+    /// start while Agents mode was away, so the agent part answered from
+    /// its session files. On screen `app-server` may give fresher numbers,
+    /// so the limits wait for it.
     #[test]
-    fn an_answer_after_a_failed_source_without_programs_waits_for_them() {
+    fn an_agent_part_answer_without_programs_waits_for_them() {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
-        let sources = vec![
-            crate::testing::named_source("ChatGPT usage API"),
-            crate::testing::named_source("codex app-server"),
-            crate::testing::named_source("Latest Codex session"),
-        ];
         let fallback = limits_answer(vec![
-            (
-                crate::testing::named_source("ChatGPT usage API"),
-                Err(SourceError::NotLoggedIn),
-            ),
-            (
-                crate::testing::named_source("codex app-server"),
-                Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
-            ),
-            (
-                crate::testing::named_source("Latest Codex session"),
-                Ok(five_hour_limits(42.0)),
-            ),
+            (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+            (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
         ]);
-        let first = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
-        )]);
 
         let _ = limits.start_reading(false);
-        limits.apply(fallback.clone(), sources.clone(), now);
+        limits.apply(fallback.clone(), now);
         let waits = limits.is_wanted(Which::WaitingForPrograms);
-        let _ = limits.start_reading(false);
-        limits.apply(first, sources.clone(), now);
-        let first_waits = limits.is_wanted(Which::WaitingForPrograms);
         let _ = limits.start_reading(true);
-        limits.apply(fallback, sources, now);
+        limits.apply(fallback, now);
 
         assert!(waits);
-        assert!(!first_waits, "the first source needs no program");
         assert!(
             !limits.is_wanted(Which::WaitingForPrograms),
             "on screen the programs had their chance"
@@ -299,19 +246,12 @@ mod tests {
     #[test]
     fn an_answer_is_kept_with_its_time() {
         let mut limits = ProfileLimits::default();
-        let answer = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
-        )]);
+        let answer = from_provider(42.0);
 
-        limits.apply(
-            answer.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(10),
-        );
+        limits.apply(answer.clone(), at(10));
 
         let LimitsRead::Answered(expected) = answer else {
-            panic!("the source answers");
+            panic!("the part answers");
         };
         assert_eq!(limits.last_good(), Some((&expected, at(10))));
         assert_eq!(limits.failures(), None);
@@ -320,41 +260,22 @@ mod tests {
     #[test]
     fn a_failure_keeps_the_last_good_answer_and_the_next_answer_clears_it() {
         let mut limits = ProfileLimits::default();
-        let good = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
-        )]);
+        let good = from_provider(42.0);
         let failed = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
+            SourceId::ProviderPart,
             Err(SourceError::NotLoggedIn),
         )]);
-        let better = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(50.0)),
-        )]);
 
-        limits.apply(
-            good.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(10),
-        );
-        limits.apply(
-            failed.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(20),
-        );
+        limits.apply(good.clone(), at(10));
+        limits.apply(failed.clone(), at(20));
         let kept = limits
             .last_good()
             .map(|(answer, read_at)| (answer.clone(), read_at));
         let failures = limits.failures().map(<[SourceFailure]>::to_vec);
-        limits.apply(
-            better.clone(),
-            vec![crate::testing::named_source("ChatGPT usage API")],
-            at(30),
-        );
+        limits.apply(from_provider(50.0), at(30));
 
         let LimitsRead::Answered(good) = good else {
-            panic!("the source answers");
+            panic!("the part answers");
         };
         assert_eq!(kept, Some((good, at(10))));
         assert_eq!(failures.as_deref(), Some(failed.failures()));
@@ -366,72 +287,39 @@ mod tests {
         assert!(limits.has_sources());
     }
 
-    /// Spec 2026-11-19, Decision 3: a login the source could not use is
-    /// "login expired"; an answer of a later source, or another failure,
-    /// is not.
+    /// Spec 2026-11-19, Decision 3: a login the provider part could not
+    /// use is "login expired"; an answer of the agent part after it, or
+    /// another failure, is not.
     #[test]
     fn only_a_read_that_failed_for_the_login_is_a_login_expired() {
-        let read = |sources: Vec<(SourceId, Result<Limits, SourceError>)>| {
+        let read = |parts: Vec<(SourceId, Result<Limits, SourceError>)>| {
             let mut limits = ProfileLimits::default();
-            limits.apply(limits_answer(sources), Vec::new(), at(10));
+            limits.apply(limits_answer(parts), at(10));
             limits.is_login_expired()
         };
-        let not_logged_in = (
-            crate::testing::named_source("ChatGPT usage API"),
-            Err(SourceError::NotLoggedIn),
-        );
+        let not_logged_in =
+            (SourceId::ProviderPart, Err(SourceError::NotLoggedIn));
 
         assert!(read(vec![not_logged_in.clone()]));
         assert!(!read(vec![
             not_logged_in,
-            (
-                crate::testing::named_source("Latest Codex session"),
-                Ok(five_hour_limits(42.0))
-            ),
+            (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
         ]));
         assert!(!read(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
+            SourceId::ProviderPart,
             Err(SourceError::Network(String::from("down"))),
         )]));
         assert!(!ProfileLimits::default().is_login_expired());
     }
 
     #[test]
-    fn no_failures_at_all_means_the_agent_has_no_sources() {
+    fn no_failures_at_all_means_nothing_reads_the_limits() {
         let mut limits = ProfileLimits::default();
 
-        limits.apply(LimitsRead::NoSources, Vec::new(), at(10));
+        limits.apply(LimitsRead::NoSources, at(10));
 
         assert!(!limits.has_sources());
         assert_eq!(limits.failures(), None);
         assert_eq!(limits.last_good(), None);
-    }
-
-    #[test]
-    fn each_read_keeps_the_names_of_every_source_it_walked() {
-        let mut limits = ProfileLimits::default();
-        let answer = limits_answer(vec![(
-            crate::testing::named_source("ChatGPT usage API"),
-            Ok(five_hour_limits(42.0)),
-        )]);
-
-        limits.apply(
-            answer,
-            vec![
-                crate::testing::named_source("ChatGPT usage API"),
-                crate::testing::named_source("codex app-server"),
-                crate::testing::named_source("Latest Codex session"),
-            ],
-            at(10),
-        );
-
-        assert_eq!(
-            limits.sources(),
-            [
-                crate::testing::named_source("ChatGPT usage API"),
-                crate::testing::named_source("codex app-server"),
-                crate::testing::named_source("Latest Codex session")
-            ]
-        );
     }
 }

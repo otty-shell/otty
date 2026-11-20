@@ -6,8 +6,11 @@
 //! [`Profile`], whether a profile is connected, and how to start or continue
 //! a session. The data an agent can read comes from small sources:
 //! [`SessionSource`], [`LimitSource`] and [`SpendCounter`]. An agent gives
-//! its sources best first, and [`read_sessions`] and [`read_limits`] try them
-//! in order until one answers. A source that asks the agent's own program
+//! its sources of sessions best first, and [`read_sessions`] tries them in
+//! order until one answers. [`read_profile_limits`] asks the provider part
+//! of the profile's subscription login first, then the agent's own
+//! [`LimitSource`]; where each part reads its numbers from is its own
+//! business. A source that asks the agent's own program
 //! starts it with the [`StartProgram`] the app gives, and a source that
 //! reads the program's screen starts it with the [`StartTerminal`] the app
 //! gives. [`projects`] groups the sessions of all
@@ -150,7 +153,7 @@ pub use crate::account::{
 };
 pub use crate::account_money::AccountMoney;
 pub use crate::account_numbers::{
-    AccountNumbers, KeyPlace, own_source_of, read_account_numbers,
+    AccountNumbers, KeyPlace, own_reader_of, read_account_numbers,
 };
 pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
@@ -173,7 +176,7 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
-pub use crate::part_health::{PAUSE_AFTER, PartHealth};
+pub use crate::part_health::{LastFailure, PAUSE_AFTER, PartHealth};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;
 pub use crate::plugin_failure::{PluginFailure, PluginFailureKind};
@@ -200,7 +203,7 @@ pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };
 pub use crate::session::{AgentSession, SessionId, SessionSource};
-pub use crate::source_id::{SourceId, SourceName};
+pub use crate::source_id::SourceId;
 pub use crate::spend::{
     DaySpend, HourSpend, ModelTokens, ProjectModelTokens, ProjectTokens, Spend,
     SpendCounter,
@@ -210,4 +213,4 @@ pub use crate::stats::{
     read_session_stats,
 };
 pub use crate::token_count::TokenCount;
-pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
+pub use crate::walk::{Answer, SourceFailure, read_sessions};

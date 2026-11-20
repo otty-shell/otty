@@ -11,7 +11,6 @@ use crate::glob::escaped;
 use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::project_folder::projects_folder;
 use crate::provider::profile_provider;
-use crate::usage_probe::USAGE_SCREEN;
 use crate::{
     Anthropic, detect, logins, sessions, spend_file, stats, usage_probe,
     version,
@@ -82,19 +81,10 @@ impl Agent for Anthropic {
 
     /// The `/usage` panel of `claude`, for any login of the profile: it
     /// shows the limits of the login Claude Code runs with.
-    fn limit_sources(_profile: &Profile) -> Vec<String> {
-        vec![USAGE_SCREEN.to_string()]
-    }
-
     fn read_limits(
         profile: &Profile,
         _login: &LoginRef,
-        source: &str,
     ) -> Result<Limits, ReadError> {
-        if source != USAGE_SCREEN {
-            return Err(ReadError::NotSupported);
-        }
-
         usage_probe::read_limits(profile)
     }
 
@@ -199,17 +189,6 @@ mod tests {
             Anthropic::login_command(&added_profile()),
             command(&[], &[(CONFIG_VARIABLE, "/home/dev/.claude-work")])
         );
-    }
-
-    #[test]
-    fn the_limits_come_from_the_usage_screen_only() {
-        let login = LoginRef::EnvVar("ANTHROPIC_API_KEY".to_string());
-
-        let sources = Anthropic::limit_sources(&default_profile());
-        let other = Anthropic::read_limits(&default_profile(), &login, "api");
-
-        assert_eq!(sources, [USAGE_SCREEN]);
-        assert_eq!(other, Err(ReadError::NotSupported));
     }
 
     /// The host walks the spend place: every session file of a project

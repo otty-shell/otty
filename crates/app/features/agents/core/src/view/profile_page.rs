@@ -3,7 +3,7 @@
 //! bottom. The header with the logo, the name, Refresh and "⋯"; "Needs
 //! from you" as a to-do list when there is anything; a line with a plain
 //! fact; the usage block; "Pays through" as chips that open their account;
-//! "Profile info" and where the numbers come from.
+//! and "Profile info" with the plugin that reads the profile.
 
 use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
@@ -19,7 +19,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::ProfilePageViewModel;
-use super::{blocks, chips, entry_icon, needs, sources, usage_block};
+use super::{blocks, chips, entry_icon, needs, usage_block};
 
 /// Edge of the agent logo before the profile name.
 pub(super) const LOGO_SIZE: f32 = 26.0;
@@ -55,7 +55,7 @@ pub(crate) fn view<'a>(
 
 /// The blocks under the header, in their order: the needs when there are
 /// any, the info line and why the sessions could not be read, the usage
-/// block, the accounts it pays through, its facts and the sources.
+/// block, the accounts it pays through and its facts.
 fn page_blocks<'a>(
     vm: ProfilePageViewModel,
     palette: &UiPalette,
@@ -82,16 +82,11 @@ fn page_blocks<'a>(
             palette,
         ));
     }
-    body = body.push(blocks::titled(
+    body.push(blocks::titled(
         i18n::t(Key::AgentsProfileInfo),
         blocks::facts(vm.facts, palette),
         palette,
-    ));
-    if !vm.sources.is_empty() {
-        body = body.push(sources::view(vm.sources, palette));
-    }
-
-    body
+    ))
 }
 
 /// The header: the logo and the name, then Refresh and "⋯" at the right
@@ -151,12 +146,11 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::components::session_row::SessionTone;
-    use otty_ui_kit::components::status_badge::StatusTone;
 
     use super::*;
     use crate::model::{
         FactViewModel, NeedFixViewModel, NeedViewModel, PaysThroughViewModel,
-        SourceRowViewModel, UsageBlockViewModel,
+        UsageBlockViewModel,
     };
     use crate::need::NeedAction;
     use crate::testing::usage_block;
@@ -221,17 +215,6 @@ mod tests {
                     String::from("~/.codex-work"),
                 ),
             ],
-            sources: vec![SourceRowViewModel {
-                source: otty_agents::SourceId::Plugin,
-                number: Some(i18n::t(Key::AgentsTokens)),
-                name: "Session files",
-                name_tip: "Reads the session files",
-                state: i18n::t(Key::AgentsSourceAnswered),
-                tone: StatusTone::Ok,
-                tip: None,
-                updated: Some(String::from("Nov 16, 2026, 10:00")),
-                plugin: None,
-            }],
         }
     }
 
@@ -292,7 +275,6 @@ mod tests {
                 at(&mut ui, "gpt-5.5-codex"),
                 at(&mut ui, i18n::t(Key::AgentsPaysThrough)),
                 at(&mut ui, i18n::t(Key::AgentsProfileInfo)),
-                at(&mut ui, i18n::t(Key::AgentsSourcesTitle)),
             ];
 
             for pair in parts.windows(2) {
@@ -424,7 +406,6 @@ mod tests {
             info: None,
             usage: None,
             pays_through: Vec::new(),
-            sources: Vec::new(),
             ..page()
         };
         let themes = ThemeManager::new();
@@ -436,7 +417,6 @@ mod tests {
             Key::AgentsNeedsFromYou,
             Key::AgentsUsage,
             Key::AgentsPaysThrough,
-            Key::AgentsSourcesTitle,
         ] {
             assert!(ui.find(i18n::t(gone)).is_err(), "{gone:?}");
         }

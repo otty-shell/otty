@@ -1,8 +1,8 @@
-//! The pace of the slow limit sources: a source whose reading ran a
-//! program or a hidden terminal, such as `codex app-server` or Claude
-//! Code's `/usage` screen, runs at most once in the five minutes of the
-//! limits read, per part, profile and source. Within that time the answer
-//! of the last reading is given again, for any plugin.
+//! The pace of the slow readings of limits: a reading that ran a program
+//! or a hidden terminal, such as `codex app-server` or Claude Code's
+//! `/usage` screen, runs at most once in the five minutes of the limits
+//! read, per part and profile. Within that time the answer of the last
+//! reading is given again, for any plugin.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -20,11 +20,11 @@ use crate::operations::v0_1::otty::host::types::{Limits, ReadError};
 /// a return to Agents mode in between gets the remembered answer.
 pub(crate) const PACE_GAP: Duration = Duration::from_secs(4 * 60 + 30);
 
-/// What a limit source read: the limits, or why the part could not read
-/// them.
+/// What a reading of limits gave: the limits, or why the part could not
+/// read them.
 pub(crate) type LimitsAnswer = Result<Limits, ReadError>;
 
-/// The last slow reading of each part, profile and source of one plugin.
+/// The last slow reading of each part and profile of one plugin.
 #[derive(Default)]
 pub(crate) struct LimitPacing {
     readings: Mutex<HashMap<PaceKey, Reading>>,
@@ -63,21 +63,19 @@ impl LimitPacing {
     }
 }
 
-/// Which reading is paced: the part, the profile's folder and the source.
+/// Which reading is paced: the part and the profile's folder.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PaceKey {
     part: PartRef,
     folder: String,
-    source: String,
 }
 
 impl PaceKey {
-    /// The reading of `source` of the profile in `folder` by `part`.
-    pub(crate) fn new(part: &PartRef, folder: &str, source: &str) -> Self {
+    /// The reading of the profile in `folder` by `part`.
+    pub(crate) fn new(part: &PartRef, folder: &str) -> Self {
         Self {
             part: part.clone(),
             folder: folder.to_string(),
-            source: source.to_string(),
         }
     }
 }
@@ -108,8 +106,8 @@ mod tests {
         }
     }
 
-    fn key(folder: &str, source: &str) -> PaceKey {
-        PaceKey::new(&PartRef::agent("test-agent"), folder, source)
+    fn key(folder: &str) -> PaceKey {
+        PaceKey::new(&PartRef::agent("test-agent"), folder)
     }
 
     fn percent(answer: Option<LimitsAnswer>) -> Option<f64> {
@@ -121,15 +119,11 @@ mod tests {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(
-            key("/home/u/.agent", "usage"),
-            started_at,
-            Ok(limits(29.0)),
-        );
+        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
 
         let soon = started_at + Duration::from_secs(60);
         assert_eq!(
-            percent(pacing.recent(&key("/home/u/.agent", "usage"), soon)),
+            percent(pacing.recent(&key("/home/u/.agent"), soon)),
             Some(29.0)
         );
     }
@@ -140,13 +134,13 @@ mod tests {
         let started_at = Instant::now();
 
         pacing.remember(
-            key("/home/u/.agent", "usage"),
+            key("/home/u/.agent"),
             started_at,
             Err(ReadError::Failed("not logged in".to_string())),
         );
 
         let soon = started_at + Duration::from_secs(60);
-        let answer = pacing.recent(&key("/home/u/.agent", "usage"), soon);
+        let answer = pacing.recent(&key("/home/u/.agent"), soon);
         assert!(matches!(answer, Some(Err(ReadError::Failed(_)))));
     }
 
@@ -155,40 +149,23 @@ mod tests {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(
-            key("/home/u/.agent", "usage"),
-            started_at,
-            Ok(limits(29.0)),
-        );
+        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
 
         let later = started_at + PACE_GAP;
-        assert!(
-            pacing
-                .recent(&key("/home/u/.agent", "usage"), later)
-                .is_none()
-        );
+        assert!(pacing.recent(&key("/home/u/.agent"), later).is_none());
     }
 
     #[test]
-    fn each_profile_part_and_source_has_its_own_reading() {
+    fn each_profile_and_part_has_its_own_reading() {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(
-            key("/home/u/.agent", "usage"),
-            started_at,
-            Ok(limits(29.0)),
-        );
+        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
 
-        let other_profile = key("/home/u/.agent-work", "usage");
-        let other_source = key("/home/u/.agent", "app-server");
-        let other_part = PaceKey::new(
-            &PartRef::agent("other-agent"),
-            "/home/u/.agent",
-            "usage",
-        );
+        let other_profile = key("/home/u/.agent-work");
+        let other_part =
+            PaceKey::new(&PartRef::agent("other-agent"), "/home/u/.agent");
         assert!(pacing.recent(&other_profile, started_at).is_none());
-        assert!(pacing.recent(&other_source, started_at).is_none());
         assert!(pacing.recent(&other_part, started_at).is_none());
     }
 }

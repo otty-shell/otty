@@ -63,6 +63,8 @@ pub enum PluginsIntent {
         /// The part.
         part: PartRef,
     },
+    /// Copy report of the last failed call of a part: the report.
+    CopyReport(String),
     /// "⋯" of a plugin: show or hide its actions.
     ToggleActions(String),
     /// Check for updates of a plugin.
@@ -163,6 +165,9 @@ pub enum PluginsOutcome {
     },
     /// Open this page in the user's browser, such as a repository.
     OpenPage(String),
+    /// Put this text on the clipboard, such as the report of a failed
+    /// call.
+    CopyText(String),
     /// The parts that are on changed: load these into Agents mode.
     LoadParts(Vec<PartsToLoad>),
     /// What Agents mode shows of the plugins changed: the parts that are

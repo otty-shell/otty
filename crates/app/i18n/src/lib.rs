@@ -1345,16 +1345,12 @@ mod tests {
         assert_eq!(agents_month(13), "", "a month out of range has no name");
     }
 
-    /// Each source of the numbers has a plain name that says where the
-    /// number is taken from, as the owner approved them on 2026-11-18
-    /// (spec Decisions 10 and 18).
+    /// The sources of the list prices have plain names, as the owner
+    /// approved them on 2026-11-18 (spec Decisions 10 and 18): a failure
+    /// names them.
     #[test]
-    fn every_source_has_a_name_a_person_reads() {
+    fn every_price_source_has_a_name_a_person_reads() {
         let names = [
-            (
-                Key::AgentsSourceSessionFilesAtListPrices,
-                "Estimate: tokens × LiteLLM prices",
-            ),
             (Key::AgentsSourceLitellmPrices, "LiteLLM prices"),
             (Key::AgentsSourceKeptPrices, "LiteLLM prices cache"),
         ];
@@ -1364,35 +1360,16 @@ mod tests {
         }
     }
 
-    /// The tooltip of each source name says in plain words what the source
-    /// does, and the table of the sources says which number each row gives
-    /// (spec Decision 18).
+    /// The blocks of an account are named after what they show, and money
+    /// estimated at the list prices says so with a short mark (issue 19 of
+    /// spec 2026-11-19-agent-plugins).
     #[test]
-    fn every_source_has_a_tooltip_and_every_number_a_name() {
+    fn every_number_has_a_name_and_an_estimate_its_mark() {
         let texts = [
-            (
-                Key::AgentsSourceTipSessionFilesAtListPrices,
-                "The tokens of the session files at the LiteLLM prices; an \
-                 estimate",
-            ),
-            (
-                Key::AgentsSourceTipLitellmPrices,
-                "The price table of the LiteLLM project on GitHub, read at \
-                 most once a day",
-            ),
-            (
-                Key::AgentsSourceTipKeptPrices,
-                "The copy of the LiteLLM prices saved on this computer at the \
-                 last good read",
-            ),
-            (Key::AgentsColumnNumber, "Number"),
-            (Key::AgentsColumnSource, "Source"),
-            (Key::AgentsColumnState, "State"),
-            (Key::AgentsColumnSourceUpdated, "Updated"),
             (Key::AgentsNumberLimits, "Limits"),
             (Key::AgentsTokens, "Tokens"),
             (Key::AgentsNumberMoney, "Money"),
-            (Key::AgentsNumberPrices, "Prices"),
+            (Key::AgentsEstimateMark, "estimate, list prices"),
         ];
 
         for (key, english) in texts {

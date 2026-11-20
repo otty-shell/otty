@@ -104,6 +104,11 @@ tokens and estimates but lose their limits and balances, and show the need **Plu
 A part whose reads fail three times in a row is **Paused after three failures**; the plugin's other
 parts keep working. **Try again** starts it again, as does the next start of OTTY.
 
+Under a part, its card shows the last call that failed or that OTTY refused, with its time and
+kind: "Last failure 5 min ago: read-limits, the plugin did not finish in time". It never shows a
+value, a key or session text. **Copy report** copies the report for the plugin's author. This is the
+place to look when a plugin gives no numbers.
+
 ## Updates
 
 Once a day, and when you press **Check for updates**, OTTY looks for a newer release of each plugin

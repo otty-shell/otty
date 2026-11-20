@@ -122,17 +122,14 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
 }
 
 /// The name a person reads of the source `id`, such as "LiteLLM prices",
-/// in the user's language; the name a plugin part gave a named source.
+/// in the user's language. Both parts of a plugin are "Plugin": where a
+/// part reads its numbers from is its own business, and "Read by" names
+/// the plugin.
 pub(crate) fn source_name(id: SourceId) -> &'static str {
     let key = match id {
-        SourceId::Named(name) => return name.as_str(),
-        SourceId::SessionFilesAtListPrices => {
-            Key::AgentsSourceSessionFilesAtListPrices
-        },
-        SourceId::CostWrittenByAgent => Key::AgentsSourceCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
-        SourceId::Plugin => Key::AgentsSourcePlugin,
+        SourceId::AgentPart | SourceId::ProviderPart => Key::AgentsSourcePlugin,
     };
 
     i18n::t(key)

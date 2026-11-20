@@ -7,7 +7,6 @@ use std::time::{Duration, SystemTime};
 use crate::error::SourceError;
 use crate::percent::Percent;
 use crate::profile::Profile;
-use crate::source_id::SourceId;
 
 /// Seconds in an hour.
 const SECONDS_IN_HOUR: u64 = 60 * 60;
@@ -468,18 +467,16 @@ impl Credits {
     }
 }
 
-/// One way to read the limits of a profile, such as "ask the agent's
-/// server".
+/// The limits an agent itself shows for the login of a profile, read the
+/// agent's own way: its plugin part tries its programs, files or servers
+/// in its own order (issue 19 of spec 2026-11-19-agent-plugins).
 ///
-/// It is a trait because each agent has its own ways, and each way crosses
-/// into the network, a program or files.
+/// It is a trait because the read crosses into a plugin, which may start
+/// the agent's program, and the tests give made-up reads in its place.
 #[cfg_attr(test, mockall::automock)]
 pub trait LimitSource: Send {
-    /// The id of the source, named on screen when it answered or failed.
-    fn id(&self) -> SourceId;
-
-    /// The limits of the profile.
-    fn limits(&self, profile: &Profile) -> Result<Limits, SourceError>;
+    /// The limits of the profile; `None` when the agent shows no limits.
+    fn limits(&self, profile: &Profile) -> Result<Option<Limits>, SourceError>;
 }
 
 #[cfg(test)]

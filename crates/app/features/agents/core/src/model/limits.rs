@@ -375,10 +375,7 @@ mod tests {
         let two_minutes_ago = now() - Duration::from_secs(2 * MINUTE);
         read_limits(
             &mut state,
-            vec![(
-                crate::testing::named_source("Anthropic usage API"),
-                Ok(limits),
-            )],
+            vec![(otty_agents::SourceId::ProviderPart, Ok(limits))],
             two_minutes_ago,
         );
 
@@ -443,10 +440,7 @@ mod tests {
         );
         read_limits(
             &mut state,
-            vec![(
-                crate::testing::named_source("Anthropic usage API"),
-                Ok(limits),
-            )],
+            vec![(otty_agents::SourceId::ProviderPart, Ok(limits))],
             now(),
         );
         let with_limit = limits_of(&state).expect("the limits show");
@@ -481,7 +475,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("Latest Codex session"),
+                    otty_agents::SourceId::AgentPart,
                     Ok(recorded),
                 )]),
                 now(),
@@ -507,7 +501,7 @@ mod tests {
         read_limits(
             &mut state,
             vec![(
-                crate::testing::named_source("Anthropic usage API"),
+                otty_agents::SourceId::ProviderPart,
                 Ok(five_hour_limits(42.0)),
             )],
             ten_minutes_ago,
@@ -515,7 +509,7 @@ mod tests {
         read_limits(
             &mut state,
             vec![(
-                crate::testing::named_source("Anthropic usage API"),
+                otty_agents::SourceId::ProviderPart,
                 Err(SourceError::Network(String::from("timed out"))),
             )],
             now(),
@@ -531,7 +525,10 @@ mod tests {
             vm.failure,
             Some(i18n::with_error(
                 Key::TplAgentsLimitsReadFailed,
-                &format!("{}: network error: timed out", "Anthropic usage API")
+                &format!(
+                    "{}: network error: timed out",
+                    i18n::t(Key::AgentsSourcePlugin)
+                )
             ))
         );
         assert_eq!(vm.log_in_hint, None);
@@ -544,11 +541,11 @@ mod tests {
             &mut state,
             vec![
                 (
-                    crate::testing::named_source("Anthropic usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Err(SourceError::NotLoggedIn),
                 ),
                 (
-                    crate::testing::named_source("Claude Code /usage"),
+                    otty_agents::SourceId::AgentPart,
                     Err(SourceError::NotAvailable(
                         Unavailable::ProgramNotFound("claude"),
                     )),
@@ -568,7 +565,8 @@ mod tests {
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
                     "{}: not logged in; {}: not available: claude is not found",
-                    "Anthropic usage API", "Claude Code /usage"
+                    i18n::t(Key::AgentsSourcePlugin),
+                    i18n::t(Key::AgentsSourcePlugin)
                 )
             ))
         );
@@ -694,7 +692,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Ok(pool),
                 )]),
                 now(),
@@ -729,7 +727,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("codex app-server"),
+                    otty_agents::SourceId::AgentPart,
                     Ok(limits),
                 )]),
                 now(),

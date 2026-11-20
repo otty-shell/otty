@@ -14,13 +14,9 @@ Built into OTTY · version 0.2.0 · `github.com/otty-shell/otty-plugin-openai`
 | [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens, statistics, logins, and the limits Codex reports. |
 | [OpenAI](#openai-provider) | provider | The limits and credits of a ChatGPT login and the bill of an organization.    |
 
-The sources of a Codex profile's limits, in the order OTTY asks them:
-
-| # | Source                                       | Part   | Kind                                           |
-| - | -------------------------------------------- | ------ | ---------------------------------------------- |
-| 1 | [ChatGPT usage request](#openai-provider)    | OpenAI | <Badge text="network" variant="caution" />     |
-| 2 | [codex app-server](#codex-app-server)        | Codex  | <Badge text="runs the agent" variant="note" /> |
-| 3 | Codex session files: the last limits Codex wrote, in the 10 newest session files | Codex | <Badge text="local" variant="success" /> |
+The limits of a Codex profile come from the [OpenAI part](#openai-provider) first. When it gives
+nothing, the Codex part reads them: from [`codex app-server`](#codex-app-server), else from the last
+limits Codex wrote in its 10 newest session files.
 
 The tokens come from the session files; the money is the bill of the organization when you gave an
 admin key, else an [estimate](../../overview/#the-money).

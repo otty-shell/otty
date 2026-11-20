@@ -161,11 +161,7 @@ mod tests {
         let limits = batch
             .agent()
             .expect("an agent part")
-            .read_limits(
-                &profile,
-                &LoginRef::EnvVar("STAND_IN_KEY".to_string()),
-                "terminal",
-            )
+            .read_limits(&profile, &LoginRef::EnvVar("terminal".to_string()))
             .expect("the call");
 
         let plan = limits.ok().and_then(|limits| limits.plan);
@@ -205,7 +201,7 @@ mod tests {
             folder: "/home/test-user/.test-agent".to_string(),
             is_default: true,
         };
-        let login = LoginRef::EnvVar("STAND_IN_KEY".to_string());
+        let login = LoginRef::EnvVar("terminal".to_string());
 
         let away = plugin
             .start_calls(&part)
@@ -213,14 +209,14 @@ mod tests {
             .without_programs()
             .agent()
             .expect("an agent part")
-            .read_limits(&profile, &login, "terminal")
+            .read_limits(&profile, &login)
             .expect("the call");
         let on_screen = plugin
             .start_calls(&part)
             .expect("a listed part")
             .agent()
             .expect("an agent part")
-            .read_limits(&profile, &login, "terminal")
+            .read_limits(&profile, &login)
             .expect("the call");
 
         assert!(away.is_err(), "{away:?}");

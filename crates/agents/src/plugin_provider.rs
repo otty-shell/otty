@@ -30,7 +30,7 @@ use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
 use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
-use crate::source_id::{SourceId, SourceName};
+use crate::source_id::SourceId;
 use crate::walk::Answer;
 
 /// The name of the read of an account's numbers in reports.
@@ -78,12 +78,6 @@ impl PluginProvider {
     /// with this.
     pub fn health(&self) -> &PartHealth {
         &self.health
-    }
-
-    /// The id of the part as a source of numbers: named after its
-    /// provider, such as "Example Cloud".
-    pub fn source(&self) -> SourceId {
-        part_source(&self.entry)
     }
 
     /// The provider part `id` of `plugin`; `None` when the plugin has no
@@ -249,7 +243,10 @@ impl PluginProvider {
             AccountKind::Money => AccountNumbers::Balance(balance_of(&numbers)),
             _ => {
                 let limits = subscription_limits(&numbers, plan);
-                AccountNumbers::Limits(Answer::first(limits, self.source()))
+                AccountNumbers::Limits(Answer::first(
+                    limits,
+                    SourceId::ProviderPart,
+                ))
             },
         })
     }
@@ -357,13 +354,6 @@ impl ProviderPartCalls for PartCalls {
             read_error(&self.part, READ_BILL, &error, not_supported)
         })
     }
-}
-
-/// The id of the provider part of `entry` as a source of numbers, named
-/// after the provider, such as "Example Cloud": the source of every number a
-/// provider part reads (issue 15 of spec 2026-11-19-agent-plugins).
-pub(crate) fn part_source(entry: &ProviderEntry) -> SourceId {
-    SourceId::Named(SourceName::new(entry.name()))
 }
 
 /// A handle source for `key`, a key OTTY read itself; a blank key is
@@ -584,10 +574,7 @@ mod tests {
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
         };
-        assert_eq!(
-            limits.source(),
-            SourceId::Named(SourceName::new("example-cloud"))
-        );
+        assert_eq!(limits.source(), SourceId::ProviderPart);
         assert_eq!(limits.value().plan(), Some("Team"));
         assert_eq!(
             limits.value().billing(),

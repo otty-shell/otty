@@ -1,6 +1,6 @@
 //! The sessions, limits and statistics of a profile as an agent part
 //! reads them. Each is one read of the part; what the part answers it can
-//! not do becomes the error of that source.
+//! not do becomes the error of that read.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use crate::plugin_failure::PluginFailureKind;
 use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
 use crate::profile::Profile;
 use crate::session::{AgentSession, SessionId, SessionSource};
-use crate::source_id::{SourceId, SourceName};
+use crate::source_id::SourceId;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
 
 /// The sessions of a profile, as the part lists them.
@@ -34,7 +34,7 @@ impl PluginSessions {
 
 impl SessionSource for PluginSessions {
     fn id(&self) -> SourceId {
-        SourceId::Plugin
+        SourceId::AgentPart
     }
 
     fn sessions(
@@ -70,39 +70,29 @@ impl SessionSource for PluginSessions {
     }
 }
 
-/// The limits the agent itself shows for the profile's login, from one of
-/// the part's sources, named as the part names it.
+/// The limits the agent itself shows for the profile's login, from
+/// wherever the part reads them.
 pub(crate) struct PluginLimits {
     part: Arc<CalledPart>,
-    source: String,
     starts_programs: bool,
 }
 
 impl PluginLimits {
-    /// The limits `part` reads from its source `source`; the source starts
-    /// the programs and hidden terminals the part declares only when
-    /// `starts_programs`.
-    pub(crate) fn new(
-        part: Arc<CalledPart>,
-        source: &str,
-        starts_programs: bool,
-    ) -> Self {
+    /// The limits `part` reads; the read starts the programs and hidden
+    /// terminals the part declares only when `starts_programs`.
+    pub(crate) fn new(part: Arc<CalledPart>, starts_programs: bool) -> Self {
         Self {
             part,
-            source: source.to_string(),
             starts_programs,
         }
     }
 }
 
 impl LimitSource for PluginLimits {
-    fn id(&self) -> SourceId {
-        SourceId::Named(SourceName::new(&self.source))
-    }
-
     /// The limits of the profile's subscription login, else of its first
-    /// login, from this source, in one read of the part.
-    fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
+    /// login, in one read of the part; `None` when the part reads no
+    /// limits.
+    fn limits(&self, profile: &Profile) -> Result<Option<Limits>, SourceError> {
         let asked = part_profile(profile);
 
         let read = |batch: &mut CallBatch<'_>| {
@@ -112,16 +102,16 @@ impl LimitSource for PluginLimits {
                 return Ok(Err(SourceError::NotLoggedIn));
             };
 
-            let limits =
-                match calls.read_limits(&asked, &login.place, &self.source)? {
-                    Ok(limits) => Ok(limits_of(&limits)),
-                    Err(error) => Err(read_error(
-                        &self.part,
-                        "read-limits",
-                        &error,
-                        no_limits(),
-                    )),
-                };
+            let limits = match calls.read_limits(&asked, &login.place)? {
+                Ok(limits) => Ok(Some(limits_of(&limits))),
+                Err(ReadError::NotSupported) => Ok(None),
+                Err(error) => Err(read_error(
+                    &self.part,
+                    "read-limits",
+                    &error,
+                    no_limits(),
+                )),
+            };
             Ok(limits)
         };
 
@@ -230,7 +220,9 @@ fn limits_login(logins: &[Login]) -> Option<&Login> {
         .or_else(|| logins.first())
 }
 
-/// What a part with no source of limits gives.
+/// The error of "not supported" that [`read_error`] wants for the limits.
+/// It is never given: [`PluginLimits`] answers "not supported" as `None`,
+/// no limits, before it asks [`read_error`].
 fn no_limits() -> SourceError {
     SourceError::NotAvailable(Unavailable::NoAccountSource)
 }

@@ -9,9 +9,9 @@ use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AccountIdentity, AccountKind, AccountLogin, AddAccountKind,
     AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
-    Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitSource,
-    LimitWindow, Limits, ModelPrice, ModelTokens, PluginPart, PriceTable,
-    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
+    Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitWindow,
+    Limits, ModelPrice, ModelTokens, PluginPart, PriceTable, Profile,
+    ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
     SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
     TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
@@ -60,7 +60,7 @@ struct NoFiles;
 
 impl otty_agents::SessionSource for NoFiles {
     fn id(&self) -> SourceId {
-        SourceId::Plugin
+        SourceId::AgentPart
     }
 
     fn sessions(
@@ -68,22 +68,6 @@ impl otty_agents::SessionSource for NoFiles {
         _profile: &Profile,
     ) -> Result<Vec<AgentSession>, SourceError> {
         Err(SourceError::NotAvailable(Unavailable::NoSessionFiles))
-    }
-}
-
-/// A limit source that gives the same answer each time.
-struct FixedLimits {
-    id: SourceId,
-    answer: Result<Limits, SourceError>,
-}
-
-impl LimitSource for FixedLimits {
-    fn id(&self) -> SourceId {
-        self.id
-    }
-
-    fn limits(&self, _profile: &Profile) -> Result<Limits, SourceError> {
-        self.answer.clone()
     }
 }
 
@@ -125,12 +109,6 @@ fn stand_in_agents() -> Vec<Box<dyn otty_agents::Agent>> {
         otty_agents::fixtures::claude_code_stand_in(),
         otty_agents::fixtures::codex_stand_in(),
     ]
-}
-
-/// A source of limits an agent part names `name`, as the stand-ins name
-/// theirs, or the source of a provider part, named after its provider.
-pub(crate) fn named_source(name: &str) -> SourceId {
-    SourceId::Named(otty_agents::SourceName::new(name))
 }
 
 /// [`registry`]: the entries of the stand-ins and the provider parts of
@@ -402,54 +380,24 @@ pub(crate) fn five_hour_limits(percent: f64) -> Limits {
     )
 }
 
-/// What the walk over `sources`, each an id and its answer, gives: the
-/// answer of the first one that answers, or every failure.
+/// What a read of the limits whose parts, the provider part and the agent
+/// part, gave `answers` in order gives: the answer of the first one that
+/// answers, or every failure.
 pub(crate) fn limits_answer(
-    sources: Vec<(SourceId, Result<Limits, SourceError>)>,
+    answers: Vec<(SourceId, Result<Limits, SourceError>)>,
 ) -> LimitsRead {
-    let sources: Vec<Box<dyn LimitSource>> = sources
-        .into_iter()
-        .map(|(id, answer)| {
-            Box::new(FixedLimits { id, answer }) as Box<dyn LimitSource>
-        })
-        .collect();
-
-    LimitsRead::from_walk(otty_agents::read_limits(&sources, &claude()))
+    LimitsRead::from_walk(otty_agents::fixtures::walked(answers))
 }
 
-/// The answer of a limits read of `profile` that ended at `read_at`, whose
-/// agent has only the sources the walk asked.
+/// The answer of a limits read of `profile` that ended at `read_at`.
 pub(crate) fn limits_loaded(
     profile: &Profile,
-    limits: LimitsRead,
-    read_at: SystemTime,
-) -> AgentsIntent {
-    let answered = match &limits {
-        LimitsRead::Answered(answer) => Some(answer.source()),
-        _ => None,
-    };
-    let sources = limits
-        .failures()
-        .iter()
-        .map(SourceFailure::source)
-        .chain(answered)
-        .collect();
-
-    limits_loaded_from(profile, sources, limits, read_at)
-}
-
-/// The answer of a limits read of `profile` over `sources`, best first,
-/// that ended at `read_at`.
-pub(crate) fn limits_loaded_from(
-    profile: &Profile,
-    sources: Vec<SourceId>,
     limits: LimitsRead,
     read_at: SystemTime,
 ) -> AgentsIntent {
     AgentsIntent::LimitsLoaded(LoadedLimits {
         profile: profile.clone(),
         limits,
-        sources,
         read_at,
     })
 }

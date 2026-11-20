@@ -158,8 +158,38 @@ fn plugin_row<'a>(
         .into()
 }
 
-/// One part with its switch, and Try again while it is paused.
+/// One part with its switch, Try again while it is paused, and under them
+/// its last failed call with Copy report.
 fn part_switch<'a>(
+    plugin: &str,
+    mut part: PartRowViewModel,
+    is_busy: bool,
+    palette: &UiPalette,
+) -> Element<'a, PluginsIntent> {
+    let last_failure = part.last_failure.take();
+    let switch = switch_and_pause(plugin, part, is_busy, palette);
+    let Some(last) = last_failure else {
+        return switch;
+    };
+
+    column![
+        switch,
+        row![
+            small_text(last.text, palette.text_muted()),
+            Button::new(i18n::t(Key::AgentsCopyReport), palette)
+                .kind(ButtonKind::Ghost)
+                .size(ButtonSize::Small)
+                .on_press(PluginsIntent::CopyReport(last.report)),
+        ]
+        .spacing(spacing::SPACE_2)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(spacing::SPACE_1)
+    .into()
+}
+
+/// The switch of a part, and Try again while it is paused.
+fn switch_and_pause<'a>(
     plugin: &str,
     part: PartRowViewModel,
     is_busy: bool,
@@ -291,6 +321,7 @@ mod tests {
     use otty_plugin_manifest::PartRef;
 
     use super::*;
+    use crate::model::LastFailureViewModel;
 
     fn example() -> PluginRowViewModel {
         PluginRowViewModel {
@@ -304,6 +335,7 @@ mod tests {
                 title: String::from("Example Agent (agent)"),
                 is_on: true,
                 is_paused: true,
+                last_failure: None,
             }],
             news: None,
             is_news_failure: false,
@@ -339,6 +371,31 @@ mod tests {
             sent.as_slice(),
             [PluginsIntent::Reload(reload), PluginsIntent::TryAgain { .. }]
                 if reload == "example"
+        ));
+    }
+
+    /// Issue 19: the card of a part shows its last failed call, and Copy
+    /// report copies its report.
+    #[test]
+    fn a_part_shows_its_last_failure_and_copies_its_report() {
+        let palette = UiPalette::otty_dark();
+        let mut plugin = example();
+        plugin.parts[0].last_failure = Some(LastFailureViewModel {
+            text: String::from("Last failure 5 min ago: read-limits, failed"),
+            report: String::from("Call: read-limits"),
+        });
+        let mut ui = simulator(view(vec![plugin], None, false, &palette));
+
+        assert!(
+            ui.find("Last failure 5 min ago: read-limits, failed")
+                .is_ok()
+        );
+        let _ = ui.click(i18n::t(Key::AgentsCopyReport));
+
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [PluginsIntent::CopyReport(report)] if report == "Call: read-limits"
         ));
     }
 }

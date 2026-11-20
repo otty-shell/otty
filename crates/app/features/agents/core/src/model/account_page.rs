@@ -1,14 +1,15 @@
 //! The page of one account in the main area (spec 2026-11-19, Decisions 5
 //! and 6): what it needs from the user, its numbers block, the profiles
-//! that use it, its facts and where the numbers come from. No budget, and
-//! no line under the title.
+//! that use it and its facts. No budget, and no line under the title.
+//! Where a number comes from is the plugin's business (issue 19 of spec
+//! 2026-11-19-agent-plugins): the page tells only how old the numbers are,
+//! what to do, and which plugin reads them.
 
 use std::time::SystemTime;
 
-use otty_agents::{Account, AccountKind, AccountLogin};
+use otty_agents::{Account, AccountLogin};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::account_numbers::AccountNumbersViewModel;
@@ -17,10 +18,6 @@ use super::entry_icon::EntryIcon;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
 use super::read_by::account_read_by;
-use super::sources::{
-    SourceRowViewModel, bill_state, limit_sources, money_sources, named_by,
-    own_sources,
-};
 use super::used_by::{UsedByViewModel, used_by};
 use super::{FactViewModel, UNKNOWN};
 
@@ -40,20 +37,17 @@ pub(crate) struct AccountPageViewModel {
     pub(crate) numbers: Option<AccountNumbersViewModel>,
     /// The profiles that use the account.
     pub(crate) used_by: Vec<UsedByViewModel>,
-    /// Account info: Provider, Email or Key, Plan and Found in.
+    /// Account info: Provider, Email or Key, Plan, Found in and Read by.
     pub(crate) info: Vec<FactViewModel>,
-    /// Where the numbers of the block come from.
-    pub(crate) sources: Vec<SourceRowViewModel>,
     /// For an account the user hid, the line under the title that says
-    /// OTTY does not read it; its page then has no needs, numbers or
-    /// sources.
+    /// OTTY does not read it; its page then has no needs or numbers.
     pub(crate) hidden_note: Option<String>,
 }
 
 impl AccountPageViewModel {
     /// Build the page of `account` at `now`, the time the ages and the
     /// reset times count from. A hidden account is not read, so its page
-    /// says so in place of its needs, numbers and sources.
+    /// says so in place of its needs and numbers.
     pub(crate) fn of(
         state: &AgentsState,
         account: Account,
@@ -70,7 +64,6 @@ impl AccountPageViewModel {
             numbers: None,
             used_by: used_by(state, &account),
             info: info(state, &account),
-            sources: Vec::new(),
             hidden_note: None,
             account,
         };
@@ -85,7 +78,6 @@ impl AccountPageViewModel {
         Self {
             needs: needs_of_account(state, &page.account),
             numbers: AccountNumbersViewModel::of(state, &page.account, now),
-            sources: sources(state, &page.account),
             ..page
         }
     }
@@ -150,65 +142,6 @@ fn plan(state: &AgentsState, account: &Account) -> Option<String> {
     answer.value().plan().map(String::from)
 }
 
-/// Where the numbers of the block come from: the limit sources as the
-/// latest read through one of its profiles, or with its own login, walked
-/// them; or the source its own key was read by, then the sources of the
-/// money of the first profile it was found in.
-fn sources(state: &AgentsState, account: &Account) -> Vec<SourceRowViewModel> {
-    let profiles = state.profiles();
-    let time_zone = profiles.time_zone();
-
-    let agent_reader = |shown: &ProfileState| {
-        state
-            .registry()
-            .agent(shown.profile().agent())
-            .map(|entry| entry.part())
-    };
-    let own_rows = |own| own_sources(state.registry(), own, time_zone);
-
-    if account.kind() != AccountKind::Money {
-        let reader = match profiles.with_limits_of(account) {
-            Some(shown) => agent_reader(shown),
-            None => provider_reader(state, account),
-        };
-        let rows = profiles
-            .account_limits(account)
-            .map(|limits| limit_sources(&limits, time_zone))
-            .unwrap_or_default();
-        return named_by(rows, reader);
-    }
-
-    let own = profiles.own_reads().of(account).map(own_rows);
-    let mut rows =
-        named_by(own.unwrap_or_default(), provider_reader(state, account));
-    let Some(shown) = profiles.first_with(account) else {
-        return rows;
-    };
-    rows.extend(named_by(
-        money_sources(
-            shown.spend(),
-            shown.money(),
-            profiles.prices(),
-            bill_state(state, shown),
-            state.writes_cost(shown.profile().agent()),
-            time_zone,
-        ),
-        agent_reader(shown),
-    ));
-    rows
-}
-
-/// The plugin part that reads the provider of `account`.
-fn provider_reader<'a>(
-    state: &'a AgentsState,
-    account: &Account,
-) -> Option<&'a otty_agents::PluginPart> {
-    state
-        .registry()
-        .provider_of(account.provider())
-        .map(|entry| entry.part())
-}
-
 #[cfg(test)]
 mod tests {
     use otty_agents::{
@@ -255,7 +188,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    SourceId::ProviderPart,
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),
@@ -288,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shared_login_shows_its_numbers_users_info_and_sources() {
+    fn a_shared_login_shows_its_numbers_users_and_info() {
         let state = shared_chatgpt();
 
         let page = page_of(&state, chatgpt_login());
@@ -313,12 +246,6 @@ mod tests {
                 found_in("~/.codex-work"),
                 read_by_plugin("OpenAI 0.1.0", "openai"),
             ]
-        );
-        let sources: Vec<SourceId> =
-            page.sources.iter().map(|row| row.source).collect();
-        assert_eq!(
-            sources,
-            [crate::testing::named_source("ChatGPT usage API")]
         );
     }
 
@@ -358,8 +285,10 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decision 3: an expired login needs the user to
-    /// open the agent, and the last numbers stay, greyed.
+    /// Spec 2026-11-19, Decision 3, and issue 19 of spec
+    /// 2026-11-19-agent-plugins: with no table of sources, a read that
+    /// fails with an expired login still asks to open the agent, and the
+    /// last numbers stay, greyed, with why and what to do under them.
     #[test]
     fn an_expired_login_asks_to_open_the_agent() {
         let mut state = shared_chatgpt();
@@ -367,10 +296,10 @@ mod tests {
             &mut state,
             limits_loaded(
                 &codex(),
-                limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
-                    Err(SourceError::NotLoggedIn),
-                )]),
+                limits_answer(vec![
+                    (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+                    (SourceId::AgentPart, Err(SourceError::KeyRefused)),
+                ]),
                 at(20),
             ),
         );
@@ -384,16 +313,20 @@ mod tests {
             .filter_map(|fix| fix.action.clone())
             .collect();
         assert_eq!(actions, vec![NeedAction::OpenAgent(codex())]);
-        assert!(matches!(
-            page.numbers,
-            Some(AccountNumbersViewModel::Limits(limits)) if limits.is_stale
-        ));
+        let Some(AccountNumbersViewModel::Limits(limits)) = page.numbers else {
+            panic!("the limits block stays");
+        };
+        assert!(limits.is_stale);
+        assert_eq!(limits.windows.len(), 1, "the last numbers stay");
+        assert!(limits.failure.is_some());
+        assert_eq!(limits.log_in_hint, None, "the need says what to do");
     }
 
-    /// The money of an organization comes from its bill, then the
-    /// estimate; with no admin key the bill is not available.
+    /// The bill of an organization needs an admin key: the page asks for
+    /// it as a need, where the table of sources used to say "not
+    /// available".
     #[test]
-    fn an_organization_lists_the_sources_of_its_money() {
+    fn an_organization_with_no_admin_key_asks_for_one() {
         let state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             SavedProfiles::default(),
@@ -401,12 +334,6 @@ mod tests {
 
         let page = page_of(&state, organization());
 
-        let sources: Vec<SourceId> =
-            page.sources.iter().map(|row| row.source).collect();
-        assert_eq!(
-            sources,
-            [SourceId::Named(otty_agents::SourceName::new("Anthropic"))]
-        );
         assert_eq!(page.needs.len(), 1, "the admin key is needed");
     }
 }

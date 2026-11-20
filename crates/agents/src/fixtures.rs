@@ -144,3 +144,33 @@ pub fn paused_health() -> crate::part_health::PartHealth {
 
     health
 }
+
+/// The health of a plugin part whose last call `failure` failed at `at`,
+/// as the card of the part on the Plugins page shows it.
+///
+/// ```
+/// use std::time::SystemTime;
+///
+/// use otty_agents::fixtures::failed_health;
+/// use otty_agents::{PluginFailure, PluginFailureKind, PluginPart};
+///
+/// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
+/// let failure =
+///     PluginFailure::new(part, "read-limits", PluginFailureKind::TooSlow);
+///
+/// let health = failed_health(&failure, SystemTime::UNIX_EPOCH);
+///
+/// assert_eq!(
+///     health.last_failure().map(|last| last.at()),
+///     Some(SystemTime::UNIX_EPOCH)
+/// );
+/// ```
+pub fn failed_health(
+    failure: &crate::plugin_failure::PluginFailure,
+    at: std::time::SystemTime,
+) -> crate::part_health::PartHealth {
+    let health = crate::part_health::PartHealth::default();
+    health.remember_failure(failure, at);
+
+    health
+}

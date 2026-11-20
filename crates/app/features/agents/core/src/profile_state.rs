@@ -1,6 +1,6 @@
 //! One shown profile with what was read of it: the accounts found in it,
-//! its sessions, its limits, the tokens it spent, the money estimated from
-//! them and its bill, and how it pays (spec Decisions 2, 5 and 9). The
+//! its sessions, its limits, the tokens it spent and its bill, and how it
+//! pays (spec Decisions 2, 5 and 9). The
 //! limits and the bill belong to an account: a profile of an account read
 //! through another profile takes a copy of that read.
 
@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountKind, AgentSession, Bill, BillingKind, MoneyEstimate,
-    PriceTable, Profile, ProfileStatus, SourceError, SourceFailure, SourceId,
+    Account, AccountKind, AgentSession, Bill, BillingKind, Profile,
+    ProfileStatus, SourceError, SourceFailure,
 };
 
 use super::bill::ProfileBill;
@@ -31,7 +31,6 @@ pub(crate) struct ProfileState {
     session_reads: ReadState,
     limits: ProfileLimits,
     spend: ProfileSpend,
-    money: Option<MoneyEstimate>,
     bill: ProfileBill,
 }
 
@@ -105,12 +104,6 @@ impl ProfileState {
         &self.spend
     }
 
-    /// The money an API key profile spent, estimated from the tokens
-    /// counted; `None` for another billing or before a count.
-    pub(crate) fn money(&self) -> Option<&MoneyEstimate> {
-        self.money.as_ref()
-    }
-
     /// What was read of the real bill of an API key profile.
     pub(crate) fn bill(&self) -> &ProfileBill {
         &self.bill
@@ -134,7 +127,6 @@ impl ProfileState {
             session_reads: ReadState::default(),
             limits: ProfileLimits::default(),
             spend: ProfileSpend::default(),
-            money: None,
             bill: ProfileBill::default(),
         }
     }
@@ -253,29 +245,18 @@ impl ProfileState {
         self.limits.start_reading(may_start_programs)
     }
 
-    /// Take the limits a read over `sources` gave at `read_at`, and
-    /// estimate the money at `prices` again: the answer may tell the
-    /// profile pays with an API key.
+    /// Take the limits a read gave at `read_at`.
     pub(crate) fn apply_limits(
         &mut self,
         limits: LimitsRead,
-        sources: Vec<SourceId>,
         read_at: SystemTime,
-        prices: Option<&PriceTable>,
     ) {
-        self.limits.apply(limits, sources, read_at);
-        self.estimate_money(prices);
+        self.limits.apply(limits, read_at);
     }
 
-    /// Take `limits`, read through another profile of the same account,
-    /// and estimate the money at `prices` again.
-    pub(crate) fn share_limits(
-        &mut self,
-        limits: &ProfileLimits,
-        prices: Option<&PriceTable>,
-    ) {
+    /// Take `limits`, read through another profile of the same account.
+    pub(crate) fn share_limits(&mut self, limits: &ProfileLimits) {
         self.limits = limits.clone();
-        self.estimate_money(prices);
     }
 
     /// Start a count of the tokens; `false` when one is on its way.
@@ -283,16 +264,13 @@ impl ProfileState {
         self.spend.start_reading()
     }
 
-    /// Take the tokens a count gave at `counted_at`, and estimate the
-    /// money at `prices` again.
+    /// Take the tokens a count gave at `counted_at`.
     pub(crate) fn apply_spend(
         &mut self,
         spend: SpendCount,
         counted_at: SystemTime,
-        prices: Option<&PriceTable>,
     ) {
         self.spend.apply(spend, counted_at);
-        self.estimate_money(prices);
     }
 
     /// Start a read of the bill; `false` when one is on its way.
@@ -312,20 +290,6 @@ impl ProfileState {
     /// Take `bill`, read through another profile of the same organization.
     pub(crate) fn share_bill(&mut self, bill: &ProfileBill) {
         self.bill = bill.clone();
-    }
-
-    /// Estimate the money of an API key profile from its last good count
-    /// of tokens at `prices` (spec Decision 9); another profile, and any
-    /// profile while there are no prices, has none.
-    pub(crate) fn estimate_money(&mut self, prices: Option<&PriceTable>) {
-        let is_api_key = self.is_api_key();
-
-        self.money = self
-            .spend
-            .last_good()
-            .filter(|_| is_api_key)
-            .zip(prices)
-            .map(|((spend, _), prices)| MoneyEstimate::new(spend, prices));
     }
 
     /// Keep what was read of the same profile before: its sessions, its
@@ -356,7 +320,6 @@ impl ProfileState {
         self.missing_folders = Vec::new();
         self.limits = ProfileLimits::default();
         self.spend = ProfileSpend::default();
-        self.money = None;
         self.bill = ProfileBill::default();
     }
 }

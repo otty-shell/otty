@@ -162,7 +162,7 @@ A plugin with only agent parts writes `export!(Example with agent)` and has only
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
 | `read_answers(profile, item)`             | Every answer of one file with its tokens and an identity, and the records seen and understood. |
 | `launch(profile, session)`, `login_command(profile)` | The commands for New session, Continue and Log in.       |
-| `limit_sources`, `read_limits`            | Optional: limits the agent itself shows, such as `codex app-server`. |
+| `read_limits(profile, login)`             | Optional: the limits the agent itself shows for a login. Where they come from is the plugin's business: try your own program, files or servers in your order, and return the first limits or one error. OTTY asks the provider part of the login first, and this only when that gives nothing. |
 | `read_session_stats`, `read_project_stats` | Optional: statistics of a session or a project.                   |
 
 | `Provider`                        | Gives OTTY                                                               |

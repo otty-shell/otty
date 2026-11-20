@@ -13,6 +13,14 @@ It also holds a test host, so a plugin's tests run natively with plain
 against the permissions of the part being tested. The test host is never
 built for `wasm32-wasip2`.
 
+Where a number comes from is the plugin's business. An agent part that
+reads the limits its agent shows implements `Agent::read_limits(profile,
+login)`: it tries its own programs, files or servers in its own order and
+returns the first limits it gets, or one `ReadError` that says why
+(`KeyRefused` for a login the agent must renew). OTTY asks the provider
+part of the login first and the agent part only when that gives nothing.
+The default says "not supported", and OTTY shows no limits of the agent.
+
 Plugin authors depend on it by a git tag of the OTTY repository; it goes
 to crates.io with its first stable version. The plugins in this
 repository depend on it by path. See `plugins/template/` for a plugin to

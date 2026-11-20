@@ -21,7 +21,7 @@ use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AccountKind, AddAccountKind, AdminKeyRef, AgentId, KeyPlace,
     Profile, ProfileStatus, Project, ProviderRef, Registry, SavedProfiles,
-    merge_accounts, own_source_of,
+    merge_accounts, own_reader_of,
 };
 
 use super::freshness::{ReadState, Which};
@@ -47,7 +47,6 @@ pub(crate) struct Profiles {
     is_reload_wanted: bool,
     sessions_wanted: Vec<Profile>,
     registry: Arc<Registry>,
-    limit_agents: Vec<AgentId>,
     versions_asked: Vec<AgentId>,
     program_versions: Vec<(AgentId, String)>,
     own_reads: OwnReads,
@@ -190,8 +189,8 @@ impl Profiles {
             return Some(shown.limits().clone());
         }
 
-        let source = own_source_of(account, &self.registry)?;
-        self.own_reads.of(account)?.limits(source)
+        own_reader_of(account, &self.registry)?;
+        self.own_reads.of(account)?.limits()
     }
 
     /// Whether the user hid `account`, as `agents.json` holds it.
@@ -367,12 +366,9 @@ impl Profiles {
             .is_some_and(|shown| self.admin_key_of(shown) == Some(admin_key))
     }
 
-    /// Nothing read yet; `registry` names the providers of the accounts,
-    /// and `limit_agents` are the agents that read limits.
-    pub(crate) fn new(
-        registry: Arc<Registry>,
-        limit_agents: Vec<AgentId>,
-    ) -> Self {
+    /// Nothing read yet; `registry` names the agents and the providers of
+    /// the accounts.
+    pub(crate) fn new(registry: Arc<Registry>) -> Self {
         Self {
             shown: Vec::new(),
             hidden: Vec::new(),
@@ -384,23 +380,16 @@ impl Profiles {
             is_reload_wanted: false,
             sessions_wanted: Vec::new(),
             registry,
-            limit_agents,
             versions_asked: Vec::new(),
             program_versions: Vec::new(),
             own_reads: OwnReads::default(),
         }
     }
 
-    /// Read with `registry` from now on, with the agents whose limits OTTY
-    /// can read, `limit_agents`, as when the installed plugins change. What
-    /// was read stays until it is read again.
-    pub(crate) fn set_readers(
-        &mut self,
-        registry: Arc<Registry>,
-        limit_agents: Vec<AgentId>,
-    ) {
+    /// Read with `registry` from now on, as when the installed plugins
+    /// change. What was read stays until it is read again.
+    pub(crate) fn set_readers(&mut self, registry: Arc<Registry>) {
         self.registry = registry;
-        self.limit_agents = limit_agents;
     }
 
     /// Start a read of the profiles; `false` when one is on its way.
@@ -474,7 +463,6 @@ impl Profiles {
                     == admin_key_in(self.saved.as_ref(), &shown);
                 shown.take_reads_of(old, keeps_bill);
             }
-            shown.estimate_money(self.prices.table());
             if !shown.has_config_dir() {
                 shown.forget_reads();
             } else if shown.start_session_read() {
@@ -648,17 +636,11 @@ impl Profiles {
     /// every other shown profile of its account that has no read of its
     /// own on its way.
     pub(crate) fn apply_limits(&mut self, loaded: LoadedLimits) {
-        let prices = self.prices.table();
         let Some(index) = position_of(&self.shown, &loaded.profile) else {
             return;
         };
 
-        self.shown[index].apply_limits(
-            loaded.limits,
-            loaded.sources,
-            loaded.read_at,
-            prices,
-        );
+        self.shown[index].apply_limits(loaded.limits, loaded.read_at);
 
         let Some(account) = self.shown[index].limits_account().cloned() else {
             return;
@@ -670,7 +652,7 @@ impl Profiles {
                 && !shown.limits().reads().is_reading()
                 && shown.has_limits_of(&account);
             if shares {
-                shown.share_limits(&limits, prices);
+                shown.share_limits(&limits);
             }
         }
     }
@@ -696,7 +678,7 @@ impl Profiles {
             return;
         };
 
-        shown.apply_spend(loaded.spend, loaded.counted_at, self.prices.table());
+        shown.apply_spend(loaded.spend, loaded.counted_at);
     }
 
     /// Start a read of the list prices when a shown profile pays with an
@@ -718,15 +700,10 @@ impl Profiles {
         self.prices.start_reading().then_some(fetch_again)
     }
 
-    /// Take the list prices that were read, and estimate the money of each
-    /// API key profile again at them.
+    /// Take the list prices that were read: the money of the accounts is
+    /// estimated at them when it is shown.
     pub(crate) fn apply_prices(&mut self, loaded: LoadedPrices) {
         self.prices.apply(loaded.prices, loaded.read_at);
-
-        let prices = self.prices.table();
-        for shown in &mut self.shown {
-            shown.estimate_money(prices);
-        }
     }
 
     /// Start a read of the bill of each shown API key profile whose
@@ -828,7 +805,7 @@ impl Profiles {
     fn own_read_places(&self) -> Vec<(Account, KeyPlace)> {
         self.accounts()
             .into_iter()
-            .filter(|account| own_source_of(account, &self.registry).is_some())
+            .filter(|account| own_reader_of(account, &self.registry).is_some())
             .filter_map(|account| {
                 let place = self.own_read_place(&account)?;
                 Some((account, place))
@@ -847,7 +824,8 @@ impl Profiles {
         if account.kind() != AccountKind::Money {
             let profiles: Vec<_> = profiles.collect();
             let is_read_by_a_profile = profiles.iter().any(|shown| {
-                self.limit_agents.contains(shown.profile().agent())
+                let agent = shown.profile().agent();
+                self.registry.agent(agent).is_some() && shown.reads_limits()
             });
             if is_read_by_a_profile {
                 return None;

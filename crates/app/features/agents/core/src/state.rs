@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use otty_agents::{
     Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
-    ProviderRef, Registry, SourceId,
+    ProviderRef, Registry,
 };
 use otty_app_domain::plugins::PluginNotes;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -235,9 +235,8 @@ impl AgentsState {
         registry: Arc<Registry>,
         env: AgentEnv,
     ) -> Self {
-        let kinds = AgentKinds::of(&agents);
-        let profiles = Profiles::new(Arc::clone(&registry), kinds.limits);
-        let stats_agents = kinds.stats;
+        let profiles = Profiles::new(Arc::clone(&registry));
+        let stats_agents = stats_agents(&agents);
 
         Self {
             agents,
@@ -279,11 +278,8 @@ impl AgentsState {
     /// Read with `readers` from now on, as when the installed plugins
     /// change. What was read stays until it is read again.
     pub(crate) fn replace_readers(&mut self, readers: AgentReaders) {
-        let kinds = AgentKinds::of(&readers.agents);
-
-        self.profiles
-            .set_readers(Arc::clone(&readers.registry), kinds.limits);
-        self.stats_agents = kinds.stats;
+        self.profiles.set_readers(Arc::clone(&readers.registry));
+        self.stats_agents = stats_agents(&readers.agents);
         self.agents = readers.agents;
         self.registry = readers.registry;
         self.env = readers.env;
@@ -471,20 +467,6 @@ impl AgentsState {
     /// and of a project (spec Decision 14).
     pub(crate) fn has_stats(&self, id: &AgentId) -> bool {
         self.stats_agents.contains(id)
-    }
-
-    /// Whether the agent with the id `id` writes what each answer cost: its
-    /// money is that cost, not an estimate.
-    pub(crate) fn writes_cost(&self, id: &AgentId) -> bool {
-        self.agent(id).is_some_and(|agent| agent.writes_cost())
-    }
-
-    /// The source the agent with the id `id` reads its sessions and its
-    /// tokens from: the plugin part that reads it.
-    pub(crate) fn token_source(&self, id: &AgentId) -> SourceId {
-        self.agent(id)
-            .and_then(|agent| agent.session_source_ids().first().copied())
-            .unwrap_or(SourceId::Plugin)
     }
 
     /// The profiles and what was read of them, to start reads and take
@@ -821,25 +803,11 @@ enum Selection {
     Profile { agent: AgentId, name: String },
 }
 
-/// The agents whose limits and statistics OTTY can read.
-struct AgentKinds {
-    limits: Vec<AgentId>,
-    stats: Vec<AgentId>,
-}
-
-impl AgentKinds {
-    fn of(agents: &AgentList) -> Self {
-        let ids = |can: &dyn Fn(&dyn Agent) -> bool| -> Vec<AgentId> {
-            agents
-                .iter()
-                .filter(|agent| can(agent.as_ref()))
-                .map(|agent| agent.entry().id().clone())
-                .collect()
-        };
-
-        Self {
-            limits: ids(&|agent| !agent.limit_source_ids().is_empty()),
-            stats: ids(&|agent| agent.has_stats()),
-        }
-    }
+/// The agents of `agents` whose statistics OTTY can read.
+fn stats_agents(agents: &AgentList) -> Vec<AgentId> {
+    agents
+        .iter()
+        .filter(|agent| agent.has_stats())
+        .map(|agent| agent.entry().id().clone())
+        .collect()
 }

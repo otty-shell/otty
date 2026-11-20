@@ -1,8 +1,10 @@
 //! One part of a loaded plugin as OTTY calls it: each read of the part is
 //! one batch of calls with that part's permissions only, and a read that
-//! traps or misses its deadline counts towards pausing the part.
+//! traps or misses its deadline counts towards pausing the part. Every
+//! failure of a call is kept as the part's last one.
 
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use otty_plugin_host::{CallBatch, CallError, LoadedPlugin, PartRef};
 
@@ -121,12 +123,19 @@ impl CalledPart {
         }
     }
 
-    /// The failure of `call` of this part, of the kind `kind`.
+    /// The failure of `call` of this part, of the kind `kind`, kept as
+    /// the part's last failure unless the part was only paused: the
+    /// failure that paused it stays.
     pub(crate) fn failure(
         &self,
         call: &'static str,
         kind: PluginFailureKind,
     ) -> Box<PluginFailure> {
-        Box::new(PluginFailure::new(self.named.clone(), call, kind))
+        let failure = PluginFailure::new(self.named.clone(), call, kind);
+
+        if kind != PluginFailureKind::Paused {
+            self.health.remember_failure(&failure, SystemTime::now());
+        }
+        Box::new(failure)
     }
 }

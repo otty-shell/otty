@@ -162,28 +162,18 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// The sources of limits the agent itself shows, best first.
-    pub fn limit_sources(
-        &mut self,
-        profile: &Profile,
-    ) -> Result<Vec<String>, CallError> {
-        self.call(CallKind::Quick, |guest, store| {
-            guest.call_limit_sources(store, profile)
-        })
-    }
-
-    /// The limits of `login` from `source`. A source whose reading ran a
-    /// program or a hidden terminal is slow: it runs at most once in the
-    /// five minutes of the limits read per profile, and the answer of the
-    /// last reading is given within that time.
+    /// The limits the agent itself shows for `login`, from wherever the
+    /// part reads them. A reading that ran a program or a hidden terminal
+    /// is slow: it runs at most once in the five minutes of the limits
+    /// read per profile, and the answer of the last reading is given
+    /// within that time.
     pub fn read_limits(
         &mut self,
         profile: &Profile,
         login: &LoginRef,
-        source: &str,
     ) -> Result<Result<Limits, ReadError>, CallError> {
         let plugin = self.batch.plugin();
-        let key = PaceKey::new(self.batch.part(), &profile.folder, source);
+        let key = PaceKey::new(self.batch.part(), &profile.folder);
         let started_at = Instant::now();
         if let Some(answer) = plugin.pacing().recent(&key, started_at) {
             return Ok(answer);
@@ -191,12 +181,8 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
 
         let (answer, is_slow) =
             self.call(CallKind::Numbers, |guest, store| {
-                let answer = guest.call_read_limits(
-                    &mut *store,
-                    profile,
-                    login,
-                    source,
-                )?;
+                let answer =
+                    guest.call_read_limits(&mut *store, profile, login)?;
 
                 Ok((answer, store.data().has_started_programs()))
             })?;
@@ -439,7 +425,6 @@ mod tests {
             .expect("engine")
             .with_programs(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
-        let login = LoginRef::EnvVar("STAND_IN_KEY".to_string());
         let work = Profile {
             agent: "test-agent".to_string(),
             folder: "/home/test-user/.test-agent-work".to_string(),
@@ -450,14 +435,19 @@ mod tests {
             is_default: true,
             ..work.clone()
         };
-        let read = |profile: &Profile, source: &str| {
+        let quick = Profile {
+            folder: "/home/test-user/.test-agent-quick".to_string(),
+            ..work.clone()
+        };
+        // The test plugin reads the limits the way its login names.
+        let read = |profile: &Profile, way: &str| {
             let mut batch = plugin
                 .start_calls(&PartRef::agent("test-agent"))
                 .expect("a listed part");
             let limits = batch
                 .agent()
                 .expect("an agent part")
-                .read_limits(profile, &login, source)
+                .read_limits(profile, &LoginRef::EnvVar(way.to_string()))
                 .expect("the call");
 
             limits.ok().and_then(|limits| limits.plan)
@@ -466,7 +456,7 @@ mod tests {
         let first = read(&work, "run");
         let second = read(&work, "run");
         let other_profile = read(&home, "run");
-        let no_program = [read(&work, "none"), read(&work, "none")];
+        let no_program = [read(&quick, "none"), read(&quick, "none")];
 
         assert_eq!(first.as_deref(), Some("/home/test-user/.test-agent-work"));
         assert_eq!(second, first);

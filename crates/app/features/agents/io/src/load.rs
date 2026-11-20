@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(
             loaded.sessions,
             SessionsRead::Failed(vec![SourceFailure::new(
-                SourceId::Plugin,
+                SourceId::AgentPart,
                 read_stopped()
             )])
         );

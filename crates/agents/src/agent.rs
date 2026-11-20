@@ -205,8 +205,8 @@ impl ConfigFolder {
 /// It is a trait because each agent part of a plugin is one
 /// ([`PluginAgent`](crate::PluginAgent)), and the tests of this crate and
 /// of the app give made-up agents in their place. What an agent can not do, it does not
-/// return: an empty list of sources or no spend counter means the mode does
-/// not show that part for its profiles.
+/// return: no source or no spend counter means the mode does not show that
+/// part for its profiles.
 ///
 /// All methods are plain blocking calls; the app runs them on a background
 /// thread, so an agent can be shared between threads.
@@ -268,21 +268,17 @@ pub trait Agent: Send + Sync {
     /// same order, known without making the sources.
     fn session_source_ids(&self) -> &'static [SourceId];
 
-    /// Ways to read the limits, best first. Empty: not supported.
+    /// The read of the limits the agent itself shows. `None`: the agent
+    /// shows none.
     ///
-    /// A source that asks the agent's own program starts it with
-    /// `programs`, and a source that reads the program's screen starts it
-    /// in a hidden terminal with `terminals`.
-    fn limit_sources(
+    /// A read that asks the agent's own program starts it with
+    /// `programs`, and one that reads the program's screen starts it in a
+    /// hidden terminal with `terminals`.
+    fn limit_source(
         &self,
         programs: Arc<dyn StartProgram>,
         terminals: Arc<dyn StartTerminal>,
-    ) -> Vec<Box<dyn LimitSource>>;
-
-    /// The ids of the sources [`Agent::limit_sources`] gives, in the same
-    /// order, known without making the sources, so nothing that could
-    /// start a program is needed.
-    fn limit_source_ids(&self) -> Vec<SourceId>;
+    ) -> Option<Box<dyn LimitSource>>;
 
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;

@@ -3,7 +3,7 @@
 //! icon, the name, Refresh and "⋯", then for a hidden account a line that
 //! says so, "Needs from you" as a to-do list when there is anything, the
 //! Limits, Credits or Money block, "Used by" as chips that open their
-//! profile, "Account info" and where the numbers come from.
+//! profile, and "Account info" with the plugin that reads the account.
 
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
@@ -17,7 +17,7 @@ use super::super::model::{
 };
 use super::chips::{self, Chip};
 use super::profile_page::{PAGE_GAP, PAGE_PADDING_X};
-use super::{blocks, limits, money, needs, overview, sources};
+use super::{blocks, limits, money, needs, overview};
 
 /// Render the page of an account: one column as wide as the room, at most
 /// a form's width, centred across the main area and starting at its top.
@@ -47,7 +47,7 @@ pub(crate) fn view<'a>(
 
 /// The blocks under the header, in their order: the line of a hidden
 /// account, the needs when there are any, the numbers, the profiles that
-/// use the account, its facts and the sources.
+/// use the account and its facts.
 fn page_blocks<'a>(
     vm: AccountPageViewModel,
     palette: &UiPalette,
@@ -74,16 +74,11 @@ fn page_blocks<'a>(
             palette,
         ));
     }
-    body = body.push(blocks::titled(
+    body.push(blocks::titled(
         i18n::t(Key::AgentsAccountInfo),
         blocks::facts(vm.info, palette),
         palette,
-    ));
-    if !vm.sources.is_empty() {
-        body = body.push(sources::view(vm.sources, palette));
-    }
-
-    body
+    ))
 }
 
 /// The Limits, Credits or Money block, named after what it shows.
@@ -205,7 +200,6 @@ mod tests {
                     String::from("~/.codex"),
                 ),
             ],
-            sources: Vec::new(),
             hidden_note: None,
         }
     }
@@ -256,7 +250,6 @@ mod tests {
             ui.find(shown).expect("the part of the page should show");
         }
         assert!(ui.find(i18n::t(Key::AgentsNeedsFromYou)).is_err());
-        assert!(ui.find(i18n::t(Key::AgentsSourcesTitle)).is_err());
         assert!(ui.find(i18n::t(Key::AgentsUsage)).is_err());
     }
 
@@ -311,6 +304,7 @@ mod tests {
                 note: None,
                 is_stale: false,
                 failure: None,
+                estimate: None,
             })),
             ..page()
         };

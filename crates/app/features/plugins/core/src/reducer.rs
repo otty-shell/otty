@@ -82,6 +82,9 @@ pub(crate) fn reduce(
         PluginsIntent::TryAgain { plugin, part } => {
             try_again(state, &plugin, &part)
         },
+        PluginsIntent::CopyReport(report) => {
+            vec![PluginsOutcome::CopyText(report)]
+        },
         PluginsIntent::ToggleActions(plugin) => {
             let is_open = state.actions_open() == Some(plugin.as_str());
             state.set_actions_open((!is_open).then_some(plugin));

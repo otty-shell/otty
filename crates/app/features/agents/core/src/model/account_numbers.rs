@@ -9,21 +9,20 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Account, AccountKind, AccountMoney, Amount, Balance, KeyLimit,
-    MoneyEstimate, SourceError, Spend, own_source_of,
+    MoneyEstimate, SourceError, Spend, own_reader_of,
 };
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::failure_text::{
-    named_failure, source_error_text, source_name,
-};
+use super::super::failure_text::{named_failure, source_error_text};
 use super::super::own_reads::OwnRead;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::limits::{
     LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
 };
-use super::money::MoneyViewModel;
+use super::money::{EstimateMarkViewModel, MoneyViewModel};
 use super::numbers::{dollars_text, money_text};
+use super::reset_time::date_time_text;
 use super::tokens::count_failed_text;
 
 /// The numbers block of an account page.
@@ -149,6 +148,7 @@ fn money(
         note: None,
         is_stale: false,
         failure: None,
+        estimate: None,
     });
     rows.append(&mut vm.rows);
     vm.rows = rows;
@@ -219,8 +219,8 @@ fn key_limit_row(key_limit: &KeyLimit) -> UsageRowViewModel {
     }
 }
 
-/// Why the own read of `account` failed: its source and the reason, such
-/// as "Example Cloud: the key was refused".
+/// Why the own read of `account` failed: the provider whose part read it
+/// and the reason, such as "Example Cloud: the key was refused".
 fn own_failure_text(
     state: &AgentsState,
     account: &Account,
@@ -228,8 +228,8 @@ fn own_failure_text(
 ) -> String {
     let reason = source_error_text(error);
 
-    match own_source_of(account, state.registry()) {
-        Some(id) => named_failure(source_name(id), &reason),
+    match own_reader_of(account, state.registry()) {
+        Some(provider) => named_failure(provider.name(), &reason),
         None => reason,
     }
 }
@@ -238,23 +238,36 @@ fn own_failure_text(
 /// profiles read it, or the account's own admin key did, else as the
 /// provider counted it for the account's key, else the money of the
 /// tokens of its profiles: the cost their agent wrote, or an estimate
-/// marked with "~".
+/// marked with "~" and "estimate, list prices". A bill a profile could
+/// not read with its admin key says why under the estimate.
 fn spent_money(
     state: &AgentsState,
     account: &Account,
     own: Option<&OwnRead>,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
-    let bill = state
-        .profiles()
-        .shown()
-        .iter()
-        .filter(|shown| shown.pays_through(account))
+    let paying = || {
+        state
+            .profiles()
+            .shown()
+            .iter()
+            .filter(|shown| shown.pays_through(account))
+    };
+    let bill = paying()
         .find_map(|shown| {
             let bill = shown.bill();
             bill.answer().zip(bill.reads().read_at())
         })
         .or_else(|| own?.bill());
+    let bill_failure =
+        paying()
+            .find_map(|shown| shown.bill().failure())
+            .map(|error| {
+                i18n::with_error(
+                    Key::TplAgentsBillReadFailed,
+                    &source_error_text(error),
+                )
+            });
 
     let counted = own.and_then(|own| {
         let (balance, read_at) = own.balance()?;
@@ -266,7 +279,9 @@ fn spent_money(
             (dollars_text(bill.this_month()), read_at)
         },
         (None, Some((spent, read_at))) => (amount_text(spent), read_at),
-        (None, None) => return estimated_money(state, account, now),
+        (None, None) => {
+            return estimated_money(state, account, now, bill_failure);
+        },
     };
     Some(MoneyViewModel {
         updated: Some(updated_text(now, read_at)),
@@ -274,16 +289,20 @@ fn spent_money(
         note: None,
         is_stale: false,
         failure: None,
+        estimate: None,
     })
 }
 
 /// The estimate of the money spent this month, as old as the latest count
 /// of the tokens of the account's profiles; greyed, with why, when a count
-/// failed. A dash while there are no prices.
+/// failed, else with `bill_failure`, why the bill could not be read. A
+/// dash while there are no prices. An estimate at the list prices carries
+/// its mark; the cost the agent wrote does not.
 fn estimated_money(
     state: &AgentsState,
     account: &Account,
     now: SystemTime,
+    bill_failure: Option<String>,
 ) -> Option<MoneyViewModel> {
     let counted_at = state
         .profiles()
@@ -303,30 +322,35 @@ fn estimated_money(
             note: None,
             is_stale: false,
             failure: Some(failure),
+            estimate: None,
         });
     };
 
     let prices = state.profiles().prices();
-    let (amount, note) = match account_estimate(state, account) {
+    let (amount, note, estimate) = match account_estimate(state, account) {
         Some(estimate) => {
             let month = estimate.this_month();
             let dollars = dollars_text(month.cost());
-            let amount = if month.is_estimate() {
-                i18n::filled(Key::TplAgentsAboutAmount, &[("amount", &dollars)])
+            let (amount, mark) = if month.is_estimate() {
+                let about = i18n::filled(
+                    Key::TplAgentsAboutAmount,
+                    &[("amount", &dollars)],
+                );
+                (about, estimate_mark(state))
             } else {
-                dollars
+                (dollars, None)
             };
             let unpriced = month.unpriced_requests();
             let note = (unpriced > 0).then(|| {
                 i18n::with_count(Key::TplAgentsMoneyUnpriced, unpriced)
             });
-            (amount, note)
+            (amount, note, mark)
         },
         None => {
             let note = prices
                 .has_failed()
                 .then(|| i18n::t(Key::AgentsNoPrices).to_string());
-            (String::from(UNKNOWN), note)
+            (String::from(UNKNOWN), note, None)
         },
     };
 
@@ -335,7 +359,22 @@ fn estimated_money(
         rows: spent_this_month(amount),
         note,
         is_stale: failure.is_some(),
-        failure,
+        failure: failure.or(bill_failure),
+        estimate,
+    })
+}
+
+/// The mark of money estimated at the LiteLLM list prices, its tooltip
+/// with when the prices are from, in the user's time zone; `None` while
+/// no prices were read.
+fn estimate_mark(state: &AgentsState) -> Option<EstimateMarkViewModel> {
+    let profiles = state.profiles();
+    let prices = profiles.prices().last_good()?;
+    let time = date_time_text(prices.fetched_at(), profiles.time_zone());
+
+    Some(EstimateMarkViewModel {
+        label: i18n::t(Key::AgentsEstimateMark),
+        tip: i18n::filled(Key::TplAgentsMoneyEstimate, &[("time", &time)]),
     })
 }
 
@@ -378,7 +417,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Ok(limits),
                 )]),
                 at(10),
@@ -442,7 +481,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(20),
@@ -509,12 +548,15 @@ mod tests {
                 note: None,
                 is_stale: false,
                 failure: None,
+                estimate: None,
             }))
         );
     }
 
     /// With no bill the money is an estimate over the tokens its profiles
-    /// sent to its provider, marked with "~".
+    /// sent to its provider, marked with "~", and the mark next to it says
+    /// it is an estimate at the list prices, not the provider's bill
+    /// (issue 19 of spec 2026-11-19-agent-plugins).
     #[test]
     fn with_no_bill_the_money_is_an_estimate_marked_with_a_tilde() {
         let mut state = with_accounts(
@@ -536,19 +578,58 @@ mod tests {
 
         let about =
             i18n::filled(Key::TplAgentsAboutAmount, &[("amount", "$6.00")]);
-        assert_eq!(
-            numbers,
-            Some(AccountNumbersViewModel::Money(MoneyViewModel {
-                updated: Some(updated_text(now(), at(10))),
-                rows: spent_this_month(about),
-                note: None,
-                is_stale: false,
-                failure: None,
-            }))
-        );
+        let Some(AccountNumbersViewModel::Money(money)) = numbers.clone()
+        else {
+            panic!("the money of the organization: {numbers:?}");
+        };
+        assert_eq!(money.updated, Some(updated_text(now(), at(10))));
+        assert_eq!(money.rows, spent_this_month(about));
+        assert_eq!(money.failure, None);
+        let mark = money.estimate.expect("the estimate is marked");
+        assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
+        assert!(mark.tip.contains("LiteLLM"), "{}", mark.tip);
         assert_eq!(
             numbers.map(|numbers| numbers.title()),
             Some(i18n::t(Key::AgentsNumberMoney))
+        );
+    }
+
+    /// Issue 19 of spec 2026-11-19-agent-plugins: a bill that could not be
+    /// read with the admin key says why under the estimate, where the
+    /// table of sources used to say it.
+    #[test]
+    fn a_bill_that_failed_says_why_under_the_estimate() {
+        let mut state = with_accounts(
+            &[(claude(), api_key(), vec![organization()])],
+            saved_with_admin_key(),
+        );
+        set_prices(&mut state, price_table());
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude(),
+                SpendCount::Counted(anthropic_spend()),
+                at(10),
+            ),
+        );
+        let _ = reduce(
+            &mut state,
+            bill_loaded(&claude(), Err(SourceError::KeyRefused)),
+        );
+
+        let numbers =
+            AccountNumbersViewModel::of(&state, &organization(), now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the estimate: {numbers:?}");
+        };
+        assert!(money.estimate.is_some());
+        assert_eq!(
+            money.failure,
+            Some(i18n::with_error(
+                Key::TplAgentsBillReadFailed,
+                i18n::t(Key::AgentsFailureKeyRefused)
+            ))
         );
     }
 
@@ -647,6 +728,7 @@ mod tests {
                 note: None,
                 is_stale: false,
                 failure: None,
+                estimate: None,
             }))
         );
     }

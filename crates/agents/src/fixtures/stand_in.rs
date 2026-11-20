@@ -19,7 +19,7 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::registry::PluginPart;
 use crate::session::{SessionId, SessionSource};
-use crate::source_id::{SourceId, SourceName};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
 
@@ -29,16 +29,7 @@ const CIRCLE_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 const SQUARE_ICON: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12"/></svg>"#;
 
 /// The ids of the session sources of both: the plugin part.
-const SESSION_SOURCES: [SourceId; 1] = [SourceId::Plugin];
-/// The names the Claude Code stand-in gives its sources of limits.
-const CLAUDE_LIMIT_SOURCES: [&str; 2] =
-    ["Anthropic usage API", "Claude Code /usage"];
-/// The names the Codex stand-in gives its sources of limits.
-const CODEX_LIMIT_SOURCES: [&str; 3] = [
-    "ChatGPT usage API",
-    "codex app-server",
-    "Latest Codex session",
-];
+const SESSION_SOURCES: [SourceId; 1] = [SourceId::AgentPart];
 
 /// A stand-in: the entry, the config folder and the commands of an agent,
 /// statistics that are never there, and no source.
@@ -49,7 +40,6 @@ struct StandIn {
     resume: &'static str,
     /// The argument that logs in, when the agent has one.
     login: Option<&'static str>,
-    limit_sources: &'static [&'static str],
 }
 
 impl Agent for StandIn {
@@ -126,19 +116,12 @@ impl Agent for StandIn {
         &SESSION_SOURCES
     }
 
-    fn limit_sources(
+    fn limit_source(
         &self,
         _programs: Arc<dyn StartProgram>,
         _terminals: Arc<dyn StartTerminal>,
-    ) -> Vec<Box<dyn LimitSource>> {
-        Vec::new()
-    }
-
-    fn limit_source_ids(&self) -> Vec<SourceId> {
-        self.limit_sources
-            .iter()
-            .map(|name| SourceId::Named(SourceName::new(name)))
-            .collect()
+    ) -> Option<Box<dyn LimitSource>> {
+        None
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -175,8 +158,8 @@ impl StatsSource for NotThere {
 /// Claude Code as the tests of the app know it: id `claude-code`, name
 /// "Claude Code", program `claude`, config folder `~/.claude` moved by
 /// `CLAUDE_CONFIG_DIR`, read by the made-up part `claude-code` of the
-/// plugin `anthropic`, with a made-up icon, statistics and two named
-/// sources of limits. It reads nothing; its statistics are never there.
+/// plugin `anthropic`, with a made-up icon and statistics. It reads
+/// nothing and shows no limits; its statistics are never there.
 ///
 /// ```
 /// use otty_agents::fixtures::claude_code_stand_in;
@@ -201,15 +184,14 @@ pub fn claude_code_stand_in() -> Box<dyn Agent> {
         folder: ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR"),
         resume: "--resume",
         login: None,
-        limit_sources: &CLAUDE_LIMIT_SOURCES,
     })
 }
 
 /// Codex as the tests of the app know it: id `codex`, name "Codex",
 /// program `codex` (`codex resume <id>`, `codex login`), config folder
 /// `~/.codex` moved by `CODEX_HOME`, read by the made-up part `codex` of
-/// the plugin `openai`, with a made-up icon, statistics and three named
-/// sources of limits. It reads nothing; its statistics are never there.
+/// the plugin `openai`, with a made-up icon and statistics. It reads
+/// nothing and shows no limits; its statistics are never there.
 ///
 /// ```
 /// use otty_agents::fixtures::codex_stand_in;
@@ -234,7 +216,6 @@ pub fn codex_stand_in() -> Box<dyn Agent> {
         folder: ConfigFolder::new(".codex", "CODEX_HOME"),
         resume: "resume",
         login: Some("login"),
-        limit_sources: &CODEX_LIMIT_SOURCES,
     })
 }
 

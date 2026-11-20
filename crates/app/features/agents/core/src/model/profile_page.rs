@@ -1,7 +1,8 @@
 //! The page of one profile in the main area (spec 2026-11-19, Decision
 //! 6): what it needs from the user, a line with a plain fact, the usage
-//! block, the accounts it pays through, its facts and where the numbers
-//! come from. No line under the title.
+//! block, the accounts it pays through and its facts. No line under the
+//! title. Where a number comes from is the plugin's business (issue 19 of
+//! spec 2026-11-19-agent-plugins).
 
 use std::path::Path;
 use std::time::SystemTime;
@@ -23,9 +24,6 @@ use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::read_by::profile_read_by;
 use super::short_number::account_number;
-use super::sources::{
-    SourceRowViewModel, bill_state, money_sources, named_by, token_sources,
-};
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
 use super::used_by::untold_accounts;
@@ -51,10 +49,9 @@ pub(crate) struct ProfilePageViewModel {
     pub(crate) usage: Option<UsageBlockViewModel>,
     /// The accounts the profile pays through.
     pub(crate) pays_through: Vec<PaysThroughViewModel>,
-    /// Profile info: Agent, Version, Folder, Projects and Sessions.
+    /// Profile info: Agent, Version, Folder, Projects, Sessions and Read
+    /// by.
     pub(crate) facts: Vec<FactViewModel>,
-    /// Where the numbers of the page come from.
-    pub(crate) sources: Vec<SourceRowViewModel>,
 }
 
 impl ProfilePageViewModel {
@@ -78,7 +75,6 @@ impl ProfilePageViewModel {
             usage: usage_block(state, shown, now),
             pays_through: pays_through(state, shown),
             facts: facts(state, shown),
-            sources: sources(state, shown),
         }
     }
 
@@ -108,7 +104,6 @@ impl ProfilePageViewModel {
             usage: None,
             pays_through: Vec::new(),
             facts,
-            sources: Vec::new(),
         }
     }
 }
@@ -318,38 +313,6 @@ fn facts(state: &AgentsState, shown: &ProfileState) -> Vec<FactViewModel> {
     ]
 }
 
-/// Where the numbers of the page come from: the money, when the profile
-/// pays per token, then the tokens.
-fn sources(
-    state: &AgentsState,
-    shown: &ProfileState,
-) -> Vec<SourceRowViewModel> {
-    let profiles = state.profiles();
-    let time_zone = profiles.time_zone();
-
-    let agent = shown.profile().agent();
-    let mut rows = if shown.is_api_key() {
-        money_sources(
-            shown.spend(),
-            shown.money(),
-            profiles.prices(),
-            bill_state(state, shown),
-            state.writes_cost(agent),
-            time_zone,
-        )
-    } else {
-        Vec::new()
-    };
-    rows.extend(token_sources(
-        shown.spend(),
-        state.token_source(agent),
-        time_zone,
-    ));
-
-    let reader = state.registry().agent(agent).map(|entry| entry.part());
-    named_by(rows, reader)
-}
-
 /// The note of a failed read of the sessions: each way of reading them
 /// and why it failed, such as "files: not available: no session files".
 fn failure_text(failures: &[SourceFailure]) -> String {
@@ -362,13 +325,11 @@ mod tests {
 
     use otty_agents::{
         AccountIdentity, AccountKind, AccountLogin, DaySpend, FoundIn,
-        ModelTokens, ProjectModelTokens, SavedProfiles, SourceId, Spend,
-        TokenCount,
+        ModelTokens, ProjectModelTokens, SavedProfiles, Spend, TokenCount,
     };
 
     use super::*;
     use crate::event::AgentsIntent;
-    use crate::failure_text::source_name;
     use crate::model::NeedFixViewModel;
     use crate::need::NeedAction;
     use crate::reducer::reduce;
@@ -489,8 +450,6 @@ mod tests {
                 ),
             ]
         );
-        let sources: Vec<_> = vm.sources.iter().map(|row| row.name).collect();
-        assert_eq!(sources, [source_name(SourceId::Plugin)]);
     }
 
     /// The last good numbers stay greyed after a failed count; a count
@@ -543,14 +502,6 @@ mod tests {
             Some(i18n::t(Key::AgentsMoneyNoPrices).to_string())
         );
         assert_eq!(reason(&priced), None);
-        let sources: Vec<_> =
-            page(&priced).sources.iter().map(|row| row.name).collect();
-        assert_eq!(
-            sources.last(),
-            Some(&source_name(SourceId::Plugin)),
-            "the money sources, then the tokens"
-        );
-        assert!(sources.len() > 1, "{sources:?}");
     }
 
     #[test]

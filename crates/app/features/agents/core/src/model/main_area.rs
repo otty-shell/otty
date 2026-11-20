@@ -246,7 +246,6 @@ mod tests {
         );
         assert!(page.usage.is_none());
         assert!(page.needs.is_empty());
-        assert!(page.sources.is_empty());
     }
 
     #[test]
@@ -279,7 +278,6 @@ mod tests {
         );
         assert!(page.numbers.is_none());
         assert!(page.needs.is_empty());
-        assert!(page.sources.is_empty());
     }
 
     /// A hidden account leaves the "Pays through" chips of its profiles.

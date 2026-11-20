@@ -57,7 +57,7 @@ disallowed-methods = [
     # `Agent::has_stats` and `Agent::writes_cost`.
     { path = "otty_agents::Agent::detect", reason = "a feature reads no agent; its io crate does it" },
     { path = "otty_agents::Agent::session_sources", reason = "a feature reads no agent; its io crate does it" },
-    { path = "otty_agents::Agent::limit_sources", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::limit_source", reason = "a feature reads no agent; its io crate does it" },
     { path = "otty_agents::Agent::spend_counter", reason = "a feature reads no agent; its io crate does it" },
     { path = "otty_agents::Agent::stats_source", reason = "a feature reads no agent; its io crate does it; ask Agent::has_stats" },
     { path = "otty_agents::profile_status", reason = "a feature reads no agent; its io crate does it" },

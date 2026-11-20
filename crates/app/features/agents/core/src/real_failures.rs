@@ -294,17 +294,17 @@ mod tests {
 
         let first = told(reduce(
             &mut state,
-            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
+            sessions_failed(vec![(SourceId::AgentPart, unreadable())]),
         ));
         let again = told(reduce(
             &mut state,
-            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
+            sessions_failed(vec![(SourceId::AgentPart, unreadable())]),
         ));
         let mended =
             told(reduce(&mut state, sessions_loaded(&claude(), Vec::new())));
         let broken_again = told(reduce(
             &mut state,
-            sessions_failed(vec![(SourceId::Plugin, unreadable())]),
+            sessions_failed(vec![(SourceId::AgentPart, unreadable())]),
         ));
 
         assert_eq!(first, std::slice::from_ref(&expected));
@@ -314,22 +314,12 @@ mod tests {
     }
 
     #[test]
-    fn every_limit_source_failing_with_an_unexpected_answer_is_told_once() {
+    fn every_part_failing_with_an_unexpected_answer_is_told_once() {
         let mut state = with_profiles(&[(codex(), connected())]);
         let changed = || {
             limits_answer(vec![
-                (
-                    crate::testing::named_source("ChatGPT usage API"),
-                    Err(unexpected()),
-                ),
-                (
-                    crate::testing::named_source("codex app-server"),
-                    Err(not_available()),
-                ),
-                (
-                    crate::testing::named_source("Latest Codex session"),
-                    Err(not_available()),
-                ),
+                (SourceId::ProviderPart, Err(unexpected())),
+                (SourceId::AgentPart, Err(not_available())),
             ])
         };
 
@@ -351,8 +341,9 @@ mod tests {
         assert!(again.is_empty());
     }
 
-    /// Not logged in, not available, a later source that answered after an
-    /// unexpected answer and a folder that is not there are expected.
+    /// Not logged in, not available, an agent part that answered after an
+    /// unexpected answer of the provider part and a folder that is not
+    /// there are expected.
     #[test]
     fn an_expected_state_is_never_told() {
         let mut state = with_profiles(&[
@@ -365,14 +356,8 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![
-                    (
-                        crate::testing::named_source("Anthropic usage API"),
-                        Err(SourceError::NotLoggedIn),
-                    ),
-                    (
-                        crate::testing::named_source("Claude Code /usage"),
-                        Err(not_available()),
-                    ),
+                    (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+                    (SourceId::AgentPart, Err(not_available())),
                 ]),
                 at(10),
             ),
@@ -382,21 +367,15 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![
-                    (
-                        crate::testing::named_source("Anthropic usage API"),
-                        Err(unexpected()),
-                    ),
-                    (
-                        crate::testing::named_source("Claude Code /usage"),
-                        Ok(five_hour_limits(10.0)),
-                    ),
+                    (SourceId::ProviderPart, Err(unexpected())),
+                    (SourceId::AgentPart, Ok(five_hour_limits(10.0))),
                 ]),
                 at(20),
             ),
         ));
         let no_folder = told(reduce(
             &mut state,
-            sessions_failed(vec![(SourceId::Plugin, not_available())]),
+            sessions_failed(vec![(SourceId::AgentPart, not_available())]),
         ));
 
         assert!(logged_out.is_empty());

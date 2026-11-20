@@ -20,13 +20,6 @@ use crate::{
 /// The program, looked up on `PATH`.
 const PROGRAM: &str = "codex";
 
-/// The limits `codex app-server` gives now. Each source is named as the
-/// user reads it in "Where the numbers come from".
-const APP_SERVER: &str = "codex app-server";
-
-/// The limits Codex wrote last into the session files.
-const SESSION_FILES: &str = "Codex session files";
-
 impl Agent for OpenAi {
     fn profiles(_agent: &str) -> Vec<ProfilePlace> {
         profiles()
@@ -85,13 +78,10 @@ impl Agent for OpenAi {
         start_command(profile, vec!["login".to_string()])
     }
 
-    /// `codex app-server` first, which tells the limits now, then the last
-    /// record of them in the session files.
-    fn limit_sources(_profile: &Profile) -> Vec<String> {
-        vec![APP_SERVER.to_string(), SESSION_FILES.to_string()]
-    }
-
     /// The limits of a ChatGPT login; an API key has none to read.
+    /// `codex app-server` first, which tells the limits now, then the last
+    /// record of them in the session files. When neither answers, the
+    /// error of `codex app-server` says why.
     ///
     /// `codex app-server` renews an expired login token by itself, which
     /// a plugin never makes another agent do: with an expired token it is
@@ -100,22 +90,20 @@ impl Agent for OpenAi {
     fn read_limits(
         profile: &Profile,
         login: &LoginRef,
-        source: &str,
     ) -> Result<Limits, ReadError> {
         if !is_chatgpt_login(login) {
             return Err(ReadError::NotSupported);
         }
 
-        match source {
-            APP_SERVER => {
-                if has_expired(login) {
-                    return Err(ReadError::KeyRefused);
-                }
-                app_server::read_limits(&profile_env(profile))
-            },
-            SESSION_FILES => session_limits::read_limits(&profile.folder),
-            _ => Err(ReadError::NotSupported),
-        }
+        let now = if has_expired(login) {
+            Err(ReadError::KeyRefused)
+        } else {
+            app_server::read_limits(&profile_env(profile))
+        };
+
+        now.or_else(|error| {
+            session_limits::read_limits(&profile.folder).map_err(|_| error)
+        })
     }
 
     fn read_session_stats(
@@ -216,14 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn the_limits_come_from_the_app_server_then_the_session_files() {
-        assert_eq!(
-            OpenAi::limit_sources(&default_profile()),
-            [APP_SERVER, SESSION_FILES]
-        );
-    }
-
-    #[test]
     fn the_app_server_of_a_profile_runs_in_its_config_folder() {
         let host = host();
         host.answer_talk(
@@ -237,10 +217,8 @@ mod tests {
         let profile = profile(&host, ".codex-plus", false);
         let login = token_of(&host, ".codex-plus");
 
-        let limits = as_part(&host, || {
-            OpenAi::read_limits(&profile, &login, APP_SERVER)
-        })
-        .expect("the limits");
+        let limits = as_part(&host, || OpenAi::read_limits(&profile, &login))
+            .expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Pro 200"));
         assert_eq!(
@@ -249,23 +227,24 @@ mod tests {
         );
     }
 
+    /// `codex app-server` does not start here: the last record of the
+    /// session files answers in its place.
     #[test]
-    fn the_session_files_of_the_profile_give_their_last_record() {
+    fn without_the_app_server_the_session_files_give_their_last_record() {
         let host = host();
         let profile = profile(&host, ".codex-limits", false);
         let login = token_of(&host, ".codex-limits");
 
-        let limits = as_part(&host, || {
-            OpenAi::read_limits(&profile, &login, SESSION_FILES)
-        })
-        .expect("the limits");
+        let limits = as_part(&host, || OpenAi::read_limits(&profile, &login))
+            .expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Plus"));
         assert!(limits.recorded_at_ms.is_some());
     }
 
     /// `codex app-server` would renew the expired token, writing Codex's
-    /// login: it is not started.
+    /// login: it is not started, and with no session files to fall back
+    /// on the login is refused.
     #[test]
     fn an_expired_login_starts_no_app_server() {
         let host = host();
@@ -273,9 +252,7 @@ mod tests {
         let profile = profile(&host, ".codex-expired", false);
         let login = token_of(&host, ".codex-expired");
 
-        let limits = as_part(&host, || {
-            OpenAi::read_limits(&profile, &login, APP_SERVER)
-        });
+        let limits = as_part(&host, || OpenAi::read_limits(&profile, &login));
 
         assert_eq!(limits, Err(ReadError::KeyRefused));
         assert!(host.started().is_empty());
@@ -300,26 +277,11 @@ mod tests {
         let profile = profile(&host, ".codex-work", false);
         let key = as_part(&host, || OpenAi::logins(&profile)).remove(0);
 
-        for source in [APP_SERVER, SESSION_FILES] {
-            let limits = as_part(&host, || {
-                OpenAi::read_limits(&profile, &key.place, source)
-            });
-            assert_eq!(limits, Err(ReadError::NotSupported), "{source}");
-        }
-        assert!(host.started().is_empty());
-    }
-
-    #[test]
-    fn another_source_is_not_read() {
-        let host = host();
-        let profile = profile(&host, ".codex-plus", false);
-        let login = token_of(&host, ".codex-plus");
-
-        let limits = as_part(&host, || {
-            OpenAi::read_limits(&profile, &login, "usage-request")
-        });
+        let limits =
+            as_part(&host, || OpenAi::read_limits(&profile, &key.place));
 
         assert_eq!(limits, Err(ReadError::NotSupported));
+        assert!(host.started().is_empty());
     }
 
     #[test]

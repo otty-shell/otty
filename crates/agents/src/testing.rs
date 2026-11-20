@@ -67,12 +67,11 @@ mock! {
         fn login(&self, profile: &Profile) -> AgentCommand;
         fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
         fn session_source_ids(&self) -> &'static [SourceId];
-        fn limit_sources(
+        fn limit_source(
             &self,
             programs: Arc<dyn StartProgram>,
             terminals: Arc<dyn StartTerminal>,
-        ) -> Vec<Box<dyn LimitSource>>;
-        fn limit_source_ids(&self) -> Vec<SourceId>;
+        ) -> Option<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
         fn found_login(
@@ -280,16 +279,12 @@ impl Agent for Coder {
         &[]
     }
 
-    fn limit_sources(
+    fn limit_source(
         &self,
         _programs: Arc<dyn StartProgram>,
         _terminals: Arc<dyn StartTerminal>,
-    ) -> Vec<Box<dyn LimitSource>> {
-        Vec::new()
-    }
-
-    fn limit_source_ids(&self) -> Vec<SourceId> {
-        Vec::new()
+    ) -> Option<Box<dyn LimitSource>> {
+        None
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -340,17 +335,17 @@ pub(crate) fn answer_line(id: &str, seconds: u64, output: u64) -> String {
     )
 }
 
-/// A program starter that must never start anything: for the sources of
-/// an agent that are only listed, never asked.
+/// A program starter that starts nothing now, as while Agents mode is
+/// away.
 pub(crate) fn no_programs() -> Arc<dyn StartProgram> {
     let mut programs = MockStartProgram::new();
     programs.expect_start().never();
+    programs.expect_starts_now().return_const(false);
 
     Arc::new(programs)
 }
 
-/// A terminal starter that must never start anything: for the sources of
-/// an agent that are only listed, never asked.
+/// A terminal starter that must never start anything.
 pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
     let mut terminals = MockStartTerminal::new();
     terminals.expect_start().never();

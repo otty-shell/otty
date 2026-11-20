@@ -162,7 +162,7 @@ These belong to a key or login, not to any agent.
 | `provider: &'static str` | Breaks | Codex, OpenCode, Kilo, Crush, Goose, Cline, Continue, Qwen, Kimi pick providers from config; Claude Code can be sent to another endpoint. |
 | `session_sources`, `stats_source` | Holds | Sessions with cwd exist in every open agent; formats differ per agent, which is what the trait already hides. |
 | `spend_counter` (tokens) | Holds, needs a provider column | Tokens per model exist almost everywhere. Token kinds differ (Gemini: thoughts, tool; Codex: reasoning, cache write; Claude: 5m/1h cache writes). Records give provider in B-type agents and Codex. |
-| `limit_sources` | Half | The ways to read limits are agent-specific (run `/usage`, read the agent's token file), but the limits themselves belong to the provider login. Two agents on one ChatGPT plan would show the same limits twice. |
+| Limits read by the agent (now `read_limits`) | Half | The ways to read limits are agent-specific (run `/usage`, read the agent's token file), but the limits themselves belong to the provider login. Two agents on one ChatGPT plan would show the same limits twice. |
 | `bill_source`, `has_bill` | Breaks | A bill is a property of the provider and the key (see pattern E), not of the agent. OpenCode with an Anthropic key and Claude Code with the same key would each need the Anthropic bill reader. |
 
 ### Can tokens be attributed to an account?

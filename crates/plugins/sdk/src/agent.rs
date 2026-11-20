@@ -54,20 +54,14 @@ pub trait Agent {
     /// The command that logs the profile in.
     fn login_command(profile: &Profile) -> Command;
 
-    /// The sources of limits the agent itself shows for a login of the
-    /// profile, best first, each named as the user reads it in "Where the
-    /// numbers come from", such as `codex app-server`; the name is also
-    /// what [`Agent::read_limits`] gets. Default: none.
-    fn limit_sources(_profile: &Profile) -> Vec<String> {
-        Vec::new()
-    }
-
-    /// The limits of `login` from one of those sources. Default: not
-    /// supported.
+    /// The limits the agent itself shows for `login` of the profile. Where
+    /// they come from is the plugin's business: it tries its own programs,
+    /// files or servers in its own order and gives the first limits it
+    /// gets, or one error. Default: not supported, and OTTY shows no
+    /// limits of the agent.
     fn read_limits(
         _profile: &Profile,
         _login: &LoginRef,
-        _source: &str,
     ) -> Result<Limits, ReadError> {
         Err(ReadError::NotSupported)
     }
@@ -134,16 +128,11 @@ impl<T: Agent> Guest for AgentExport<T> {
         T::login_command(&profile)
     }
 
-    fn limit_sources(profile: Profile) -> Vec<String> {
-        T::limit_sources(&profile)
-    }
-
     fn read_limits(
         profile: Profile,
         login: LoginRef,
-        source: String,
     ) -> Result<Limits, ReadError> {
-        T::read_limits(&profile, &login, &source)
+        T::read_limits(&profile, &login)
     }
 
     fn read_session_stats(

@@ -206,7 +206,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Ok(five_hour_limits(42.0)),
                 )]),
                 at(10),

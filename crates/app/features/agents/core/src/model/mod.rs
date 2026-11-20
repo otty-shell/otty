@@ -25,7 +25,6 @@ mod rename_dialog;
 mod reset_time;
 mod session_account;
 mod short_number;
-mod sources;
 mod stats_dialog;
 mod status_bar;
 mod tokens;
@@ -57,7 +56,7 @@ pub(crate) use menus::{
     MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
     SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
 };
-pub(crate) use money::MoneyViewModel;
+pub(crate) use money::{EstimateMarkViewModel, MoneyViewModel};
 pub(crate) use needs::NeedViewModel;
 #[cfg(test)]
 pub(crate) use needs::{NeedFixViewModel, account_needs};
@@ -78,7 +77,6 @@ pub(crate) use projects_section::{
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use rename_dialog::RenameDialogViewModel;
-pub(crate) use sources::SourceRowViewModel;
 pub(crate) use stats_dialog::{
     ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
     StatsDialogViewModel,

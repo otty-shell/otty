@@ -143,15 +143,17 @@ OTTY release.
   resume and login commands, and reports which logins and keys sit in a
   profile and where (file and field, environment variable, keyring entry,
   database field), with the provider id or the host each is for. It may
-  also read limits the agent itself shows (Codex session files and
-  `app-server`, Claude Code `/usage`).
+  also read limits the agent itself shows (Codex `app-server` and
+  session files, Claude Code `/usage`): where they come from, and in
+  which order, is the part's business (issue 19).
 - **Provider part**: given a key handle, says whose account it is (account
   id or organization id, email, plan) and reads the account's numbers:
   limits (with the extra usage a subscription may buy), credits, Left, Key
   limit, Spent this month, the bill with an admin key; and names its usage
-  pages. It reads the limits of a subscription login before the agent's
-  own sources of them, and its numbers show under the provider's name in
-  "Where the numbers come from" (issue 15). It never sees when a login
+  pages. OTTY asks it for the limits of a subscription login before the
+  agent part (issue 15); that order is the one rule OTTY keeps, because
+  the parts may come from different plugins, such as OpenCode with
+  DeepSeek (issue 19). It never sees when a login
   token expires or what it may read: it sends the request and a refusal
   is `key-refused`, which OTTY shows for a subscription as "not logged
   in" (owner question of issue 12, settled in issue 15); a part may read
@@ -305,6 +307,12 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
   a local folder, updates with the permission changes, a switch per
   part, Remove.
 - Account info and Profile info get a row "Read by: <plugin> <version>".
+- No table of sources (owner, 2026-11-20, issue 19): where a number comes
+  from is the plugin's business. A page tells how old its numbers are,
+  greys the last good ones with why when a read fails, puts what the
+  user must do in "Needs from you", marks money estimated at the list
+  prices "estimate, list prices", and names the plugin in "Read by". The
+  card of a part on the Plugins page shows its last failed call.
 - The "format changed" need and its report name the plugin, its version
   and its repository.
 - New needs: "Key for <host> found in <agent>: no provider plugin [Add
@@ -506,13 +514,10 @@ pub trait Agent {
     /// The command that logs the profile in.
     fn login_command(profile: &Profile) -> Command;
 
-    /// Limits the agent itself shows for a login of the profile, best
-    /// source first, each named as the user reads it ("codex app-server");
-    /// the name is also what `read_limits` gets. Default: none.
-    fn limit_sources(_profile: &Profile) -> Vec<String> { Vec::new() }
-
-    /// Reads limits from one of those sources. Default: not supported.
-    fn read_limits(_profile: &Profile, _login: &LoginRef, _source: &SourceId)
+    /// The limits the agent itself shows for `login`. The part tries its
+    /// own programs, files or servers in its own order and gives the first
+    /// limits it gets, or one error. Default: not supported.
+    fn read_limits(_profile: &Profile, _login: &LoginRef)
         -> Result<Limits, ReadError> { Err(ReadError::NotSupported) }
 
     /// Statistics of one session or one project folder. Default: none.
@@ -780,8 +785,7 @@ interface agent {
   read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
   login-command: func(profile: profile) -> command;
-  limit-sources: func(profile: profile) -> list<string>;   // named as the user reads them
-  read-limits: func(profile: profile, login: login-ref, source: string) -> result<limits, read-error>;
+  read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;   // the part picks its sources
   session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
   project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
 }
@@ -1162,11 +1166,16 @@ then the cleanup and the docs.
 - **Account info** and **Profile info**: a row "Read by: <plugin>
   <version>" linking to its page on the Plugins page; "no plugin" for an
   account whose provider has no part.
-- **Where the numbers come from**: each source names its plugin. An
-  agent part's source of limits shows the name the part gives it ("codex
-  app-server", "Claude Code /usage"); a provider part's source shows the
-  provider's name ("Anthropic") and comes first in the limits of a
-  profile (issue 15).
+- **No "Where the numbers come from"** (issue 19): the account and profile
+  pages show the time of their numbers, the last good ones greyed with
+  why after a failed read, "Needs from you", the mark "estimate, list
+  prices" (with a tooltip of the prices' time) under money estimated from
+  LiteLLM prices, and "Read by". The provider part is asked before the
+  agent part; neither is shown as a source.
+- **Plugins page, card of a part**: the last call that failed or that the
+  host refused, with its time and kind ("Last failure 5 min ago:
+  read-limits, the plugin did not finish in time"), never a value, key or
+  session text, and **Copy report** (issue 19).
 - **Found by OTTY** and **All accounts → Needs you**: the new needs
   "no provider plugin", "part is off", "plugin update needs your OK",
   "plugin could not read".

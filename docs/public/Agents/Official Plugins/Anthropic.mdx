@@ -14,12 +14,8 @@ Built into OTTY · version 0.2.0 · `github.com/otty-shell/otty-plugin-anthropic
 | [Claude Code](#claude-code-agent) | agent    | Profiles, sessions, tokens, statistics, logins, and the limits of `/usage`. |
 | [Anthropic](#anthropic-provider)  | provider | The limits of a Claude login and the bill of an organization.            |
 
-The sources of a Claude Code profile's limits, in the order OTTY asks them:
-
-| # | Source                                        | Part        | Kind                                              |
-| - | --------------------------------------------- | ----------- | ------------------------------------------------- |
-| 1 | [Anthropic usage request](#anthropic-provider) | Anthropic   | <Badge text="network" variant="caution" />        |
-| 2 | [Claude Code /usage](#claude-code-usage)      | Claude Code | <Badge text="runs the agent" variant="note" />    |
+The limits of a Claude Code profile come from the [Anthropic part](#anthropic-provider) first.
+When it gives nothing, the Claude Code part reads them from [`/usage`](#claude-code-usage).
 
 The tokens come from the session files; the money is the bill of the organization when you gave an
 admin key, else an [estimate](../../overview/#the-money).

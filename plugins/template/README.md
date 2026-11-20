@@ -22,6 +22,12 @@ the folder into a new repository and replace what the parts read.
   `src/lib.rs`, `otty_plugin_sdk::export!(Example with agent, provider);`,
   must name the same traits. A plugin with only agent parts writes
   `export!(Example with agent)` and only `agent` in `[api]`.
+- An agent part that reads the limits its agent shows implements
+  `read_limits(profile, login)`. Where a number comes from is the
+  plugin's business: try your sources in your own order and return the
+  first limits you get, or one error that says why. OTTY asks the
+  provider part of the login first, and the agent part only when that
+  gives nothing. The template keeps the default, "not supported".
 - Field names, file names, JSON shapes and URLs live in the plugin, never
   in OTTY. Keys are never read: files, variables and database columns
   that hold keys are listed in `keys`, and the plugin gets a handle,

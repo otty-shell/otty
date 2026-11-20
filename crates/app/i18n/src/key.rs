@@ -1290,8 +1290,12 @@ pub enum Key {
     AgentsLastSevenDays,
     /// Label of the money of the current month on the dashboard of an API key profile.
     AgentsThisMonth,
-    /// Tooltip of the session files at list prices among the sources of the money: the money is an estimate at the LiteLLM prices fetched at a time. Placeholder: `{time}`.
+    /// Tooltip of the mark of money estimated at the LiteLLM list prices: the tokens of the session files at the prices fetched at a time, an estimate. Placeholder: `{time}`.
     TplAgentsMoneyEstimate,
+    /// Short mark next to money that is an estimate at the LiteLLM list prices, not the provider's bill.
+    AgentsEstimateMark,
+    /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
+    TplAgentsBillReadFailed,
     /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
     TplAgentsMoneyUnpriced,
     /// Label of the number of sessions of a profile and the projects they
@@ -1313,22 +1317,10 @@ pub enum Key {
     AgentsColumnModel,
     /// Column of the top models table: the requests of the model.
     AgentsColumnRequests,
-    /// Title of the list of the sources of a profile and their states.
-    AgentsSourcesTitle,
-    /// State of the source that answered.
-    AgentsSourceAnswered,
-    /// State of a source after the one that answered: it was not asked.
-    AgentsSourceNotNeeded,
-    /// State of a source that failed because the login is missing or expired.
+    /// The number of an account in the left panel when its login is missing or expired.
     AgentsSourceLoginExpired,
-    /// State of a source that can not be used here, such as a missing file.
-    AgentsSourceNotAvailable,
-    /// State of a source that failed for another reason.
-    AgentsSourceFailed,
     /// Line under the typed path of a new profile: the folder must already exist.
     AgentsTypedFolderHint,
-    /// Tooltip of the cost report among the sources of the money when it answered: the bill is the money of the whole organization, not only of this profile.
-    AgentsMoneyFromBill,
     /// Why the cost report is not available: the profile has no admin key.
     AgentsNoAdminKey,
     /// Label of the admin key of an API key profile in the profile dialog: where the key is kept.
@@ -1401,40 +1393,16 @@ pub enum Key {
     AgentsMonthNov,
     /// The short name of the month Dec, as it is written in a reset date.
     AgentsMonthDec,
-    /// Name of the source of the money of an API key profile: its tokens at the list prices.
-    AgentsSourceSessionFilesAtListPrices,
-    /// Name of the source of the money of a profile whose agent writes the cost of each answer.
-    AgentsSourceCostWrittenByAgent,
     /// Name of the first source of the list prices: the LiteLLM price table, fetched at most once a day.
     AgentsSourceLitellmPrices,
     /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
     AgentsSourceKeptPrices,
-    /// Name of the source of numbers a plugin part reads; the registry names the plugin.
+    /// Name of a plugin part where a failure names what failed; "Read by" names the plugin.
     AgentsSourcePlugin,
-    /// Column of "Where the numbers come from": which number of the dashboard the row gives, such as Limits or Money.
-    AgentsColumnNumber,
-    /// Column of "Where the numbers come from": the source of the number.
-    AgentsColumnSource,
-    /// Column of "Where the numbers come from": what the source did at the latest read.
-    AgentsColumnState,
-    /// Column of "Where the numbers come from": when the data of the source is from.
-    AgentsColumnSourceUpdated,
     /// Number of the dashboard a source gives: the usage windows or the credits of a subscription.
     AgentsNumberLimits,
     /// Number of the dashboard a source gives: the money of an API key profile.
     AgentsNumberMoney,
-    /// Number of the dashboard a source gives: the list prices the money is estimated at.
-    AgentsNumberPrices,
-    /// Tooltip of the name of the money estimate among the sources of the money.
-    AgentsSourceTipSessionFilesAtListPrices,
-    /// Tooltip of the name of the cost written by the agent among the sources of the money.
-    AgentsSourceTipCostWrittenByAgent,
-    /// Tooltip of the name of the first source of the list prices: the LiteLLM price table.
-    AgentsSourceTipLitellmPrices,
-    /// Tooltip of the name of the second source of the list prices: the kept copy.
-    AgentsSourceTipKeptPrices,
-    /// Tooltip of the source of numbers a plugin part reads.
-    AgentsSourceTipPlugin,
     /// Muted line under the money rows of an API key profile when no source gave prices: the rows show a dash.
     AgentsNoPrices,
     /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
@@ -1995,6 +1963,8 @@ pub enum Key {
     TplPluginsErrorNoSuchPart,
     /// Error: {id}.
     TplPluginsErrorNotLocal,
+    /// The last call of a plugin part that failed, on its card of the Plugins page. Placeholders: `{time}`, `{call}`, `{kind}`.
+    TplPluginsLastFailure,
     /// Fact of Account info and Profile info: the plugin that reads it.
     AgentsFieldReadBy,
     /// Read by: no plugin serves the provider.
@@ -2034,7 +2004,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 954] = [
+    pub(super) const ALL: [Self; 939] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2623,6 +2593,8 @@ impl Key {
         Self::AgentsLastSevenDays,
         Self::AgentsThisMonth,
         Self::TplAgentsMoneyEstimate,
+        Self::AgentsEstimateMark,
+        Self::TplAgentsBillReadFailed,
         Self::TplAgentsMoneyUnpriced,
         Self::AgentsSessions,
         Self::AgentsTopByProject,
@@ -2632,14 +2604,8 @@ impl Key {
         Self::AgentsTokens,
         Self::AgentsColumnModel,
         Self::AgentsColumnRequests,
-        Self::AgentsSourcesTitle,
-        Self::AgentsSourceAnswered,
-        Self::AgentsSourceNotNeeded,
         Self::AgentsSourceLoginExpired,
-        Self::AgentsSourceNotAvailable,
-        Self::AgentsSourceFailed,
         Self::AgentsTypedFolderHint,
-        Self::AgentsMoneyFromBill,
         Self::AgentsNoAdminKey,
         Self::AgentsFieldAdminKey,
         Self::AgentsAdminKeyFile,
@@ -2676,23 +2642,11 @@ impl Key {
         Self::AgentsMonthOct,
         Self::AgentsMonthNov,
         Self::AgentsMonthDec,
-        Self::AgentsSourceSessionFilesAtListPrices,
-        Self::AgentsSourceCostWrittenByAgent,
         Self::AgentsSourceLitellmPrices,
         Self::AgentsSourceKeptPrices,
         Self::AgentsSourcePlugin,
-        Self::AgentsColumnNumber,
-        Self::AgentsColumnSource,
-        Self::AgentsColumnState,
-        Self::AgentsColumnSourceUpdated,
         Self::AgentsNumberLimits,
         Self::AgentsNumberMoney,
-        Self::AgentsNumberPrices,
-        Self::AgentsSourceTipSessionFilesAtListPrices,
-        Self::AgentsSourceTipCostWrittenByAgent,
-        Self::AgentsSourceTipLitellmPrices,
-        Self::AgentsSourceTipKeptPrices,
-        Self::AgentsSourceTipPlugin,
         Self::AgentsNoPrices,
         Self::TplAgentsPricesUnreadable,
         Self::AgentsShowStatistics,
@@ -2972,6 +2926,7 @@ impl Key {
         Self::TplPluginsErrorNotInstalled,
         Self::TplPluginsErrorNoSuchPart,
         Self::TplPluginsErrorNotLocal,
+        Self::TplPluginsLastFailure,
         Self::AgentsFieldReadBy,
         Self::AgentsReadByNoPlugin,
         Self::TplAgentsReadByOff,

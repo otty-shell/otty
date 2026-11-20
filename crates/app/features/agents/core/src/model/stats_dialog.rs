@@ -833,7 +833,7 @@ mod tests {
             crate::testing::limits_loaded(
                 &claude(),
                 crate::testing::limits_answer(vec![(
-                    crate::testing::named_source("Anthropic usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Ok(api_key_limits),
                 )]),
                 at(NOW),

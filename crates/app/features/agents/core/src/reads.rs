@@ -297,12 +297,10 @@ mod tests {
         profile: &otty_agents::Profile,
         read_at: SystemTime,
     ) -> AgentsIntent {
-        let source = if profile.agent() == codex().agent() {
-            crate::testing::named_source("ChatGPT usage API")
-        } else {
-            crate::testing::named_source("Anthropic usage API")
-        };
-        let answer = limits_answer(vec![(source, Ok(five_hour_limits(10.0)))]);
+        let answer = limits_answer(vec![(
+            SourceId::ProviderPart,
+            Ok(five_hour_limits(10.0)),
+        )]);
 
         limits_loaded(profile, answer, read_at)
     }
@@ -313,7 +311,7 @@ mod tests {
         read_at: SystemTime,
     ) -> AgentsIntent {
         let failed = limits_answer(vec![(
-            crate::testing::named_source("Anthropic usage API"),
+            SourceId::ProviderPart,
             Err(SourceError::Network(String::from("down"))),
         )]);
 
@@ -860,24 +858,18 @@ mod tests {
         assert_eq!(opened, vec![AgentsOutcome::LoadLimits(claude())]);
     }
 
-    /// `codex app-server` did not start at the start, and a later source
-    /// answered: on screen the limits are read again with it.
+    /// The provider part failed at the start and `codex app-server` did
+    /// not start, so the agent part answered from its session files: on
+    /// screen the limits are read again with the program.
     #[test]
-    fn limits_a_later_source_gave_at_the_start_are_read_again_on_screen() {
+    fn limits_the_agent_part_gave_at_the_start_are_read_again_on_screen() {
         let mut state = started(true, |profile, read_at| {
             let answer = limits_answer(vec![
                 (
-                    crate::testing::named_source("ChatGPT usage API"),
+                    SourceId::ProviderPart,
                     Err(SourceError::Network(String::from("down"))),
                 ),
-                (
-                    crate::testing::named_source("codex app-server"),
-                    Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
-                ),
-                (
-                    crate::testing::named_source("Latest Codex session"),
-                    Ok(five_hour_limits(10.0)),
-                ),
+                (SourceId::AgentPart, Ok(five_hour_limits(10.0))),
             ]);
 
             limits_loaded(profile, answer, read_at)

@@ -7,7 +7,7 @@ use otty_agents::{
     Account, AccountNumbers, AdminKeyRef, Agent, AgentEnv, AgentId,
     AgentSession, Answer, Bill, FetchedPrices, Limits, Profile, ProfileStatus,
     ProjectStats, Registry, SavedProfiles, SessionId, SessionStats,
-    SourceError, SourceFailure, SourceId, Spend,
+    SourceError, SourceFailure, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -159,12 +159,9 @@ impl SessionsRead {
 pub struct LoadedLimits {
     /// The profile the limits belong to.
     pub profile: Profile,
-    /// The limits with the source that answered, why each source failed,
-    /// or that the agent can not read limits.
+    /// The limits with the part that answered, why each part failed, or
+    /// that nothing reads the limits of the profile.
     pub limits: LimitsRead,
-    /// The ids of every source of the agent, best first, those after the
-    /// one that answered too: the dashboard lists them with their states.
-    pub sources: Vec<SourceId>,
     /// When the read ended.
     pub read_at: SystemTime,
 }
@@ -173,8 +170,8 @@ pub struct LoadedLimits {
 ///
 /// # Example
 ///
-/// A walk over no sources fails with no failure at all: the agent can not
-/// read limits.
+/// A read that no part answered and no part failed: nothing reads the
+/// limits of the profile.
 ///
 /// ```
 /// use otty_app_agents::LimitsRead;
@@ -186,18 +183,18 @@ pub struct LoadedLimits {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum LimitsRead {
-    /// The limits with the source that answered and the failures before
-    /// it.
+    /// The limits with the part that answered, the provider part or the
+    /// agent part, and the failure of the provider part before it.
     Answered(Answer<Limits>),
-    /// Every source failed, each with why.
+    /// Every part failed, each with why.
     Failed(Vec<SourceFailure>),
-    /// The agent has no way to read limits.
+    /// Neither a provider part nor the agent part reads the limits.
     NoSources,
 }
 
 impl LimitsRead {
-    /// What the walk over the limit sources of an agent gave, `walk`: no
-    /// failures at all means the agent has no source.
+    /// What [`otty_agents::read_profile_limits`] gave, `walk`: no failures
+    /// at all means nothing reads the limits.
     pub fn from_walk(walk: Result<Answer<Limits>, Vec<SourceFailure>>) -> Self {
         match walk {
             Ok(answer) => Self::Answered(answer),
@@ -206,9 +203,9 @@ impl LimitsRead {
         }
     }
 
-    /// The failures of the sources the read tried before the one that
-    /// answered, or of every source when none did; empty for an agent
-    /// with no sources.
+    /// The failures of the parts the read asked before the one that
+    /// answered, or of every part when none did; empty when nothing reads
+    /// the limits.
     pub fn failures(&self) -> &[SourceFailure] {
         match self {
             Self::Answered(answer) => answer.earlier_failures(),

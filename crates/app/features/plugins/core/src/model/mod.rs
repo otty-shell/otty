@@ -5,11 +5,15 @@ mod choices;
 mod dialogs;
 mod list;
 
+use std::time::SystemTime;
+
 pub(crate) use choices::{ChoiceViewModel, given_to_new};
 pub(crate) use dialogs::{
     InstallDialogViewModel, PartPermissionsViewModel, PermissionsViewModel,
     UpdateDialogViewModel,
 };
+#[cfg(test)]
+pub(crate) use list::LastFailureViewModel;
 pub(crate) use list::{PartRowViewModel, PluginRowViewModel, failed};
 use otty_app_i18n::{self as i18n, Key};
 
@@ -81,7 +85,7 @@ impl<'a> PageViewModel<'a> {
 
         let page = match state.screen() {
             Screen::List => Self::List {
-                rows: list::rows(state),
+                rows: list::rows(state, SystemTime::now()),
                 error,
                 is_busy,
             },

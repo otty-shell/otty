@@ -1,8 +1,11 @@
 //! The list of the installed plugins (spec 2026-11-19-agent-plugins, "UI
 //! changes"): each with its icon, name, version, how far it is trusted,
-//! its parts with a switch each, what the latest check said, and its
-//! actions.
+//! its parts with a switch each and the last call of each that failed,
+//! what the latest check said, and its actions.
 
+use std::time::SystemTime;
+
+use otty_agents::{LastFailure, PluginFailureKind};
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::Trust;
@@ -53,14 +56,32 @@ pub(crate) struct PartRowViewModel {
     pub(crate) is_on: bool,
     /// Whether it is paused after three failures in a row: Try again.
     pub(crate) is_paused: bool,
+    /// The last call of the part that failed or that the host refused,
+    /// for plugin authors (issue 19).
+    pub(crate) last_failure: Option<LastFailureViewModel>,
 }
 
-/// The rows of the installed plugins, in their order.
-pub(crate) fn rows(state: &PluginsState) -> Vec<PluginRowViewModel> {
+/// The last failed call of a part: when, which call and the kind of
+/// error, never a value, a key or session text, and its report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LastFailureViewModel {
+    /// "Last failure 5 min ago: read-limits, the plugin did not finish in
+    /// time".
+    pub(crate) text: String,
+    /// The report Copy report puts on the clipboard.
+    pub(crate) report: String,
+}
+
+/// The rows of the installed plugins, in their order, with the ages of
+/// the last failures counted at `now`.
+pub(crate) fn rows(
+    state: &PluginsState,
+    now: SystemTime,
+) -> Vec<PluginRowViewModel> {
     state
         .plugins()
         .iter()
-        .map(|plugin| row(state, plugin))
+        .map(|plugin| row(state, plugin, now))
         .collect()
 }
 
@@ -69,7 +90,11 @@ pub(crate) fn failed(error: &otty_plugin_releases::InstallError) -> PluginNews {
     PluginNews::Failed(error_text(error))
 }
 
-fn row(state: &PluginsState, plugin: &ListedPlugin) -> PluginRowViewModel {
+fn row(
+    state: &PluginsState,
+    plugin: &ListedPlugin,
+    now: SystemTime,
+) -> PluginRowViewModel {
     let installed = &plugin.installed;
     let id = plugin.id();
 
@@ -82,6 +107,8 @@ fn row(state: &PluginsState, plugin: &ListedPlugin) -> PluginRowViewModel {
                 title: part_title(&plugin.part_name(&reference), &reference),
                 is_on: part.is_on(),
                 is_paused: is_paused(state, id, &reference),
+                last_failure: last_failure(state, id, &reference)
+                    .map(|last| last_failure_line(&last, now)),
                 part: reference,
             }
         })
@@ -149,10 +176,71 @@ fn is_paused(state: &PluginsState, id: &str, part: &PartRef) -> bool {
     })
 }
 
+/// The last failed call of the part `part` of the plugin `id`, while it
+/// runs.
+fn last_failure(
+    state: &PluginsState,
+    id: &str,
+    part: &PartRef,
+) -> Option<LastFailure> {
+    let running = state.running_plugin(id)?;
+
+    running
+        .parts
+        .iter()
+        .find(|(loaded, _)| loaded == part)
+        .and_then(|(_, health)| health.last_failure())
+}
+
+/// The line of `last`, as old as it is at `now`, with its report.
+fn last_failure_line(
+    last: &LastFailure,
+    now: SystemTime,
+) -> LastFailureViewModel {
+    let failure = last.failure();
+    let age = now.duration_since(last.at()).unwrap_or_default();
+    let kind = match failure.kind() {
+        PluginFailureKind::CouldNotRead(reason) => format!(
+            "{} ({reason})",
+            i18n::t(Key::AgentsPluginFailureCouldNotRead)
+        ),
+        kind => kind_text(kind).to_string(),
+    };
+
+    LastFailureViewModel {
+        text: i18n::filled(
+            Key::TplPluginsLastFailure,
+            &[
+                ("time", &i18n::time_ago(age)),
+                ("call", failure.call()),
+                ("kind", &kind),
+            ],
+        ),
+        report: failure.report(),
+    }
+}
+
+/// The kind of a failed call in the user's language, such as "the plugin
+/// did not finish in time".
+fn kind_text(kind: PluginFailureKind) -> &'static str {
+    let key = match kind {
+        PluginFailureKind::Stopped => Key::AgentsPluginFailureStopped,
+        PluginFailureKind::TooSlow => Key::AgentsPluginFailureTooSlow,
+        PluginFailureKind::Paused => Key::AgentsPluginFailurePaused,
+        PluginFailureKind::CouldNotRead(_) => {
+            Key::AgentsPluginFailureCouldNotRead
+        },
+    };
+
+    i18n::t(key)
+}
+
 #[cfg(test)]
 mod tests {
-    use otty_agents::PartHealth;
-    use otty_agents::fixtures::paused_health;
+    use std::time::Duration;
+
+    use otty_agents::fixtures::{failed_health, paused_health};
+    use otty_agents::{PartHealth, PluginFailure, PluginPart};
     use otty_plugin_host::PluginLog;
     use otty_plugin_releases::fixtures::with_part_on;
 
@@ -165,7 +253,7 @@ mod tests {
     fn each_plugin_lists_its_parts_with_their_kind_and_switch() {
         let state = PluginsState::new(vec![built_in_example()]);
 
-        let rows = rows(&state);
+        let rows = rows(&state, SystemTime::now());
 
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
@@ -180,12 +268,14 @@ mod tests {
                     title: part_title("Example Agent", &agent()),
                     is_on: true,
                     is_paused: false,
+                    last_failure: None,
                 },
                 PartRowViewModel {
                     part: provider(),
                     title: part_title("Example Cloud", &provider()),
                     is_on: true,
                     is_paused: false,
+                    last_failure: None,
                 },
             ]
         );
@@ -202,7 +292,7 @@ mod tests {
     fn a_local_plugin_is_marked_local_and_reloads() {
         let state = PluginsState::new(vec![local_example()]);
 
-        let rows = rows(&state);
+        let rows = rows(&state, SystemTime::now());
 
         assert_eq!(rows[0].trust, i18n::t(Key::PluginsLocal));
         assert!(rows[0].is_local);
@@ -214,7 +304,7 @@ mod tests {
         plugin.installed = with_part_on(plugin.installed, &agent(), false);
         let state = PluginsState::new(vec![plugin]);
 
-        let rows = rows(&state);
+        let rows = rows(&state, SystemTime::now());
 
         assert!(!rows[0].parts[0].is_on);
         assert!(rows[0].parts[1].is_on);
@@ -234,10 +324,62 @@ mod tests {
             ],
         }]);
 
-        let rows = rows(&state);
+        let rows = rows(&state, SystemTime::now());
 
         assert!(rows[0].parts[0].is_paused);
         assert!(!rows[0].parts[1].is_paused);
+    }
+
+    /// Issue 19: the card of a part shows its last failed call, with its
+    /// time and kind and no value, and Copy report; the plugin's other
+    /// part, which did not fail, shows none.
+    #[test]
+    fn a_part_shows_its_last_failed_call_and_its_report() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let failed_at = now - Duration::from_secs(5 * 60);
+        let part = PluginPart::new(
+            "example",
+            "Example",
+            "0.1.0",
+            "https://github.com/otty-shell/otty-plugin-example",
+            "example-agent",
+        );
+        let failure = PluginFailure::new(
+            part,
+            "read-limits",
+            PluginFailureKind::CouldNotRead("host error: not allowed"),
+        );
+        let mut state = PluginsState::new(vec![built_in_example()]);
+        state.set_running(vec![RunningPlugin {
+            plugin: String::from("example"),
+            log: PluginLog::new(),
+            parts: vec![
+                (agent(), failed_health(&failure, failed_at)),
+                (provider(), PartHealth::default()),
+            ],
+        }]);
+
+        let rows = rows(&state, now);
+
+        let kind = format!(
+            "{} (host error: not allowed)",
+            i18n::t(Key::AgentsPluginFailureCouldNotRead)
+        );
+        assert_eq!(
+            rows[0].parts[0].last_failure,
+            Some(LastFailureViewModel {
+                text: i18n::filled(
+                    Key::TplPluginsLastFailure,
+                    &[
+                        ("time", &i18n::time_ago(Duration::from_secs(300))),
+                        ("call", "read-limits"),
+                        ("kind", &kind),
+                    ],
+                ),
+                report: failure.report(),
+            })
+        );
+        assert_eq!(rows[0].parts[1].last_failure, None);
     }
 
     #[test]
@@ -246,7 +388,7 @@ mod tests {
         state.set_news("example", PluginNews::Updated(String::from("0.5.0")));
         state.set_too_new("example", Some(String::from("0.6.0")));
 
-        let rows = rows(&state);
+        let rows = rows(&state, SystemTime::now());
 
         let updated =
             i18n::filled(Key::TplPluginsUpdatedTo, &[("version", "0.5.0")]);

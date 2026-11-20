@@ -227,7 +227,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Ok(limits),
                 )]),
                 at(10),
@@ -414,7 +414,7 @@ mod tests {
             limits_loaded(
                 &codex(),
                 limits_answer(vec![(
-                    crate::testing::named_source("ChatGPT usage API"),
+                    otty_agents::SourceId::ProviderPart,
                     Err(SourceError::NotLoggedIn),
                 )]),
                 at(20),

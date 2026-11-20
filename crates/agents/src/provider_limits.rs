@@ -1,7 +1,10 @@
-//! The limits of a profile, best source first (issue 15 of spec
-//! 2026-11-19-agent-plugins): the provider part that serves the profile's
-//! subscription login reads them with one request, before the agent's own
-//! sources, which may start the agent's program.
+//! The limits of a profile (issues 15 and 19 of spec
+//! 2026-11-19-agent-plugins). The parts may come from different plugins,
+//! such as OpenCode with DeepSeek, so OTTY keeps one order rule: the
+//! provider part that serves the profile's subscription login is asked
+//! first, with one request, then the agent part, which may start the
+//! agent's program. The first answer wins. Where each part reads its
+//! numbers from is the part's business.
 
 use crate::account::{Account, AccountKind};
 use crate::account_numbers::AccountNumbers;
@@ -13,37 +16,33 @@ use crate::profile::Profile;
 use crate::source_id::SourceId;
 use crate::walk::{Answer, SourceFailure, walk};
 
-/// The limits of `profile` from the first source that answers: the
+/// The limits of `profile` from the first part that answers: the
 /// provider part of `providers` that serves the subscription login
-/// `agent` finds in the profile, then `sources`, the agent's own, best
-/// first. A source is asked only when the ones before it failed. The ids
-/// of the sources come with the answer, in the order they are walked.
+/// `agent` finds in the profile ([`SourceId::ProviderPart`]), then
+/// `agent_limits`, the agent part's own read ([`SourceId::AgentPart`]).
+/// The agent part is asked only when the provider part failed or there
+/// is none.
 ///
-/// When no source answered, the error holds the failure of each source in
-/// order; it is empty when there were no sources.
+/// When no part answered, the error holds the failure of each part in
+/// order; it is empty when neither reads limits for the profile.
 pub fn read_profile_limits(
     agent: &dyn Agent,
     providers: &[PluginProvider],
-    sources: &[Box<dyn LimitSource>],
+    agent_limits: Option<&dyn LimitSource>,
     profile: &Profile,
-) -> (Result<Answer<Limits>, Vec<SourceFailure>>, Vec<SourceId>) {
+) -> Result<Answer<Limits>, Vec<SourceFailure>> {
     let subscription = subscription_of(agent, providers, profile);
-
-    let mut ids: Vec<SourceId> = subscription
-        .iter()
-        .map(|(provider, _)| provider.source())
-        .collect();
-    ids.extend(sources.iter().map(|source| source.id()));
 
     let from_provider = subscription.iter().map(|(provider, account)| {
         let limits = provider_limits(agent, provider, account, profile);
-        (provider.source(), limits)
+        (SourceId::ProviderPart, limits)
     });
-    let from_agent = sources
-        .iter()
-        .map(|source| (source.id(), source.limits(profile)));
+    let from_agent = agent_limits.into_iter().filter_map(|source| {
+        let limits = source.limits(profile).transpose()?;
+        Some((SourceId::AgentPart, limits))
+    });
 
-    (walk(from_provider.chain(from_agent)), ids)
+    walk(from_provider.chain(from_agent))
 }
 
 /// The subscription login `agent` finds in `profile` with the provider
@@ -98,7 +97,6 @@ mod tests {
     use crate::limits::{Billing, MockLimitSource, UsageWindows};
     use crate::plugin_provider::MockProviderPartCalls;
     use crate::provider::ProviderRef;
-    use crate::source_id::SourceName;
     use crate::testing::{MockAgent, mock_entry, profile};
 
     fn claude_login() -> Account {
@@ -168,64 +166,62 @@ mod tests {
         PluginProvider::made_up("anthropic", &["anthropic.com"], calls)
     }
 
-    fn usage_screen(times: usize) -> Box<dyn LimitSource> {
+    /// The agent part's read of the limits, asked `times` times, which
+    /// answers with the plan "From the agent".
+    fn usage_screen(times: usize) -> MockLimitSource {
         let mut source = MockLimitSource::new();
-        source
-            .expect_id()
-            .return_const(SourceId::Named(SourceName::new("made-up /usage")));
         source.expect_limits().times(times).returning(|_| {
-            Ok(Limits::new(
+            let limits = Limits::new(
                 Billing::UsageWindows(UsageWindows::default()),
-                None,
-            ))
+                Some("From the agent".to_string()),
+            );
+            Ok(Some(limits))
         });
-        Box::new(source)
+        source
     }
 
+    /// Issue 19: the provider part's answer wins over the agent part's,
+    /// which is not asked.
     #[test]
-    fn the_provider_part_answers_first_and_the_agent_is_not_asked() {
+    fn the_provider_part_answers_first_and_the_agent_part_is_not_asked() {
         let agent = agent_with(vec![claude_login()]);
         let providers = [anthropic(Ok(()), 1)];
-        let sources = [usage_screen(0)];
+        let screen = usage_screen(0);
 
-        let (limits, ids) = read_profile_limits(
+        let limits = read_profile_limits(
             &agent,
             &providers,
-            &sources,
+            Some(&screen),
             &profile("Example"),
         );
 
         let answer = limits.expect("the limits");
-        assert_eq!(answer.source(), providers[0].source());
+        assert_eq!(answer.source(), SourceId::ProviderPart);
         assert_eq!(answer.value().plan(), Some("Max 20x"));
-        assert_eq!(
-            ids,
-            [
-                providers[0].source(),
-                SourceId::Named(SourceName::new("made-up /usage"))
-            ]
-        );
+        assert!(answer.earlier_failures().is_empty());
     }
 
     #[test]
-    fn when_the_provider_part_fails_the_agents_source_is_asked() {
+    fn when_the_provider_part_fails_the_agent_part_is_asked() {
         let agent = agent_with(vec![claude_login()]);
         let providers = [anthropic(Err(SourceError::KeyRefused), 1)];
-        let sources = [usage_screen(1)];
+        let screen = usage_screen(1);
 
-        let (limits, _) = read_profile_limits(
+        let limits = read_profile_limits(
             &agent,
             &providers,
-            &sources,
+            Some(&screen),
             &profile("Example"),
         );
 
         let answer = limits.expect("the limits");
-        assert_eq!(
-            answer.source(),
-            SourceId::Named(SourceName::new("made-up /usage"))
-        );
+        assert_eq!(answer.source(), SourceId::AgentPart);
+        assert_eq!(answer.value().plan(), Some("From the agent"));
         assert_eq!(answer.earlier_failures().len(), 1);
+        assert_eq!(
+            answer.earlier_failures()[0].source(),
+            SourceId::ProviderPart
+        );
         assert_eq!(
             answer.earlier_failures()[0].error(),
             &SourceError::NotLoggedIn
@@ -233,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_with_no_login_a_part_serves_walks_only_its_agent() {
+    fn a_profile_with_no_login_a_part_serves_asks_only_its_agent_part() {
         let mut key = claude_login();
         key = Account::new(
             key.provider().clone(),
@@ -244,16 +240,48 @@ mod tests {
         );
         let agent = agent_with(vec![key]);
         let providers = [anthropic(Ok(()), 0)];
-        let sources = [usage_screen(1)];
+        let screen = usage_screen(1);
 
-        let (limits, ids) = read_profile_limits(
+        let limits = read_profile_limits(
             &agent,
             &providers,
-            &sources,
+            Some(&screen),
             &profile("Example"),
         );
 
-        assert!(limits.is_ok());
-        assert_eq!(ids, [SourceId::Named(SourceName::new("made-up /usage"))]);
+        let answer = limits.expect("the limits");
+        assert_eq!(answer.source(), SourceId::AgentPart);
+    }
+
+    /// An agent part that reads no limits is no failure: with no provider
+    /// part either, nothing reads the limits of the profile.
+    #[test]
+    fn an_agent_part_that_reads_no_limits_leaves_no_failure() {
+        let agent = agent_with(Vec::new());
+        let mut no_limits = MockLimitSource::new();
+        no_limits.expect_limits().times(1).returning(|_| Ok(None));
+
+        let limits = read_profile_limits(
+            &agent,
+            &[],
+            Some(&no_limits),
+            &profile("Example"),
+        );
+
+        assert_eq!(limits, Err(Vec::new()));
+    }
+
+    #[test]
+    fn a_failed_provider_part_and_no_agent_read_give_its_failure() {
+        let agent = agent_with(vec![claude_login()]);
+        let providers = [anthropic(Err(SourceError::KeyRefused), 1)];
+
+        let limits =
+            read_profile_limits(&agent, &providers, None, &profile("Example"));
+
+        let failures = limits.expect_err("no part answers");
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].source(), SourceId::ProviderPart);
+        assert_eq!(failures[0].error(), &SourceError::NotLoggedIn);
     }
 }

@@ -70,6 +70,9 @@ impl Delivery for PluginsIntent {
             PluginsOutcome::OpenPage(address) => {
                 agents_io::open_page(address).map(AppEvent::Agents)
             },
+            PluginsOutcome::CopyText(text) => {
+                agents_io::copy_text(text).map(AppEvent::Agents)
+            },
             PluginsOutcome::LoadParts(parts) => agents_io::load_readers(
                 Arc::clone(&app.plugin_io.engine),
                 installed_parts(parts),

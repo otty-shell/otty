@@ -123,8 +123,10 @@ mod tests {
         }
     }
 
-    fn login() -> LoginRef {
-        LoginRef::EnvVar("STAND_IN_KEY".to_string())
+    /// The login whose variable names the way the test plugin reads the
+    /// limits, such as `run`.
+    fn way(name: &str) -> LoginRef {
+        LoginRef::EnvVar(name.to_string())
     }
 
     /// The plan of `limits`, where the test plugin puts what the program
@@ -165,7 +167,7 @@ mod tests {
         let limits = batch
             .agent()
             .expect("an agent part")
-            .read_limits(&profile(), &login(), "run")
+            .read_limits(&profile(), &way("run"))
             .expect("the call");
 
         assert_same(plan(limits), Ok("stand-in 1.2.3".to_string()));
@@ -187,7 +189,7 @@ mod tests {
         let limits = batch
             .agent()
             .expect("an agent part")
-            .read_limits(&profile(), &login(), "run")
+            .read_limits(&profile(), &way("run"))
             .expect("the call");
 
         assert_same(
@@ -231,13 +233,19 @@ mod tests {
         let talked = batch
             .agent()
             .expect("an agent part")
-            .read_limits(&profile(), &login(), "talk")
+            .read_limits(&profile(), &way("talk"))
             .expect("the call");
         let stopped_with_the_call = stopped.load(Ordering::SeqCst);
+        // Another profile, so the paced answer of the talk is not given.
+        let other = Profile {
+            folder: "/home/test-user/.test-agent-work".to_string(),
+            is_default: false,
+            ..profile()
+        };
         let used_later = batch
             .agent()
             .expect("an agent part")
-            .read_limits(&profile(), &login(), "used-talk")
+            .read_limits(&other, &way("used-talk"))
             .expect("the call");
 
         assert_same(plan(talked), Ok("pong".to_string()));

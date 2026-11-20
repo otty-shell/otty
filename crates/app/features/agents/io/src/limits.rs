@@ -1,4 +1,4 @@
-//! The read of the limits of one profile. Its sources may ask a server over
+//! The read of the limits of one profile. Its parts may ask a server over
 //! the network or start the agent's program, so it runs on a thread of its
 //! own.
 
@@ -9,12 +9,12 @@ use std::time::SystemTime;
 use iced::Task;
 use otty_agents::{
     Agent, AgentCommand, PluginProvider, Profile, ProgramError, RunningProgram,
-    RunningTerminal, SourceId, StartProgram, StartTerminal,
+    RunningTerminal, SourceFailure, SourceId, StartProgram, StartTerminal,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
 use crate::agent_program::LoginShellPrograms;
-use crate::background::{failed_because_stopped, on_own_thread};
+use crate::background::{on_own_thread, read_stopped};
 use crate::hidden_terminal::LoginShellTerminals;
 use crate::plugin_parts::ProviderList;
 
@@ -70,14 +70,14 @@ impl StartTerminal for NoTerminals {
     }
 }
 
-/// Read the limits of `profile` in the background, best source first: the
-/// provider part of `providers` that serves the profile's subscription
-/// login, then the sources of the agent of `agents` it belongs to. A
-/// source that asks the agent's program starts it through the user's
-/// shell at `shell`, the way the agent tab does; a source that reads the
-/// program's screen starts it in a hidden terminal in a folder of its own
-/// inside OTTY's cache folder `cache_dir`. The answer comes back as
-/// [`AgentsIntent::LimitsLoaded`].
+/// Read the limits of `profile` in the background: the provider part of
+/// `providers` that serves the profile's subscription login first, then
+/// the agent part of the agent of `agents` it belongs to, which reads them
+/// from wherever it reads them. A read that asks the agent's program
+/// starts it through the user's shell at `shell`, the way the agent tab
+/// does; one that reads the program's screen starts it in a hidden
+/// terminal in a folder of its own inside OTTY's cache folder
+/// `cache_dir`. The answer comes back as [`AgentsIntent::LimitsLoaded`].
 ///
 /// # Example
 ///
@@ -118,10 +118,9 @@ pub fn load_limits(
 }
 
 /// Read the limits of `profile` in the background while Agents mode is not
-/// on screen, as [`load_limits`] does, except that no source starts the
-/// agent's program, neither `codex app-server` nor `claude` in a hidden
-/// terminal: that source says why, and a read on screen starts it (spec
-/// Decision 10).
+/// on screen, as [`load_limits`] does, except that the agent part starts
+/// no program, neither `codex app-server` nor `claude` in a hidden
+/// terminal, and a read on screen starts it (spec Decision 10).
 pub fn load_limits_in_background(
     agents: &AgentList,
     providers: &ProviderList,
@@ -135,8 +134,8 @@ pub fn load_limits_in_background(
 }
 
 /// The read of the limits of `profile` with the agents and the provider
-/// parts of `readers` on a thread of its own, whose sources may start the
-/// agent's program as `starts` says.
+/// parts of `readers` on a thread of its own, which may start the agent's
+/// program as `starts` says.
 fn read_task(
     (agents, providers): (&AgentList, &ProviderList),
     profile: Profile,
@@ -144,7 +143,7 @@ fn read_task(
     cache_dir: &Path,
     starts: ProgramStarts,
 ) -> Task<AgentsIntent> {
-    let sources = limit_source_ids(agents, &profile);
+    let is_known = otty_agents::agent_of(agents, profile.agent()).is_some();
     let task = format!("reading the limits of {}", profile.name());
     let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
@@ -158,17 +157,16 @@ fn read_task(
             let readers = (agents.as_ref(), providers.as_ref());
             read_limits(readers, profile, &shell, probe_dir, starts)
         },
-        move || stopped_read(fallback, &sources),
+        move || stopped_read(fallback, is_known),
         AgentsIntent::LimitsLoaded,
     )
 }
 
-/// The limits of `profile` from the first source that answers, the
-/// provider part of the profile's subscription login first, then the
-/// sources of its agent, with the ids of all the sources and the time the
-/// read ended. The agent's program starts only as `starts` says; in a
-/// hidden terminal it runs in `probe_dir`. An agent OTTY does not know has
-/// no sources.
+/// The limits of `profile` from the first part that answers, the provider
+/// part of the profile's subscription login first, then the agent part,
+/// with the time the read ended. The agent's program starts only as
+/// `starts` says; in a hidden terminal it runs in `probe_dir`. Nothing
+/// reads the limits of an agent OTTY does not know.
 fn read_limits(
     (agents, providers): (&[Box<dyn Agent>], &[PluginProvider]),
     profile: Profile,
@@ -192,43 +190,39 @@ fn read_limits(
         return LoadedLimits {
             profile,
             limits: LimitsRead::from_walk(Err(Vec::new())),
-            sources: Vec::new(),
             read_at: SystemTime::now(),
         };
     };
 
-    let sources = agent.limit_sources(programs, terminals);
-    let (walked, ids) =
-        otty_agents::read_profile_limits(agent, providers, &sources, &profile);
+    let agent_limits = agent.limit_source(programs, terminals);
+    let walked = otty_agents::read_profile_limits(
+        agent,
+        providers,
+        agent_limits.as_deref(),
+        &profile,
+    );
 
     LoadedLimits {
         profile,
         limits: LimitsRead::from_walk(walked),
-        sources: ids,
         read_at: SystemTime::now(),
     }
 }
 
-/// The ids of the limit sources of the agent of `profile`, best first.
-/// Nothing is made or started. An agent OTTY does not know has none.
-fn limit_source_ids(
-    agents: &[Box<dyn Agent>],
-    profile: &Profile,
-) -> Vec<SourceId> {
-    otty_agents::agent_of(agents, profile.agent())
-        .map(|agent| agent.limit_source_ids())
-        .unwrap_or_default()
-}
-
 /// What a read of the limits of `profile` that stopped before it answered
-/// gives: each of `sources` failed because the read stopped, so the last
-/// good answer stays, greyed, and the user sees why. With no sources the
-/// agent has no way to read limits.
-fn stopped_read(profile: Profile, sources: &[SourceId]) -> LoadedLimits {
+/// gives: the agent part failed because the read stopped, so the last good
+/// answer stays, greyed, and the user sees why. Nothing reads the limits
+/// of an agent OTTY does not know, `is_known` false.
+fn stopped_read(profile: Profile, is_known: bool) -> LoadedLimits {
+    let failures = if is_known {
+        vec![SourceFailure::new(SourceId::AgentPart, read_stopped())]
+    } else {
+        Vec::new()
+    };
+
     LoadedLimits {
         profile,
-        limits: LimitsRead::from_walk(Err(failed_because_stopped(sources))),
-        sources: sources.to_vec(),
+        limits: LimitsRead::from_walk(Err(failures)),
         read_at: SystemTime::now(),
     }
 }
@@ -237,7 +231,7 @@ fn stopped_read(profile: Profile, sources: &[SourceId]) -> LoadedLimits {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{AgentId, SourceFailure, SourceName};
+    use otty_agents::AgentId;
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -252,20 +246,6 @@ mod tests {
 
     /// No provider part: no test sends a request to a provider.
     const NO_PROVIDERS: &[PluginProvider] = &[];
-
-    /// The source of the limits of Coder's `/usage` panel, as the
-    /// Anthropic plugin names it.
-    fn usage_panel() -> SourceId {
-        SourceId::Named(SourceName::new("Claude Code /usage"))
-    }
-
-    /// The sources of the limits of Coder, as the OpenAI plugin names them.
-    fn codex_sources() -> [SourceId; 2] {
-        [
-            SourceId::Named(SourceName::new("codex app-server")),
-            SourceId::Named(SourceName::new("Codex session files")),
-        ]
-    }
 
     /// No provider part, shared by the background reads.
     fn no_providers() -> ProviderList {
@@ -302,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_with_no_login_has_the_failure_of_its_source_and_its_time() {
+    fn a_profile_with_no_login_has_the_failure_of_its_agent_part_and_time() {
         let home = TempDir::new("agents-limits");
         let profile = logged_out_claude(&home);
         let probe_dir = home.path().join("agent-probe");
@@ -320,11 +300,10 @@ mod tests {
         assert_eq!(
             loaded.limits,
             LimitsRead::Failed(vec![SourceFailure::new(
-                usage_panel(),
+                SourceId::AgentPart,
                 otty_agents::SourceError::NotLoggedIn
             )])
         );
-        assert_eq!(loaded.sources, [usage_panel()]);
         assert!(loaded.read_at >= before);
     }
 
@@ -360,9 +339,9 @@ mod tests {
     }
 
     /// While Agents mode is away `codex app-server` is not started either:
-    /// the OpenAI plugin starts nothing for the read, and its session files
-    /// hold no record of the limits. The shell here only counts its
-    /// starts, so no real `coder` ever runs.
+    /// the OpenAI plugin starts nothing for the read, falls back on its
+    /// session files, and they hold no record of the limits. The shell
+    /// here only counts its starts, so no real `codex` ever runs.
     #[test]
     fn a_read_in_the_background_starts_no_codex_app_server() {
         let home = TempDir::new("agents-limits-background-codex");
@@ -393,7 +372,6 @@ mod tests {
         );
 
         assert!(matches!(loaded.limits, LimitsRead::Failed(_)));
-        assert_eq!(loaded.sources, codex_sources());
         assert!(!starts.exists(), "the shell was started");
     }
 
@@ -414,7 +392,6 @@ mod tests {
         );
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
-        assert!(loaded.sources.is_empty());
     }
 
     #[test]
@@ -461,55 +438,35 @@ mod tests {
         ));
     }
 
+    /// A read that stopped before it answered fails at the agent part with
+    /// why, so the last good limits stay, greyed, and the user is told; it
+    /// never says nothing reads the limits.
     #[test]
-    fn the_sources_of_an_agent_are_known_without_starting_anything() {
-        let home = TempDir::new("agents-limits-ids");
-        let profile = logged_out_claude(&home);
-        let stranger = Profile::added(
-            AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/home/user/.stranger"),
-        );
-        let agents = agents_with_plugins(home.path());
-
-        let claude = limit_source_ids(&agents, &profile);
-        let none = limit_source_ids(&agents, &stranger);
-
-        assert_eq!(claude, [usage_panel()]);
-        assert!(none.is_empty());
-    }
-
-    /// A read that stopped before it answered fails at each source with
-    /// why, so the last good limits stay, greyed, and the user is told;
-    /// it never says the agent has no way to read limits.
-    #[test]
-    fn a_read_that_stopped_fails_at_each_source_because_it_stopped() {
+    fn a_read_that_stopped_fails_at_the_agent_part_because_it_stopped() {
         let home = TempDir::new("agents-limits-stopped");
         let profile = logged_out_claude(&home);
-        let sources = [usage_panel()];
 
-        let loaded = stopped_read(profile.clone(), &sources);
+        let loaded = stopped_read(profile.clone(), true);
 
         assert_eq!(loaded.profile, profile);
         assert_eq!(
             loaded.limits,
             LimitsRead::Failed(vec![SourceFailure::new(
-                usage_panel(),
+                SourceId::AgentPart,
                 read_stopped()
             )])
         );
-        assert_eq!(loaded.sources, sources);
     }
 
     #[test]
-    fn a_stopped_read_of_an_agent_with_no_sources_has_no_way_to_read() {
+    fn a_stopped_read_of_an_unknown_agent_has_no_way_to_read() {
         let profile = Profile::added(
             AgentId::new("stranger"),
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let loaded = stopped_read(profile, &[]);
+        let loaded = stopped_read(profile, false);
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
     }

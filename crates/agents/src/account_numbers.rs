@@ -18,11 +18,10 @@ use crate::balance::Balance;
 use crate::bill::Bill;
 use crate::error::{SourceError, Unavailable};
 use crate::limits::Limits;
-use crate::plugin_provider::{PluginProvider, part_source};
+use crate::plugin_provider::PluginProvider;
 use crate::profile::Profile;
-use crate::provider::AddAccountKind;
+use crate::provider::{AddAccountKind, ProviderEntry};
 use crate::registry::Registry;
-use crate::source_id::SourceId;
 use crate::walk::Answer;
 
 /// Where the key or the login token of an account is read again for a
@@ -48,8 +47,8 @@ pub enum AccountNumbers {
     Limits(Answer<Limits>),
 }
 
-/// The source OTTY reads `account` through with its own key, by itself;
-/// `None` for an account it does not read that way.
+/// The provider whose part OTTY reads `account` through with its own key,
+/// by itself; `None` for an account it does not read that way.
 ///
 /// It is `None` while no entry of `registry` serves the account's
 /// provider (spec 2026-11-19-agent-plugins, "What the UI shows": no Left
@@ -57,11 +56,11 @@ pub enum AccountNumbers {
 /// it reads every account found in a profile, with the key of its login,
 /// and every key the user added by hand when the part offers Add account,
 /// a key for its numbers or an admin key for the bill of its
-/// organization, named after the provider ([`SourceId::Named`]).
+/// organization.
 ///
 /// ```
 /// use otty_agents::{
-///     Account, AdminKeyRef, ProviderRef, Registry, own_source_of,
+///     Account, AdminKeyRef, ProviderRef, Registry, own_reader_of,
 /// };
 ///
 /// let added = Account::added(
@@ -69,12 +68,12 @@ pub enum AccountNumbers {
 ///     AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into()),
 /// );
 ///
-/// assert_eq!(own_source_of(&added, &Registry::default()), None);
+/// assert!(own_reader_of(&added, &Registry::default()).is_none());
 /// ```
-pub fn own_source_of(
+pub fn own_reader_of<'a>(
     account: &Account,
-    registry: &Registry,
-) -> Option<SourceId> {
+    registry: &'a Registry,
+) -> Option<&'a ProviderEntry> {
     let entry = registry.provider_of(account.provider())?;
 
     let is_in_profile = account
@@ -84,7 +83,7 @@ pub fn own_source_of(
     let is_added =
         account.added_key().is_some() && entry.add_account().is_some();
 
-    (is_in_profile || is_added).then(|| part_source(entry))
+    (is_in_profile || is_added).then_some(entry)
 }
 
 /// The numbers of `account` up to `now`, read by the provider part of
@@ -176,9 +175,14 @@ mod tests {
         )
     }
 
-    /// The source of the provider part of the entry named `name`.
-    fn named(name: &str) -> SourceId {
-        SourceId::Named(crate::SourceName::new(name))
+    /// The name of the provider whose part reads `account` by itself.
+    fn reader(account: &Account, registry: &Registry) -> Option<String> {
+        own_reader_of(account, registry).map(|entry| entry.name().to_string())
+    }
+
+    /// The name of the provider of the entry named `name`.
+    fn named(name: &str) -> String {
+        name.to_string()
     }
 
     /// The registry entry of a provider a plugin part reads, offering Add
@@ -253,12 +257,8 @@ mod tests {
             (added("example-cloud", "KEY"), None),
         ];
 
-        for (account, source) in cases {
-            assert_eq!(
-                own_source_of(&account, &registry),
-                source,
-                "{account:?}"
-            );
+        for (account, reader_name) in cases {
+            assert_eq!(reader(&account, &registry), reader_name, "{account:?}");
         }
     }
 
@@ -266,7 +266,7 @@ mod tests {
     /// for its provider, an account has no Left or Limits rows, so nothing
     /// is read for it; a key for a host is read once an entry serves it.
     #[test]
-    fn an_account_whose_provider_no_entry_serves_has_no_source() {
+    fn an_account_whose_provider_no_entry_serves_has_no_reader() {
         let registry = Registry::new(
             Vec::new(),
             vec![plugin_entry(
@@ -282,11 +282,8 @@ mod tests {
         let by_host = key_account(host.clone(), "sk-made-up");
         let resolved = key_account(registry.resolve(&host), "sk-made-up");
 
-        assert_eq!(own_source_of(&by_host, &without), None);
-        assert_eq!(
-            own_source_of(&resolved, &registry),
-            Some(named("example-cloud"))
-        );
+        assert_eq!(reader(&by_host, &without), None);
+        assert_eq!(reader(&resolved, &registry), Some(named("example-cloud")));
     }
 
     /// Issue 17: an account added by hand for a provider no plugin part
@@ -429,9 +426,9 @@ mod tests {
         let added = added("example-cloud", "EXAMPLE_KEY");
 
         let part = named("example-cloud");
-        for (add_account, added_source) in [
-            (Some(AddAccountKind::Key), Some(part)),
-            (Some(AddAccountKind::AdminKey), Some(part)),
+        for (add_account, added_reader) in [
+            (Some(AddAccountKind::Key), Some(part.clone())),
+            (Some(AddAccountKind::AdminKey), Some(part.clone())),
             (None, None),
         ] {
             let registry = Registry::new(
@@ -439,10 +436,10 @@ mod tests {
                 vec![plugin_entry("example-cloud", "example.com", add_account)],
             );
 
-            assert_eq!(own_source_of(&found, &registry), Some(part));
+            assert_eq!(reader(&found, &registry), Some(part.clone()));
             assert_eq!(
-                own_source_of(&added, &registry),
-                added_source,
+                reader(&added, &registry),
+                added_reader,
                 "{add_account:?}"
             );
         }

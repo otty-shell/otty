@@ -1,13 +1,16 @@
 //! The Usage block of an API key profile: when the money was read, then
 //! the money of today, 7 days and this month as rows, drawn as the usage
-//! windows of a subscription are, and the requests with no price.
+//! windows of a subscription are, the mark of an estimate at the list
+//! prices under the sum, and the requests with no price.
 
-use iced::widget::Column;
+use iced::widget::{Column, Space, row};
 use iced::{Element, Length};
+use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
 
 use super::super::event::AgentsIntent;
-use super::super::model::MoneyViewModel;
+use super::super::model::{EstimateMarkViewModel, MoneyViewModel};
 use super::blocks;
 
 /// Render the block of money named `title`: "Usage" on the dashboard of
@@ -23,11 +26,29 @@ pub(super) fn view<'a>(
     for row in vm.rows {
         block = block.push(blocks::usage_row(row, vm.is_stale, palette));
     }
+    if let Some(mark) = vm.estimate {
+        block = block.push(estimate_mark(mark, palette));
+    }
 
     block
         .push(blocks::notes(vm.note, vm.failure, palette))
         .width(Length::Fill)
         .into()
+}
+
+/// The mark of an estimate at the list prices, right under the sum it is
+/// about, at the right end of the block, with its tooltip.
+fn estimate_mark<'a>(
+    mark: EstimateMarkViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let label = small_text(mark.label, palette.text_muted());
+
+    row![
+        Space::new().width(Length::Fill),
+        tooltip(label, mark.tip, palette)
+    ]
+    .into()
 }
 
 #[cfg(test)]
@@ -64,6 +85,7 @@ mod tests {
             note: Some(String::from("3 requests have no price")),
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
+            estimate: None,
         }
     }
 
@@ -100,6 +122,34 @@ mod tests {
         ] {
             ui.find(shown).expect("the money should show");
         }
+    }
+
+    /// Issue 19 of spec 2026-11-19-agent-plugins: an estimate at the list
+    /// prices says so right under its sum.
+    #[test]
+    fn an_estimate_is_marked_under_its_sum() {
+        let themes = ThemeManager::new();
+        let money = MoneyViewModel {
+            estimate: Some(EstimateMarkViewModel {
+                label: i18n::t(Key::AgentsEstimateMark),
+                tip: String::from("At the LiteLLM prices of Nov 16"),
+            }),
+            ..money()
+        };
+        let mut ui = block(view(
+            money,
+            i18n::t(Key::AgentsUsage),
+            themes.current().ui(),
+        ));
+
+        let sum = at(&mut ui, "$184.75");
+        let mark = at(&mut ui, i18n::t(Key::AgentsEstimateMark));
+
+        assert!(mark.y >= sum.y + sum.height, "{mark:?} under {sum:?}");
+        assert!(
+            (mark.x + mark.width - WIDTH).abs() < 1.0,
+            "the mark ends the row: {mark:?}"
+        );
     }
 
     #[test]

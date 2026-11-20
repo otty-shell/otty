@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agent::{
     Billing as PartBilling, Command as PartCommand, Login, LoginKind,
-    Profile as PartProfile, ProfilePlace, ProfileStatus as PartStatus,
+    ProfilePlace, ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{LoadedPlugin, PartRef};
 
@@ -31,12 +31,12 @@ use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::provider::ProviderRef;
 use crate::session::{SessionId, SessionSource};
-use crate::source_id::{SourceId, SourceName};
+use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
 use crate::stats::StatsSource;
 
 /// The ids of the one source of sessions a plugin agent has: its part.
-const PLUGIN_SOURCES: [SourceId; 1] = [SourceId::Plugin];
+const PLUGIN_SOURCES: [SourceId; 1] = [SourceId::AgentPart];
 
 /// One agent part of a loaded plugin as an [`Agent`]. Its sources, spend
 /// counter and statistics call the same part; the app keeps one for the
@@ -47,7 +47,6 @@ pub struct PluginAgent {
     tested_version: Option<String>,
     default_folder: PathBuf,
     folder_variable: String,
-    limit_sources: Vec<String>,
     spend: Arc<PluginSpend>,
     writes_cost: Arc<AtomicBool>,
 }
@@ -66,8 +65,7 @@ impl PluginAgent {
     }
 
     /// The agent part `id` of `plugin`; `None` when the plugin has no such
-    /// part. It asks the part for its default folder and the names of its
-    /// sources of limits once, now.
+    /// part. It asks the part for its default folder once, now.
     pub fn new(plugin: Arc<LoadedPlugin>, id: &str) -> Option<Self> {
         let manifest_part = plugin
             .manifest()
@@ -99,7 +97,7 @@ impl PluginAgent {
             .cloned()
             .unwrap_or_default();
 
-        let (default_folder, limit_sources) = first_look(&part, id);
+        let default_folder = default_folder(&part, id);
         let writes_cost = Arc::new(AtomicBool::new(false));
         let tested_version = manifest_part.tested_version().map(String::from);
         let spend = Arc::new(PluginSpend::new(
@@ -114,7 +112,6 @@ impl PluginAgent {
             tested_version,
             default_folder,
             folder_variable,
-            limit_sources,
             spend,
             writes_cost,
         })
@@ -273,35 +270,19 @@ impl Agent for PluginAgent {
         &PLUGIN_SOURCES
     }
 
-    /// The part's sources, each named as the part names it and read in a
-    /// read of its own. The plugin engine starts the programs and hidden
-    /// terminals of every part, so `programs` only tells whether any may
-    /// start now: while Agents mode is away none does.
-    fn limit_sources(
+    /// The limits the part reads from wherever it reads them, in one read.
+    /// The plugin engine starts the programs and hidden terminals of every
+    /// part, so `programs` only tells whether any may start now: while
+    /// Agents mode is away none does.
+    fn limit_source(
         &self,
         programs: Arc<dyn StartProgram>,
         _terminals: Arc<dyn StartTerminal>,
-    ) -> Vec<Box<dyn LimitSource>> {
+    ) -> Option<Box<dyn LimitSource>> {
         let starts_programs = programs.starts_now();
 
-        self.limit_sources
-            .iter()
-            .map(|source| {
-                let limits = PluginLimits::new(
-                    Arc::clone(&self.part),
-                    source,
-                    starts_programs,
-                );
-                Box::new(limits) as Box<dyn LimitSource>
-            })
-            .collect()
-    }
-
-    fn limit_source_ids(&self) -> Vec<SourceId> {
-        self.limit_sources
-            .iter()
-            .map(|source| SourceId::Named(SourceName::new(source)))
-            .collect()
+        let limits = PluginLimits::new(Arc::clone(&self.part), starts_programs);
+        Some(Box::new(limits))
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -372,32 +353,19 @@ pub(crate) fn account_of(
     Some(account.with_plan(login.plan.clone()))
 }
 
-/// The default folder of the part `id` and the names of the sources of
-/// limits the part reads for it, asked once in one read; the folder
-/// `~/.<id>` and no sources when the read fails.
-fn first_look(part: &CalledPart, id: &str) -> (PathBuf, Vec<String>) {
+/// The default folder of the part `id`, asked once; the folder `~/.<id>`
+/// when the read fails.
+fn default_folder(part: &CalledPart, id: &str) -> PathBuf {
     let home = part.plugin().env().home().to_path_buf();
     let fallback = home.join(format!(".{id}"));
 
-    let look = part.read("profiles", |batch| {
-        let mut calls = batch.agent()?;
-        let places = calls.profiles()?;
-        let Some(default) = default_place(&places) else {
-            return Ok(None);
-        };
+    let places = part.read("profiles", |batch| batch.agent()?.profiles());
 
-        let asked = PartProfile {
-            agent: id.to_string(),
-            folder: default.folder.clone(),
-            is_default: true,
-        };
-        let sources = calls.limit_sources(&asked)?;
-        Ok(Some((PathBuf::from(&default.folder), sources)))
-    });
-
-    match look {
-        Ok(Some(found)) => found,
-        _ => (fallback, Vec::new()),
+    match places {
+        Ok(places) => default_place(&places)
+            .map(|place| PathBuf::from(&place.folder))
+            .unwrap_or(fallback),
+        Err(_) => fallback,
     }
 }
 
@@ -445,7 +413,9 @@ mod tests {
     use super::*;
     use crate::profile_list::profiles;
     use crate::saved_profiles::SavedProfiles;
-    use crate::testing::{NOW, TemplateHome, answer_line, meta_line};
+    use crate::testing::{
+        NOW, TemplateHome, answer_line, meta_line, no_programs, no_terminals,
+    };
 
     const AGENT: &str = "example-agent";
 
@@ -468,7 +438,21 @@ mod tests {
         assert!(entry.keyring_services().is_empty());
         assert_eq!((part.plugin(), part.part()), ("example", AGENT));
         assert_eq!(agent.tested_version(), Some("1.4.2"));
-        assert!(agent.limit_source_ids().is_empty());
+    }
+
+    /// The template's part reads no limits: its agent shows none, so the
+    /// mode draws no limits for its profiles.
+    #[test]
+    fn a_part_that_reads_no_limits_gives_none() {
+        let home = TemplateHome::new();
+        let agent = agent(&home);
+        let source = agent
+            .limit_source(no_programs(), no_terminals())
+            .expect("a plugin agent always asks its part");
+
+        let limits = source.limits(&home.profile());
+
+        assert_eq!(limits, Ok(None));
     }
 
     /// The default profile is the part's default folder; another folder
@@ -582,7 +566,7 @@ mod tests {
         let sources = agent.session_sources();
         let sessions = sources[0].sessions(&home.profile()).expect("listed");
 
-        assert_eq!(sources[0].id(), SourceId::Plugin);
+        assert_eq!(sources[0].id(), SourceId::AgentPart);
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id().as_str(), "s1");
         assert_eq!(

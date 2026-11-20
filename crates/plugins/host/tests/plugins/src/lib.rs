@@ -56,12 +56,18 @@ impl Agent for Plugin {
         command()
     }
 
+    /// The limits read the way the variable name of `login` says, such as
+    /// `run`: the tests choose the way with the login they pass.
     fn read_limits(
         profile: &Profile,
-        _login: &LoginRef,
-        source: &str,
+        login: &LoginRef,
     ) -> Result<Limits, ReadError> {
-        limits(profile, source)
+        let way = match login {
+            LoginRef::EnvVar(name) => name.as_str(),
+            _ => "none",
+        };
+
+        limits(profile, way)
     }
 }
 
@@ -112,18 +118,17 @@ fn version() -> Option<String> {
 }
 
 #[cfg(not(feature = "programs"))]
-fn limits(_profile: &Profile, _source: &str) -> Result<Limits, ReadError> {
+fn limits(_profile: &Profile, _way: &str) -> Result<Limits, ReadError> {
     Err(ReadError::NotSupported)
 }
 
 /// The limits whose plan is what `stand-in` answered: its output for the
-/// source `run`, its first line for `talk`, its screen after `/usage`
-/// and the working folder of hidden terminals for `terminal`. The talk
-/// and the terminal are kept, never dropped, so the host must stop them
-/// when the call ends; the source `keep-talk` only starts a talk and
-/// keeps it.
+/// way `run`, its first line for `talk`, its screen after `/usage` and
+/// the working folder of hidden terminals for `terminal`. The talk and
+/// the terminal are kept, never dropped, so the host must stop them when
+/// the call ends; the way `keep-talk` only starts a talk and keeps it.
 #[cfg(feature = "programs")]
-fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
+fn limits(profile: &Profile, way: &str) -> Result<Limits, ReadError> {
     use std::cell::RefCell;
 
     use otty_plugin_sdk::programs::{self, Talk};
@@ -138,11 +143,15 @@ fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
     let env = vec![("STAND_IN_HOME".to_string(), profile.folder.clone())];
     let serve = ["serve", "--profile", "work"].map(String::from);
 
-    let plan = match source {
+    let plan = match way {
         "run" => {
-            let output =
-                programs::run("stand-in", &["--version".to_string()], &env, 5000)
-                    .map_err(ReadError::Host)?;
+            let output = programs::run(
+                "stand-in",
+                &["--version".to_string()],
+                &env,
+                5000,
+            )
+            .map_err(ReadError::Host)?;
             String::from_utf8_lossy(&output.stdout).into_owned()
         },
         "talk" => {
@@ -182,7 +191,9 @@ fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
                 kept.first().map(|talk| talk.next_line(1000))
             });
             match line {
-                Some(line) => line.map_err(ReadError::Host)?.unwrap_or_default(),
+                Some(line) => {
+                    line.map_err(ReadError::Host)?.unwrap_or_default()
+                },
                 None => String::new(),
             }
         },

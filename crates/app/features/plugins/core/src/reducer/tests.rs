@@ -577,3 +577,16 @@ fn the_daily_timer_asks_for_the_check_when_it_is_due() {
 
     assert_eq!(outcomes, [PluginsOutcome::CheckUpdatesIfDue]);
 }
+
+/// Issue 19: Copy report of the last failed call of a part puts its
+/// report on the clipboard.
+#[test]
+fn copy_report_of_a_part_copies_its_report() {
+    let mut state = open_state(vec![built_in_example()]);
+    let report = String::from("The plugin Example 0.1.0 could not read.");
+
+    let outcomes =
+        reduce(&mut state, PluginsIntent::CopyReport(report.clone()));
+
+    assert_eq!(outcomes, [PluginsOutcome::CopyText(report)]);
+}
