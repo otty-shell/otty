@@ -269,7 +269,7 @@ mod tests {
 
     use super::*;
     use crate::testing::agents::{
-        PROJECT, SESSION_TITLE, show_claude_with_a_session,
+        PROJECT, SESSION_TITLE, show_codex_with_a_session,
     };
     use crate::testing::keyboard::enter_press;
     use crate::testing::window::{
@@ -283,10 +283,10 @@ mod tests {
             .with_env("CODEX_HOME", "/home/user/.codex-work")
     }
 
-    /// Show Agents mode with one Claude Code session and select it in the
+    /// Show Agents mode with one Codex session and select it in the
     /// sessions table of its project.
     fn select_the_session(app: &mut App) {
-        show_claude_with_a_session(app);
+        show_codex_with_a_session(app);
 
         for intent in [
             AgentsIntent::SelectProject(PathBuf::from(PROJECT)),

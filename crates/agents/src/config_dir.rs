@@ -51,15 +51,12 @@ pub(crate) fn default_config_dir(
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use otty_agents::{Agent, AgentEnv, ClaudeCode, proposed_config_dir};
+/// use otty_agents::{AgentEnv, ConfigFolder, proposed_config_dir};
 ///
 /// let env = AgentEnv::new(PathBuf::from("/home/user"));
+/// let claude = ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR");
 ///
-/// let folder = proposed_config_dir(
-///     ClaudeCode::default().config_folder(),
-///     &env,
-///     "Semrush",
-/// );
+/// let folder = proposed_config_dir(claude, &env, "Semrush");
 ///
 /// assert_eq!(folder, Some(PathBuf::from("/home/user/.claude-semrush")));
 /// ```
@@ -128,9 +125,12 @@ fn folder_suffix(name: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::claude_code::ClaudeCode;
     use crate::codex::Codex;
     use crate::testing::{TempDir, write_file};
+
+    /// A config folder named like Claude Code's.
+    const CLAUDE: ConfigFolder =
+        ConfigFolder::new(".claude", "CLAUDE_CONFIG_DIR");
 
     fn env_in(home: &Path) -> AgentEnv {
         AgentEnv::new(home.to_path_buf())
@@ -139,18 +139,14 @@ mod tests {
     fn propose(name: &str) -> Option<PathBuf> {
         let env = env_in(Path::new("/home/user"));
 
-        proposed_config_dir(ClaudeCode::default().config_folder(), &env, name)
+        proposed_config_dir(CLAUDE, &env, name)
     }
 
     #[test]
     fn the_proposed_folder_is_the_agents_folder_with_the_name() {
         let env = env_in(Path::new("/home/user"));
 
-        let claude = proposed_config_dir(
-            ClaudeCode::default().config_folder(),
-            &env,
-            "Semrush",
-        );
+        let claude = proposed_config_dir(CLAUDE, &env, "Semrush");
         let codex = proposed_config_dir(
             Codex::default().config_folder(),
             &env,

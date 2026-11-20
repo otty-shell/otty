@@ -6,6 +6,7 @@
 //! and killed when it runs past them.
 
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -70,6 +71,10 @@ impl RunningProgram for ShellProgram {
 }
 
 impl StartTerminal for LoginShellTerminals {
+    fn working_folder(&self) -> PathBuf {
+        otty_agents::StartTerminal::working_dir(self)
+    }
+
     #[cfg(unix)]
     fn start(
         &self,
@@ -482,6 +487,10 @@ mod tests {
         RunningTerminal::stop(terminal.as_mut());
 
         assert!(ready.contains("ready"), "{ready}");
+        assert_eq!(
+            StartTerminal::working_folder(&terminals),
+            folder.path().join("probe")
+        );
         assert_eq!(sent, Ok(()));
         assert!(answered.contains("got: /usage"), "{answered}");
     }

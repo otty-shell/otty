@@ -288,16 +288,22 @@ impl Agent for PluginAgent {
         &PLUGIN_SOURCES
     }
 
+    /// The part's sources, read in one batch. The plugin engine starts
+    /// the programs and hidden terminals of every part, so `programs`
+    /// only tells whether any may start now: while Agents mode is away
+    /// none does.
     fn limit_sources(
         &self,
-        _programs: Arc<dyn StartProgram>,
+        programs: Arc<dyn StartProgram>,
         _terminals: Arc<dyn StartTerminal>,
     ) -> Vec<Box<dyn LimitSource>> {
         if !self.has_limits {
             return Vec::new();
         }
 
-        vec![Box::new(PluginLimits::new(Arc::clone(&self.part)))]
+        let limits =
+            PluginLimits::new(Arc::clone(&self.part), programs.starts_now());
+        vec![Box::new(limits)]
     }
 
     fn limit_source_ids(&self) -> &'static [SourceId] {

@@ -10,6 +10,19 @@
 //! Every request has OTTY's `User-Agent`, follows no redirect and gives up
 //! after 30 seconds ([`UreqClient`]).
 
+mod anthropic_costs;
+// The limits of a Claude login, kept until the provider part `anthropic`
+// reads them (spec 2026-11-19-agent-plugins, issue 15). Nothing sends the
+// request until then; the tests keep it working.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the provider part `anthropic` reads it in issue 15"
+    )
+)]
+mod claude_usage;
+mod claude_usage_answer;
 mod deepseek;
 mod kilo;
 mod moonshot;
@@ -20,6 +33,7 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
+use self::anthropic_costs::CostReport;
 use crate::account::{Account, AccountIdentity, AccountKind, FoundIn};
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, agent_of};
@@ -28,7 +42,6 @@ use crate::bill::{Bill, BillSource};
 use crate::built_in::{
     ANTHROPIC, DEEPSEEK, KILO, MOONSHOT, OPENAI, OPENROUTER,
 };
-use crate::claude_code::CostReport;
 use crate::codex::chatgpt_limits;
 use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};

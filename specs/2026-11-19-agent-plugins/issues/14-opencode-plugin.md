@@ -61,3 +61,4 @@ as with the built-in reader; a Kilo key found in OpenCode shows "no
 provider plugin".
 
 ## Comments
+- 2026-11-20, issue 13: the embedding script is `plugins/embed.sh <folder>`; how to use it and add the `embedded_plugins()` entry is in the comments of issue 13.

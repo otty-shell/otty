@@ -221,7 +221,9 @@ mod tests {
 
     use super::*;
     use crate::background::read_stopped;
-    use crate::testing::{executable_script, run, write};
+    use crate::testing::{
+        agents_with_anthropic, executable_script, run, write,
+    };
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
 
@@ -273,9 +275,18 @@ mod tests {
 
         let before = SystemTime::now();
 
-        let found = read_profiles(&known_agents(), &env, home.path(), &finds);
-        let not_found =
-            read_profiles(&known_agents(), &env, home.path(), &finds_nothing);
+        let found = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            home.path(),
+            &finds,
+        );
+        let not_found = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            home.path(),
+            &finds_nothing,
+        );
 
         let connected = ProfileStatus::Connected {
             account: None,
@@ -327,7 +338,7 @@ mod tests {
         .to_string();
 
         let loaded = read_profiles(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             &env,
             home.path(),
             &prints_a_version,
@@ -405,7 +416,12 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
-        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            &config_dir,
+            &finds,
+        );
 
         let names: Vec<_> = loaded
             .profiles
@@ -446,7 +462,12 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
-        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            &config_dir,
+            &finds,
+        );
 
         let names: Vec<_> = loaded
             .profiles
@@ -476,7 +497,12 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
-        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            &config_dir,
+            &finds,
+        );
 
         assert_eq!(
             statuses(&loaded)[1..],
@@ -512,7 +538,12 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
-        let loaded = read_profiles(&known_agents(), &env, &config_dir, &finds);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            &config_dir,
+            &finds,
+        );
 
         let work_profile = loaded
             .profiles
@@ -542,8 +573,12 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds_nothing = shell(&home, false);
 
-        let loaded =
-            read_profiles(&known_agents(), &env, home.path(), &finds_nothing);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            home.path(),
+            &finds_nothing,
+        );
 
         assert!(loaded.problem.is_some());
         assert_eq!(loaded.profiles.len(), 1);
@@ -561,9 +596,18 @@ mod tests {
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
-        let loaded = read_profiles(&known_agents(), &env, home.path(), &finds);
-        let unread =
-            read_profiles(&known_agents(), &env, broken.path(), &finds);
+        let loaded = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            home.path(),
+            &finds,
+        );
+        let unread = read_profiles(
+            &agents_with_anthropic(home.path()),
+            &env,
+            broken.path(),
+            &finds,
+        );
 
         let saved = loaded.saved.expect("the file was read");
         assert!(
@@ -594,7 +638,8 @@ mod tests {
             config_dir,
         );
 
-        let loaded = read_sessions(&known_agents(), profile.clone());
+        let loaded =
+            read_sessions(&agents_with_anthropic(home.path()), profile.clone());
 
         assert_eq!(loaded.profile, profile);
         let SessionsRead::Read(sessions) = loaded.sessions else {
@@ -623,7 +668,7 @@ mod tests {
         let config_dir = home.path().join(".claude");
         std::fs::create_dir_all(config_dir.join("projects")).expect("folder");
         let env = AgentEnv::new(home.path().to_path_buf());
-        let agents: AgentList = Arc::from(known_agents());
+        let agents = agents_with_anthropic(home.path());
         let finds_nothing = shell(&home, false);
         let profile = Profile::default_for(
             AgentId::new("claude-code"),
@@ -655,9 +700,9 @@ mod tests {
     #[test]
     fn a_sessions_read_that_stopped_fails_because_it_stopped() {
         let profile = Profile::default_for(
-            AgentId::new("claude-code"),
-            "Claude Code",
-            PathBuf::from("/home/user/.claude"),
+            AgentId::new("codex"),
+            "Codex",
+            PathBuf::from("/home/user/.codex"),
         );
         let stranger = Profile::added(
             AgentId::new("stranger"),

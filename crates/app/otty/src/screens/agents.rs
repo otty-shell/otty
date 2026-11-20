@@ -108,15 +108,15 @@ mod tests {
 
     use super::*;
     use crate::dispatch;
-    use crate::testing::agents::{claude_profile, show_claude_with_a_session};
+    use crate::testing::agents::{codex_profile, show_codex_with_a_session};
     use crate::testing::running::RunningApp;
     use crate::testing::window::app;
     use crate::view::view;
 
-    /// An app in Agents mode with one Claude Code session in `/work/otty`.
+    /// An app in Agents mode with one Codex session in `/work/otty`.
     fn agents_app() -> App {
         let mut app = app();
-        show_claude_with_a_session(&mut app);
+        show_codex_with_a_session(&mut app);
 
         app
     }
@@ -141,7 +141,7 @@ mod tests {
         let app = agents_app();
         let mut ui = simulator(view(&app));
 
-        ui.find("Claude Code").expect("the profile should show");
+        ui.find("Codex").expect("the profile should show");
         ui.find(i18n::t(Key::AgentsNotLoggedInHint))
             .expect("the dashboard of the profile should show");
         assert!(ui.find(i18n::t(Key::AgentsStartTitle)).is_err());
@@ -263,7 +263,7 @@ mod tests {
     fn profile_page_app() -> App {
         let mut app = agents_app();
         let _ = app.agents.reduce(
-            AgentsIntent::SelectProfile(claude_profile()),
+            AgentsIntent::SelectProfile(codex_profile()),
             AgentsCtx::default(),
         );
 
@@ -359,7 +359,7 @@ mod tests {
         let spend = otty_agents::Spend::new(vec![today], Vec::new());
         let _ = app.agents.reduce(
             AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
-                profile: claude_profile(),
+                profile: codex_profile(),
                 spend: otty_app_agents::SpendCount::Counted(spend),
                 counted_at: std::time::SystemTime::now(),
             }),
@@ -534,7 +534,7 @@ mod tests {
     fn the_plus_opens_the_dialog_and_start_opens_the_agent_tab_there() {
         let (mut app, _terminals) =
             crate::testing::window::app_with_scripted_terminals();
-        crate::testing::agents::show_claude(&mut app);
+        crate::testing::agents::show_codex(&mut app);
         let home = app.agents.env().home().to_path_buf();
 
         press_widget(&mut app, otty_app_agents::NEW_SESSION_BUTTON_ID);
@@ -559,7 +559,7 @@ mod tests {
         assert!(opened);
         assert_eq!(app.agents.top_overlay(), None);
         assert_eq!(app.tabs.len(), 1);
-        assert_eq!(app.tabs.active_tab_title(), Some("Claude Code"));
+        assert_eq!(app.tabs.active_tab_title(), Some("Codex"));
         assert_eq!(app.modes.active(), Mode::Terminal);
         assert_eq!(app.terminal.focused_local_folder(), Some(home));
     }

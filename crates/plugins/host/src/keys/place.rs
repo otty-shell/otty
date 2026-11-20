@@ -16,8 +16,10 @@ use crate::operations::v0_1::otty::host::keys::{
 use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 
-/// The most bytes of a JSON key file (spec "Host operations").
-const MOST_KEY_FILE_BYTES: u64 = 1024 * 1024;
+/// The most bytes of a JSON key file (spec "Host operations"): as much as
+/// `files.read` gives, since a key file can also hold a long list, such
+/// as the projects of Claude Code's `.claude.json`.
+const MOST_KEY_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// The key at `place`, read now. Variables come from `env`, keyring
 /// entries from `outside` once the user allowed the keyring.
@@ -43,7 +45,7 @@ pub(crate) fn read_key(
         .ok_or_else(|| HostError::NotFound(place_text(place)))
 }
 
-/// The JSON document of the key file `path`, at most 1 MiB.
+/// The JSON document of the key file `path`, at most 4 MiB.
 pub(crate) fn read_json_file(path: &Path) -> Result<Value, HostError> {
     let mut bytes = Vec::new();
     File::open(path)
@@ -59,7 +61,7 @@ pub(crate) fn read_json_file(path: &Path) -> Result<Value, HostError> {
 
     if bytes.len() as u64 > MOST_KEY_FILE_BYTES {
         return Err(HostError::TooBig(format!(
-            "{} is more than 1 MiB",
+            "{} is more than 4 MiB",
             path.display()
         )));
     }
@@ -276,6 +278,30 @@ mod tests {
 
         assert_eq!(key.expect("the key").as_str(), KEY);
         assert!(matches!(missing, Err(HostError::NotFound(_))));
+    }
+
+    /// Issue 13: a global config file with a long project list, such as
+    /// Claude Code's `.claude.json`, is read up to 4 MiB.
+    #[test]
+    fn a_key_file_is_read_up_to_four_mib() {
+        let folder = TempDir::new();
+        let big = folder.path().join(".claude.json");
+        let projects = "p".repeat(3 * 1024 * 1024);
+        std::fs::write(
+            &big,
+            format!(r#"{{"projects": "{projects}", "key": "{KEY}"}}"#),
+        )
+        .expect("the file");
+        let huge = folder.path().join("huge.json");
+        let projects = "p".repeat(4 * 1024 * 1024);
+        std::fs::write(&huge, format!(r#"{{"projects": "{projects}"}}"#))
+            .expect("the file");
+
+        let key = read_key(&json_field(&big, "/key"), &env(), &no_keyring());
+        let too_big = read_json_file(&huge);
+
+        assert_eq!(key.expect("the key").as_str(), KEY);
+        assert!(matches!(too_big, Err(HostError::TooBig(_))));
     }
 
     #[test]

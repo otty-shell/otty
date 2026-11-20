@@ -740,6 +740,28 @@ fn an_embedded_plugin_installs_on_first_start_and_stays_removed_after_remove() {
     assert!(installer.plugin("example").is_none());
 }
 
+/// Issue 13: the Anthropic plugin built into OTTY passes every check of
+/// an install and serves Claude Code with no dialog.
+#[test]
+fn the_built_in_anthropic_plugin_installs_with_every_part_on() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    let mut installer = test_installer(folder.path(), &github);
+
+    let reports = installer.install_embedded(&crate::embedded_plugins());
+
+    assert_eq!(*reports[0].outcome(), Ok(UpdateOutcome::Installed));
+    let plugin = installer.plugin("anthropic").expect("installed");
+    assert!(plugin.is_built_in());
+    assert_eq!(plugin.trust(), Trust::Official);
+    let parts: Vec<(PartRef, bool)> = plugin
+        .parts()
+        .iter()
+        .map(|part| (part.part(), part.is_on()))
+        .collect();
+    assert_eq!(parts, [(PartRef::agent("claude-code"), true)]);
+}
+
 #[test]
 fn a_newer_embedded_copy_in_a_newer_otty_is_installed_like_an_update() {
     let folder = TempDir::new();

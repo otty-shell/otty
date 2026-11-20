@@ -1,8 +1,9 @@
 //! The answer of the `/usage` probe to Claude Code's question whether to
 //! trust the folder it runs in.
 //!
-//! The probe answers "Yes" only for its own folder (spec Decision 12), as
-//! CodexBar's Claude CLI session does (MIT licence),
+//! The probe answers "Yes" only for its own folder, OTTY's working folder
+//! of hidden terminals, as CodexBar's Claude CLI session does (MIT
+//! licence),
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Claude/ClaudeCLISession.swift>
 //! (`workspaceTrustKeys`): an arrow moves the `❯` marker toward the "Yes"
 //! option of the same list, and Enter is pressed only once the marker is on
@@ -11,7 +12,7 @@
 //! also compared with the probe's folder.
 
 use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The "Yes" options of the question, in the new and the old layout.
 const YES_OPTIONS: [&str; 2] = ["yes, i trust this folder", "yes, proceed"];
@@ -21,8 +22,8 @@ const MARKER: char = '❯';
 const BOX_BORDER: char = '│';
 
 /// What the probe does about the trust question on the screen.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum TrustAnswer {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrustAnswer {
     /// Press Enter: the marker is on "Yes".
     Confirm,
     /// Move the marker one option up, toward "Yes".
@@ -31,26 +32,25 @@ pub(super) enum TrustAnswer {
     MoveDown,
     /// Press nothing yet: no "Yes" option with a marker is drawn.
     Wait,
-    /// Never answer: the question names another folder, given as the
-    /// screen shows it.
-    Refuse(String),
+    /// Never answer: the question names another folder.
+    Refuse,
 }
 
 /// The answer to the trust question on `screen`, for the probe started in
-/// its own folder, written as each of `probe_dirs` (the folder as OTTY
+/// its own folder, written as each of `probe_folders` (the folder as OTTY
 /// names it, and as the system resolves its links).
 ///
 /// A screen that names a folder must name the probe's folder, written in
 /// full or from the home folder (`~/…`). A screen that names no folder is
 /// about the folder the probe started in, which is always its own.
-pub(super) fn answer_trust(
+pub(crate) fn answer_trust(
     screen: &str,
-    probe_dirs: &[PathBuf],
+    probe_folders: &[String],
 ) -> TrustAnswer {
     let lines: Vec<&str> = screen.lines().map(inner_text).collect();
 
-    if let Some(folder) = other_folder(&lines, probe_dirs) {
-        return TrustAnswer::Refuse(folder.to_string());
+    if names_other_folder(&lines, probe_folders) {
+        return TrustAnswer::Refuse;
     }
 
     let Some(yes_row) = lines.iter().position(|line| is_yes_option(line))
@@ -77,20 +77,21 @@ fn inner_text(line: &str) -> &str {
     line.trim().trim_matches(BOX_BORDER).trim()
 }
 
-/// The folder the question names when it is not the probe's folder:
-/// `None` when a line names the probe's folder or no line names a folder.
-/// A line the user's shell printed before `claude` started may start with
-/// a path too, so any line that names the probe's folder is enough.
-fn other_folder<'a>(
-    lines: &[&'a str],
-    probe_dirs: &[PathBuf],
-) -> Option<&'a str> {
+/// Whether the question names a folder that is not the probe's folder:
+/// no when a line names the probe's folder or no line names a folder. A
+/// line the user's shell printed before `claude` started may start with a
+/// path too, so any line that names the probe's folder is enough.
+fn names_other_folder(lines: &[&str], probe_folders: &[String]) -> bool {
     let mut folders = lines.iter().copied().filter(|line| is_folder(line));
-    let first = folders.clone().next()?;
+    if folders.clone().next().is_none() {
+        return false;
+    }
 
-    let names_probe_dir = folders
-        .any(|folder| probe_dirs.iter().any(|dir| names_folder(folder, dir)));
-    (!names_probe_dir).then_some(first)
+    !folders.any(|folder| {
+        probe_folders
+            .iter()
+            .any(|probe| names_folder(folder, Path::new(probe)))
+    })
 }
 
 /// Whether `line` is a folder: it starts with `/` or `~/`.
@@ -98,15 +99,15 @@ fn is_folder(line: &str) -> bool {
     line.starts_with('/') || line.starts_with("~/")
 }
 
-/// Whether the folder `text` on the screen is `dir`. A folder written from
-/// the home folder, `~/.cache/otty/agent-probe`, is `dir` when `dir` ends
-/// with the same parts.
-fn names_folder(text: &str, dir: &Path) -> bool {
+/// Whether the folder `text` on the screen is `folder`. A folder written
+/// from the home folder, `~/.cache/otty/agent-probe`, is `folder` when
+/// `folder` ends with the same parts.
+fn names_folder(text: &str, folder: &Path) -> bool {
     let text = text.trim_end_matches('/');
 
     match text.strip_prefix("~/") {
-        Some(from_home) => !from_home.is_empty() && dir.ends_with(from_home),
-        None => Path::new(text) == dir,
+        Some(from_home) => !from_home.is_empty() && folder.ends_with(from_home),
+        None => Path::new(text) == folder,
     }
 }
 
@@ -137,12 +138,12 @@ fn option_list(lines: &[&str], row: usize) -> (usize, usize) {
 mod tests {
     use super::*;
 
-    const PROBE_DIR: &str = "/home/user/.cache/otty/agent-probe";
+    const PROBE_FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
 
     const MARKER_ON_YES: &str = "\
  Accessing workspace:
 
- /home/user/.cache/otty/agent-probe
+ /home/dev/.cache/otty/agent-probe
 
  Quick safety check: Is this a project you created or one you trust?
 
@@ -156,7 +157,7 @@ mod tests {
 ╭──────────────────────────────────────────────╮
 │ Do you trust the files in this folder?       │
 │                                              │
-│ /home/user/.cache/otty/agent-probe           │
+│ /home/dev/.cache/otty/agent-probe            │
 │                                              │
 │ ❯ 1. Yes, proceed                            │
 │   2. No, exit                                │
@@ -170,18 +171,18 @@ mod tests {
    2. No, exit
 ";
 
-    fn probe_dirs() -> Vec<PathBuf> {
-        vec![PathBuf::from(PROBE_DIR)]
+    fn probe_folders() -> Vec<String> {
+        vec![PROBE_FOLDER.to_string()]
     }
 
     #[test]
     fn the_marker_on_yes_for_the_probe_folder_is_confirmed() {
         assert_eq!(
-            answer_trust(MARKER_ON_YES, &probe_dirs()),
+            answer_trust(MARKER_ON_YES, &probe_folders()),
             TrustAnswer::Confirm
         );
         assert_eq!(
-            answer_trust(OLD_LAYOUT_IN_A_BOX, &probe_dirs()),
+            answer_trust(OLD_LAYOUT_IN_A_BOX, &probe_folders()),
             TrustAnswer::Confirm
         );
     }
@@ -196,11 +197,11 @@ mod tests {
             .replace("  2. No, exit", "  2. Yes, I trust this folder");
 
         assert_eq!(
-            answer_trust(&marker_below, &probe_dirs()),
+            answer_trust(&marker_below, &probe_folders()),
             TrustAnswer::MoveUp
         );
         assert_eq!(
-            answer_trust(&marker_above, &probe_dirs()),
+            answer_trust(&marker_above, &probe_folders()),
             TrustAnswer::MoveDown
         );
     }
@@ -210,26 +211,29 @@ mod tests {
     #[test]
     fn with_no_marker_in_the_options_nothing_is_pressed() {
         let no_marker = MARKER_ON_YES.replace("❯ 1. Yes", "  1. Yes");
-        let marker_elsewhere =
-            format!("❯ an earlier line\n\n{}", no_marker.as_str());
+        let marker_elsewhere = format!("❯ an earlier line\n\n{no_marker}");
         let no_options = " Do you trust the files in this folder?\n";
 
-        assert_eq!(answer_trust(&no_marker, &probe_dirs()), TrustAnswer::Wait);
         assert_eq!(
-            answer_trust(&marker_elsewhere, &probe_dirs()),
+            answer_trust(&no_marker, &probe_folders()),
             TrustAnswer::Wait
         );
-        assert_eq!(answer_trust(no_options, &probe_dirs()), TrustAnswer::Wait);
+        assert_eq!(
+            answer_trust(&marker_elsewhere, &probe_folders()),
+            TrustAnswer::Wait
+        );
+        assert_eq!(
+            answer_trust(no_options, &probe_folders()),
+            TrustAnswer::Wait
+        );
     }
 
     #[test]
     fn a_question_for_another_folder_is_refused() {
-        let other = MARKER_ON_YES.replace(PROBE_DIR, "/home/user/work/secret");
+        let other =
+            MARKER_ON_YES.replace(PROBE_FOLDER, "/home/dev/work/secret");
 
-        assert_eq!(
-            answer_trust(&other, &probe_dirs()),
-            TrustAnswer::Refuse(String::from("/home/user/work/secret"))
-        );
+        assert_eq!(answer_trust(&other, &probe_folders()), TrustAnswer::Refuse);
     }
 
     /// The probe always starts in its own folder, so a question that names
@@ -237,7 +241,7 @@ mod tests {
     #[test]
     fn a_question_that_names_no_folder_is_about_the_probe_folder() {
         assert_eq!(
-            answer_trust(NO_FOLDER_NAMED, &probe_dirs()),
+            answer_trust(NO_FOLDER_NAMED, &probe_folders()),
             TrustAnswer::Confirm
         );
     }
@@ -245,22 +249,19 @@ mod tests {
     #[test]
     fn the_probe_folder_written_from_home_or_by_its_real_path_is_its_own() {
         let from_home = MARKER_ON_YES
-            .replace(PROBE_DIR, "~/.cache/otty/agent-probe")
+            .replace(PROBE_FOLDER, "~/.cache/otty/agent-probe")
             .replace("probe\n", "probe/\n");
         let real_path =
-            MARKER_ON_YES.replace(PROBE_DIR, "/data/cache/otty/agent-probe");
-        let dirs = vec![
-            PathBuf::from(PROBE_DIR),
-            PathBuf::from("/data/cache/otty/agent-probe"),
+            MARKER_ON_YES.replace(PROBE_FOLDER, "/data/cache/otty/agent-probe");
+        let folders = vec![
+            PROBE_FOLDER.to_string(),
+            "/data/cache/otty/agent-probe".to_string(),
         ];
-        let home_only = MARKER_ON_YES.replace(PROBE_DIR, "~/");
+        let home_only = MARKER_ON_YES.replace(PROBE_FOLDER, "~/");
 
-        assert_eq!(answer_trust(&from_home, &dirs), TrustAnswer::Confirm);
-        assert_eq!(answer_trust(&real_path, &dirs), TrustAnswer::Confirm);
-        assert_eq!(
-            answer_trust(&home_only, &dirs),
-            TrustAnswer::Refuse(String::from("~/"))
-        );
+        assert_eq!(answer_trust(&from_home, &folders), TrustAnswer::Confirm);
+        assert_eq!(answer_trust(&real_path, &folders), TrustAnswer::Confirm);
+        assert_eq!(answer_trust(&home_only, &folders), TrustAnswer::Refuse);
     }
 
     /// A line the user's shell printed before `claude` started can start
@@ -268,9 +269,12 @@ mod tests {
     #[test]
     fn a_path_printed_by_the_shell_does_not_hide_the_probe_folder() {
         let screen = format!(
-            "/home/user/.zshrc:12: command not found: nvm\n{MARKER_ON_YES}"
+            "/home/dev/.zshrc:12: command not found: nvm\n{MARKER_ON_YES}"
         );
 
-        assert_eq!(answer_trust(&screen, &probe_dirs()), TrustAnswer::Confirm);
+        assert_eq!(
+            answer_trust(&screen, &probe_folders()),
+            TrustAnswer::Confirm
+        );
     }
 }

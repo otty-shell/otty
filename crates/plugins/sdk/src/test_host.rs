@@ -54,6 +54,10 @@ use crate::programs::Output;
 use crate::sqlite::{Param, Value};
 use crate::{HostError, JsonWithKeys, Key, KeyPlace};
 
+/// The working folder of hidden terminals in the home folder, as OTTY
+/// starts them: `agent-probe` in OTTY's cache folder.
+const TERMINAL_FOLDER: &str = ".cache/otty/agent-probe";
+
 thread_local! {
     /// The host and the part of the test running on this thread.
     static CURRENT: RefCell<Option<Current>> = const { RefCell::new(None) };
@@ -120,6 +124,7 @@ impl TestHost {
 
         let fixtures = folder.join("fixtures");
         let home = fixtures.canonicalize().unwrap_or(fixtures);
+        let terminal_folder = home.join(TERMINAL_FOLDER);
 
         let state = HostState {
             manifest,
@@ -128,6 +133,7 @@ impl TestHost {
             now_ms: None,
             keyring: Vec::new(),
             keyring_allowed: false,
+            terminal_folder,
             keys: Vec::new(),
             answers: Vec::new(),
             requests: Vec::new(),
@@ -174,6 +180,14 @@ impl TestHost {
     /// in Agents mode. Until then every keyring read is refused.
     pub fn with_keyring_allowed(self) -> Self {
         self.state.borrow_mut().keyring_allowed = true;
+
+        self
+    }
+
+    /// The same host with hidden terminals started in `folder` instead of
+    /// `~/.cache/otty/agent-probe`, the folder OTTY uses.
+    pub fn with_terminal_folder(self, folder: impl Into<PathBuf>) -> Self {
+        self.state.borrow_mut().terminal_folder = folder.into();
 
         self
     }
@@ -322,6 +336,7 @@ struct HostState {
     now_ms: Option<i64>,
     keyring: Vec<(String, String, String)>,
     keyring_allowed: bool,
+    terminal_folder: PathBuf,
     keys: Vec<String>,
     answers: Vec<CannedAnswer>,
     requests: Vec<SentRequest>,
@@ -467,6 +482,9 @@ pub(crate) fn remove_file(path: &str) -> Result<(), HostError> {
         if !permissions.may_write(&path) {
             return Err(not_allowed(&path));
         }
+        if fs::symlink_metadata(&path).is_err() {
+            return Err(HostError::NotFound(path.display().to_string()));
+        }
         let is_full_folder = fs::read_dir(&path)
             .is_ok_and(|mut entries| entries.next().is_some());
         if is_full_folder {
@@ -533,6 +551,18 @@ pub(crate) fn start_terminal(
         state
             .programs
             .start_terminal(permissions, program, args, env)
+    })
+}
+
+pub(crate) fn terminal_folders() -> Result<Vec<String>, HostError> {
+    with_host(|state, permissions| {
+        if !permissions.has_terminals() {
+            return Err(HostError::NotAllowed(
+                "the working folder of hidden terminals".to_string(),
+            ));
+        }
+
+        Ok(vec![state.terminal_folder.display().to_string()])
     })
 }
 
@@ -979,6 +1009,19 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_file_is_not_found_and_not_noted() {
+        let plugin = MadeUpPlugin::new();
+        let missing =
+            plugin.folder().join("fixtures/.made-up/probe/gone.jsonl");
+        let host = TestHost::new(plugin.folder());
+
+        let removed = host.as_agent(AGENT, || files::remove(&text(&missing)));
+
+        assert_eq!(removed, Err(HostError::NotFound(text(&missing))));
+        assert!(host.removed().is_empty());
+    }
+
+    #[test]
     fn a_folder_that_is_not_empty_is_not_removed() {
         let plugin = MadeUpPlugin::new();
         // A folder whose name matches the part's `write` glob.
@@ -1348,6 +1391,29 @@ mod tests {
         assert_eq!(
             not_in_a_terminal,
             Err(HostError::NotAllowed("made-up".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_working_folder_of_hidden_terminals_is_told_to_a_part_with_one() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let moved = TestHost::new(plugin.folder())
+            .with_terminal_folder("/data/cache/otty/agent-probe");
+
+        let folders = host.as_agent(AGENT, crate::terminal::working_folders);
+        let moved = moved.as_agent(AGENT, crate::terminal::working_folders);
+        let provider =
+            host.as_provider(PROVIDER, crate::terminal::working_folders);
+
+        let default = host.home().join(".cache/otty/agent-probe");
+        assert_eq!(folders, Ok(vec![default.display().to_string()]));
+        assert_eq!(moved, Ok(vec!["/data/cache/otty/agent-probe".to_string()]));
+        assert_eq!(
+            provider,
+            Err(HostError::NotAllowed(
+                "the working folder of hidden terminals".to_string()
+            ))
         );
     }
 

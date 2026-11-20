@@ -8,6 +8,7 @@
 //! first and keeps the time limit; the tests give a mock, so no test
 //! starts a real agent.
 
+use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::programs::{ProgramCommand, ProgramError};
@@ -33,6 +34,9 @@ pub enum ScreenOutput {
 /// the tests answer with mocks.
 #[cfg_attr(test, mockall::automock)]
 pub trait StartTerminal: Send + Sync {
+    /// The working folder of OTTY's own that every program starts in.
+    fn working_folder(&self) -> PathBuf;
+
     /// Starts `command` in a terminal of `cols` by `rows` cells that
     /// nobody sees, in a working folder of OTTY's own, so a program that
     /// keeps a record of where it ran never records a real project.

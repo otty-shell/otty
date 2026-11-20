@@ -141,6 +141,7 @@ pub struct CallBatch<'plugin> {
     plugin: &'plugin LoadedPlugin,
     part: PartRef,
     permissions: Arc<Permissions>,
+    starts_programs: bool,
     running: Option<(Store<CallState>, Instance)>,
 }
 
@@ -194,8 +195,18 @@ impl<'plugin> CallBatch<'plugin> {
             plugin,
             part,
             permissions,
+            starts_programs: true,
             running: None,
         }
+    }
+
+    /// The same batch, whose calls start no program and no hidden
+    /// terminal, as while Agents mode is away: each start is refused, so
+    /// a limit source is not paced and the next read starts it.
+    pub fn without_programs(mut self) -> Self {
+        self.starts_programs = false;
+
+        self
     }
 
     /// Runs `call` against the instance with the deadline of `kind`. A
@@ -246,6 +257,12 @@ impl<'plugin> CallBatch<'plugin> {
     fn start(&self) -> Result<(Store<CallState>, Instance), CallError> {
         let mut wasi = WasiCtx::builder();
         wasi.stderr(self.plugin.stderr().clone());
+        let starters = self.plugin.starters();
+        let (programs, terminals) = if self.starts_programs {
+            (starters.programs(), starters.terminals())
+        } else {
+            (None, None)
+        };
         let state = CallState {
             wasi: wasi.build(),
             table: ResourceTable::new(),
@@ -257,11 +274,11 @@ impl<'plugin> CallBatch<'plugin> {
             outside: Arc::clone(self.plugin.outside()),
             deadline: Instant::now() + CallKind::Quick.deadline(),
             programs: CallPrograms::new(
-                self.plugin.starters().programs(),
+                programs,
                 Arc::clone(&self.permissions),
             ),
             terminals: CallTerminals::new(
-                self.plugin.starters().terminals(),
+                terminals,
                 Arc::clone(&self.permissions),
             ),
             zstd_cursor: ZstdCursor::default(),

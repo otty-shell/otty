@@ -44,11 +44,11 @@ pub(crate) fn codex_id() -> AgentId {
 /// The registry of the readers of `otty-agents`, for the view models
 /// that borrow it for the whole test.
 pub(crate) static BUILT_IN: LazyLock<Registry> =
-    LazyLock::new(|| Registry::built_in(&otty_agents::known_agents()));
+    LazyLock::new(|| Registry::built_in(&known_agents()));
 
 /// The registry of the readers of `otty-agents`, all built in.
 pub(crate) fn registry() -> Arc<Registry> {
-    Arc::new(Registry::built_in(&otty_agents::known_agents()))
+    Arc::new(Registry::built_in(&known_agents()))
 }
 /// Position of the Title column of the sessions table, which production
 /// code reaches only as the fallback of the sort.
@@ -112,9 +112,18 @@ pub(crate) fn berlin() -> TimeZone {
     TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").expect("the rule of Berlin")
 }
 
-/// The agents OTTY knows: Claude Code and Codex.
+/// The agents of the tests: a stand-in for Claude Code, which a plugin
+/// reads, then the readers built into OTTY.
 pub(crate) fn agents() -> AgentList {
-    Arc::from(otty_agents::known_agents())
+    Arc::from(known_agents())
+}
+
+/// [`agents`] as a list the registry is made from.
+fn known_agents() -> Vec<Box<dyn otty_agents::Agent>> {
+    let mut agents = vec![otty_agents::fixtures::claude_code_stand_in()];
+    agents.extend(otty_agents::known_agents());
+
+    agents
 }
 
 /// The environment of the tests: the home folder `/home/user`, no
@@ -445,7 +454,7 @@ pub(crate) fn provider_icon(id: &str) -> EntryIcon {
 /// The registry of the readers of `otty-agents` without the DeepSeek
 /// entry, as when no plugin serves DeepSeek.
 pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
-    let registry = Registry::built_in(&otty_agents::known_agents());
+    let registry = Registry::built_in(&known_agents());
 
     Arc::new(registry.without_provider(&ProviderId::new("deepseek")))
 }

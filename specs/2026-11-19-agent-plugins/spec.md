@@ -730,6 +730,7 @@ interface programs {
 }
 
 interface terminal {
+  working-folders: func() -> result<list<string>, host-error>;  // where every hidden terminal starts
   resource hidden-terminal {
     constructor(program: string, args: list<string>, env: list<tuple<string, string>>,
                 cols: u16, rows: u16);
@@ -821,7 +822,7 @@ each part.
 | `files.list(glob)` | Paths, sizes and change times | `read` | At most 100,000 entries |
 | `files.read(path, max)` | The bytes of a small file | `read`; refused for a key file | At most 4 MiB |
 | `files.read-lines(path, offset, max, markers)` | Complete lines from an offset, only those with a marker (`memchr::memmem`), zstd decoded | `read` | About 1 MiB per batch |
-| `files.read-json-with-keys(path)` | A key file as JSON, key fields replaced by handles | `keys` (file) | At most 1 MiB |
+| `files.read-json-with-keys(path)` | A key file as JSON, key fields replaced by handles | `keys` (file) | At most 4 MiB (Claude Code's `.claude.json` holds its project list; issue 13) |
 | `files.remove(path)` | Deletes one file (and an empty folder) | `write` | Never outside the globs |
 | `sqlite.query(db, sql, params)` | One read-only `SELECT`; a declared key column in the result comes back as a handle, a JSON key column as JSON with handles in its key fields (rule below) | `sqlite` (+ `keys` for key columns) | Read-only open, `query_only`, no `ATTACH`, 10 s, 50,000 rows |
 | `keys.open(place)` | A key handle for a declared key place | `keys` / `env` / `keyring` | Read again right before each use |
@@ -830,6 +831,7 @@ each part.
 | `programs.run(program, args, env)` | Runs a program once and returns its output | `run` (program + argument pattern) | 10 s, 1 MiB output, only listed variables passed |
 | `programs.talk(...)` | Talks to a program line by line (`codex app-server`) | `run` | Stopped with the call; 60 s in all |
 | `terminal.hidden-terminal(...)` | Starts a program in an unseen terminal, sends keys, reads screen text | `terminal` | OTTY's own working folder; stopped with the call; 60 s |
+| `terminal.working-folders()` | OTTY's working folder of hidden terminals, also as the system resolves its links (issue 13) | `terminal` | |
 | `keyring.read(service, user)` | One keyring entry as JSON with key fields as handles | `keyring` + the user's Allow (spec `2026-11-19-agents-accounts`, Decision 8) | Read only |
 | `env.var(name)` | One environment variable as text | `env` | Key variables only through `keys.open` |
 | `clock.now-ms` | The time | none | |

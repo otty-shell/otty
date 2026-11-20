@@ -10,6 +10,15 @@ use crate::part_health::PartHealth;
 use crate::plugin_failure::{PluginFailure, PluginFailureKind};
 use crate::registry::PluginPart;
 
+/// What the calls of one read may start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Starts {
+    /// Programs and hidden terminals the part declares.
+    Programs,
+    /// Nothing.
+    Nothing,
+}
+
 /// One part of a loaded plugin: the plugin, the part, what names it in
 /// reports, and how its reads went.
 pub(crate) struct CalledPart {
@@ -62,6 +71,26 @@ impl CalledPart {
         call: &'static str,
         read: impl FnOnce(&mut CallBatch<'_>) -> Result<T, CallError>,
     ) -> Result<T, Box<PluginFailure>> {
+        self.read_in(call, Starts::Programs, read)
+    }
+
+    /// [`read`](Self::read), whose calls start no program and no hidden
+    /// terminal, as while Agents mode is away.
+    pub(crate) fn read_starting_nothing<T>(
+        &self,
+        call: &'static str,
+        read: impl FnOnce(&mut CallBatch<'_>) -> Result<T, CallError>,
+    ) -> Result<T, Box<PluginFailure>> {
+        self.read_in(call, Starts::Nothing, read)
+    }
+
+    /// One read of the part, whose calls start what `starts` says.
+    fn read_in<T>(
+        &self,
+        call: &'static str,
+        starts: Starts,
+        read: impl FnOnce(&mut CallBatch<'_>) -> Result<T, CallError>,
+    ) -> Result<T, Box<PluginFailure>> {
         if self.health.is_paused() {
             return Err(self.failure(call, PluginFailureKind::Paused));
         }
@@ -69,6 +98,10 @@ impl CalledPart {
         let answer = self
             .plugin
             .start_calls(&self.part)
+            .map(|batch| match starts {
+                Starts::Programs => batch,
+                Starts::Nothing => batch.without_programs(),
+            })
             .and_then(|mut batch| read(&mut batch));
 
         match answer {

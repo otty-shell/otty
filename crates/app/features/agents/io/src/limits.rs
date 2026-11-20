@@ -42,6 +42,11 @@ impl StartProgram for NoPrograms {
     ) -> Result<Box<dyn RunningProgram>, ProgramError> {
         Err(ProgramError::NotNow)
     }
+
+    /// No: the plugin parts start nothing either.
+    fn starts_now(&self) -> bool {
+        false
+    }
 }
 
 /// The hidden terminals of a read while Agents mode is away: none starts.
@@ -209,25 +214,41 @@ fn stopped_read(profile: Profile, sources: &[SourceId]) -> LoadedLimits {
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Arc;
 
-    use otty_agents::{
-        AgentId, SourceError, SourceFailure, Unavailable, known_agents,
-    };
+    use otty_agents::{AgentId, SourceFailure, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::background::read_stopped;
-    use crate::testing::run;
+    use crate::testing::{
+        agents_with_anthropic, agents_with_anthropic_and_shell,
+        executable_script, run, write,
+    };
 
     /// A shell that does not exist: no test starts a real agent.
     const NO_SHELL: &str = "/no/such/shell";
 
-    /// A Claude Code profile in a made-up folder with no token file: its
-    /// source fails before it sends anything.
+    /// A Claude Code profile in a made-up folder with no login: the
+    /// Anthropic plugin reads no limits for it and starts nothing.
     fn logged_out_claude(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
-        std::fs::create_dir_all(&config_dir).expect("the config folder");
+        write(&config_dir.join("settings.json"), "{}");
+
+        Profile::added(
+            AgentId::new("claude-code"),
+            "Claude Code · Test",
+            config_dir,
+        )
+    }
+
+    /// A Claude Code profile in a made-up folder with a made-up login
+    /// token, whose limits the plugin reads from the `/usage` panel.
+    fn logged_in_claude(home: &TempDir) -> Profile {
+        let config_dir = home.path().join(".claude-test");
+        write(
+            &config_dir.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"made-up-token"}}"#,
+        );
 
         Profile::added(
             AgentId::new("claude-code"),
@@ -237,14 +258,14 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_with_no_login_has_the_failure_of_each_source_and_its_time() {
+    fn a_profile_with_no_login_has_the_failure_of_its_source_and_its_time() {
         let home = TempDir::new("agents-limits");
         let profile = logged_out_claude(&home);
         let probe_dir = home.path().join("agent-probe");
         let before = SystemTime::now();
 
         let loaded = read_limits(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             profile.clone(),
             NO_SHELL,
             probe_dir,
@@ -252,62 +273,46 @@ mod tests {
         );
 
         assert_eq!(loaded.profile, profile);
-        let LimitsRead::Failed(failures) = loaded.limits else {
-            panic!("no source answers");
-        };
-        let reasons: Vec<_> = failures
-            .iter()
-            .map(|failure| (failure.source(), failure.error().clone()))
-            .collect();
-        let no_token = SourceError::NotAvailable(Unavailable::NoLoginToken);
-        let no_shell = SourceError::NotAvailable(Unavailable::NotStarted {
-            program: "claude",
-            reason: ProgramError::ShellNotFound(String::from(NO_SHELL)),
-        });
         assert_eq!(
-            reasons,
-            [
-                (SourceId::AnthropicUsageApi, no_token),
-                (SourceId::ClaudeUsageCommand, no_shell)
-            ]
+            loaded.limits,
+            LimitsRead::Failed(vec![SourceFailure::new(
+                SourceId::Plugin,
+                otty_agents::SourceError::NotLoggedIn
+            )])
         );
-        assert_eq!(
-            loaded.sources,
-            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
-        );
+        assert_eq!(loaded.sources, [SourceId::Plugin]);
         assert!(loaded.read_at >= before);
     }
 
-    /// While Agents mode is away the hidden terminal is not started: its
-    /// source says why, and the next read on screen starts it.
+    /// While Agents mode is away the plugin's hidden terminal is not
+    /// started: the plugin engine starts nothing for the read, and the
+    /// next read on screen starts it. The shell here only counts its
+    /// starts, so no real `claude` ever runs.
     #[test]
     fn a_read_in_the_background_starts_no_hidden_terminal() {
         let home = TempDir::new("agents-limits-background");
-        let profile = logged_out_claude(&home);
-        let probe_dir = home.path().join("agent-probe");
+        let profile = logged_in_claude(&home);
+        let starts = home.path().join("starts");
+        let shell = executable_script(
+            home.path(),
+            "counting-shell",
+            &format!("echo started >> '{}'\nexit 1", starts.display()),
+        );
+        let agents = agents_with_anthropic_and_shell(
+            home.path(),
+            &shell.display().to_string(),
+        );
 
         let loaded = read_limits(
-            &known_agents(),
+            &agents,
             profile,
             NO_SHELL,
-            probe_dir,
+            home.path().join("agent-probe"),
             ProgramStarts::NotNow,
         );
 
-        let LimitsRead::Failed(failures) = loaded.limits else {
-            panic!("no source answers");
-        };
-        let probe = failures
-            .iter()
-            .find(|failure| failure.source() == SourceId::ClaudeUsageCommand)
-            .map(|failure| failure.error().clone());
-        assert_eq!(
-            probe,
-            Some(SourceError::NotAvailable(Unavailable::NotStarted {
-                program: "claude",
-                reason: ProgramError::NotNow,
-            }))
-        );
+        assert!(matches!(loaded.limits, LimitsRead::Failed(_)));
+        assert!(!starts.exists(), "the shell was started");
     }
 
     /// While Agents mode is away `codex app-server` is not started either:
@@ -337,10 +342,12 @@ mod tests {
             .map(|failure| failure.error().clone());
         assert_eq!(
             app_server,
-            Some(SourceError::NotAvailable(Unavailable::NotStarted {
-                program: "codex",
-                reason: ProgramError::NotNow,
-            }))
+            Some(otty_agents::SourceError::NotAvailable(
+                otty_agents::Unavailable::NotStarted {
+                    program: "codex",
+                    reason: ProgramError::NotNow,
+                }
+            ))
         );
     }
 
@@ -368,7 +375,7 @@ mod tests {
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-limits-task");
         let profile = logged_out_claude(&home);
-        let agents: AgentList = Arc::from(known_agents());
+        let agents = agents_with_anthropic(home.path());
 
         let answers =
             run(load_limits(&agents, profile.clone(), NO_SHELL, home.path()));
@@ -385,7 +392,7 @@ mod tests {
     fn the_read_in_the_background_answers_with_an_intent() {
         let home = TempDir::new("agents-limits-background-task");
         let profile = logged_out_claude(&home);
-        let agents: AgentList = Arc::from(known_agents());
+        let agents = agents_with_anthropic(home.path());
 
         let answers = run(load_limits_in_background(
             &agents,
@@ -411,14 +418,12 @@ mod tests {
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
+        let agents = agents_with_anthropic(home.path());
 
-        let claude = limit_source_ids(&known_agents(), &profile);
-        let none = limit_source_ids(&known_agents(), &stranger);
+        let claude = limit_source_ids(&agents, &profile);
+        let none = limit_source_ids(&agents, &stranger);
 
-        assert_eq!(
-            claude,
-            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand]
-        );
+        assert_eq!(claude, [SourceId::Plugin]);
         assert!(none.is_empty());
     }
 
@@ -429,21 +434,17 @@ mod tests {
     fn a_read_that_stopped_fails_at_each_source_because_it_stopped() {
         let home = TempDir::new("agents-limits-stopped");
         let profile = logged_out_claude(&home);
-        let sources =
-            [SourceId::AnthropicUsageApi, SourceId::ClaudeUsageCommand];
+        let sources = [SourceId::Plugin];
 
         let loaded = stopped_read(profile.clone(), &sources);
 
         assert_eq!(loaded.profile, profile);
         assert_eq!(
             loaded.limits,
-            LimitsRead::Failed(vec![
-                SourceFailure::new(SourceId::AnthropicUsageApi, read_stopped()),
-                SourceFailure::new(
-                    SourceId::ClaudeUsageCommand,
-                    read_stopped()
-                ),
-            ])
+            LimitsRead::Failed(vec![SourceFailure::new(
+                SourceId::Plugin,
+                read_stopped()
+            )])
         );
         assert_eq!(loaded.sources, sources);
     }

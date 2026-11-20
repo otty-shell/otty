@@ -102,9 +102,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use otty_agents::{
-        AdminKeyRef, AgentId, SourceError, Unavailable, known_agents,
-    };
+    use otty_agents::{AdminKeyRef, Agent, AgentId, SourceError, Unavailable};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -113,6 +111,16 @@ mod tests {
     /// No environment variable is set: no test reads the real environment.
     fn no_variables(_: &str) -> Option<String> {
         None
+    }
+
+    /// The agents of the tests: a stand-in for Claude Code, whose bill a
+    /// plugin will read, then the readers built into OTTY. The stand-in's
+    /// bill is never there, so nothing is sent.
+    fn agents() -> Vec<Box<dyn Agent>> {
+        let mut agents = vec![otty_agents::fixtures::claude_code_stand_in()];
+        agents.extend(otty_agents::known_agents());
+
+        agents
     }
 
     /// A Claude Code API key profile in a made-up folder.
@@ -134,7 +142,7 @@ mod tests {
         let before = SystemTime::now();
 
         let loaded = read_bill(
-            &known_agents(),
+            &agents(),
             profile.clone(),
             key.clone(),
             SystemTime::now(),
@@ -157,7 +165,7 @@ mod tests {
         let profile = claude_api(home.path());
 
         let loaded = read_bill(
-            &known_agents(),
+            &agents(),
             profile,
             key.clone(),
             SystemTime::now(),
@@ -177,7 +185,7 @@ mod tests {
         let key =
             AdminKeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_ADMIN_KEY"));
         let profile = claude_api(home.path());
-        let agents: AgentList = Arc::from(known_agents());
+        let agents: AgentList = Arc::from(agents());
 
         let answers = run(load_bill(&agents, profile, key.clone(), &shell));
 
@@ -198,7 +206,7 @@ mod tests {
         let home = TempDir::new("agents-bill-task");
         let key_file = home.path().join("no-such-admin-key");
         let profile = claude_api(home.path());
-        let agents: AgentList = Arc::from(known_agents());
+        let agents: AgentList = Arc::from(agents());
 
         let answers = run(load_bill(
             &agents,

@@ -23,12 +23,12 @@ pub(crate) const PROJECT: &str = "/work/otty";
 /// The title of the made-up sessions.
 pub(crate) const SESSION_TITLE: &str = "Fix the tabs";
 
-/// The default Claude Code profile in a made-up home folder.
-pub(crate) fn claude_profile() -> Profile {
+/// The default Codex profile in a made-up home folder.
+pub(crate) fn codex_profile() -> Profile {
     Profile::default_for(
-        AgentId::new("claude-code"),
-        "Claude Code",
-        PathBuf::from("/home/user/.claude"),
+        AgentId::new("codex"),
+        "Codex",
+        PathBuf::from("/home/user/.codex"),
     )
 }
 
@@ -69,26 +69,26 @@ pub(crate) fn one_session_loaded(profile: Profile, id: &str) -> AgentsIntent {
     })
 }
 
-/// Show Agents mode in `app` and tell it that [`claude_profile`] was read,
+/// Show Agents mode in `app` and tell it that [`codex_profile`] was read,
 /// not logged in: a session can start with it.
-pub(crate) fn show_claude(app: &mut App) {
+pub(crate) fn show_codex(app: &mut App) {
     let _ = dispatch::dispatch(
         app,
         AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
     );
     let loaded =
-        profiles_loaded(vec![(claude_profile(), ProfileStatus::NotLoggedIn)]);
+        profiles_loaded(vec![(codex_profile(), ProfileStatus::NotLoggedIn)]);
 
     let _ = dispatch::dispatch(app, AppEvent::Agents(loaded));
 }
 
-/// Show Agents mode in `app` as [`show_claude`] does, with one Claude Code
+/// Show Agents mode in `app` as [`show_codex`] does, with one Codex
 /// session, `c1`, in [`PROJECT`].
-pub(crate) fn show_claude_with_a_session(app: &mut App) {
-    show_claude(app);
+pub(crate) fn show_codex_with_a_session(app: &mut App) {
+    show_codex(app);
 
     let _ = app.agents.reduce(
-        one_session_loaded(claude_profile(), "c1"),
+        one_session_loaded(codex_profile(), "c1"),
         AgentsCtx::default(),
     );
 }

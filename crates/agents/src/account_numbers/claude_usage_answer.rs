@@ -9,7 +9,6 @@
 
 use serde_json::{Map, Value};
 
-use super::window_id::{five_hours, model_week, week};
 use crate::error::{SourceError, Unexpected};
 use crate::limits::{
     Billing, ExtraUsage, LimitWindow, Limits, UsageWindows, WindowId,
@@ -187,6 +186,28 @@ fn is_same_window(a: &WindowId, b: &WindowId) -> bool {
     };
 
     a.length() == b.length() && same_model
+}
+
+/// The five-hour window.
+fn five_hours() -> WindowId {
+    WindowId::hours(5)
+}
+
+/// The weekly window of all models.
+fn week() -> WindowId {
+    WindowId::days(7)
+}
+
+/// The weekly window of one model, such as the week of "Fable" for
+/// `fable`: the model with its first letter in upper case.
+fn model_week(model: &str) -> WindowId {
+    let mut letters = model.trim().chars();
+    let model: String = match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => String::new(),
+    };
+
+    week().for_model(model)
 }
 
 /// The extra usage the account may buy, while it is turned on: how much

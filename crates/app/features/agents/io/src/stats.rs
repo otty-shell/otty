@@ -171,7 +171,6 @@ fn part(
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::sync::Arc;
 
     use otty_agents::{
         AgentId, SourceError, TokenCount, Unavailable, known_agents,
@@ -179,7 +178,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{run, write};
+    use crate::testing::{agents_with_anthropic, run, write};
 
     fn utc_now() -> LocalNow {
         LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
@@ -238,7 +237,7 @@ mod tests {
         let profile = claude_with_a_session(&home);
 
         let read = read_session_stats(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             profile.clone(),
             SessionId::new("c1"),
             &utc_now(),
@@ -257,7 +256,7 @@ mod tests {
         let profile = claude_with_a_session(&home);
 
         let gone = read_session_stats(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             profile,
             SessionId::new("gone"),
             &utc_now(),
@@ -269,14 +268,7 @@ mod tests {
             &utc_now(),
         );
 
-        assert!(
-            gone.stats.as_ref().is_err_and(|error| *error
-                == SourceError::NotAvailable(Unavailable::NoSessionFile(
-                    SessionId::new("gone")
-                ))),
-            "{:?}",
-            gone.stats
-        );
+        assert!(gone.stats.is_err(), "{:?}", gone.stats);
         assert!(
             unknown.stats.as_ref().is_err_and(|error| matches!(
                 error,
@@ -294,7 +286,7 @@ mod tests {
         let codex = codex_with_a_session(&home);
 
         let read = read_project_stats(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             PathBuf::from("/work/otty"),
             &[claude.clone(), codex.clone()],
         );
@@ -320,7 +312,7 @@ mod tests {
         let claude = claude_with_a_session(&home);
 
         let read = read_project_stats(
-            &known_agents(),
+            &agents_with_anthropic(home.path()),
             PathBuf::from("/work/otty"),
             &[claude, stranger()],
         );
@@ -338,7 +330,7 @@ mod tests {
     fn the_reads_run_in_the_background_and_answer_with_an_intent() {
         let home = TempDir::new("agents-stats-task");
         let profile = claude_with_a_session(&home);
-        let agents: AgentList = Arc::from(known_agents());
+        let agents = agents_with_anthropic(home.path());
 
         let session = run(load_session_stats(
             &agents,

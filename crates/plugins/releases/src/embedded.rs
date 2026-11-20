@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::error::InstallError;
-use crate::package::sha256_hex;
+use crate::package::{MANIFEST_FILE, sha256_hex};
 
 /// The name of the file that lists the SHA-256 of every other file of a
 /// built-in copy, as `sha256sum` writes it.
@@ -97,14 +97,38 @@ impl EmbeddedPlugin {
 
 /// The plugins built into this OTTY, installed on first start.
 ///
-/// All five official plugins are built in (spec Decision 10). Their copies
-/// arrive with their plugins: OpenAI in issue 11, Anthropic in issue 13,
-/// OpenCode in issue 14, DeepSeek and OpenRouter in issue 16, each as
+/// All five official plugins are built in (spec Decision 10). Each copy in
+/// `assets/plugins/<id>/` is made by `plugins/embed.sh <folder>` from
+/// `plugins/<folder>/`, and listed here as
 /// `EmbeddedPlugin::new(id, include_str!(".../SHA256SUMS"))` with one
-/// `with_file(name, include_bytes!(...))` per file of
-/// `assets/plugins/<id>/`.
+/// `with_file(name, include_bytes!(...))` per file of the copy. The
+/// others arrive with their plugins: OpenAI in issue 11, OpenCode in issue
+/// 14, DeepSeek and OpenRouter in issue 16.
 pub fn embedded_plugins() -> Vec<EmbeddedPlugin> {
-    Vec::new()
+    vec![anthropic()]
+}
+
+/// The Anthropic plugin: the agent part Claude Code.
+fn anthropic() -> EmbeddedPlugin {
+    EmbeddedPlugin::new(
+        "anthropic",
+        include_str!("../../../../assets/plugins/anthropic/SHA256SUMS"),
+    )
+    .with_file(
+        MANIFEST_FILE,
+        include_bytes!("../../../../assets/plugins/anthropic/otty-plugin.toml")
+            .as_slice(),
+    )
+    .with_file(
+        "anthropic.wasm",
+        include_bytes!("../../../../assets/plugins/anthropic/anthropic.wasm")
+            .as_slice(),
+    )
+    .with_file(
+        "claude-code.svg",
+        include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg")
+            .as_slice(),
+    )
 }
 
 #[cfg(test)]
@@ -125,6 +149,25 @@ mod tests {
                 "otty-plugin.toml"
             ]
         );
+    }
+
+    /// Every copy built into OTTY is whole and holds its manifest, so a
+    /// copy left out of date by `plugins/embed.sh` fails here.
+    #[test]
+    fn every_built_in_copy_matches_its_hashes() {
+        let plugins = embedded_plugins();
+
+        let ids: Vec<&str> = plugins.iter().map(EmbeddedPlugin::id).collect();
+        assert_eq!(ids, ["anthropic"]);
+        for plugin in &plugins {
+            let files = plugin.checked_files().expect("whole");
+            assert!(files.contains_key(MANIFEST_FILE), "{}", plugin.id());
+            assert!(
+                files.contains_key(&format!("{}.wasm", plugin.id())),
+                "{}",
+                plugin.id()
+            );
+        }
     }
 
     #[test]

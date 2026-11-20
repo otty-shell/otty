@@ -19,7 +19,6 @@ use crate::account::{
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::bill::BillSource;
-use crate::claude_code::ClaudeCode;
 use crate::codex::Codex;
 use crate::command::AgentCommand;
 use crate::dollars::Dollars;
@@ -301,13 +300,6 @@ pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
         format!("Session {id}"),
         at(seconds),
     )
-}
-
-/// A profile of Claude Code that the user added, in `config_dir`.
-pub(crate) fn claude_profile(config_dir: &Path) -> Profile {
-    let agent = ClaudeCode::default().entry().id().clone();
-
-    Profile::added(agent, "Claude Code · Test", config_dir.to_path_buf())
 }
 
 /// A profile of Codex that the user added, in `config_dir`.

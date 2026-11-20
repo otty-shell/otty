@@ -7,9 +7,7 @@
 //! session" or "Current week" block has a line with a percent and the word
 //! "used" or "left", and a line that starts with "Resets".
 
-use super::window_id::{five_hours, model_week, week};
-use crate::error::{ClaudeQuestion, SourceError, Unavailable};
-use crate::limits::{Billing, LimitWindow, Limits, UsageWindows, WindowId};
+use otty_plugin_sdk::{LimitWindow, ReadError};
 
 /// The header of the panel: the panel on screen is the text after the
 /// last one.
@@ -40,11 +38,17 @@ const LOGIN_TEXTS: [&str; 7] = [
     "select login method",
 ];
 /// Texts of a question Claude Code asks before its prompt, other than
-/// the trust of its folder, with what it asks.
-const QUESTIONS: [(&str, ClaudeQuestion); 3] = [
-    ("do you want to use this api key", ClaudeQuestion::UseApiKey),
-    ("choose the text style", ClaudeQuestion::ChooseLook),
-    ("press enter to continue", ClaudeQuestion::PressEnter),
+/// the trust of its folder, with what OTTY tells about it.
+const QUESTIONS: [(&str, &str); 3] = [
+    (
+        "do you want to use this api key",
+        "Claude Code asks whether to use an API key",
+    ),
+    (
+        "choose the text style",
+        "Claude Code asks to choose the text style",
+    ),
+    ("press enter to continue", "Claude Code asks to press Enter"),
 ];
 /// Texts of the question whether to trust the folder Claude Code runs in.
 const TRUST_TEXTS: [&str; 4] = [
@@ -55,19 +59,23 @@ const TRUST_TEXTS: [&str; 4] = [
 ];
 /// Texts of usage requests refused for asking too often.
 const RATE_LIMIT_TEXTS: [&str; 2] = ["rate_limit_error", "rate limited"];
+/// The length of the five-hour window, in minutes.
+const FIVE_HOURS: u32 = 5 * 60;
+/// The length of the weekly window, in minutes.
+const WEEK: u32 = 7 * 24 * 60;
 
-/// What the screen shows, for the source that waits for the panel.
+/// What the screen shows, for the probe that waits for the panel.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum UsageScreen {
+pub(crate) enum UsageScreen {
     /// The panel with at least one window.
-    Usage(Limits),
+    Usage(Vec<LimitWindow>),
     /// Nothing to read yet: Claude Code is starting or loading the usage.
     Waiting,
     /// The panel is on the screen, but it shows no percent used or left.
     Unreadable,
     /// Claude Code stopped at something OTTY must not answer for the user,
     /// such as a login or a question.
-    Stopped(SourceError),
+    Stopped(ReadError),
     /// Claude Code asks whether to trust the folder it runs in, and
     /// nothing else. Only the probe knows whether it is its own folder.
     TrustQuestion,
@@ -75,8 +83,60 @@ pub(super) enum UsageScreen {
 
 /// A block of the panel: its window and the line its name is on.
 struct Block {
-    window: WindowId,
+    window: Window,
     line: usize,
+}
+
+/// A usage window as the panel names it: its length and, for the week of
+/// one model, the model.
+#[derive(Debug, Clone, PartialEq)]
+struct Window {
+    length_minutes: u32,
+    model: Option<String>,
+}
+
+impl Window {
+    /// The five-hour window.
+    fn five_hours() -> Self {
+        Self {
+            length_minutes: FIVE_HOURS,
+            model: None,
+        }
+    }
+
+    /// The weekly window of all models.
+    fn week() -> Self {
+        Self {
+            length_minutes: WEEK,
+            model: None,
+        }
+    }
+
+    /// The weekly window of one model, such as the week of "Fable" for
+    /// `fable`: the model with its first letter in upper case.
+    fn model_week(model: &str) -> Self {
+        let mut letters = model.trim().chars();
+        let model: String = match letters.next() {
+            Some(first) => first.to_uppercase().chain(letters).collect(),
+            None => String::new(),
+        };
+
+        Self {
+            length_minutes: WEEK,
+            model: Some(model),
+        }
+    }
+
+    /// The limit window of this window with `percent_used`.
+    fn limit(&self, percent_used: f64) -> LimitWindow {
+        LimitWindow {
+            length_minutes: Some(self.length_minutes),
+            model: self.model.clone(),
+            percent_used,
+            resets_at_ms: None,
+            reset_text: None,
+        }
+    }
 }
 
 /// What the screen `text` shows.
@@ -86,7 +146,7 @@ struct Block {
 /// question on the screen stops the reading, except the question whether
 /// to trust the folder, which is named when nothing else stops; a panel
 /// with no numbers is unreadable; anything else is waited for.
-pub(super) fn read_usage_screen(text: &str) -> UsageScreen {
+pub(crate) fn read_usage_screen(text: &str) -> UsageScreen {
     let lower = text.to_lowercase();
     let is_loading =
         LOADING_TEXTS.iter().any(|loading| lower.contains(loading));
@@ -99,11 +159,7 @@ pub(super) fn read_usage_screen(text: &str) -> UsageScreen {
         if is_loading {
             return UsageScreen::Waiting;
         }
-        let usage = UsageWindows::new(windows, None);
-        return UsageScreen::Usage(Limits::new(
-            Billing::UsageWindows(usage),
-            None,
-        ));
+        return UsageScreen::Usage(windows);
     }
 
     if let Some(error) = stop_reason(&lower) {
@@ -169,15 +225,14 @@ fn windows(lines: &[&str], blocks: &[Block]) -> Vec<LimitWindow> {
                 .iter()
                 .take(PERCENT_LINES)
                 .find_map(|line| percent_used(line))?;
-            let window =
-                LimitWindow::new(block.window.clone(), percent_used, None);
+            let mut window = block.window.limit(percent_used);
 
-            let reset =
-                below.iter().take(RESET_LINES).find(|line| is_reset(line));
-            Some(match reset {
-                Some(reset) => window.with_reset_text(reset.trim()),
-                None => window,
-            })
+            window.reset_text = below
+                .iter()
+                .take(RESET_LINES)
+                .find(|line| is_reset(line))
+                .map(|reset| reset.trim().to_string());
+            Some(window)
         })
         .collect()
 }
@@ -199,11 +254,11 @@ fn block_lines<'a>(lines: &'a [&'a str], line: usize) -> &'a [&'a str] {
 /// models)" the weekly one, and "Current week (Sonnet only)" the week of
 /// Sonnet. The model keeps the letters the screen shows; the label may also
 /// be written without spaces, "Currentweek(Fable)", as CodexBar reads it.
-fn window_of(line: &str) -> Option<WindowId> {
+fn window_of(line: &str) -> Option<Window> {
     let line = line.trim();
 
     if line.to_lowercase().starts_with("current session") {
-        return Some(five_hours());
+        return Some(Window::five_hours());
     }
     let rest = WEEK_LABELS
         .iter()
@@ -223,9 +278,9 @@ fn window_of(line: &str) -> Option<WindowId> {
             if !model.is_empty()
                 && !model.eq_ignore_ascii_case("all models") =>
         {
-            Some(model_week(model))
+            Some(Window::model_week(model))
         },
-        _ => Some(week()),
+        _ => Some(Window::week()),
     }
 }
 
@@ -300,23 +355,27 @@ fn is_reset(line: &str) -> bool {
 
 /// Why the screen ends the reading, when it shows a login, a question
 /// other than the trust of the folder, or a refusal instead of the panel.
-/// `lower` is the screen in lower case.
-fn stop_reason(lower: &str) -> Option<SourceError> {
+/// `lower` is the screen in lower case. The reason names what Claude Code
+/// asks, never what the screen shows.
+fn stop_reason(lower: &str) -> Option<ReadError> {
     if LOGIN_TEXTS.iter().any(|login| lower.contains(login)) {
-        return Some(SourceError::NotLoggedIn);
+        return Some(ReadError::Failed(
+            "Claude Code asks to log in".to_string(),
+        ));
     }
 
     if let Some((_, asks)) = QUESTIONS
         .iter()
         .find(|(question, _)| lower.contains(question))
     {
-        return Some(SourceError::NotAvailable(Unavailable::ClaudeAsks(
-            asks.clone(),
-        )));
+        return Some(ReadError::Failed((*asks).to_string()));
     }
 
     if RATE_LIMIT_TEXTS.iter().any(|limit| lower.contains(limit)) {
-        return Some(SourceError::NotAvailable(Unavailable::ClaudeRateLimited));
+        return Some(ReadError::Failed(
+            "Claude Code was refused its usage for asking too often"
+                .to_string(),
+        ));
     }
 
     None
@@ -442,7 +501,7 @@ mod tests {
     const TRUST: &str = "\
  Do you trust the files in this folder?
 
- /home/user/.cache/otty/agent-probe
+ /home/dev/.cache/otty/agent-probe
 
  ❯ 1. Yes, proceed
    2. No, exit
@@ -451,7 +510,7 @@ mod tests {
     const QUICK_SAFETY_CHECK: &str = "\
  Accessing workspace:
 
- /home/user/.cache/otty/agent-probe
+ /home/dev/.cache/otty/agent-probe
 
  Quick safety check: Is this a project you created or one you trust?
 
@@ -505,18 +564,34 @@ mod tests {
   ? for shortcuts
 ";
 
+    const SESSION: Option<u32> = Some(FIVE_HOURS);
+    const WEEKLY: Option<u32> = Some(WEEK);
+    const RESET: &str = "Resets Nov 20, 10am (Europe/Berlin)";
+
     fn windows(screen: UsageScreen) -> Vec<LimitWindow> {
         match screen {
-            UsageScreen::Usage(limits) => match limits.billing() {
-                Billing::UsageWindows(usage) => usage.windows().to_vec(),
-                other => panic!("usage windows expected, got {other:?}"),
-            },
+            UsageScreen::Usage(windows) => windows,
             other => panic!("the panel expected, got {other:?}"),
         }
     }
 
-    fn window(id: WindowId, percent_used: f64, reset: &str) -> LimitWindow {
-        LimitWindow::new(id, percent_used, None).with_reset_text(reset)
+    fn window(
+        length_minutes: Option<u32>,
+        model: Option<&str>,
+        percent_used: f64,
+        reset: Option<&str>,
+    ) -> LimitWindow {
+        LimitWindow {
+            length_minutes,
+            model: model.map(str::to_string),
+            percent_used,
+            resets_at_ms: None,
+            reset_text: reset.map(str::to_string),
+        }
+    }
+
+    fn failed(text: &str) -> UsageScreen {
+        UsageScreen::Stopped(ReadError::Failed(text.to_string()))
     }
 
     #[test]
@@ -526,12 +601,8 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window(WindowId::hours(5), 29.0, "Resets 5pm (Europe/Berlin)"),
-                window(
-                    WindowId::days(7),
-                    17.0,
-                    "Resets Nov 20, 10am (Europe/Berlin)"
-                ),
+                window(SESSION, None, 29.0, Some("Resets 5pm (Europe/Berlin)")),
+                window(WEEKLY, None, 17.0, Some(RESET)),
             ]
         );
     }
@@ -543,8 +614,8 @@ mod tests {
         assert_eq!(
             windows(screen),
             [
-                window(WindowId::hours(5), 29.0, "Resets in 2h 15m"),
-                window(WindowId::days(7), 16.5, "Resets Nov 20 at 10am"),
+                window(SESSION, None, 29.0, Some("Resets in 2h 15m")),
+                window(WEEKLY, None, 16.5, Some("Resets Nov 20 at 10am")),
             ]
         );
     }
@@ -553,55 +624,43 @@ mod tests {
     fn a_panel_with_only_the_week_gives_one_window() {
         let screen = read_usage_screen(ONLY_WEEK);
 
-        assert_eq!(
-            windows(screen),
-            [window(
-                WindowId::days(7),
-                10.0,
-                "Resets Nov 20, 10am (Europe/Berlin)"
-            )]
-        );
+        assert_eq!(windows(screen), [window(WEEKLY, None, 10.0, Some(RESET))]);
     }
 
     #[test]
     fn model_weeks_are_read_and_the_blocks_and_hints_around_are_skipped() {
         let screen = read_usage_screen(MODEL_WEEKS_AND_HINTS);
 
-        let reset = "Resets Nov 20, 10am (Europe/Berlin)";
         assert_eq!(
             windows(screen),
             [
-                window(WindowId::hours(5), 2.0, "Resets 5pm (Europe/Berlin)"),
-                window(WindowId::days(7), 8.0, reset),
-                window(WindowId::days(7).for_model("Opus"), 0.0, reset),
-                window(WindowId::days(7).for_model("Sonnet"), 4.0, reset),
+                window(SESSION, None, 2.0, Some("Resets 5pm (Europe/Berlin)")),
+                window(WEEKLY, None, 8.0, Some(RESET)),
+                window(WEEKLY, Some("Opus"), 0.0, Some(RESET)),
+                window(WEEKLY, Some("Sonnet"), 4.0, Some(RESET)),
             ]
         );
     }
 
-    /// Owner, issue 27: every "Current week (<model>)" block is a window,
-    /// named like the usage request names it.
+    /// Owner, issue 27 of the earlier spec: every "Current week (<model>)"
+    /// block is a window, named like the usage request names it.
     #[test]
     fn every_model_week_is_read_with_the_model_name_as_shown() {
         let screen = read_usage_screen(THREE_MODEL_WEEKS);
 
-        let reset = "Resets Nov 20, 10am (Europe/Berlin)";
         assert_eq!(
             windows(screen),
             [
-                window(WindowId::hours(5), 2.0, "Resets 5pm (Europe/Berlin)"),
-                window(WindowId::days(7), 8.0, reset),
-                window(WindowId::days(7).for_model("Opus"), 0.0, reset),
+                window(SESSION, None, 2.0, Some("Resets 5pm (Europe/Berlin)")),
+                window(WEEKLY, None, 8.0, Some(RESET)),
+                window(WEEKLY, Some("Opus"), 0.0, Some(RESET)),
                 window(
-                    WindowId::days(7).for_model("Fable"),
+                    WEEKLY,
+                    Some("Fable"),
                     64.0,
-                    "Resets Nov 21, 9am (Europe/Berlin)"
+                    Some("Resets Nov 21, 9am (Europe/Berlin)")
                 ),
-                window(
-                    WindowId::days(7).for_model("Example Model"),
-                    3.0,
-                    reset
-                ),
+                window(WEEKLY, Some("Example Model"), 3.0, Some(RESET)),
             ]
         );
     }
@@ -614,39 +673,30 @@ mod tests {
 
         assert_eq!(
             windows(screen),
-            [LimitWindow::new(
-                WindowId::days(7).for_model("Fable"),
-                64.0,
-                None
-            )]
+            [window(WEEKLY, Some("Fable"), 64.0, None)]
         );
     }
 
     #[test]
-    fn the_panel_gives_no_plan() {
-        let UsageScreen::Usage(limits) = read_usage_screen(BOTH_BLOCKS_USED)
-        else {
-            panic!("the panel expected");
-        };
-
-        assert_eq!(limits.plan(), None);
-        assert_eq!(limits.recorded_at(), None);
+    fn a_model_week_is_named_with_a_capital_letter() {
+        assert_eq!(Window::model_week("opus").model.as_deref(), Some("Opus"));
+        assert_eq!(
+            Window::model_week(" Fable ").model.as_deref(),
+            Some("Fable")
+        );
     }
 
     #[test]
     fn a_login_screen_is_not_logged_in() {
-        assert_eq!(
-            read_usage_screen(LOGIN),
-            UsageScreen::Stopped(SourceError::NotLoggedIn)
-        );
-        assert_eq!(
-            read_usage_screen(FIRST_LOGIN),
-            UsageScreen::Stopped(SourceError::NotLoggedIn)
-        );
+        let login = failed("Claude Code asks to log in");
+
+        assert_eq!(read_usage_screen(LOGIN), login);
+        assert_eq!(read_usage_screen(FIRST_LOGIN), login);
     }
 
-    /// Owner, issue 29: the probe answers the trust question of its own
-    /// folder, so the reading names it instead of stopping.
+    /// Owner, issue 29 of the earlier spec: the probe answers the trust
+    /// question of its own folder, so the reading names it instead of
+    /// stopping.
     #[test]
     fn the_question_whether_to_trust_the_folder_is_named() {
         assert_eq!(read_usage_screen(TRUST), UsageScreen::TrustQuestion);
@@ -656,15 +706,25 @@ mod tests {
         );
     }
 
+    /// The reason names the question, never the key on the screen.
     #[test]
-    fn another_question_is_never_answered_and_is_not_available() {
+    fn another_question_is_never_answered_and_names_no_value() {
         let screen = read_usage_screen(API_KEY_QUESTION);
 
         assert_eq!(
             screen,
-            UsageScreen::Stopped(SourceError::NotAvailable(
-                Unavailable::ClaudeAsks(ClaudeQuestion::UseApiKey)
-            ))
+            failed("Claude Code asks whether to use an API key")
+        );
+        assert!(!format!("{screen:?}").contains("sk-ant"));
+    }
+
+    #[test]
+    fn a_refusal_for_asking_too_often_stops_the_reading() {
+        let screen = read_usage_screen(" Error: rate_limit_error\n");
+
+        assert_eq!(
+            screen,
+            failed("Claude Code was refused its usage for asking too often")
         );
     }
 
@@ -674,7 +734,7 @@ mod tests {
 
         assert_eq!(
             read_usage_screen(&screen),
-            UsageScreen::Stopped(SourceError::NotLoggedIn)
+            failed("Claude Code asks to log in")
         );
     }
 
@@ -698,6 +758,15 @@ mod tests {
     }
 
     #[test]
+    fn a_status_bar_percent_is_no_window() {
+        let screen = read_usage_screen(
+            " Settings:  Usage\n\n Current session\n Opus 4 | 12% context\n",
+        );
+
+        assert_eq!(screen, UsageScreen::Unreadable);
+    }
+
+    #[test]
     fn only_the_newest_panel_on_the_screen_is_read() {
         let screen = format!(
             "{}\n{}",
@@ -707,11 +776,7 @@ mod tests {
 
         assert_eq!(
             windows(read_usage_screen(&screen)),
-            [window(
-                WindowId::days(7),
-                12.0,
-                "Resets Nov 20, 10am (Europe/Berlin)"
-            )]
+            [window(WEEKLY, None, 12.0, Some(RESET))]
         );
     }
 }

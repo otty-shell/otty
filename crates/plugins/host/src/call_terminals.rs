@@ -97,11 +97,7 @@ impl CallTerminals {
                  once"
             )));
         }
-        let starter = self.starter.clone().ok_or_else(|| {
-            HostError::Failed(
-                "this OTTY starts no hidden terminals for plugins".to_string(),
-            )
-        })?;
+        let starter = self.starter.clone().ok_or_else(no_starter)?;
 
         self.has_started = true;
         let running = starter
@@ -121,6 +117,28 @@ impl CallTerminals {
             call: self.call,
             slot,
         })
+    }
+
+    /// The working folder every hidden terminal starts in: as the app
+    /// names it and, when links lead elsewhere, as the system resolves
+    /// it. Refused to a part that declares no terminal.
+    pub(crate) fn working_folders(&self) -> Result<Vec<String>, HostError> {
+        if !self.permissions.has_terminals() {
+            return Err(HostError::NotAllowed(
+                "the working folder of hidden terminals".to_string(),
+            ));
+        }
+        let starter = self.starter.as_ref().ok_or_else(no_starter)?;
+
+        let folder = starter.working_folder();
+        let mut folders = vec![folder.display().to_string()];
+        if let Ok(real) = std::fs::canonicalize(&folder)
+            && real != folder
+        {
+            folders.push(real.display().to_string());
+        }
+
+        Ok(folders)
     }
 
     /// Types `keys` into the program of `terminal`.
@@ -248,6 +266,14 @@ struct Terminal {
     deadline: Instant,
 }
 
+/// What a part that asks for a hidden terminal gets when the app gave the
+/// host none.
+fn no_starter() -> HostError {
+    HostError::Failed(
+        "this OTTY starts no hidden terminals for plugins".to_string(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -256,7 +282,7 @@ mod tests {
 
     use super::*;
     use crate::terminal::{MockRunningTerminal, MockStartTerminal};
-    use crate::testing::{assert_same, programs_permissions, strings};
+    use crate::testing::{TempDir, assert_same, programs_permissions, strings};
 
     fn env() -> Environment {
         Environment::new("/home/test-user".into())
@@ -461,6 +487,55 @@ mod tests {
         terminals.drop_terminal(terminal);
 
         assert!(terminals.send_keys(terminal, "x").is_err());
+    }
+
+    /// Issue 13: a program names its records after the folder it ran in,
+    /// so the part learns that folder, also as the system resolves it.
+    #[cfg(unix)]
+    #[test]
+    fn the_working_folder_reaches_a_part_with_terminals() {
+        let temp = TempDir::new();
+        let real = temp.path().join("real-probe");
+        std::fs::create_dir_all(&real).expect("the folder");
+        let link = temp.path().join("agent-probe");
+        std::os::unix::fs::symlink(&real, &link).expect("the link");
+        let missing = temp.path().join("not-made-yet");
+        let mut starter = MockStartTerminal::new();
+        let mut folders = vec![missing.clone(), link.clone()].into_iter();
+        starter
+            .expect_working_folder()
+            .times(2)
+            .returning(move || folders.next().expect("a folder"));
+        let terminals = terminals(starter);
+
+        let not_made = terminals.working_folders();
+        let linked = terminals.working_folders();
+
+        let real = real.canonicalize().expect("the real folder");
+        assert_same(not_made, Ok(vec![missing.display().to_string()]));
+        assert_same(
+            linked,
+            Ok(vec![link.display().to_string(), real.display().to_string()]),
+        );
+    }
+
+    #[test]
+    fn a_part_with_no_terminal_does_not_learn_the_working_folder() {
+        let mut starter = MockStartTerminal::new();
+        starter.expect_working_folder().never();
+        let terminals = CallTerminals::new(
+            Some(Arc::new(starter)),
+            programs_permissions("other-agent", &env()),
+        );
+
+        let folders = terminals.working_folders();
+
+        assert_same(
+            folders,
+            Err(HostError::NotAllowed(
+                "the working folder of hidden terminals".to_string(),
+            )),
+        );
     }
 
     #[test]

@@ -118,9 +118,10 @@ fn limits(_profile: &Profile, _source: &str) -> Result<Limits, ReadError> {
 
 /// The limits whose plan is what `stand-in` answered: its output for the
 /// source `run`, its first line for `talk`, its screen after `/usage`
-/// for `terminal`. The talk and the terminal are kept, never dropped, so
-/// the host must stop them when the call ends; the source `keep-talk`
-/// only starts a talk and keeps it.
+/// and the working folder of hidden terminals for `terminal`. The talk
+/// and the terminal are kept, never dropped, so the host must stop them
+/// when the call ends; the source `keep-talk` only starts a talk and
+/// keeps it.
 #[cfg(feature = "programs")]
 fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
     use std::cell::RefCell;
@@ -170,8 +171,10 @@ fn limits(profile: &Profile, source: &str) -> Result<Limits, ReadError> {
             terminal.send_keys("/usage\r").map_err(ReadError::Host)?;
             terminal.wait_for_change(1000).map_err(ReadError::Host)?;
             let screen = terminal.screen().map_err(ReadError::Host)?;
+            let folders = otty_plugin_sdk::terminal::working_folders()
+                .map_err(ReadError::Host)?;
             KEPT_TERMINALS.with_borrow_mut(|kept| kept.push(terminal));
-            screen
+            format!("{screen} in {}", folders.join(", "))
         },
         "used-talk" => {
             // A talk kept by an earlier call: its program was stopped.

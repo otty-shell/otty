@@ -311,10 +311,7 @@ mod tests {
             .iter()
             .map(|agent| agent.entry().id().as_str().to_string())
             .collect();
-        assert_eq!(
-            ids,
-            ["example-agent", "claude-code", "codex", "kilo", "opencode"]
-        );
+        assert_eq!(ids, ["example-agent", "codex", "kilo", "opencode"]);
     }
 
     #[test]

@@ -732,7 +732,7 @@ mod tests {
     use super::*;
     use crate::frame::sidebar::types::HeaderMenu;
     use crate::testing::agents::{
-        PROJECT, claude_profile, first_start_profiles_loaded,
+        PROJECT, codex_profile, first_start_profiles_loaded,
         one_session_loaded, profiles_loaded,
     };
     use crate::testing::keyboard::key_press;
@@ -1184,7 +1184,7 @@ mod tests {
         profile_dialog(ProfileDialogIntent::Folder(intent))
     }
 
-    /// An app in Agents mode with the added profile Claude Code · Work.
+    /// An app in Agents mode with the added profile Codex · Work.
     fn agents_app_with_a_profile() -> App {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
@@ -1201,9 +1201,9 @@ mod tests {
 
     fn work_profile() -> otty_agents::Profile {
         otty_agents::Profile::added(
-            otty_agents::AgentId::new("claude-code"),
-            "Claude Code · Work",
-            std::path::PathBuf::from("/home/user/.claude-work"),
+            otty_agents::AgentId::new("codex"),
+            "Codex · Work",
+            std::path::PathBuf::from("/home/user/.codex-work"),
         )
     }
 
@@ -1213,7 +1213,7 @@ mod tests {
             .reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
     }
 
-    /// Rename… of the menu of Claude Code · Work.
+    /// Rename… of the menu of Codex · Work.
     fn open_rename_dialog(app: &mut App) {
         for intent in [
             AgentsIntent::OpenProfileMenu(work_profile()),
@@ -1245,7 +1245,7 @@ mod tests {
         );
     }
 
-    /// The statistics of the project of a session of Claude Code · Work.
+    /// The statistics of the project of a session of Codex · Work.
     fn open_stats_dialog(app: &mut App) {
         for intent in [
             one_session_loaded(work_profile(), "w1"),
@@ -2029,8 +2029,8 @@ mod tests {
         }
     }
 
-    /// An app in Agents mode with the default Claude Code, logged in, with
-    /// one session in `/work/otty`, and the added Claude Code · Work, not
+    /// An app in Agents mode with the default Codex, logged in, with
+    /// one session in `/work/otty`, and the added Codex · Work, not
     /// logged in; the project `/work/otty` is selected. So every item of
     /// every menu of the mode can be pressed.
     fn agents_app_with_a_session() -> App {
@@ -2043,10 +2043,10 @@ mod tests {
         };
         for intent in [
             profiles_loaded(vec![
-                (claude_profile(), connected),
+                (codex_profile(), connected),
                 (work_profile(), otty_agents::ProfileStatus::NotLoggedIn),
             ]),
-            one_session_loaded(claude_profile(), "c1"),
+            one_session_loaded(codex_profile(), "c1"),
             AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),
         ] {
             let _ = app.agents.reduce(intent, agents_menu_ctx());
@@ -2208,7 +2208,7 @@ mod tests {
         let mut app = agents_app_with_a_session();
         open_agents_menu_with(&mut app, AgentsIntent::OpenNewSessionMenu);
 
-        assert_items_pass(&app, &["Claude Code", "Claude Code · Work"]);
+        assert_items_pass(&app, &["Codex", "Codex · Work"]);
     }
 
     /// A choice that is on lets Clear all filters be pressed too.
@@ -2227,7 +2227,7 @@ mod tests {
             &app,
             &[
                 i18n::t(i18n::Key::AgentsFilterAllAgents),
-                "Claude Code",
+                "Codex",
                 "Codex",
                 i18n::t(i18n::Key::AgentsFilterRecent),
                 i18n::t(i18n::Key::AgentsFilterMissing),

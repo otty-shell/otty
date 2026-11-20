@@ -266,8 +266,8 @@ mod tests {
     fn the_agents_look_at_the_home_folder_and_their_variables() {
         let agents = otty_agents::known_agents();
         let variable = |name: &str| match name {
-            "CLAUDE_CONFIG_DIR" => Some(OsString::from("/data/claude")),
-            "CODEX_HOME" => Some(OsString::new()),
+            "CODEX_HOME" => Some(OsString::from("/data/codex")),
+            "XDG_DATA_HOME" => Some(OsString::new()),
             _ => None,
         };
 
@@ -275,11 +275,11 @@ mod tests {
 
         assert_eq!(env.home(), Path::new("/home/user"));
         assert_eq!(
-            env.config_dir_of("CLAUDE_CONFIG_DIR"),
-            Some(Path::new("/data/claude"))
+            env.config_dir_of("CODEX_HOME"),
+            Some(Path::new("/data/codex"))
         );
         assert_eq!(
-            env.config_dir_of("CODEX_HOME"),
+            env.config_dir_of("XDG_DATA_HOME"),
             None,
             "an empty value is not set"
         );

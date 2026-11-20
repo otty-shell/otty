@@ -289,10 +289,6 @@ mod tests {
     use crate::known_agents;
     use crate::testing::{MockAgent, TempDir, mock_entry, write_file};
 
-    fn claude_id() -> AgentId {
-        AgentId::new("claude-code")
-    }
-
     fn codex_id() -> AgentId {
         AgentId::new("codex")
     }
@@ -313,7 +309,7 @@ mod tests {
     #[test]
     fn a_default_profile_is_in_the_default_folder_in_the_home_folder() {
         let temp = TempDir::new();
-        let claude_dir = make_dir(&temp.path().join(".claude"));
+        let codex_dir = make_dir(&temp.path().join(".codex"));
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -325,11 +321,11 @@ mod tests {
 
         assert_eq!(
             list,
-            [Profile::default_for(claude_id(), "Claude Code", claude_dir)]
+            [Profile::default_for(codex_id(), "Codex", codex_dir)]
         );
         assert_eq!(
             known_agents()[0].launch(&list[0], None),
-            AgentCommand::new("claude")
+            AgentCommand::new("codex")
         );
     }
 
@@ -353,7 +349,7 @@ mod tests {
             [Profile::default_for(codex_id(), "Codex", codex_home)]
         );
         assert_eq!(
-            known_agents()[1].launch(&list[0], None),
+            known_agents()[0].launch(&list[0], None),
             AgentCommand::new("codex")
         );
     }
@@ -367,15 +363,15 @@ mod tests {
             &known_agents(),
             &env,
             &SavedProfiles::default(),
-            |program| program == "claude",
+            |program| program == "codex",
         );
 
         assert_eq!(
             list,
             [Profile::default_for(
-                claude_id(),
-                "Claude Code",
-                temp.path().join(".claude")
+                codex_id(),
+                "Codex",
+                temp.path().join(".codex")
             )]
         );
     }
@@ -383,28 +379,25 @@ mod tests {
     #[test]
     fn the_users_changes_apply_to_the_default_profile() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".claude"));
-        let moved_dir = make_dir(&temp.path().join("data/claude"));
+        make_dir(&temp.path().join(".codex"));
+        let moved_dir = make_dir(&temp.path().join("data/codex"));
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(claude_id())
-                .with_name("Claude Code · Home")
+            DefaultProfileChanges::new(codex_id())
+                .with_name("Codex · Home")
                 .with_config_dir(moved_dir.clone()),
         );
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
 
-        let expected = Profile::default_for(
-            claude_id(),
-            "Claude Code · Home",
-            moved_dir.clone(),
-        )
-        .with_agent_default_dir(&temp.path().join(".claude"));
+        let expected =
+            Profile::default_for(codex_id(), "Codex · Home", moved_dir.clone())
+                .with_agent_default_dir(&temp.path().join(".codex"));
         assert_eq!(list, [expected]);
         assert_eq!(
             known_agents()[0].launch(&list[0], None),
-            AgentCommand::new("claude")
-                .with_env("CLAUDE_CONFIG_DIR", moved_dir.to_string_lossy())
+            AgentCommand::new("codex")
+                .with_env("CODEX_HOME", moved_dir.to_string_lossy())
         );
     }
 
@@ -424,17 +417,17 @@ mod tests {
     #[test]
     fn added_profiles_come_after_the_default_ones_in_their_order() {
         let temp = TempDir::new();
-        let claude_dir = make_dir(&temp.path().join(".claude"));
+        let codex_dir = make_dir(&temp.path().join(".codex"));
         let env = env_in(temp.path());
         let codex_work = Profile::added(
             codex_id(),
             "Codex · Work",
             temp.path().join(".codex-work"),
         );
-        let claude_work = Profile::added(
-            claude_id(),
-            "Claude Code · Work",
-            temp.path().join(".claude-work"),
+        let codex_home = Profile::added(
+            codex_id(),
+            "Codex · Home",
+            temp.path().join(".codex-home"),
         );
         let future = Profile::added(
             AgentId::new("future-agent"),
@@ -444,16 +437,16 @@ mod tests {
         let saved = SavedProfiles::default()
             .with_added(codex_work.clone())
             .with_added(future)
-            .with_added(claude_work.clone());
+            .with_added(codex_home.clone());
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
 
         assert_eq!(
             list,
             [
-                Profile::default_for(claude_id(), "Claude Code", claude_dir),
+                Profile::default_for(codex_id(), "Codex", codex_dir),
                 codex_work,
-                claude_work,
+                codex_home,
             ]
         );
     }
@@ -478,7 +471,7 @@ mod tests {
 
         let commands: Vec<_> = list
             .iter()
-            .map(|profile| known_agents()[1].launch(profile, None))
+            .map(|profile| known_agents()[0].launch(profile, None))
             .collect();
         assert_eq!(
             commands,
@@ -489,14 +482,6 @@ mod tests {
                 ),
                 AgentCommand::new("codex"),
             ]
-        );
-    }
-
-    /// A Claude Code login in `config_dir`, made up.
-    fn claude_login(config_dir: &Path) {
-        write_file(
-            &config_dir.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up-token"}}"#,
         );
     }
 
@@ -518,11 +503,11 @@ mod tests {
     }
 
     #[test]
-    fn an_extra_folder_with_a_login_is_a_profile_named_after_it() {
+    fn an_extra_folder_is_a_profile_named_after_it() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".claude"));
-        let work = temp.path().join(".claude-work");
-        claude_login(&work);
+        make_dir(&temp.path().join(".codex"));
+        let work = temp.path().join(".codex-work");
+        codex_session(&work);
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -536,17 +521,17 @@ mod tests {
             list,
             [
                 Profile::default_for(
-                    claude_id(),
-                    "Claude Code",
-                    temp.path().join(".claude")
+                    codex_id(),
+                    "Codex",
+                    temp.path().join(".codex")
                 ),
-                Profile::found(claude_id(), "Work", work.clone()),
+                Profile::found(codex_id(), "Work", work.clone()),
             ]
         );
         assert_eq!(
             known_agents()[0].launch(&list[1], None),
-            AgentCommand::new("claude")
-                .with_env("CLAUDE_CONFIG_DIR", work.to_string_lossy())
+            AgentCommand::new("codex")
+                .with_env("CODEX_HOME", work.to_string_lossy())
         );
     }
 
@@ -570,11 +555,10 @@ mod tests {
     #[test]
     fn a_folder_without_a_login_or_sessions_is_skipped() {
         let temp = TempDir::new();
-        write_file(&temp.path().join(".claude-empty/settings.json"), "{}");
         make_dir(&temp.path().join(".codex-old/sessions"));
-        write_file(&temp.path().join(".claude.json"), "{}");
-        claude_login(&temp.path().join(".claudette"));
-        claude_login(&temp.path().join("claude-work"));
+        write_file(&temp.path().join(".codex-empty/config.toml"), "");
+        codex_session(&temp.path().join(".codexette"));
+        codex_session(&temp.path().join("codex-work"));
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -590,11 +574,10 @@ mod tests {
     #[test]
     fn a_found_folder_that_is_a_saved_profile_is_not_listed_twice() {
         let temp = TempDir::new();
-        let work = temp.path().join(".claude-work");
-        claude_login(&work);
+        let work = temp.path().join(".codex-work");
+        codex_session(&work);
         let env = env_in(temp.path());
-        let added =
-            Profile::added(claude_id(), "Claude Code · Office", work.clone());
+        let added = Profile::added(codex_id(), "Codex · Office", work.clone());
         let saved = SavedProfiles::default().with_added(added.clone());
 
         let list = profiles(&known_agents(), &env, &saved, no_program);
@@ -605,11 +588,11 @@ mod tests {
     #[test]
     fn a_found_folder_that_is_the_moved_default_profile_is_not_listed() {
         let temp = TempDir::new();
-        let work = temp.path().join(".claude-work");
-        claude_login(&work);
+        let work = temp.path().join(".codex-work");
+        codex_session(&work);
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(claude_id())
+            DefaultProfileChanges::new(codex_id())
                 .with_config_dir(work.clone()),
         );
 
@@ -623,8 +606,6 @@ mod tests {
     #[test]
     fn a_found_name_taken_by_another_profile_gets_its_agents_name() {
         let temp = TempDir::new();
-        let claude_work = temp.path().join(".claude-work");
-        claude_login(&claude_work);
         let codex_work = temp.path().join(".codex-work");
         codex_session(&codex_work);
         let codex_team = temp.path().join(".codex_my-team");
@@ -641,7 +622,6 @@ mod tests {
         assert_eq!(
             found_names(&list),
             [
-                ("Claude Code · Work", claude_work.as_path()),
                 ("Codex · Work", codex_work.as_path()),
                 ("My Team", codex_team.as_path()),
             ]

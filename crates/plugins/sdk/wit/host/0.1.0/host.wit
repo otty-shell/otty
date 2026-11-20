@@ -293,6 +293,13 @@ interface programs {
 interface terminal {
   use types.{host-error};
 
+  /// The working folder OTTY starts every hidden terminal in: the folder
+  /// as OTTY names it and, when links lead elsewhere, as the system
+  /// resolves it. A program that keeps a record of where it ran, such as
+  /// a session file named after its folder, records this folder. Only
+  /// for a part that declares a terminal.
+  working-folders: func() -> result<list<string>, host-error>;
+
   /// A program in a hidden terminal, in OTTY's own working folder. It is
   /// stopped when the call that started it ends; 60 s in all.
   resource hidden-terminal {

@@ -1,5 +1,6 @@
 //! Helpers that the tests of several files share: running a task to its
-//! end, writing files, and made-up programs to run.
+//! end, writing files, made-up programs to run, and the agents with the
+//! Anthropic plugin built into OTTY.
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -15,9 +16,54 @@ use iced_test::runtime::Action;
 use iced_test::runtime::task::into_stream;
 #[cfg(unix)]
 use otty_agents::AgentCommand;
-use otty_app_agents::AgentsIntent;
+use otty_app_agents::{AgentList, AgentsIntent};
 #[cfg(unix)]
 use otty_app_testing::temp_dir::TempDir;
+use otty_plugin_host::PartRef;
+
+/// The folder of the copy of the Anthropic plugin OTTY carries.
+const ANTHROPIC_COPY: &str = "../../../../../assets/plugins/anthropic";
+/// The folder next to the test binary its compiled plugins are kept in,
+/// so the plugin is compiled once for all the tests, not in each.
+const COMPILED_FOLDER: &str = "otty-agents-io-compiled-plugins";
+
+/// The agents of Agents mode with the Anthropic plugin built into OTTY,
+/// loaded as the app loads it: its part Claude Code first, then the
+/// readers built into OTTY. The plugin sees `home` as the home folder and
+/// no variable; nothing it starts runs, since the shell is not there.
+pub(crate) fn agents_with_anthropic(home: &std::path::Path) -> AgentList {
+    agents_with_anthropic_and_shell(home, "/no/such/shell")
+}
+
+/// [`agents_with_anthropic`] whose plugin starts its programs and hidden
+/// terminals through the shell `shell`.
+pub(crate) fn agents_with_anthropic_and_shell(
+    home: &std::path::Path,
+    shell: &str,
+) -> AgentList {
+    let copy =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(ANTHROPIC_COPY);
+    let compiled = std::env::current_exe()
+        .ok()
+        .and_then(|binary| Some(binary.parent()?.join(COMPILED_FOLDER)))
+        .expect("the folder of the test binary");
+    let engine = crate::plugin_readers::plugin_engine(&compiled, shell)
+        .expect("the engine");
+    let plugins = [crate::plugin_parts::InstalledParts {
+        folder: copy,
+        on: vec![PartRef::agent("claude-code")],
+    }];
+
+    let loaded = crate::plugin_readers::readers_now(
+        &engine,
+        &plugins,
+        home.to_path_buf(),
+        |_| None,
+        &[],
+    );
+
+    loaded.readers.agents
+}
 
 /// Run `task` to its end and return the intents it answers with.
 pub(crate) fn run(task: Task<AgentsIntent>) -> Vec<AgentsIntent> {

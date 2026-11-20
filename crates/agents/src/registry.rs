@@ -463,7 +463,6 @@ mod tests {
         assert_eq!(
             agents,
             [
-                ("claude-code", "Claude Code", true),
                 ("codex", "Codex", true),
                 ("kilo", "Kilo", true),
                 ("opencode", "OpenCode", true),
@@ -506,7 +505,7 @@ mod tests {
             .map(|agent| agent.entry().id().as_str().to_string())
             .collect();
 
-        assert_eq!(listed, ["claude-code", "codex", "opencode"]);
+        assert_eq!(listed, ["codex", "opencode"]);
     }
 
     /// Spec "What the UI shows": with no Codex entry its profiles leave
@@ -591,11 +590,10 @@ mod tests {
             readers,
             [
                 ("codex".to_string(), true),
-                ("claude-code".to_string(), false),
                 ("kilo".to_string(), false),
                 ("opencode".to_string(), false),
             ]
         );
-        assert_eq!(registry.agents().len(), 4);
+        assert_eq!(registry.agents().len(), 3);
     }
 }

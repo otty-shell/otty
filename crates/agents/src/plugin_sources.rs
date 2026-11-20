@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use otty_plugin_host::CallBatch;
 use otty_plugin_host::agent::{Login, LoginKind, ReadError};
 
 use crate::agent::AgentId;
@@ -73,12 +74,17 @@ impl SessionSource for PluginSessions {
 /// part's sources, best first.
 pub(crate) struct PluginLimits {
     part: Arc<CalledPart>,
+    starts_programs: bool,
 }
 
 impl PluginLimits {
-    /// The limits `part` reads.
-    pub(crate) fn new(part: Arc<CalledPart>) -> Self {
-        Self { part }
+    /// The limits `part` reads; its sources start the programs and hidden
+    /// terminals the part declares only when `starts_programs`.
+    pub(crate) fn new(part: Arc<CalledPart>, starts_programs: bool) -> Self {
+        Self {
+            part,
+            starts_programs,
+        }
     }
 }
 
@@ -93,7 +99,7 @@ impl LimitSource for PluginLimits {
     fn limits(&self, profile: &Profile) -> Result<Limits, SourceError> {
         let asked = part_profile(profile);
 
-        self.part.read("read-limits", |batch| {
+        let read = |batch: &mut CallBatch<'_>| {
             let mut calls = batch.agent()?;
             let sources = calls.limit_sources(&asked)?;
             let logins = calls.logins(&asked)?;
@@ -116,7 +122,13 @@ impl LimitSource for PluginLimits {
                 None => no_limits(),
             };
             Ok(Err(error))
-        })?
+        };
+
+        if self.starts_programs {
+            self.part.read("read-limits", read)?
+        } else {
+            self.part.read_starting_nothing("read-limits", read)?
+        }
     }
 }
 

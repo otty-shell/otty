@@ -23,6 +23,11 @@ jiff = { version = "0.2.17", default-features = false, features = ["std"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
+[dev-dependencies]
+# The made-up hidden terminal of the `/usage` probe's tests; the version of
+# OTTY's lock.
+mockall = "0.15.0"
+
 # Plugins are built for speed, not size (spec Decision 2).
 [profile.release]
 opt-level = 3

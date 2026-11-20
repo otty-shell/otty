@@ -102,7 +102,6 @@ mod balance;
 mod bill;
 mod built_in;
 mod called_part;
-mod claude_code;
 mod codex;
 mod command;
 mod config_dir;
@@ -172,7 +171,6 @@ pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, BillSource, DayCost, read_bill};
-pub use crate::claude_code::ClaudeCode;
 pub use crate::codex::Codex;
 pub use crate::command::AgentCommand;
 pub use crate::config_dir::{
@@ -248,7 +246,6 @@ pub use crate::walk::{Answer, SourceFailure, read_limits, read_sessions};
 /// ```
 pub fn known_agents() -> Vec<Box<dyn Agent>> {
     vec![
-        Box::new(ClaudeCode::default()),
         Box::new(Codex::default()),
         Box::new(OpenCodeAgent::kilo()),
         Box::new(OpenCodeAgent::opencode()),
@@ -260,14 +257,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_code_codex_kilo_and_opencode_are_the_known_agents() {
+    fn codex_kilo_and_opencode_are_the_known_agents() {
         let agents = known_agents();
         let ids: Vec<_> = agents
             .iter()
             .map(|agent| agent.entry().id().as_str())
             .collect();
 
-        assert_eq!(ids, ["claude-code", "codex", "kilo", "opencode"]);
+        assert_eq!(ids, ["codex", "kilo", "opencode"]);
     }
 
     #[test]
@@ -278,7 +275,7 @@ mod tests {
             .map(|agent| agent.entry().provider_name())
             .collect();
 
-        assert_eq!(providers, ["Anthropic", "OpenAI", "Kilo", "OpenCode"]);
+        assert_eq!(providers, ["OpenAI", "Kilo", "OpenCode"]);
     }
 
     #[test]
@@ -297,7 +294,6 @@ mod tests {
             found,
             [
                 (false, None),
-                (false, None),
                 (true, Some("KILO_DB")),
                 (true, Some("OPENCODE_DB"))
             ]
@@ -311,14 +307,16 @@ mod tests {
         }
     }
 
+    /// The bill of an organization comes from an admin key the user adds,
+    /// not from an agent: Claude Code's reader went to its plugin.
     #[test]
-    fn only_claude_code_reads_a_bill() {
+    fn no_known_agent_reads_a_bill() {
         let has_bill: Vec<_> = known_agents()
             .iter()
             .map(|agent| agent.bill_source().is_some())
             .collect();
 
-        assert_eq!(has_bill, [true, false, false, false]);
+        assert_eq!(has_bill, [false, false, false]);
     }
 
     #[test]
@@ -328,14 +326,6 @@ mod tests {
             .map(|agent| agent.config_folder().variable().to_string())
             .collect();
 
-        assert_eq!(
-            variables,
-            [
-                "CLAUDE_CONFIG_DIR",
-                "CODEX_HOME",
-                "XDG_DATA_HOME",
-                "XDG_DATA_HOME"
-            ]
-        );
+        assert_eq!(variables, ["CODEX_HOME", "XDG_DATA_HOME", "XDG_DATA_HOME"]);
     }
 }

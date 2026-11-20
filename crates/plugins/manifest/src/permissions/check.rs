@@ -175,6 +175,11 @@ impl Permissions {
         self.terminal.iter().any(|rule| rule.matches(program, args))
     }
 
+    /// Whether the part may start any program in a hidden terminal.
+    pub fn has_terminals(&self) -> bool {
+        !self.terminal.is_empty()
+    }
+
     /// Whether the part may send an HTTPS request to `host`; hosts are
     /// compared whole, with no subdomains.
     pub fn may_call(&self, host: &str) -> bool {
@@ -524,6 +529,20 @@ mod tests {
         assert!(!codex.may_run("codex", &args(&["exec", "rm -rf ~"])));
         assert!(!codex.may_run("sh", &args(&["--version"])));
         assert!(!codex.may_start_terminal("codex", &args(&["--version"])));
+        assert!(!codex.has_terminals());
+    }
+
+    #[test]
+    fn a_part_with_a_terminal_rule_has_terminals() {
+        let text = edited(
+            OPENAI_MANIFEST,
+            "[[agent.permissions.run]]",
+            "[[agent.permissions.terminal]]\nprogram = \"codex\"\nargs = [\"tui\"]\n\n[[agent.permissions.run]]",
+        );
+        let codex = permissions_of(&text, &PartRef::agent("codex"));
+
+        assert!(codex.has_terminals());
+        assert!(codex.may_start_terminal("codex", &args(&["tui"])));
     }
 
     #[test]

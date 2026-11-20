@@ -12,7 +12,11 @@ use crate::calls::CallState;
 use crate::operations::v0_1::otty::host::terminal;
 use crate::operations::v0_1::otty::host::types::HostError;
 
-impl terminal::Host for CallState {}
+impl terminal::Host for CallState {
+    fn working_folders(&mut self) -> Result<Vec<String>, HostError> {
+        self.terminals_mut().working_folders()
+    }
+}
 
 impl terminal::HostHiddenTerminal for CallState {
     fn start(
@@ -97,6 +101,7 @@ impl CallState {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -110,7 +115,7 @@ mod tests {
     use crate::testing::{TempDir, load_programs_plugin};
 
     #[test]
-    fn a_hidden_terminals_screen_text_reaches_the_plugin() {
+    fn a_hidden_terminals_screen_text_and_folder_reach_the_plugin() {
         let cache = TempDir::new();
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopped);
@@ -128,6 +133,9 @@ mod tests {
             .times(1)
             .returning(move || stop.store(true, Ordering::SeqCst));
         let mut starter = MockStartTerminal::new();
+        starter
+            .expect_working_folder()
+            .return_const(PathBuf::from("/no/such/otty/agent-probe"));
         starter
             .expect_start()
             .withf(|command, cols, rows| {
@@ -161,7 +169,61 @@ mod tests {
             .expect("the call");
 
         let plan = limits.ok().and_then(|limits| limits.plan);
-        assert_eq!(plan.as_deref(), Some("Current session 29% used"));
+        assert_eq!(
+            plan.as_deref(),
+            Some("Current session 29% used in /no/such/otty/agent-probe")
+        );
         assert!(stopped.load(Ordering::SeqCst), "stopped with the call");
+    }
+
+    /// Issue 13: while Agents mode is away a read starts no hidden
+    /// terminal, and is not paced, so the next read on screen starts it.
+    #[test]
+    fn a_batch_without_programs_starts_no_terminal_and_is_not_paced() {
+        let cache = TempDir::new();
+        let mut terminal = MockRunningTerminal::new();
+        terminal.expect_send_keys().returning(|_| Ok(()));
+        terminal.expect_next_screen().returning(|_| {
+            ScreenOutput::Screen("Current session 29% used".to_string())
+        });
+        terminal.expect_stop().return_const(());
+        let mut starter = MockStartTerminal::new();
+        starter
+            .expect_working_folder()
+            .return_const(PathBuf::from("/no/such/otty/agent-probe"));
+        starter
+            .expect_start()
+            .times(1)
+            .return_once(move |_, _, _| Ok(Box::new(terminal)));
+        let engine = PluginEngine::new(cache.path().to_path_buf())
+            .expect("engine")
+            .with_terminals(Arc::new(starter));
+        let plugin = load_programs_plugin(&engine);
+        let part = PartRef::agent("test-agent");
+        let profile = Profile {
+            agent: "test-agent".to_string(),
+            folder: "/home/test-user/.test-agent".to_string(),
+            is_default: true,
+        };
+        let login = LoginRef::EnvVar("STAND_IN_KEY".to_string());
+
+        let away = plugin
+            .start_calls(&part)
+            .expect("a listed part")
+            .without_programs()
+            .agent()
+            .expect("an agent part")
+            .read_limits(&profile, &login, "terminal")
+            .expect("the call");
+        let on_screen = plugin
+            .start_calls(&part)
+            .expect("a listed part")
+            .agent()
+            .expect("an agent part")
+            .read_limits(&profile, &login, "terminal")
+            .expect("the call");
+
+        assert!(away.is_err(), "{away:?}");
+        assert!(on_screen.is_ok(), "{on_screen:?}");
     }
 }

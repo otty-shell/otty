@@ -105,14 +105,13 @@ fn stopped_count(profile: Profile, has_counter: bool) -> LoadedSpend {
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Arc;
     use std::time::Duration;
 
     use otty_agents::{AgentId, TokenCount, known_agents};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::run;
+    use crate::testing::{agents_with_anthropic, run};
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -154,11 +153,15 @@ mod tests {
         let profile = claude_with_one_answer(&home);
         let before = SystemTime::now();
 
-        let counted = count_spend(&known_agents(), profile.clone(), &now());
+        let counted = count_spend(
+            &agents_with_anthropic(home.path()),
+            profile.clone(),
+            &now(),
+        );
 
         assert_eq!(counted.profile, profile);
         let SpendCount::Counted(spend) = counted.spend else {
-            panic!("Claude Code counts the tokens of the files");
+            panic!("the Anthropic plugin counts the tokens of the files");
         };
         assert_eq!(spend.today(), TokenCount::new(10, 100, 5));
         assert!(counted.counted_at >= before);
@@ -181,7 +184,7 @@ mod tests {
     fn the_count_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-spend-task");
         let profile = claude_with_one_answer(&home);
-        let agents: AgentList = Arc::from(known_agents());
+        let agents = agents_with_anthropic(home.path());
 
         let answers = run(load_spend(&agents, profile.clone()));
 
@@ -201,7 +204,7 @@ mod tests {
         let home = TempDir::new("agents-spend-stopped");
         let profile = claude_with_one_answer(&home);
 
-        let counts = has_counter(&known_agents(), &profile);
+        let counts = has_counter(&agents_with_anthropic(home.path()), &profile);
 
         let counted = stopped_count(profile.clone(), counts);
 

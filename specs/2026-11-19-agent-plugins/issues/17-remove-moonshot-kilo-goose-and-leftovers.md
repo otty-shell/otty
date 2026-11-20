@@ -49,3 +49,4 @@ Kilo, Kilo Gateway and Goose are not ported (Decision 10, owner
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+- 2026-11-20, issue 13: Claude-only leftovers after the core reader went: `ClaudeQuestion`, `Unavailable::{ClaudeAsks, ClaudeRateLimited, NoLoginToken, LoginMayNotReadUsage}`, `Unexpected::UsagePanelUnreadable`, `SourceId::{AnthropicUsageApi, ClaudeUsageCommand}` and their i18n texts; `otty_agents::fixtures::claude_code_stand_in` (test-only) and the Claude icon of the built-in Anthropic entry.

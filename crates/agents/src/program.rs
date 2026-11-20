@@ -90,6 +90,13 @@ pub trait StartProgram: Send + Sync {
         &self,
         command: &AgentCommand,
     ) -> Result<Box<dyn RunningProgram>, ProgramError>;
+
+    /// Whether programs start now. A starter that refuses every start, as
+    /// the app's while Agents mode is away, says no, so the plugin parts,
+    /// which the plugin engine starts programs for, start none either.
+    fn starts_now(&self) -> bool {
+        true
+    }
 }
 
 /// A program started by [`StartProgram`]: lines go to its input and come

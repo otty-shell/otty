@@ -75,3 +75,19 @@ impl HiddenTerminal {
         }
     }
 }
+
+/// The working folder OTTY starts every hidden terminal in: as OTTY names
+/// it and, when links lead elsewhere, as the system resolves it. A program
+/// that names its records after the folder it ran in, such as an agent's
+/// session files, names them after this one. Only for a part that
+/// declares a terminal.
+pub fn working_folders() -> Result<Vec<String>, HostError> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::bindings::host::otty::host::terminal::working_folders()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        crate::test_host::terminal_folders()
+    }
+}
