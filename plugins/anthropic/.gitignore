@@ -1,0 +1,3 @@
+# The made-up default config folder of the fixtures: the root .gitignore
+# leaves out every `.claude` folder.
+!/fixtures/.claude

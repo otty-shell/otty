@@ -1,0 +1,31 @@
+[package]
+name = "otty-plugin-anthropic"
+description = "The official Anthropic plugin of OTTY: the Claude Code agent part"
+readme = "README.md"
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = "2024"
+rust-version = "1.96.0"
+
+# A plugin is its own cargo workspace, outside the OTTY build.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Inside the OTTY repository the official plugins use the SDK by path.
+otty-plugin-sdk = { path = "../../crates/plugins/sdk" }
+# The times of the session records, RFC 3339 text; the version and features
+# of OTTY's lock (no time zone database is needed).
+jiff = { version = "0.2.17", default-features = false, features = ["std"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Plugins are built for speed, not size (spec Decision 2).
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

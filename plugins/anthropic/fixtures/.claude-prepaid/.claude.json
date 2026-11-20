@@ -1,0 +1,14 @@
+{
+  "numStartups": 12,
+  "installMethod": "native",
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-00000000000d",
+    "emailAddress": "dev@example.com",
+    "organizationUuid": "00000000-0000-4000-8000-0000000000dd",
+    "organizationName": "Example Org",
+    "billingType": "prepaid"
+  },
+  "projects": {
+    "/home/dev/shop": {"allowedTools": [], "hasTrustDialogAccepted": true}
+  }
+}

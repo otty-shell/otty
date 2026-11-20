@@ -331,11 +331,13 @@ struct HostState {
 }
 
 impl HostState {
-    /// The made-up key of the handle `id`.
+    /// The made-up key of the handle `id`. A blank key is no key, as OTTY
+    /// reads it.
     fn key_text(&self, id: usize) -> Result<&str, HostError> {
         self.keys
             .get(id)
             .map(String::as_str)
+            .filter(|key| !key.trim().is_empty())
             .ok_or_else(|| HostError::NotFound(format!("key handle {id}")))
     }
 
@@ -815,6 +817,38 @@ mod tests {
             )
         );
         assert_eq!(plain_read, Err(HostError::NotAllowed(text(&auth))));
+    }
+
+    /// OTTY reads a key without the spaces around it and finds no key in
+    /// a blank field, so a plugin tells a blank key from a key by asking.
+    #[test]
+    fn a_blank_key_is_not_there() {
+        let plugin = MadeUpPlugin::new();
+        let auth = plugin.write(
+            ".made-up/auth.json",
+            br#"{"work": {"key": "  "}, "token": "x.y.z"}"#,
+        );
+        let host = TestHost::new(plugin.folder());
+        let blank = KeyPlace::JsonField(JsonField {
+            file: text(&auth),
+            pointer: "/work/key".to_string(),
+        });
+
+        let (fingerprint, prefix, opened) = host.as_agent(AGENT, || {
+            let document =
+                files::json_with_keys(&text(&auth)).expect("the file");
+            let key = document.key(1).expect("a handle");
+
+            (
+                key.fingerprint(),
+                key.has_prefix(""),
+                keys::open(&blank).map(|_| ()),
+            )
+        });
+
+        assert!(matches!(fingerprint, Err(HostError::NotFound(_))));
+        assert!(matches!(prefix, Err(HostError::NotFound(_))));
+        assert!(matches!(opened, Err(HostError::NotFound(_))));
     }
 
     #[test]

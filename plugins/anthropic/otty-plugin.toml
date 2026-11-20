@@ -1,0 +1,46 @@
+# The manifest of the official Anthropic plugin. Its one part for now is
+# the agent Claude Code; the provider part `anthropic` comes in a later
+# release.
+[plugin]
+id = "anthropic"
+name = "Anthropic"
+version = "0.1.0"
+description = "Claude Code profiles, sessions, tokens and logins."
+repository = "https://github.com/otty-shell/otty-plugin-anthropic"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "anthropic.wasm"
+
+# One contract version per kind of part the .wasm exports.
+[api]
+agent = "0.1"
+
+[[agent]]
+id = "claude-code"
+name = "Claude Code"
+icon = "claude-code.svg"
+program = "claude"
+tested_version = "2.1.328"
+
+# Apply only while a function of this part runs. `CLAUDE_CONFIG_DIR` moves
+# the default config folder, so it comes first in `env`.
+[agent.permissions]
+read = ["~/.claude*/**", "{CLAUDE_CONFIG_DIR}/**"]
+env = ["CLAUDE_CONFIG_DIR"]
+
+# Where the keys are: readable only with the keys replaced by handles.
+# The Claude login.
+[[agent.permissions.keys]]
+files = ["~/.claude*/.credentials.json", "{CLAUDE_CONFIG_DIR}/.credentials.json"]
+fields = ["/claudeAiOauth/accessToken", "/claudeAiOauth/refreshToken"]
+
+# The global config file: next to `~/.claude`, or inside the config folder
+# of another profile.
+[[agent.permissions.keys]]
+files = ["~/.claude.json", "~/.claude*/.claude.json", "{CLAUDE_CONFIG_DIR}/.claude.json"]
+fields = ["/primaryApiKey"]
+
+# The variables the settings give Claude Code.
+[[agent.permissions.keys]]
+files = ["~/.claude*/settings.json", "{CLAUDE_CONFIG_DIR}/settings.json"]
+fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]

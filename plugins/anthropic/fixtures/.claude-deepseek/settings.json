@@ -1,0 +1,7 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-made-up-deepseek-key-0000",
+    "ANTHROPIC_MODEL": "deepseek-chat"
+  }
+}

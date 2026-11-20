@@ -1,0 +1,7 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": " HTTPS://Gateway.Example.com:8443/v1 ",
+    "ANTHROPIC_AUTH_TOKEN": "made-up-gateway-token-0000",
+    "ANTHROPIC_API_KEY": "sk-ant-made-up-other-key-9999"
+  }
+}

@@ -59,6 +59,9 @@ pub(super) fn open(
         KeyPlace::Keyring(entry) => keyring::key_text(state, entry)?,
         KeyPlace::SqliteField(field) => sqlite::key_field(field)?,
     };
+    if value.trim().is_empty() {
+        return Err(HostError::NotFound(format!("{place:?}")));
+    }
 
     Ok(state.add_key(value))
 }
