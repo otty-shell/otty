@@ -9,17 +9,20 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Account, Agent, KeyPlace};
+use otty_agents::{Account, Agent, KeyPlace, PluginProvider};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedAccountNumbers};
 
 use crate::background::{on_own_thread, read_stopped};
+use crate::plugin_parts::ProviderList;
 use crate::shell_variable::shell_variable;
 
 /// Read the numbers of `account` in the background, with its key read
 /// again from `place`: the files of a profile through its agent of
 /// `agents`, the system keyring, or the file or variable the user gave, a
-/// variable as the user's login shell at `shell` sees it. The key is used
-/// for this read only and never logged. The answer comes back as
+/// variable as the user's login shell at `shell` sees it. The provider
+/// part of `providers` that serves the account reads it with a handle to
+/// the key, else the reader built into OTTY. The key is used for this
+/// read only and never logged. The answer comes back as
 /// [`AgentsIntent::AccountNumbersLoaded`].
 ///
 /// # Example
@@ -35,8 +38,10 @@ use crate::shell_variable::shell_variable;
 ///     AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
 /// );
 /// let agents: AgentList = Arc::from(otty_agents::known_agents());
+/// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_account_numbers(
 ///     &agents,
+///     &providers,
 ///     account,
 ///     KeyPlace::Added,
 ///     "/bin/zsh",
@@ -46,6 +51,7 @@ use crate::shell_variable::shell_variable;
 /// ```
 pub fn load_account_numbers(
     agents: &AgentList,
+    providers: &ProviderList,
     account: Account,
     place: KeyPlace,
     shell: &str,
@@ -55,6 +61,7 @@ pub fn load_account_numbers(
         account.provider().as_str()
     );
     let agents = Arc::clone(agents);
+    let providers = Arc::clone(providers);
     let fallback = account.clone();
     let shell = shell.to_string();
 
@@ -63,6 +70,7 @@ pub fn load_account_numbers(
         move || {
             read_account_numbers(
                 &agents,
+                &providers,
                 account,
                 &place,
                 SystemTime::now(),
@@ -82,13 +90,14 @@ pub fn load_account_numbers(
 /// `env_var` gives the value of an environment variable.
 fn read_account_numbers(
     agents: &[Box<dyn Agent>],
+    providers: &[PluginProvider],
     account: Account,
     place: &KeyPlace,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedAccountNumbers {
     let numbers = otty_agents::read_account_numbers(
-        agents, &account, place, now, env_var,
+        agents, providers, &account, place, now, env_var,
     );
 
     LoadedAccountNumbers {
@@ -126,6 +135,7 @@ mod tests {
 
         let loaded = read_account_numbers(
             &known_agents(),
+            &[],
             account.clone(),
             &KeyPlace::Added,
             SystemTime::now(),
@@ -146,8 +156,10 @@ mod tests {
         let (account, _) = missing_key(&folder);
         let agents: AgentList = Arc::from(known_agents());
 
+        let providers: ProviderList = Arc::from(Vec::new());
         let answers = run(load_account_numbers(
             &agents,
+            &providers,
             account.clone(),
             KeyPlace::Added,
             "/no/such/shell",

@@ -91,7 +91,7 @@ pub(crate) fn tally<'a>(
                 count_part(parts, file, answer, profile_provider);
             }
         }
-        if let Some(project) = file.project()
+        if let Some(project) = answer.project().or(file.project())
             && day >= first_project_day
         {
             *projects.entry(project).or_default() += answer.tokens();
@@ -180,15 +180,15 @@ fn count_answer<'a>(
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let provider = file.provider().or(profile_provider);
-    let key = (provider, file.account(), answer.model());
+    let (provider, account) = payer_of(file, answer, profile_provider);
+    let key = (provider, account, answer.model());
 
     models
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
-                .with_account(file.account().cloned())
+                .with_account(account.cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
@@ -201,17 +201,31 @@ fn count_part<'a>(
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let provider = file.provider().or(profile_provider);
-    let key = (file.project(), (provider, file.account(), answer.model()));
+    let (provider, account) = payer_of(file, answer, profile_provider);
+    let project = answer.project().or(file.project());
+    let key = (project, (provider, account, answer.model()));
 
     parts
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
-                .with_account(file.account().cloned())
+                .with_account(account.cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
+}
+
+/// The provider and the account of `answer` of `file`: its own, else the
+/// file's, else, for the provider, the profile's.
+fn payer_of<'a>(
+    file: &'a FileSpend,
+    answer: &'a CountedAnswer,
+    profile_provider: Option<&'a ProviderRef>,
+) -> (Option<&'a ProviderRef>, Option<&'a AccountIdentity>) {
+    let provider = answer.provider().or(file.provider()).or(profile_provider);
+    let account = answer.account().or(file.account());
+
+    (provider, account)
 }
 
 /// The size of the prompt of `answer`, which tells whether the request
@@ -722,5 +736,46 @@ mod tests {
         assert_eq!(spend.last_30_days_by_day().len(), 30);
         assert!(spend.last_30_days().is_zero());
         assert_eq!(spend.last_30_days_by_day()[0].models(), []);
+    }
+    /// A plugin part names the project, the provider and the account of
+    /// each answer (spec 2026-11-19-agent-plugins, "SDK"): they go before
+    /// the ones of the file and of the profile.
+    #[test]
+    fn the_project_provider_and_account_of_an_answer_go_first() {
+        let one = AccountIdentity::Email("dev@example.com".into());
+        let own = answer(NOW, "m", input(1))
+            .with_project(Some(PathBuf::from("/b")))
+            .with_provider(Some(ProviderRef::of_id("example-cloud")))
+            .with_account(Some(one.clone()));
+        let files = [file("/a", vec![own, answer(NOW, "m", input(2))])];
+
+        let spend = tally(
+            files.iter(),
+            &utc_now(),
+            Some(&ProviderRef::of_id("anthropic")),
+        );
+
+        let projects: Vec<_> = spend
+            .projects()
+            .iter()
+            .map(|project| (project.folder().to_path_buf(), project.tokens()))
+            .collect();
+        assert_eq!(
+            projects,
+            [
+                (PathBuf::from("/a"), input(2)),
+                (PathBuf::from("/b"), input(1))
+            ]
+        );
+        assert_eq!(
+            spend.this_month_by_model(),
+            [
+                ModelTokens::new(Some("m"), input(2), 1)
+                    .with_provider(Some(ProviderRef::of_id("anthropic"))),
+                ModelTokens::new(Some("m"), input(1), 1)
+                    .with_provider(Some(ProviderRef::of_id("example-cloud")))
+                    .with_account(Some(one)),
+            ]
+        );
     }
 }

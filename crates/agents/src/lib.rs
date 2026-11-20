@@ -70,10 +70,19 @@
 //!
 //! The [`Registry`] is the one list of the agents and providers OTTY knows
 //! right now: names, icons, usage pages and hosts come only from it (spec
-//! 2026-11-19-agent-plugins, "Links in the interface"). Until plugins
-//! fill it, the readers of this crate put their entries in it as built-in
-//! ones ([`Registry::built_in`]). An account whose provider no entry
-//! serves stays known by the host of its key.
+//! 2026-11-19-agent-plugins, "Links in the interface"). The parts of the
+//! plugins that are on fill it ([`Registry::of_readers`]), and the readers
+//! of this crate put their entries in it as built-in ones for what no part
+//! serves. An account whose provider no entry serves stays known by the
+//! host of its key.
+//!
+//! A [`PluginAgent`] is an agent part of a plugin as an [`Agent`]: OTTY
+//! walks the spend places it names, reads only the files that changed,
+//! counts an answer once and judges "format changed" from what the part
+//! saw. A [`PluginProvider`] reads the numbers of the accounts of its own
+//! provider id or hosts, with a handle to the key an agent part found. A
+//! trap or a missed deadline fails that read only, as a
+//! [`PluginFailure`]; three in a row pause the part ([`PartHealth`]).
 //!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`], built from the
@@ -92,6 +101,7 @@ mod agent;
 mod balance;
 mod bill;
 mod built_in;
+mod called_part;
 mod claude_code;
 mod codex;
 mod command;
@@ -115,7 +125,14 @@ mod litellm;
 mod local_time;
 mod money_estimate;
 mod open_code;
+mod part_health;
 mod percent;
+mod plugin_agent;
+mod plugin_failure;
+mod plugin_provider;
+mod plugin_sources;
+mod plugin_spend;
+mod plugin_values;
 mod price_source;
 mod price_table;
 mod profile;
@@ -178,7 +195,11 @@ pub use crate::limits::{
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
 pub use crate::open_code::OpenCodeAgent;
+pub use crate::part_health::{PAUSE_AFTER, PartHealth};
 pub use crate::percent::Percent;
+pub use crate::plugin_agent::PluginAgent;
+pub use crate::plugin_failure::{PluginFailure, PluginFailureKind};
+pub use crate::plugin_provider::PluginProvider;
 pub use crate::price_source::{FetchedPrices, PriceSource};
 pub use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
 pub use crate::profile::{Profile, ProfileStatus};
@@ -304,7 +325,7 @@ mod tests {
     fn each_known_agent_names_its_config_folder_variable() {
         let variables: Vec<_> = known_agents()
             .iter()
-            .map(|agent| agent.config_folder().variable())
+            .map(|agent| agent.config_folder().variable().to_string())
             .collect();
 
         assert_eq!(

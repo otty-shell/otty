@@ -45,7 +45,7 @@ impl SpendCounter for SessionSpend {
             now,
             None,
             SESSION_FILES,
-            read_spend,
+            |path| Ok(read_spend(path)),
         )
     }
 }

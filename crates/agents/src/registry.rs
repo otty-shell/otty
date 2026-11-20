@@ -6,9 +6,12 @@
 //! Until the plugin engine fills it, the readers of this crate put their
 //! entries in it as "built in" ones ([`Registry::built_in`]).
 
+use otty_plugin_host::Manifest;
+
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
 use crate::built_in;
+use crate::plugin_provider::PluginProvider;
 use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
 
 /// What reads an agent or a provider: the code of this crate, or one part
@@ -22,10 +25,11 @@ pub enum Reader {
 }
 
 /// One part of a plugin that reads an agent or a provider: the plugin's
-/// id, version and repository, and the id of the part.
+/// id, name, version and repository, and the id of the part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginPart {
     plugin: String,
+    name: String,
     version: String,
     repository: String,
     part: String,
@@ -35,6 +39,11 @@ impl PluginPart {
     /// The id of the plugin, such as `openai`.
     pub fn plugin(&self) -> &str {
         &self.plugin
+    }
+
+    /// The name of the plugin, such as "OpenAI".
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// The version of the plugin, such as `0.4.0`.
@@ -52,20 +61,60 @@ impl PluginPart {
         &self.part
     }
 
-    /// The part `part` of the plugin `plugin` at `version` from
-    /// `repository`.
+    /// The part `part` of the plugin `plugin`, named `name`, at `version`
+    /// from `repository`.
+    ///
+    /// ```
+    /// use otty_agents::PluginPart;
+    ///
+    /// let codex = PluginPart::new(
+    ///     "openai",
+    ///     "OpenAI",
+    ///     "0.4.0",
+    ///     "https://github.com/otty-shell/otty-plugin-openai",
+    ///     "codex",
+    /// );
+    ///
+    /// assert_eq!(codex.part(), "codex");
+    /// ```
     pub fn new(
         plugin: impl Into<String>,
+        name: impl Into<String>,
         version: impl Into<String>,
         repository: impl Into<String>,
         part: impl Into<String>,
     ) -> Self {
         Self {
             plugin: plugin.into(),
+            name: name.into(),
             version: version.into(),
             repository: repository.into(),
             part: part.into(),
         }
+    }
+
+    /// The part `part` of the plugin of `manifest`; a plugin with no
+    /// repository, such as a local one, has an empty one.
+    pub fn of_manifest(manifest: &Manifest, part: &str) -> Self {
+        let plugin = manifest.plugin();
+
+        Self::new(
+            plugin.id(),
+            plugin.name(),
+            plugin.version().to_string(),
+            plugin.repository().unwrap_or_default(),
+            part,
+        )
+    }
+
+    /// The lines a report names the part with: the plugin, its version,
+    /// its repository and the part. Never anything the part read.
+    pub(crate) fn report_lines(&self) -> [String; 3] {
+        [
+            format!("Plugin: {} {}", self.plugin, self.version),
+            format!("Repository: {}", self.repository),
+            format!("Part: {}", self.part),
+        ]
     }
 }
 
@@ -177,16 +226,19 @@ impl Registry {
             .usage_page(account.kind())
     }
 
-    /// The readers of `agents` whose agent has an entry, in their order:
-    /// the profiles of any other agent leave the lists, while what
-    /// `agents.json` keeps for them stays.
+    /// The readers of `agents` whose entry is in the registry, in their
+    /// order: the profiles of any other agent leave the lists, while what
+    /// `agents.json` keeps for them stays, and a built-in reader of an
+    /// agent a plugin part serves is left out.
     pub fn listed_agents(
         &self,
         agents: Vec<Box<dyn Agent>>,
     ) -> Vec<Box<dyn Agent>> {
         agents
             .into_iter()
-            .filter(|agent| self.agent(agent.entry().id()).is_some())
+            .filter(|agent| {
+                self.agent(agent.entry().id()) == Some(agent.entry())
+            })
             .collect()
     }
 
@@ -219,9 +271,24 @@ impl Registry {
     /// The registry of the readers of this crate: the entries of `agents`
     /// and of the providers it reads, all built in.
     pub fn built_in(agents: &[Box<dyn Agent>]) -> Self {
-        let entries = agents.iter().map(|agent| agent.entry().clone());
+        Self::of_readers(agents, &[])
+    }
 
-        Self::new(entries.collect(), built_in::providers())
+    /// The registry of `agents`, the agent parts of plugins first, then
+    /// of the provider parts `providers` and of the providers this crate
+    /// reads (spec Decision 4): the parts that are on serve their ids and
+    /// hosts, and a built-in reader stays only for what no part serves.
+    pub fn of_readers(
+        agents: &[Box<dyn Agent>],
+        providers: &[PluginProvider],
+    ) -> Self {
+        let agents = agents.iter().map(|agent| agent.entry().clone());
+        let providers = providers
+            .iter()
+            .map(|provider| provider.entry().clone())
+            .chain(built_in::providers());
+
+        Self::new(agents.collect(), providers.collect())
     }
 
     /// The same registry without the agent `id`, as when its part is off.
@@ -480,5 +547,55 @@ mod tests {
             names(&built_in()),
             ["Codex", "Codex · Work", "Codex · Old"]
         );
+    }
+    fn plugin_codex() -> Box<dyn Agent> {
+        let part = PluginPart::new(
+            "openai",
+            "OpenAI",
+            "0.4.0",
+            "https://github.com/otty-shell/otty-plugin-openai",
+            "codex",
+        );
+        let entry = AgentEntry::new(
+            AgentId::new("codex"),
+            "Codex",
+            "codex",
+            "OpenAI",
+            Reader::Plugin(part),
+        );
+        let mut agent = crate::testing::MockAgent::new();
+        agent.expect_entry().return_const(entry);
+
+        Box::new(agent)
+    }
+
+    /// Issue 07: a part that is on serves its agent id; the built-in
+    /// reader of the same agent leaves the lists, the others stay.
+    #[test]
+    fn a_plugin_part_serves_its_agent_before_the_built_in_reader() {
+        let mut agents = vec![plugin_codex()];
+        agents.extend(known_agents());
+
+        let registry = Registry::of_readers(&agents, &[]);
+        let listed = registry.listed_agents(agents);
+
+        let readers: Vec<_> = listed
+            .iter()
+            .map(|agent| {
+                let entry = agent.entry();
+                let is_plugin = matches!(entry.reader(), Reader::Plugin(_));
+                (entry.id().as_str().to_string(), is_plugin)
+            })
+            .collect();
+        assert_eq!(
+            readers,
+            [
+                ("codex".to_string(), true),
+                ("claude-code".to_string(), false),
+                ("kilo".to_string(), false),
+                ("opencode".to_string(), false),
+            ]
+        );
+        assert_eq!(registry.agents().len(), 4);
     }
 }

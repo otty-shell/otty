@@ -31,7 +31,7 @@ pub enum CreateConfigDirError {
 /// variable names in `env` when it is set, else the agent's config folder
 /// name in the home folder, such as `~/.claude`.
 pub(crate) fn default_config_dir(
-    agent: ConfigFolder,
+    agent: &ConfigFolder,
     env: &AgentEnv,
 ) -> PathBuf {
     match env.config_dir_of(agent.variable()) {

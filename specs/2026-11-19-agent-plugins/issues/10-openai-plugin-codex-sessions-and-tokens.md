@@ -58,3 +58,4 @@ same profiles, sessions, projects and token numbers as with the built-in
 reader.
 
 ## Comments
+- 2026-11-20, issue 07: plugin session stats have no per-day spend and no limit changes yet; reasoning tokens are dropped (counted in output); `writes_cost` turns true only after a part first gives a cost; a failed `detect` counts as NotLoggedIn. Check these against what the Codex part needs.

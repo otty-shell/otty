@@ -1429,6 +1429,8 @@ pub enum Key {
     AgentsSourceLitellmPrices,
     /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
     AgentsSourceKeptPrices,
+    /// Name of the source of numbers a plugin part reads; the registry names the plugin.
+    AgentsSourcePlugin,
     /// Column of "Where the numbers come from": which number of the dashboard the row gives, such as Limits or Money.
     AgentsColumnNumber,
     /// Column of "Where the numbers come from": the source of the number.
@@ -1467,6 +1469,8 @@ pub enum Key {
     AgentsSourceTipLitellmPrices,
     /// Tooltip of the name of the second source of the list prices: the kept copy.
     AgentsSourceTipKeptPrices,
+    /// Tooltip of the source of numbers a plugin part reads.
+    AgentsSourceTipPlugin,
     /// Muted line under the money rows of an API key profile when no source gave prices: the rows show a dash.
     AgentsNoPrices,
     /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
@@ -1589,6 +1593,16 @@ pub enum Key {
     AgentsSourceFormatChanged,
     /// Why the tokens could not be counted: the format of the session files changed. Placeholders: `{understood}`, `{seen}`.
     TplAgentsFailureFormatChanged,
+    /// Why a plugin part gave no answer, such as "Example 0.1.0 could not read: the plugin did not finish in time". Placeholders: `{plugin}`, `{version}`, `{reason}`.
+    TplAgentsFailurePlugin,
+    /// Reason of a plugin failure: the plugin trapped, used too much memory or could not start.
+    AgentsPluginFailureStopped,
+    /// Reason of a plugin failure: the call ran past its deadline.
+    AgentsPluginFailureTooSlow,
+    /// Reason of a plugin failure: the part is paused after three failed reads in a row.
+    AgentsPluginFailurePaused,
+    /// Reason of a plugin failure: the part answered that it could not read.
+    AgentsPluginFailureCouldNotRead,
     /// Title of the need of a profile whose agent changed its session files, such as "Claude Code 2.2.0 changed its session files". Placeholders: `{agent}`, `{version}`.
     TplAgentsNeedFormatChangedTitle,
     /// Title of the need of a profile whose agent changed its session files, when the files name no version. Placeholder: `{agent}`.
@@ -1597,6 +1611,10 @@ pub enum Key {
     TplAgentsNeedFormatChangedText,
     /// Line of the need of a profile whose agent changed its session files, before any good count. Placeholders: `{agent}`, `{tested}`.
     TplAgentsNeedFormatChangedNoNumbers,
+    /// Line of the need of a profile whose agent changed its session files, read by a plugin part, with the time of the last good count. Placeholders: `{plugin}`, `{version}`, `{agent}`, `{tested}`, `{time}`.
+    TplAgentsNeedFormatChangedPluginText,
+    /// Line of the need of a profile whose agent changed its session files, read by a plugin part, before any good count. Placeholders: `{plugin}`, `{version}`, `{agent}`, `{tested}`.
+    TplAgentsNeedFormatChangedPluginNoNumbers,
     /// Button of the need of a changed format: copies a plain text report for the makers of OTTY.
     AgentsCopyReport,
     /// A period of the usage block: the last 7 days.
@@ -1918,7 +1936,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 896] = [
+    pub(super) const ALL: [Self; 905] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2573,6 +2591,7 @@ impl Key {
         Self::AgentsSourceCostWrittenByAgent,
         Self::AgentsSourceLitellmPrices,
         Self::AgentsSourceKeptPrices,
+        Self::AgentsSourcePlugin,
         Self::AgentsColumnNumber,
         Self::AgentsColumnSource,
         Self::AgentsColumnState,
@@ -2592,6 +2611,7 @@ impl Key {
         Self::AgentsSourceTipCostWrittenByAgent,
         Self::AgentsSourceTipLitellmPrices,
         Self::AgentsSourceTipKeptPrices,
+        Self::AgentsSourceTipPlugin,
         Self::AgentsNoPrices,
         Self::TplAgentsPricesUnreadable,
         Self::AgentsShowStatistics,
@@ -2653,10 +2673,17 @@ impl Key {
         Self::TplAgentsOpenAgent,
         Self::AgentsSourceFormatChanged,
         Self::TplAgentsFailureFormatChanged,
+        Self::TplAgentsFailurePlugin,
+        Self::AgentsPluginFailureStopped,
+        Self::AgentsPluginFailureTooSlow,
+        Self::AgentsPluginFailurePaused,
+        Self::AgentsPluginFailureCouldNotRead,
         Self::TplAgentsNeedFormatChangedTitle,
         Self::TplAgentsNeedFormatChangedNoVersion,
         Self::TplAgentsNeedFormatChangedText,
         Self::TplAgentsNeedFormatChangedNoNumbers,
+        Self::TplAgentsNeedFormatChangedPluginText,
+        Self::TplAgentsNeedFormatChangedPluginNoNumbers,
         Self::AgentsCopyReport,
         Self::AgentsSevenDays,
         Self::AgentsThirtyDays,

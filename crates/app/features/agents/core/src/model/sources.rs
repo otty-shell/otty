@@ -375,6 +375,7 @@ fn source_tip(id: SourceId) -> &'static str {
         SourceId::CostWrittenByAgent => Key::AgentsSourceTipCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceTipLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceTipKeptPrices,
+        SourceId::Plugin => Key::AgentsSourceTipPlugin,
     };
 
     i18n::t(key)

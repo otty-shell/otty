@@ -20,7 +20,7 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
-use crate::account::{Account, AccountIdentity, AccountKind};
+use crate::account::{Account, AccountIdentity, AccountKind, FoundIn};
 use crate::account_key::AccountKey;
 use crate::agent::{Agent, agent_of};
 use crate::balance::Balance;
@@ -34,6 +34,7 @@ use crate::error::{SourceError, Unavailable};
 use crate::https::{HttpsGet, HttpsRequest, UreqClient, json_answer};
 use crate::keyring_entry::{KeyringEntry, key_in_keyring};
 use crate::limits::Limits;
+use crate::plugin_provider::PluginProvider;
 use crate::profile::Profile;
 use crate::provider::ProviderId;
 use crate::registry::{Reader, Registry};
@@ -166,9 +167,10 @@ impl Reach<'_> {
 /// that uses it reads them.
 ///
 /// It is `None` too while no entry of `registry` serves the account's
-/// provider, or a plugin reads the provider (spec
-/// 2026-11-19-agent-plugins, "What the UI shows": no Left or Limits rows
-/// with no provider part).
+/// provider (spec 2026-11-19-agent-plugins, "What the UI shows": no Left
+/// or Limits rows with no provider part). A provider a plugin part reads
+/// reads every account found in a profile, with the key of its login
+/// ([`SourceId::Plugin`]).
 ///
 /// ```
 /// use otty_agents::{
@@ -196,8 +198,12 @@ pub fn own_source_of(
     registry: &Registry,
 ) -> Option<SourceId> {
     let entry = registry.provider_of(account.provider())?;
-    if entry.reader() != &Reader::BuiltIn {
-        return None;
+    if let Reader::Plugin(_) = entry.reader() {
+        let is_in_profile = account
+            .found_in()
+            .iter()
+            .any(|place| matches!(place, FoundIn::ProfileFolder(_)));
+        return is_in_profile.then_some(SourceId::Plugin);
     }
 
     let id = match (own_source(account)?, provider_id(account)) {
@@ -214,10 +220,12 @@ pub fn own_source_of(
 }
 
 /// The numbers of `account` up to `now`, read with its key from `place`
-/// by the request of its provider. `agents` read the files of a profile
-/// again, and `env_var` gives the value of an environment variable, for a
-/// key the user keeps in one. It blocks; a key in the keyring may make the
-/// system ask the user to unlock it.
+/// by the request of its provider: the one of `providers`, the provider
+/// parts of plugins, that serves it, else the reader built into OTTY.
+/// `agents` read the files of a profile again, and `env_var` gives the
+/// value of an environment variable, for a key the user keeps in one. It
+/// blocks; a key in the keyring may make the system ask the user to
+/// unlock it.
 ///
 /// # Errors
 ///
@@ -227,11 +235,16 @@ pub fn own_source_of(
 /// logged in" (it is never renewed).
 pub fn read_account_numbers(
     agents: &[Box<dyn Agent>],
+    providers: &[PluginProvider],
     account: &Account,
     place: &KeyPlace,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<AccountNumbers, SourceError> {
+    if let Some(provider) = providers.iter().find(|part| part.serves(account)) {
+        return plugin_numbers(provider, agents, account, place);
+    }
+
     let reach = Reach {
         client: Box::new(UreqClient::new()),
         keyring: &SystemKeyring,
@@ -239,6 +252,26 @@ pub fn read_account_numbers(
     };
 
     reach.read(account, place, now, env_var)
+}
+
+/// The numbers of `account` read by the provider part `provider` with the
+/// key of the login an agent part found it by in the profile of `place`.
+/// An account the user added or found in the keyring has no such login.
+fn plugin_numbers(
+    provider: &PluginProvider,
+    agents: &[Box<dyn Agent>],
+    account: &Account,
+    place: &KeyPlace,
+) -> Result<AccountNumbers, SourceError> {
+    let KeyPlace::ProfileFiles(profile) = place else {
+        return Err(SourceError::NotAvailable(Unavailable::NoAccountSource));
+    };
+
+    let login = agent_of(agents, profile.agent())
+        .and_then(|agent| agent.found_login(profile, account))
+        .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
+
+    provider.read(account, &login)
 }
 
 /// The JSON answer of a `GET` of `url` with `key` as its bearer token and
@@ -677,5 +710,132 @@ mod tests {
         assert_eq!(number_in(&serde_json::json!(" 110.00 ")), Some(110.0));
         assert_eq!(number_in(&serde_json::json!("ten")), None);
         assert_eq!(number_in(&serde_json::json!(null)), None);
+    }
+    fn example_login() -> otty_plugin_host::agent::Login {
+        use otty_plugin_host::agent::{
+            JsonField, KeyPlace as PartPlace, LoginKind,
+            ProviderRef as PartProvider,
+        };
+
+        use crate::testing::no_identity;
+
+        otty_plugin_host::agent::Login {
+            kind: LoginKind::ApiKey,
+            for_whom: PartProvider::Id("example-cloud".to_string()),
+            place: PartPlace::JsonField(JsonField {
+                file: "/home/user/.config-Example/auth.json".to_string(),
+                pointer: "/api_key".to_string(),
+            }),
+            identity: no_identity(),
+            plan: None,
+        }
+    }
+
+    /// Spec "How plugins talk to OTTY": an account a provider part serves
+    /// is read by that part, once, with the login the agent part of its
+    /// profile found it by; the built-in readers are not asked.
+    #[test]
+    fn an_account_a_provider_part_serves_is_read_by_it_once() {
+        use otty_plugin_host::provider::{
+            AccountFacts, AccountNumbers as PartNumbers, Money,
+        };
+
+        use crate::plugin_provider::MockProviderPartCalls;
+        use crate::testing::{MockAgent, mock_entry, no_identity, profile};
+
+        let twelve_dollars = || {
+            let facts = AccountFacts {
+                identity: no_identity(),
+                plan: None,
+            };
+            let numbers = PartNumbers {
+                windows: Vec::new(),
+                credits: None,
+                left: Some(Money {
+                    amount: 12.0,
+                    currency: "USD".to_string(),
+                }),
+                key_limit: None,
+                spent_this_month: None,
+                plan: None,
+            };
+            (facts, numbers)
+        };
+
+        let example = profile("Example");
+        let account =
+            key_account(ProviderRef::of_id("example-cloud"), "made-up");
+        let mut agent = MockAgent::new();
+        agent
+            .expect_entry()
+            .return_const(mock_entry("test-agent", "test-agent"));
+        agent
+            .expect_found_login()
+            .times(1)
+            .returning(|_, _| Some(example_login()));
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .times(1)
+            .returning(move |_, _| Ok(twelve_dollars()));
+        let providers = [PluginProvider::made_up(
+            "example-cloud",
+            &["example.com"],
+            calls,
+        )];
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
+
+        let numbers = read_account_numbers(
+            &agents,
+            &providers,
+            &account,
+            &KeyPlace::ProfileFiles(example),
+            at(NOW),
+            |_| None,
+        );
+        let added = read_account_numbers(
+            &agents,
+            &providers,
+            &account,
+            &KeyPlace::Added,
+            at(NOW),
+            |_| None,
+        );
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
+        );
+        assert_eq!(
+            added,
+            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
+        );
+    }
+
+    #[test]
+    fn a_provider_a_plugin_reads_reads_the_accounts_found_in_profiles() {
+        use crate::provider::ProviderEntry;
+        use crate::registry::PluginPart;
+
+        let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                ProviderEntry::new(
+                    ProviderId::new("example-cloud"),
+                    "Example Cloud",
+                    Reader::Plugin(part),
+                )
+                .with_hosts(["example.com"]),
+            ],
+        );
+        let found = key_account(ProviderRef::of_id("example-cloud"), "made-up");
+        let added = Account::added(
+            ProviderRef::of_id("example-cloud"),
+            AdminKeyRef::EnvVar("EXAMPLE_KEY".into()),
+        );
+
+        assert_eq!(own_source_of(&found, &registry), Some(SourceId::Plugin));
+        assert_eq!(own_source_of(&added, &registry), None);
     }
 }

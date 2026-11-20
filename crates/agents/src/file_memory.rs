@@ -117,6 +117,24 @@ pub(crate) fn read_if_changed<T>(
     }
 }
 
+/// The file at `path`, which has the stamp `stamp` now: taken out of
+/// `previous` when it had the same stamp there, else read now with
+/// `read`, which may fail.
+pub(crate) fn try_read_if_changed<T, E>(
+    previous: &mut ReadFiles<T>,
+    path: &Path,
+    stamp: FileStamp,
+    read: impl FnOnce(&Path) -> Result<T, E>,
+) -> Result<ReadFile<T>, E> {
+    match previous.remove(path) {
+        Some(file) if file.stamp == stamp => Ok(file),
+        _ => Ok(ReadFile {
+            stamp,
+            content: read(path)?,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

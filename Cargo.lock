@@ -4155,6 +4155,7 @@ dependencies = [
  "keyring",
  "log",
  "mockall",
+ "otty-plugin-host",
  "rusqlite",
  "ruzstd",
  "serde",

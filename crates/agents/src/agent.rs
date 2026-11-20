@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use otty_plugin_host::agent::Login;
+
 use crate::account::Account;
 use crate::account_key::AccountKey;
 use crate::bill::BillSource;
@@ -12,6 +14,7 @@ use crate::env::AgentEnv;
 use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
 use crate::profile::{Profile, ProfileStatus};
+use crate::profile_list::found_in_home;
 use crate::program::StartProgram;
 use crate::registry::Reader;
 use crate::session::{SessionId, SessionSource};
@@ -135,10 +138,10 @@ impl AgentEntry {
 /// Where an agent keeps its config folder: the folder's name in the home
 /// folder and the environment variables that point the agent's program at
 /// another folder or another database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFolder {
-    name: &'static str,
-    variable: &'static str,
+    name: Cow<'static, str>,
+    variable: Cow<'static, str>,
     database_variable: Option<&'static str>,
 }
 
@@ -146,16 +149,16 @@ impl ConfigFolder {
     /// The name of the agent's default config folder in the home folder,
     /// such as `.claude`. The folder proposed for a new profile starts with
     /// it, such as `.claude-work`.
-    pub fn name(&self) -> &'static str {
-        self.name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// The environment variable that points the agent's program at a
     /// config folder, such as `CLAUDE_CONFIG_DIR`. When the app found it
     /// set, its folder is the one of the default profile, or holds it, as
     /// `XDG_DATA_HOME` holds the `kilo` folder of Kilo.
-    pub fn variable(&self) -> &'static str {
-        self.variable
+    pub fn variable(&self) -> &str {
+        &self.variable
     }
 
     /// The environment variable that points the agent's program at
@@ -179,18 +182,34 @@ impl ConfigFolder {
     /// ```
     pub const fn new(name: &'static str, variable: &'static str) -> Self {
         Self {
-            name,
-            variable,
+            name: Cow::Borrowed(name),
+            variable: Cow::Borrowed(variable),
             database_variable: None,
         }
     }
 
-    /// The same folder of an agent that keeps its sessions in a database
-    /// file, which the environment variable `variable` moves.
-    pub const fn with_database_variable(self, variable: &'static str) -> Self {
+    /// The config folder `name` an agent part of a plugin names, which
+    /// the variable `variable` moves; empty when the part lists none.
+    pub fn of_plugin(name: String, variable: String) -> Self {
         Self {
-            database_variable: Some(variable),
-            ..self
+            name: Cow::Owned(name),
+            variable: Cow::Owned(variable),
+            database_variable: None,
+        }
+    }
+
+    /// The config folder `name`, which `variable` moves, of an agent that
+    /// keeps its sessions in a database file, which the environment
+    /// variable `database_variable` moves.
+    pub const fn with_database(
+        name: &'static str,
+        variable: &'static str,
+        database_variable: &'static str,
+    ) -> Self {
+        Self {
+            name: Cow::Borrowed(name),
+            variable: Cow::Borrowed(variable),
+            database_variable: Some(database_variable),
         }
     }
 }
@@ -206,7 +225,8 @@ impl ConfigFolder {
 /// thread, so an agent can be shared between threads.
 pub trait Agent: Send + Sync {
     /// The entry the agent puts in the registry: its id, name, icon,
-    /// program and provider, read by this built-in reader.
+    /// program and provider, and what reads it: a reader built into OTTY
+    /// or a plugin part.
     fn entry(&self) -> &AgentEntry;
 
     /// Where the agent keeps its config folder.
@@ -306,6 +326,27 @@ pub trait Agent: Send + Sync {
     /// local files (spec Decision 14). `None`: not supported, and Show
     /// statistics is off for the agent's sessions.
     fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
+
+    /// The config folders of the agent besides its default one found on
+    /// this computer: by default the folders in the home folder whose
+    /// names start with the name of its config folder and a `-` or `_`,
+    /// such as `~/.codex-work`, that hold a login or a session (spec
+    /// 2026-11-19, Decision 2). A plugin part finds them itself.
+    fn found_config_dirs(&self, env: &AgentEnv) -> Vec<PathBuf> {
+        found_in_home(self, env)
+    }
+
+    /// The login of `account` as the plugin part that found it in
+    /// `profile` names it, with the place its key sits, so that a
+    /// provider part can be given a handle to it. `None` for a reader
+    /// built into OTTY, which reads keys itself.
+    fn found_login(
+        &self,
+        _profile: &Profile,
+        _account: &Account,
+    ) -> Option<Login> {
+        None
+    }
 
     /// Whether the agent reads the real bill of an API key account with an
     /// admin key: its [`Agent::bill_source`] gives one (spec Decision 9).

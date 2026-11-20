@@ -19,7 +19,9 @@ use std::time::SystemTime;
 use crate::account::AccountIdentity;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
-use crate::file_memory::{FileMemory, ReadFile, ReadFiles, read_if_changed};
+use crate::file_memory::{
+    FileMemory, ReadFile, ReadFiles, try_read_if_changed,
+};
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
 use crate::provider::ProviderRef;
@@ -28,7 +30,9 @@ use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
 use crate::token_count::TokenCount;
 
-/// One answer of the model found in a session file.
+/// One answer of the model found in a session file. Its project, provider
+/// and account, when a plugin part names them for each answer, go before
+/// the ones of its file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CountedAnswer {
     identity: Option<u64>,
@@ -36,6 +40,9 @@ pub(crate) struct CountedAnswer {
     model: Option<String>,
     tokens: TokenCount,
     cost: Option<Dollars>,
+    project: Option<PathBuf>,
+    provider: Option<ProviderRef>,
+    account: Option<AccountIdentity>,
 }
 
 impl CountedAnswer {
@@ -65,6 +72,21 @@ impl CountedAnswer {
         self.cost
     }
 
+    /// The project folder of this answer, when named for it alone.
+    pub(crate) fn project(&self) -> Option<&Path> {
+        self.project.as_deref()
+    }
+
+    /// The provider that served this answer, when named for it alone.
+    pub(crate) fn provider(&self) -> Option<&ProviderRef> {
+        self.provider.as_ref()
+    }
+
+    /// The account that paid for this answer, when named for it alone.
+    pub(crate) fn account(&self) -> Option<&AccountIdentity> {
+        self.account.as_ref()
+    }
+
     /// An answer written at `at` by `model`, with no identity.
     pub(crate) fn new(
         at: SystemTime,
@@ -77,12 +99,30 @@ impl CountedAnswer {
             model: model.map(String::from),
             tokens,
             cost: None,
+            project: None,
+            provider: None,
+            account: None,
         }
     }
 
     /// The same answer, which cost `cost` as the agent wrote it.
     pub(crate) fn with_cost(self, cost: Option<Dollars>) -> Self {
         Self { cost, ..self }
+    }
+
+    /// The same answer, given in the project folder `project`.
+    pub(crate) fn with_project(self, project: Option<PathBuf>) -> Self {
+        Self { project, ..self }
+    }
+
+    /// The same answer, served by `provider`.
+    pub(crate) fn with_provider(self, provider: Option<ProviderRef>) -> Self {
+        Self { provider, ..self }
+    }
+
+    /// The same answer, paid by `account`.
+    pub(crate) fn with_account(self, account: Option<AccountIdentity>) -> Self {
+        Self { account, ..self }
     }
 
     /// The same answer with the identity made of `parts`, such as the ids
@@ -186,7 +226,9 @@ impl FileSpend {
 /// first counted day. A file that is gone is skipped and forgotten.
 ///
 /// When the newest files show that the agent changed the `format` of its
-/// files, the count fails with [`SourceError::FormatChanged`].
+/// files, the count fails with [`SourceError::FormatChanged`]. When
+/// `read_file` fails, so does the count: the files read before it are
+/// kept, and the one that failed is read again next time.
 pub(crate) fn count_spend(
     memory: &FileMemory<FileSpend>,
     config_dir: &Path,
@@ -194,7 +236,7 @@ pub(crate) fn count_spend(
     now: &LocalNow,
     profile_provider: Option<&ProviderRef>,
     format: RecordFormat,
-    read_file: impl Fn(&Path) -> FileSpend,
+    mut read_file: impl FnMut(&Path) -> Result<FileSpend, SourceError>,
 ) -> Result<Spend, SourceError> {
     let counted_since = now.start_of(first_counted_day(now));
 
@@ -212,8 +254,16 @@ pub(crate) fn count_spend(
             continue;
         }
 
-        let file = read_if_changed(&mut previous, &path, stamp, &read_file);
-        counted.insert(path, file);
+        match try_read_if_changed(&mut previous, &path, stamp, &mut read_file) {
+            Ok(file) => {
+                counted.insert(path, file);
+            },
+            Err(error) => {
+                counted.extend(previous);
+                memory.keep(config_dir, counted);
+                return Err(error);
+            },
+        }
     }
 
     let change = format_change(format, newest_first(&counted));
@@ -298,7 +348,7 @@ mod tests {
                 &utc_now(),
                 None,
                 FORMAT,
-                |path| self.read(path),
+                |path| Ok(self.read(path)),
             )
         }
 
@@ -403,7 +453,7 @@ mod tests {
             &utc_now(),
             None,
             FORMAT,
-            |path| folder.read(path),
+            |path| Ok(folder.read(path)),
         )
         .expect("no file is no change");
         let (again, opened) = folder.count(&["a.jsonl"]);
@@ -446,5 +496,38 @@ mod tests {
         assert_eq!(answer.identity(), None);
         assert_eq!(first.identity(), same.identity());
         assert_ne!(first.identity(), other.identity());
+    }
+    /// A plugin part that traps fails the count; the file it trapped on is
+    /// read again next time, the files read before it are not.
+    #[test]
+    fn a_read_that_failed_fails_the_count_and_is_read_again() {
+        let folder = Folder::new();
+        folder.write("a.jsonl", 10, NOW);
+        folder.write("b.jsonl", 20, NOW);
+        let paths = || vec![folder.path("a.jsonl"), folder.path("b.jsonl")];
+        let opened = RefCell::new(Vec::new());
+        let failing = |path: &Path| {
+            opened.borrow_mut().push(path.to_path_buf());
+            if path.ends_with("b.jsonl") {
+                return Err(SourceError::NotLoggedIn);
+            }
+            Ok(folder.read(path))
+        };
+
+        let failed = count_spend(
+            &folder.memory,
+            folder.temp.path(),
+            paths(),
+            &utc_now(),
+            None,
+            FORMAT,
+            failing,
+        );
+        opened.borrow_mut().clear();
+        let (spend, _) = folder.count(&["a.jsonl", "b.jsonl"]);
+
+        assert_eq!(failed, Err(SourceError::NotLoggedIn));
+        assert_eq!(folder.opened.borrow().clone(), ["b.jsonl"]);
+        assert_eq!(spend.today(), TokenCount::new(30, 0, 0));
     }
 }

@@ -7,8 +7,8 @@
 //! read, is put in as it came.
 
 use otty_agents::{
-    AdminKeyRef, ClaudeQuestion, ProgramError, SourceError, SourceFailure,
-    SourceId, Unavailable, Unexpected,
+    AdminKeyRef, ClaudeQuestion, PluginFailureKind, ProgramError, SourceError,
+    SourceFailure, SourceId, Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -52,7 +52,30 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
                 ("seen", &change.seen().to_string()),
             ],
         ),
+        SourceError::PluginFailed(failure) => i18n::filled(
+            Key::TplAgentsFailurePlugin,
+            &[
+                ("plugin", failure.part().name()),
+                ("version", failure.part().version()),
+                ("reason", plugin_failure_text(failure.kind())),
+            ],
+        ),
     }
+}
+
+/// Why a plugin part gave no answer, such as "the plugin did not finish
+/// in time".
+fn plugin_failure_text(kind: PluginFailureKind) -> &'static str {
+    let key = match kind {
+        PluginFailureKind::Stopped => Key::AgentsPluginFailureStopped,
+        PluginFailureKind::TooSlow => Key::AgentsPluginFailureTooSlow,
+        PluginFailureKind::Paused => Key::AgentsPluginFailurePaused,
+        PluginFailureKind::CouldNotRead(_) => {
+            Key::AgentsPluginFailureCouldNotRead
+        },
+    };
+
+    i18n::t(key)
 }
 
 /// Why a source can not be used here, such as "no session files".
@@ -175,6 +198,7 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
         SourceId::CostWrittenByAgent => Key::AgentsSourceCostWrittenByAgent,
         SourceId::LiteLlmPrices => Key::AgentsSourceLitellmPrices,
         SourceId::KeptPrices => Key::AgentsSourceKeptPrices,
+        SourceId::Plugin => Key::AgentsSourcePlugin,
     };
 
     i18n::t(key)
@@ -399,7 +423,26 @@ mod tests {
             unexpected(Unexpected::TooManyPages),
             unexpected(Unexpected::NoPrices),
             unexpected(Unexpected::UsagePanelUnreadable),
+            plugin_failed(PluginFailureKind::Stopped),
+            plugin_failed(PluginFailureKind::TooSlow),
+            plugin_failed(PluginFailureKind::Paused),
+            plugin_failed(PluginFailureKind::CouldNotRead("failed")),
         ]
+    }
+
+    fn plugin_failed(kind: PluginFailureKind) -> SourceError {
+        let part = otty_agents::PluginPart::new(
+            "example",
+            "Example",
+            "0.1.0",
+            "https://github.com/otty-shell/otty-plugin-example",
+            "example-agent",
+        );
+
+        let failure =
+            otty_agents::PluginFailure::new(part, "read-answers", kind);
+
+        SourceError::PluginFailed(Box::new(failure))
     }
 
     /// The app writes every failure in English as `otty-agents` writes it

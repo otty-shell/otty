@@ -75,9 +75,8 @@ pub fn profiles(
         }
     }
 
-    let home_folders = folders_in(env.home());
     for agent in agents {
-        let found = found_profiles(agent.as_ref(), env, &home_folders, &list);
+        let found = found_profiles(agent.as_ref(), env, &list);
         list.extend(found);
     }
 
@@ -141,25 +140,20 @@ fn default_profile(
         .with_agent_default_dir(&default_dir)
 }
 
-/// The profiles of `agent` found among `home_folders`: each folder named
-/// after the agent's config folder that holds its login or a session and
-/// that no profile of `listed` uses, named so that no profile of `listed`
-/// or found before has its name.
+/// The profiles of `agent` found on this computer
+/// ([`Agent::found_config_dirs`]) that no profile of `listed` uses, named
+/// so that no profile of `listed` or found before has its name.
 fn found_profiles(
     agent: &dyn Agent,
     env: &AgentEnv,
-    home_folders: &[PathBuf],
     listed: &[Profile],
 ) -> Vec<Profile> {
     let entry = agent.entry();
     let default_dir = agent.default_config_dir(env);
+    let base = agent.config_folder();
     let mut found: Vec<Profile> = Vec::new();
 
-    for folder in home_folders {
-        let Some(suffix) = folder_suffix(folder, agent.config_folder().name())
-        else {
-            continue;
-        };
+    for folder in agent.found_config_dirs(env) {
         let is_listed = listed.iter().any(|profile| {
             profile.agent() == entry.id() && profile.config_dir() == folder
         });
@@ -167,16 +161,13 @@ fn found_profiles(
             continue;
         }
 
-        let Some(name) = found_name(suffix) else {
+        let name = match folder_suffix(&folder, base.name()) {
+            Some(suffix) => found_name(suffix),
+            None => folder_name(&folder),
+        };
+        let Some(name) = name else {
             continue;
         };
-        let candidate =
-            Profile::found(entry.id().clone(), name.as_str(), folder.clone());
-        let is_logged_in =
-            matches!(agent.detect(&candidate), ProfileStatus::Connected { .. });
-        if !is_logged_in && !agent.has_sessions(&candidate) {
-            continue;
-        }
 
         let is_taken = |name: &str| {
             listed
@@ -193,12 +184,38 @@ fn found_profiles(
             continue;
         }
 
-        let profile = Profile::found(entry.id().clone(), name, folder.clone())
+        let profile = Profile::found(entry.id().clone(), name, folder)
             .with_agent_default_dir(&default_dir);
         found.push(profile);
     }
 
     found
+}
+
+/// The folders in the home folder of `env` named after the config folder
+/// of `agent` with a `-` or `_` after it, such as `~/.claude-work`, that
+/// hold its login or a session, by name: what
+/// [`Agent::found_config_dirs`] gives for a reader built into OTTY.
+pub(crate) fn found_in_home<A: Agent + ?Sized>(
+    agent: &A,
+    env: &AgentEnv,
+) -> Vec<PathBuf> {
+    let base = agent.config_folder();
+    let id = agent.entry().id();
+
+    folders_in(env.home())
+        .into_iter()
+        .filter(|folder| folder_suffix(folder, base.name()).is_some())
+        .filter(|folder| {
+            let candidate = Profile::found(id.clone(), "", folder.clone());
+            let is_logged_in = matches!(
+                agent.detect(&candidate),
+                ProfileStatus::Connected { .. }
+            );
+
+            is_logged_in || agent.has_sessions(&candidate)
+        })
+        .collect()
 }
 
 /// The folders in `home`, by name. A home folder that can not be read has
@@ -229,6 +246,14 @@ fn folder_suffix<'a>(folder: &'a Path, base: &str) -> Option<&'a str> {
     }
 
     Some(rest)
+}
+
+/// The name of a found profile whose folder is not named after the
+/// agent's config folder: the folder's own name, such as "agent-data".
+fn folder_name(folder: &Path) -> Option<String> {
+    let name = folder.file_name()?.to_str()?;
+
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// The name of a found profile from the end of its folder name: each word

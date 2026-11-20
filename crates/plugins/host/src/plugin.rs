@@ -15,6 +15,11 @@ use crate::cache::LoadKind;
 use crate::calls::{CallBatch, CallError, CallState};
 use crate::contract::ContractExports;
 use crate::engine::{EngineShared, Starters};
+use crate::keys::{KeyText, permission_place, place_text, read_key};
+use crate::operations::list_files;
+use crate::operations::v0_1::otty::host::files::FileInfo;
+use crate::operations::v0_1::otty::host::keys::KeyPlace;
+use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 use crate::pacing::LimitPacing;
 use crate::plugin_log::PluginLog;
@@ -68,7 +73,8 @@ impl LoadedPlugin {
         &self.stderr
     }
 
-    pub(crate) fn env(&self) -> &Environment {
+    /// The home folder and the variables the plugin's parts see.
+    pub fn env(&self) -> &Environment {
         &self.env
     }
 
@@ -139,5 +145,113 @@ impl LoadedPlugin {
         };
 
         Ok(CallBatch::new(self, part.clone(), Arc::clone(permissions)))
+    }
+
+    /// The files whose paths match `glob` that the part `part` may read,
+    /// as `files.list` gives them to the part: OTTY walks the spend places
+    /// a part names with it (spec "Host operations").
+    pub fn list_files(
+        &self,
+        part: &PartRef,
+        glob: &str,
+    ) -> Result<Vec<FileInfo>, HostError> {
+        let Some(permissions) = self.permissions.get(part) else {
+            return Err(HostError::NotAllowed(part.to_string()));
+        };
+
+        list_files(permissions, &self.env, glob)
+    }
+
+    /// The key at `place`, which the part `part` declares, read now for
+    /// OTTY's own use: the fingerprint accounts are joined by, or a reader
+    /// built into OTTY that still sends the key itself. It is never given
+    /// to a plugin, and dropped once used.
+    pub fn read_key(
+        &self,
+        part: &PartRef,
+        place: &KeyPlace,
+    ) -> Result<KeyText, HostError> {
+        let may_open = self.permissions.get(part).is_some_and(|permissions| {
+            permissions.may_open_key(&permission_place(place))
+        });
+        if !may_open {
+            return Err(HostError::NotAllowed(place_text(place)));
+        }
+
+        read_key(place, &self.env, self.outside())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_plugin_manifest::PartRef;
+
+    use super::*;
+    use crate::engine::PluginEngine;
+    use crate::operations::v0_1::otty::host::keys::JsonField;
+    use crate::testing::{TempDir, load_template, template_env};
+
+    const AGENT: &str = "example-agent";
+    const PROVIDER: &str = "example-cloud";
+
+    fn auth_place() -> KeyPlace {
+        let file = template_env().home().join(".example-agent/auth.json");
+
+        KeyPlace::JsonField(JsonField {
+            file: file.display().to_string(),
+            pointer: "/api_key".to_string(),
+        })
+    }
+
+    #[test]
+    fn the_files_of_a_glob_are_listed_with_the_parts_permissions() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_template(&engine, &template_env());
+        let glob = template_env()
+            .home()
+            .join(".example-agent/sessions/*.jsonl")
+            .display()
+            .to_string();
+
+        let mut for_agent: Vec<String> = plugin
+            .list_files(&PartRef::agent(AGENT), &glob)
+            .expect("listed")
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
+        let for_provider = plugin
+            .list_files(&PartRef::provider(PROVIDER), &glob)
+            .expect("listed");
+
+        for_agent.sort();
+        let folder = template_env().home().join(".example-agent/sessions");
+        assert_eq!(
+            for_agent,
+            [
+                folder.join("s1.jsonl").display().to_string(),
+                folder.join("s2.jsonl").display().to_string(),
+            ]
+        );
+        assert!(for_provider.is_empty(), "{for_provider:?}");
+    }
+
+    #[test]
+    fn a_key_is_read_for_otty_only_at_a_place_the_part_declares() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_template(&engine, &template_env());
+
+        let for_agent = plugin.read_key(&PartRef::agent(AGENT), &auth_place());
+        let for_provider =
+            plugin.read_key(&PartRef::provider(PROVIDER), &auth_place());
+
+        let key = for_agent.expect("the agent part declares the place");
+        assert_eq!(key.as_str(), "ex-made-up-key-0001");
+        assert_eq!(key.fingerprint().len(), 64);
+        assert_eq!(format!("{key:?}"), "KeyText(hidden)");
+        assert!(matches!(for_provider, Err(HostError::NotAllowed(_))));
     }
 }

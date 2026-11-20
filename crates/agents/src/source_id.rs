@@ -61,4 +61,8 @@ pub enum SourceId {
     LiteLlmPrices,
     /// The copy of the LiteLLM price table kept from the last good fetch.
     KeptPrices,
+    /// A part of a plugin: its sessions, tokens, limits, statistics or the
+    /// numbers of an account (spec 2026-11-19-agent-plugins). The registry
+    /// names the plugin.
+    Plugin,
 }

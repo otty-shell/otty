@@ -103,7 +103,7 @@ impl Agent for ClaudeCode {
     }
 
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf {
-        default_config_dir(CONFIG_FOLDER, env)
+        default_config_dir(&CONFIG_FOLDER, env)
     }
 
     fn detect(&self, profile: &Profile) -> ProfileStatus {

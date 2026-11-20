@@ -55,3 +55,4 @@ release.
 - The checks of `AGENTS.md` pass; the plugins' own tests pass.
 
 ## Comments
+- 2026-11-20, issue 07 (left for the provider issues): provider parts get only accounts a plugin agent found. Still missing: a host key place for keys added by hand (a plain key file / variable from Add account) and for keys found only by built-in readers or in the keyring; `read-bill` for organizations with an admin key; `spent_this_month` and credits on key accounts (`AccountNumbers` holds only a Balance or Limits today); the names of a part's own limit sources (all show as one "Plugin" source).

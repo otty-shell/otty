@@ -9,14 +9,15 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD_INDIFFERENT;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-/// A key read from its place, without the spaces around it.
-pub(crate) struct KeyText {
+/// A key read from its place, without the spaces around it. Printing it
+/// shows nothing of the key.
+pub struct KeyText {
     text: String,
 }
 
 impl KeyText {
     /// The key itself, for the one header it is sent in.
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.text
     }
 
@@ -35,7 +36,7 @@ impl KeyText {
 
     /// SHA-256 of the key, lowercase hex: the fingerprint OTTY joins
     /// accounts by (`KeyFingerprint` of `otty-agents`).
-    pub(crate) fn fingerprint(&self) -> String {
+    pub fn fingerprint(&self) -> String {
         Sha256::digest(self.text.as_bytes())
             .iter()
             .map(|byte| format!("{byte:02x}"))

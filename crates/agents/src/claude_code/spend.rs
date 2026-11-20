@@ -55,7 +55,7 @@ impl SpendCounter for SessionSpend {
             now,
             provider.as_ref(),
             SESSION_FILES,
-            |path| read_session_spend(config_dir, path),
+            |path| Ok(read_session_spend(config_dir, path)),
         )
     }
 }

@@ -9,6 +9,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jiff::tz::TimeZone;
 use mockall::mock;
+use otty_plugin_host::agent::Login;
+use otty_plugin_host::{Environment, LoadedPlugin, Manifest, PluginEngine};
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
 use crate::account::{
@@ -82,6 +84,11 @@ mock! {
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn bill_source(&self) -> Option<Box<dyn BillSource>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
+        fn found_login(
+            &self,
+            profile: &Profile,
+            account: &Account,
+        ) -> Option<Login>;
     }
 }
 
@@ -113,6 +120,104 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
     }
+}
+
+/// A made-up home folder with the files of the template plugin's agent,
+/// `~/.example-agent`, and the template plugin (issue 03) loaded for it
+/// from its built copy in `otty-plugin-host`.
+pub(crate) struct TemplateHome {
+    home: TempDir,
+    cache: TempDir,
+}
+
+impl TemplateHome {
+    /// The home folder.
+    pub(crate) fn home(&self) -> &Path {
+        self.home.path()
+    }
+
+    /// The default config folder of the made-up agent.
+    pub(crate) fn folder(&self) -> PathBuf {
+        self.home().join(".example-agent")
+    }
+
+    /// A home whose made-up agent holds a key for `dev@example.com` and
+    /// wrote its version 1.4.2, with no session yet.
+    pub(crate) fn new() -> Self {
+        let home = Self {
+            home: TempDir::new(),
+            cache: TempDir::new(),
+        };
+
+        write_file(
+            &home.folder().join("auth.json"),
+            r#"{"api_key": "ex-made-up-key-0001", "email": "dev@example.com"}"#,
+        );
+        write_file(
+            &home.folder().join("state.json"),
+            r#"{"last_version": "1.4.2"}"#,
+        );
+        home
+    }
+
+    /// The default profile of the made-up agent.
+    pub(crate) fn profile(&self) -> Profile {
+        let agent = AgentId::new("example-agent");
+
+        Profile::default_for(agent, "Example Agent", self.folder())
+    }
+
+    /// Writes the session file `name` of `folder` in the home folder with
+    /// `lines`, last changed `changed` seconds after the epoch.
+    pub(crate) fn write_session(
+        &self,
+        folder: &str,
+        name: &str,
+        lines: &[String],
+        changed: u64,
+    ) {
+        let path = self.home().join(folder).join("sessions").join(name);
+
+        write_file(&path, &format!("{}\n", lines.join("\n")));
+        set_file_time(&path, at(changed));
+    }
+
+    /// The template plugin, loaded by an engine of its own for this home.
+    pub(crate) fn plugin(&self) -> Arc<LoadedPlugin> {
+        let crate_folder = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let manifest = std::fs::read_to_string(
+            crate_folder.join("../../plugins/template/otty-plugin.toml"),
+        )
+        .expect("the template's manifest");
+        let manifest = Manifest::parse(&manifest).expect("a valid manifest");
+        let wasm =
+            crate_folder.join("../plugins/host/tests/fixtures/template.wasm");
+        let engine = PluginEngine::new(self.cache.path().to_path_buf())
+            .expect("the engine");
+
+        let env = Environment::new(self.home().to_path_buf());
+        let plugin = engine.load(manifest, &wasm, &env).expect("the template");
+        Arc::new(plugin)
+    }
+}
+
+/// The `meta` record of a session of the template's made-up agent in the
+/// project `cwd`.
+pub(crate) fn meta_line(cwd: &str) -> String {
+    format!(
+        r#"{{"type":"meta","version":"1.4.2","cwd":"{cwd}","title":"Made up"}}"#
+    )
+}
+
+/// An `answer` record of the template's made-up agent with the id `id`,
+/// written `seconds` after the epoch, with 100 input tokens and `output`
+/// output tokens.
+pub(crate) fn answer_line(id: &str, seconds: u64, output: u64) -> String {
+    let at_ms = seconds * 1000;
+
+    format!(
+        r#"{{"type":"answer","id":"{id}","at_ms":{at_ms},"model":"example-large","tokens":{{"input":100,"cached":0,"output":{output}}}}}"#
+    )
 }
 
 /// A program starter that must never start anything: for the sources of
@@ -308,4 +413,14 @@ pub(crate) fn key_account(provider: ProviderRef, key: &str) -> Account {
         AccountKind::Money,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
     )
+}
+
+/// What a plugin part tells of whom a login is for when its files say
+/// nothing.
+pub(crate) fn no_identity() -> otty_plugin_host::agent::Identity {
+    otty_plugin_host::agent::Identity {
+        account_id: None,
+        organization_id: None,
+        email: None,
+    }
 }

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
+use crate::plugin_failure::PluginFailure;
 use crate::program::ProgramError;
 use crate::record_format::FormatChange;
 use crate::session::SessionId;
@@ -65,6 +66,23 @@ pub enum SourceError {
         .0.seen()
     )]
     FormatChanged(Box<FormatChange>),
+    /// A plugin part could not read: it trapped, ran past its deadline,
+    /// is paused, or said it could not read (spec
+    /// 2026-11-19-agent-plugins, "What the UI shows"). The last good
+    /// numbers stay, greyed.
+    #[error(
+        "{} {} could not read: {}",
+        .0.part().name(),
+        .0.part().version(),
+        .0.kind().text()
+    )]
+    PluginFailed(Box<PluginFailure>),
+}
+
+impl From<Box<PluginFailure>> for SourceError {
+    fn from(failure: Box<PluginFailure>) -> Self {
+        SourceError::PluginFailed(failure)
+    }
 }
 
 /// Why a source can not be used here.

@@ -45,7 +45,7 @@ impl Fork {
 
     /// Where the agent keeps its data folder.
     pub(super) fn config_folder(&self) -> ConfigFolder {
-        self.config_folder
+        self.config_folder.clone()
     }
 
     /// The entry the agent puts in the registry, built in.
@@ -63,7 +63,7 @@ impl Fork {
     /// How the answers in its database are read, and the newest version
     /// of the agent they were checked against.
     pub(super) fn format(&self) -> RecordFormat {
-        self.format
+        self.format.clone()
     }
 
     /// The data folder of the default profile: the agent's folder in
@@ -132,14 +132,17 @@ impl Fork {
 
 /// Kilo, the fork of OpenCode by Kilo Code: `~/.local/share/kilo`,
 /// `kilo.db` and `KILO_DB`.
-pub(super) const KILO: Fork = Fork {
+pub(super) static KILO: Fork = Fork {
     id: "kilo",
     name: "Kilo",
     program: "kilo",
     provider_name: "Kilo",
     icon: built_in::KILO_ICON,
-    config_folder: ConfigFolder::new(".local/share/kilo", XDG_DATA_HOME)
-        .with_database_variable("KILO_DB"),
+    config_folder: ConfigFolder::with_database(
+        ".local/share/kilo",
+        XDG_DATA_HOME,
+        "KILO_DB",
+    ),
     data_dir_name: "kilo",
     database_file: "kilo.db",
     format: RecordFormat::new(
@@ -150,14 +153,17 @@ pub(super) const KILO: Fork = Fork {
 
 /// OpenCode by Anomaly: `~/.local/share/opencode`, `opencode.db` and
 /// `OPENCODE_DB`.
-pub(super) const OPENCODE: Fork = Fork {
+pub(super) static OPENCODE: Fork = Fork {
     id: "opencode",
     name: "OpenCode",
     program: "opencode",
     provider_name: "OpenCode",
     icon: built_in::OPENCODE_ICON,
-    config_folder: ConfigFolder::new(".local/share/opencode", XDG_DATA_HOME)
-        .with_database_variable("OPENCODE_DB"),
+    config_folder: ConfigFolder::with_database(
+        ".local/share/opencode",
+        XDG_DATA_HOME,
+        "OPENCODE_DB",
+    ),
     data_dir_name: "opencode",
     database_file: "opencode.db",
     format: RecordFormat::new(

@@ -19,3 +19,4 @@ pub mod v0_1;
 mod variables;
 
 pub(crate) use crate::operations::lines::ZstdCursor;
+pub(crate) use crate::operations::listing::list as list_files;

@@ -7,7 +7,7 @@ mod key_text;
 mod place;
 
 pub(crate) use crate::keys::key_fields::{key_value, take_key_fields};
-pub(crate) use crate::keys::key_text::KeyText;
+pub use crate::keys::key_text::KeyText;
 pub(crate) use crate::keys::place::{
     permission_place, place_text, read_json_file, read_key,
 };

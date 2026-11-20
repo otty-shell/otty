@@ -270,9 +270,11 @@ fn profile_need(
 }
 
 /// The need of a profile whose agent changed the format of its session
-/// files (spec 2026-11-19, Decision 9): it names the version, says since
-/// when the tokens are missing while the last good numbers stay, and
-/// copies a report for the makers of OTTY.
+/// files (spec 2026-11-19, Decision 9): it names the version and, when a
+/// plugin part reads the files, the plugin (spec 2026-11-19-agent-plugins,
+/// "What the UI shows"), says since when the tokens are missing while the
+/// last good numbers stay, and copies a report for the makers of OTTY or
+/// of the plugin.
 fn format_changed_need(
     state: &AgentsState,
     shown: &ProfileState,
@@ -283,17 +285,36 @@ fn format_changed_need(
     let folder = tilde_path(profile.config_dir(), state.env().home());
     let tested = change.tested_version();
 
-    let line = match shown.spend().last_good() {
-        Some((_, counted_at)) => {
-            let time = date_time_text(counted_at, state.profiles().time_zone());
-            i18n::filled(
-                Key::TplAgentsNeedFormatChangedText,
-                &[("agent", agent), ("tested", tested), ("time", &time)],
-            )
-        },
-        None => i18n::filled(
+    let time = shown.spend().last_good().map(|(_, counted_at)| {
+        date_time_text(counted_at, state.profiles().time_zone())
+    });
+    let line = match (change.plugin(), time) {
+        (None, Some(time)) => i18n::filled(
+            Key::TplAgentsNeedFormatChangedText,
+            &[("agent", agent), ("tested", tested), ("time", &time)],
+        ),
+        (None, None) => i18n::filled(
             Key::TplAgentsNeedFormatChangedNoNumbers,
             &[("agent", agent), ("tested", tested)],
+        ),
+        (Some(part), Some(time)) => i18n::filled(
+            Key::TplAgentsNeedFormatChangedPluginText,
+            &[
+                ("plugin", part.name()),
+                ("version", part.version()),
+                ("agent", agent),
+                ("tested", tested),
+                ("time", &time),
+            ],
+        ),
+        (Some(part), None) => i18n::filled(
+            Key::TplAgentsNeedFormatChangedPluginNoNumbers,
+            &[
+                ("plugin", part.name()),
+                ("version", part.version()),
+                ("agent", agent),
+                ("tested", tested),
+            ],
         ),
     };
 
@@ -590,5 +611,38 @@ mod tests {
         );
 
         assert_eq!(account_needs(&state).len(), 1);
+    }
+    /// Spec 2026-11-19-agent-plugins, "What the UI shows": the need of a
+    /// changed format a plugin part saw names the plugin and its version,
+    /// and asks to update the plugin.
+    #[test]
+    fn a_changed_format_a_plugin_saw_names_the_plugin() {
+        let change = otty_agents::fixtures::plugin_format_change("1.5.0", 6);
+        let state = with_changed_format(&change);
+
+        let needs = profile_needs(&state);
+
+        let since = date_time_text(at(10), state.profiles().time_zone());
+        assert_eq!(
+            needs[0].line,
+            i18n::filled(
+                Key::TplAgentsNeedFormatChangedPluginText,
+                &[
+                    ("plugin", "Example"),
+                    ("version", "0.1.0"),
+                    ("agent", "Claude Code"),
+                    ("tested", "1.4.2"),
+                    ("time", &since)
+                ]
+            )
+        );
+        let Some(NeedFixViewModel {
+            action: Some(NeedAction::CopyReport(report)),
+            ..
+        }) = &needs[0].fix
+        else {
+            panic!("a report to copy: {needs:?}");
+        };
+        assert!(report.contains("Plugin: example 0.1.0"), "{report}");
     }
 }

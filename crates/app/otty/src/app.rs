@@ -5,6 +5,7 @@ use std::sync::Arc;
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_agents::{Agent, AgentEnv, Registry};
 use otty_app_agents::{AgentList, Agents};
+use otty_app_agents_io::{PluginParts, ProviderList};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
@@ -76,6 +77,9 @@ pub(crate) struct App {
     /// the agents OTTY knows and what they look at in the environment,
     /// kept for the whole run.
     pub(crate) agents: Agents,
+    /// The provider parts of the plugins that are on, which read the
+    /// numbers of the accounts of their providers.
+    pub(crate) plugin_providers: ProviderList,
 }
 
 impl App {
@@ -91,9 +95,14 @@ impl App {
         let files_home = home_or_temp(home.as_deref());
         let config_dir = config_dir(&files_home);
         let cache_dir = cache_dir(&files_home);
-        let known = otty_agents::known_agents();
-        let registry = registry_at_start(&known);
-        let agents: AgentList = Arc::from(registry.listed_agents(known));
+        // The parts of installed plugins join here once the Plugins page
+        // installs them (issue 09); until then the built-in readers serve.
+        let readers =
+            PluginParts::default().into_readers(otty_agents::known_agents());
+        let registry = registry_at_start(readers.registry);
+        let agents: AgentList =
+            Arc::from(registry.listed_agents(readers.agents));
+        let providers: ProviderList = Arc::from(readers.providers);
         let agent_env = agent_env(files_home, &agents, |variable| {
             std::env::var_os(variable)
         });
@@ -127,6 +136,7 @@ impl App {
             agent_env,
             TerminalWorkspace::new(),
         );
+        app.plugin_providers = providers;
         let told = app.tell_start_problems(problems);
         let first =
             startup::run(shell, app.config_dir.clone()).map(Message::Internal);
@@ -193,6 +203,7 @@ impl App {
             default_shell,
             containers,
             agents: Agents::new(agents, registry, agent_env),
+            plugin_providers: Arc::from(Vec::new()),
         }
     }
 
@@ -294,14 +305,13 @@ fn agent_env(
     env
 }
 
-/// Return the registry OTTY starts with: the built-in entries of `agents`
-/// and of the providers `otty-agents` reads (spec 2026-11-19-agent-plugins,
-/// "Links in the interface"). A debug build leaves out the entries whose
-/// ids `OTTY_HIDE_ENTRIES` lists, such as `deepseek,kilo`, so the owner can
-/// see an agent or a provider no plugin serves.
-fn registry_at_start(agents: &[Box<dyn Agent>]) -> Registry {
-    let registry = Registry::built_in(agents);
-
+/// Return the registry OTTY starts with: `registry`, the entries of the
+/// plugin parts that are on and of the readers built into OTTY (spec
+/// 2026-11-19-agent-plugins, "Links in the interface"). A debug build
+/// leaves out the entries whose ids `OTTY_HIDE_ENTRIES` lists, such as
+/// `deepseek,kilo`, so the owner can see an agent or a provider no plugin
+/// serves.
+fn registry_at_start(registry: Registry) -> Registry {
     #[cfg(debug_assertions)]
     let registry = match std::env::var("OTTY_HIDE_ENTRIES") {
         Ok(ids) => without_entries(registry, &ids),

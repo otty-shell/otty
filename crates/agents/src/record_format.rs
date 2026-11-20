@@ -11,10 +11,17 @@
 //! The newest files decide: once they hold enough such records and fewer
 //! than half of them were understood, the format changed. A few odd lines,
 //! such as the last line of a file the agent is still writing, never do.
+//!
+//! A plugin part counts the records it reads itself; the verdict and the
+//! report are the same, and the report names the plugin (spec
+//! 2026-11-19-agent-plugins, "What the UI shows").
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use serde_json::Value;
+
+use crate::registry::PluginPart;
 
 /// The fewest records of the kind a reader reads, in the newest files, the
 /// verdict is made on.
@@ -27,12 +34,14 @@ const MOST_FIELDS: usize = 20;
 /// file path used as a key, not the name of a field.
 const LONGEST_FIELD_NAME: usize = 40;
 
-/// The kind of file a reader reads, as a report names it, and the newest
-/// version of the agent the reader was checked against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The kind of file a reader reads, as a report names it, the newest
+/// version of the agent the reader was checked against, and the plugin
+/// part that reads it, when a plugin does.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordFormat {
-    file_kind: &'static str,
-    tested_version: &'static str,
+    file_kind: Cow<'static, str>,
+    tested_version: Cow<'static, str>,
+    plugin: Option<PluginPart>,
 }
 
 impl RecordFormat {
@@ -44,8 +53,24 @@ impl RecordFormat {
         tested_version: &'static str,
     ) -> Self {
         Self {
-            file_kind,
-            tested_version,
+            file_kind: Cow::Borrowed(file_kind),
+            tested_version: Cow::Borrowed(tested_version),
+            plugin: None,
+        }
+    }
+
+    /// The files and databases the plugin part `part` reads, up to the
+    /// agent's version `tested_version` its manifest names, if any.
+    pub(crate) fn of_plugin(
+        part: PluginPart,
+        tested_version: Option<&str>,
+    ) -> Self {
+        Self {
+            file_kind: Cow::Borrowed("the spend places of the plugin part"),
+            tested_version: Cow::Owned(
+                tested_version.unwrap_or("not given").to_string(),
+            ),
+            plugin: Some(part),
         }
     }
 }
@@ -58,7 +83,7 @@ pub(crate) struct RecordCounts {
     seen: u64,
     understood: u64,
     version: Option<String>,
-    missing: BTreeSet<&'static str>,
+    missing: BTreeSet<Cow<'static, str>>,
     fields: BTreeSet<String>,
 }
 
@@ -66,6 +91,39 @@ impl RecordCounts {
     /// The agent's version written in the file, when it writes one.
     pub(crate) fn version(&self) -> Option<&str> {
         self.version.as_deref()
+    }
+
+    /// What a plugin part said it saw in one file: `seen` records of the
+    /// kind it reads, `understood` of them, the agent's `version`, and the
+    /// names of the fields it `missing` and found in their place
+    /// (`fields`). A text that does not look like the name of a field is
+    /// left out: the report never holds a value.
+    pub(crate) fn of_plugin(
+        seen: u64,
+        understood: u64,
+        version: Option<&str>,
+        missing: Vec<String>,
+        fields: Vec<String>,
+    ) -> Self {
+        let mut counts = Self {
+            seen,
+            understood: understood.min(seen),
+            ..Self::default()
+        };
+        if let Some(version) = version {
+            counts.saw_version(version);
+        }
+
+        let names = |list: Vec<String>| {
+            list.into_iter()
+                .filter(|name| is_field_path(name))
+                .take(MOST_FIELDS)
+                .collect::<Vec<_>>()
+        };
+        counts.missing = names(missing).into_iter().map(Cow::Owned).collect();
+        counts.fields = names(fields).into_iter().collect();
+
+        counts
     }
 
     /// One record of the kind was seen and understood.
@@ -86,7 +144,7 @@ impl RecordCounts {
         found: Option<&Value>,
     ) {
         self.seen += 1;
-        self.missing.insert(missing);
+        self.missing.insert(Cow::Borrowed(missing));
 
         let Some(Value::Object(fields)) = found else {
             return;
@@ -120,7 +178,7 @@ impl RecordCounts {
         if self.version.is_none() {
             self.version.clone_from(&other.version);
         }
-        self.missing.extend(other.missing.iter().copied());
+        self.missing.extend(other.missing.iter().cloned());
         for field in &other.fields {
             if self.fields.len() >= MOST_FIELDS {
                 break;
@@ -143,8 +201,8 @@ impl RecordCounts {
     }
 
     /// The fields that were missing or of another shape.
-    pub(crate) fn missing(&self) -> Vec<&'static str> {
-        self.missing.iter().copied().collect()
+    pub(crate) fn missing(&self) -> Vec<&str> {
+        self.missing.iter().map(AsRef::as_ref).collect()
     }
 
     /// The names of the fields found where those were looked for.
@@ -177,9 +235,16 @@ impl FormatChange {
         self.counts.version()
     }
 
-    /// The newest version of the agent this OTTY was checked against.
-    pub fn tested_version(&self) -> &'static str {
-        self.format.tested_version
+    /// The newest version of the agent the reader was checked against:
+    /// this OTTY, or the plugin part that reads the files.
+    pub fn tested_version(&self) -> &str {
+        &self.format.tested_version
+    }
+
+    /// The plugin part that reads the files; `None` for a reader built
+    /// into OTTY.
+    pub fn plugin(&self) -> Option<&PluginPart> {
+        self.format.plugin.as_ref()
     }
 
     /// How many records of the kind OTTY reads the newest files hold.
@@ -193,11 +258,13 @@ impl FormatChange {
     }
 
     /// The plain text report of the change, for the user to send to the
-    /// makers of OTTY: the agent named `agent`, its version, the `folder`
-    /// of the profile as the user reads it, the kind of file, the counts
-    /// and the names of the fields that were missing or found in their
-    /// place. It is in English, the language of OTTY's issues, and holds
-    /// no key, token or text of a session.
+    /// makers of OTTY or of the plugin that reads the files: the agent
+    /// named `agent`, its version, the plugin, its version, repository and
+    /// part when a plugin reads them, the `folder` of the profile as the
+    /// user reads it, the kind of file, the counts and the names of the
+    /// fields that were missing or found in their place. It is in
+    /// English, the language of OTTY's issues, and holds no key, token or
+    /// text of a session.
     ///
     /// ```
     /// use otty_agents::fixtures::format_change;
@@ -210,7 +277,8 @@ impl FormatChange {
     pub fn report(&self, agent: &str, folder: &str) -> String {
         let counts = &self.counts;
         let version = counts.version().unwrap_or("not written in the files");
-        let missing: Vec<&str> = counts.missing.iter().copied().collect();
+        let missing: Vec<&str> =
+            counts.missing.iter().map(AsRef::as_ref).collect();
         let fields: Vec<&str> =
             counts.fields.iter().map(String::as_str).collect();
 
@@ -220,6 +288,11 @@ impl FormatChange {
             format!("Agent: {agent}"),
             format!("Version: {version}"),
             format!("Tested up to: {}", self.format.tested_version),
+        ];
+        if let Some(part) = &self.format.plugin {
+            lines.extend(part.report_lines());
+        }
+        lines.extend([
             format!("Folder: {folder}"),
             format!("File kind: {}", self.format.file_kind),
             format!(
@@ -227,7 +300,7 @@ impl FormatChange {
                 counts.seen, counts.understood
             ),
             format!("Missing or changed: {}", missing.join(", ")),
-        ];
+        ]);
         if !fields.is_empty() {
             lines.push(format!("Fields found there: {}", fields.join(", ")));
         }
@@ -258,6 +331,12 @@ pub(crate) fn format_change<'a>(
         format,
         counts: newest,
     })
+}
+
+/// Whether `path`, a name a plugin gave, is the name of a field or names
+/// of fields joined by `.`, such as `message.usage`, and not data.
+fn is_field_path(path: &str) -> bool {
+    path.split('.').all(is_field_name)
 }
 
 /// Whether `name`, a key of a record, is the name of a field and not data:
@@ -408,5 +487,72 @@ mod tests {
         assert!(!is_field_name("/home/user/project/file.rs"));
         assert!(!is_field_name("a key with spaces"));
         assert!(!is_field_name(&"x".repeat(41)));
+    }
+    fn plugin_part() -> PluginPart {
+        PluginPart::new(
+            "example",
+            "Example",
+            "0.1.0",
+            "https://github.com/otty-shell/otty-plugin-example",
+            "example-agent",
+        )
+    }
+
+    /// Spec "What the UI shows": the report of a change a plugin part saw
+    /// names the plugin, its version, its repository and the part.
+    #[test]
+    fn the_report_of_a_plugin_part_names_the_plugin() {
+        let format = RecordFormat::of_plugin(plugin_part(), Some("1.4.2"));
+        let file = RecordCounts::of_plugin(
+            6,
+            1,
+            Some("1.5.0"),
+            vec!["tokens".to_string()],
+            vec!["usage".to_string()],
+        );
+
+        let change = format_change(format, [&file]).expect("a change");
+        let report = change.report("Example Agent", "~/.example-agent");
+
+        assert_eq!(change.plugin(), Some(&plugin_part()));
+        assert_eq!(change.tested_version(), "1.4.2");
+        for line in [
+            "Agent: Example Agent",
+            "Version: 1.5.0",
+            "Tested up to: 1.4.2",
+            "Plugin: example 0.1.0",
+            "Repository: https://github.com/otty-shell/otty-plugin-example",
+            "Part: example-agent",
+            "Records: 6 seen, 1 understood",
+            "Missing or changed: tokens",
+            "Fields found there: usage",
+        ] {
+            assert!(report.contains(line), "{line} in {report}");
+        }
+    }
+
+    /// A plugin is not trusted to give only names: what does not look
+    /// like the name of a field is left out of the report.
+    #[test]
+    fn a_plugin_gives_only_names_of_fields_to_the_report() {
+        let file = RecordCounts::of_plugin(
+            5,
+            0,
+            None,
+            vec!["message.usage".to_string(), "sk-ant 123 secret".to_string()],
+            vec!["usage".to_string(), "/home/user/secret".to_string()],
+        );
+
+        let change = format_change(
+            RecordFormat::of_plugin(plugin_part(), None),
+            [&file],
+        )
+        .expect("a change");
+        let report = change.report("Example Agent", "~/.example-agent");
+
+        assert!(report.contains("Missing or changed: message.usage"));
+        assert!(report.contains("Fields found there: usage"));
+        assert!(report.contains("Tested up to: not given"));
+        assert!(!report.contains("secret"), "{report}");
     }
 }

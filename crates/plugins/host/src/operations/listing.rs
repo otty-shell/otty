@@ -144,7 +144,7 @@ impl Listing<'_> {
 /// `/home/user/.agent/sessions/*.jsonl`, that the part may read, read
 /// with its keys replaced, or query; at most [`MOST_FILES`]. A glob that
 /// is not absolute or holds `..` is refused.
-pub(super) fn list(
+pub(crate) fn list(
     permissions: &Permissions,
     env: &Environment,
     glob: &str,

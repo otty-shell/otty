@@ -1,7 +1,8 @@
 //! Values for the tests of the crates that use this one, behind the
 //! `fixtures` feature: the answer of a walk over made-up sources, the
 //! file a price source keeps its copy in, a change of the format of the
-//! session files, and the keyring entry of Goose.
+//! session files, also one a plugin part saw, and the keyring entry of
+//! Goose.
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,7 @@ use crate::price_source::PriceSource;
 use crate::record_format::{
     FormatChange, RecordCounts, RecordFormat, format_change as judged,
 };
+use crate::registry::PluginPart;
 use crate::source_id::SourceId;
 use crate::walk::{Answer, SourceFailure, walk};
 
@@ -90,6 +92,38 @@ pub fn format_change(
     }
 
     judged(format, [&counts]).expect("too few records are understood")
+}
+
+/// A change of the format of made-up session files read by the agent
+/// part `example-agent` of the plugin Example 0.1.0, tested up to 1.4.2:
+/// the newest files hold `seen` records, none understood, and name the
+/// agent's `version`.
+///
+/// ```
+/// use otty_agents::fixtures::plugin_format_change;
+///
+/// let change = plugin_format_change("1.5.0", 6);
+///
+/// assert_eq!(change.plugin().map(|part| part.name()), Some("Example"));
+/// ```
+pub fn plugin_format_change(version: &str, seen: u64) -> FormatChange {
+    let part = PluginPart::new(
+        "example",
+        "Example",
+        "0.1.0",
+        "https://github.com/otty-shell/otty-plugin-example",
+        "example-agent",
+    );
+    let format = RecordFormat::of_plugin(part, Some("1.4.2"));
+    let counts = RecordCounts::of_plugin(
+        seen,
+        0,
+        Some(version),
+        vec!["tokens".to_string()],
+        Vec::new(),
+    );
+
+    judged(format, [&counts]).expect("no record is understood")
 }
 
 /// The keyring entry of Goose, as [`keyring_entries`] lists it when Goose

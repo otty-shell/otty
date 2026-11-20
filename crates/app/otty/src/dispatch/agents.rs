@@ -99,6 +99,7 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::LoadAccountNumbers { account, place } => {
                 agents_io::load_account_numbers(
                     app.agents.known_agents(),
+                    &app.plugin_providers,
                     account,
                     place,
                     app.shell_session.program(),
