@@ -116,11 +116,17 @@ interface agent {
     reasoning: u64,
   }
 
-  /// One answer of the model.
+  /// One answer of the model: a fact, as the agent wrote it. The host
+  /// makes every total from these rows: the tokens of a day, of a
+  /// project, of a session, their money and their accounts.
   record answer {
     /// What tells this answer from the others; the host counts answers
     /// with one identity once.
     identity: option<string>,
+    /// The id of the session it was given in, as `read-sessions` names
+    /// it, when the agent records it; the host sums the numbers of a
+    /// session from the answers that name it.
+    session: option<string>,
     at-ms: s64,
     model: option<string>,
     provider: option<provider-ref>,
@@ -150,28 +156,6 @@ interface agent {
     records: record-counts,
   }
 
-  /// The tokens of one model.
-  record model-tokens {
-    model: string,
-    tokens: token-count,
-    answers: u64,
-  }
-
-  /// What the files of one session tell.
-  record session-stats {
-    started-ms: option<s64>,
-    last-active-ms: option<s64>,
-    messages: u64,
-    models: list<model-tokens>,
-  }
-
-  /// What the files of one project folder tell over the whole history.
-  record project-stats {
-    first-ms: option<s64>,
-    last-ms: option<s64>,
-    models: list<model-tokens>,
-  }
-
   /// The agent's config folders on this computer, default first.
   profiles: func(agent: string) -> list<profile-place>;
   /// Whether the profile is logged in.
@@ -197,10 +181,6 @@ interface agent {
   /// limits it gets, or one error; `not-supported` when the agent shows
   /// no limits.
   read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;
-  /// What the files of one session tell.
-  read-session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
-  /// What the files of one project folder tell.
-  read-project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
   /// What the user must do now that a provider refused `login` of the
   /// profile, or it expired, such as run the agent so it renews the
   /// login. None: OTTY says the login was refused, with no button.

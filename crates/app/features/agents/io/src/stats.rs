@@ -1,6 +1,7 @@
-//! The read of the statistics of a session or of a project. It reads the
-//! agents' session files, a project over its whole history, so it runs on a
-//! thread of its own and never on the thread that draws the window.
+//! The read of the statistics of a session or of a project, which OTTY
+//! sums from the answers of the agents' session files over the whole
+//! history, so it runs on a thread of its own and never on the thread that
+//! draws the window.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -244,12 +245,14 @@ mod tests {
         assert_eq!(read.profile, profile);
         assert_eq!(read.session, SessionId::new("c1"));
         let stats = read.stats.expect("the session is read");
-        assert_eq!(stats.messages(), 1);
+        assert_eq!(stats.answers(), 1);
         assert_eq!(stats.tokens(), TokenCount::new(10, 100, 5));
     }
 
+    /// Issue 22: OTTY sums a session from its answers, so a session no
+    /// answer names has none; an agent OTTY does not know reads nothing.
     #[test]
-    fn a_session_with_no_file_or_of_an_unknown_agent_fails_with_a_reason() {
+    fn a_session_with_no_answers_is_empty_and_an_unknown_agent_fails() {
         let home = TempDir::new("agents-stats-gone");
         let profile = claude_with_a_session(&home);
 
@@ -266,7 +269,9 @@ mod tests {
             &utc_now(),
         );
 
-        assert!(gone.stats.is_err(), "{:?}", gone.stats);
+        let gone = gone.stats.expect("a session with no answers");
+        assert_eq!(gone.answers(), 0);
+        assert_eq!(gone.started_at(), None);
         assert!(
             unknown.stats.as_ref().is_err_and(|error| matches!(
                 error,
@@ -349,5 +354,143 @@ mod tests {
             project.as_slice(),
             [AgentsIntent::ProjectStatsLoaded(read)] if read.parts.is_ok()
         ));
+    }
+    /// Issue 22: how long the first session panel, the first project
+    /// panel and a second panel take from the real `~/.codex`, and the
+    /// memory of the process after them. It only reads the folder. Run it
+    /// by hand: `cargo test -p otty-app-agents-io --release
+    /// measure_the_panels -- --ignored --nocapture`, one test at a time.
+    #[test]
+    #[ignore = "reads the real ~/.codex; run by hand"]
+    fn measure_the_panels_of_the_real_codex() {
+        measure_panels(AgentId::new("codex"), "Codex", ".codex");
+    }
+
+    /// [`measure_the_panels_of_the_real_codex`] for the real `~/.claude`.
+    #[test]
+    #[ignore = "reads the real ~/.claude; run by hand"]
+    fn measure_the_panels_of_the_real_claude() {
+        measure_panels(AgentId::new("claude-code"), "Claude Code", ".claude");
+    }
+
+    /// Issue 22: how long a count of the real OpenCode database takes now
+    /// that its whole history is read; the count after a change of the
+    /// database reads it all again, as the first one does.
+    #[test]
+    #[ignore = "reads the real OpenCode data; run by hand"]
+    fn measure_the_answers_of_the_real_opencode() {
+        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
+        let profile = Profile::default_for(
+            AgentId::new("opencode"),
+            "OpenCode",
+            home.join(".local/share/opencode"),
+        );
+        let agents = crate::testing::agents_with_opencode(&home);
+        let agent =
+            otty_agents::agent_of(&agents, profile.agent()).expect("the agent");
+        let counter = agent.spend_counter().expect("a spend counter");
+
+        for read in ["first", "unchanged"] {
+            let started = std::time::Instant::now();
+            let spend = counter.spend(&profile, &utc_now());
+            let took = started.elapsed();
+
+            let today = spend.map(|spend| spend.last_30_days().total());
+            println!("OpenCode: {read} count: {today:?} tokens in {took:?}");
+        }
+        println!("OpenCode: after: {}", memory());
+    }
+
+    /// Prints how long the panels of the newest sessions of the profile
+    /// in `~/<folder>` take, each first one with agents that read nothing
+    /// yet, and the memory of the process after them.
+    fn measure_panels(agent: AgentId, name: &str, folder: &str) {
+        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
+        let profile = Profile::default_for(agent, name, home.join(folder));
+        println!("{name}: before: {}", memory());
+
+        // The sessions are read at the start of Agents mode, before any
+        // panel can open.
+        let agents = agents_with_plugins(&home);
+        let started = std::time::Instant::now();
+        let sessions = newest_sessions(&agents, &profile);
+        println!(
+            "{name}: sessions read: {} sessions in {:?}",
+            sessions.len(),
+            started.elapsed()
+        );
+        let (first, second) = (sessions[0].clone(), sessions[1].clone());
+
+        let started = std::time::Instant::now();
+        let session = otty_agents::read_session_stats(
+            &agents,
+            &profile,
+            first.id(),
+            &utc_now(),
+        )
+        .expect("the session");
+        println!(
+            "{name}: (a) first session panel: {} answers in {:?}",
+            session.answers(),
+            started.elapsed()
+        );
+        drop(agents);
+
+        let agents = agents_with_plugins(&home);
+        let _ = newest_sessions(&agents, &profile);
+        let started = std::time::Instant::now();
+        let project =
+            otty_agents::read_project_stats(&agents, &profile, first.folder())
+                .expect("the project");
+        println!(
+            "{name}: (b) first project panel: {} tokens in {:?}",
+            project.tokens().total(),
+            started.elapsed()
+        );
+
+        let started = std::time::Instant::now();
+        let session = otty_agents::read_session_stats(
+            &agents,
+            &profile,
+            second.id(),
+            &utc_now(),
+        )
+        .expect("the second session");
+        println!(
+            "{name}: (c) second panel: {} answers in {:?}",
+            session.answers(),
+            started.elapsed()
+        );
+        println!("{name}: after: {}", memory());
+    }
+
+    /// The sessions of `profile`, the newest first.
+    fn newest_sessions(
+        agents: &[Box<dyn Agent>],
+        profile: &Profile,
+    ) -> Vec<otty_agents::AgentSession> {
+        let agent =
+            otty_agents::agent_of(agents, profile.agent()).expect("the agent");
+        let mut sessions =
+            otty_agents::read_sessions(&agent.session_sources(), profile)
+                .expect("the sessions")
+                .into_value();
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.changed_at()));
+        sessions
+    }
+
+    /// The peak and the resident memory of this process.
+    fn memory() -> String {
+        let status =
+            std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+
+        status
+            .lines()
+            .filter(|line| {
+                line.starts_with("VmHWM") || line.starts_with("VmRSS")
+            })
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }

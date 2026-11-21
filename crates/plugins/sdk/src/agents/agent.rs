@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::agents::{
     Answers, Limits, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats,
+    ProfileStatus, ReadError, Session,
 };
 use crate::bindings::agents_agent::exports::otty::agents_agent::agent::Guest;
 use crate::{Command, Need};
@@ -79,22 +79,6 @@ pub trait Agent {
         Err(ReadError::NotSupported)
     }
 
-    /// What the files of one session tell. Default: not supported.
-    fn read_session_stats(
-        _profile: &Profile,
-        _session: &str,
-    ) -> Result<SessionStats, ReadError> {
-        Err(ReadError::NotSupported)
-    }
-
-    /// What the files of one project folder tell. Default: not supported.
-    fn read_project_stats(
-        _profile: &Profile,
-        _folder: &str,
-    ) -> Result<ProjectStats, ReadError> {
-        Err(ReadError::NotSupported)
-    }
-
     /// What the user must do now that a provider part refused `login` of
     /// the profile, or saw it expired
     /// ([`ReadError::LoginRefused`]): the provider part does not know
@@ -160,20 +144,6 @@ impl<T: Agent> Guest for AgentExport<T> {
         login: LoginRef,
     ) -> Result<Limits, ReadError> {
         T::read_limits(&profile, &login)
-    }
-
-    fn read_session_stats(
-        profile: Profile,
-        session: String,
-    ) -> Result<SessionStats, ReadError> {
-        T::read_session_stats(&profile, &session)
-    }
-
-    fn read_project_stats(
-        profile: Profile,
-        folder: String,
-    ) -> Result<ProjectStats, ReadError> {
-        T::read_project_stats(&profile, &folder)
     }
 
     fn login_refused(profile: Profile, login: LoginRef) -> Option<Need> {

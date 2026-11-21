@@ -4,8 +4,8 @@ The official OpenCode plugin of OTTY. OTTY has no code for any agent by
 name: this plugin teaches it OpenCode. Its one agent part, `opencode`,
 finds OpenCode's data folder (`~/.local/share/opencode`, or the one
 `XDG_DATA_HOME` names), reads its logins from `auth.json` and from the
-`credential` table of its database, and reads the sessions, the tokens and
-the cost of every answer and the statistics from the database
+`credential` table of its database, and reads the sessions and the tokens
+and the cost of every answer, with its session and project, from the database
 (`opencode.db`, or the one `OPENCODE_DB` names). It has no provider part:
 the accounts of its logins are read by the plugins of their providers.
 

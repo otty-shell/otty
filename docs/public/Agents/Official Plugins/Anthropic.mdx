@@ -11,7 +11,7 @@ Built into OTTY · version 0.2.0 · `github.com/otty-shell/otty-plugin-anthropic
 
 | Part                          | Kind     | Gives                                                                    |
 | ----------------------------- | -------- | ------------------------------------------------------------------------ |
-| [Claude Code](#claude-code-agent) | agent    | Profiles, sessions, tokens, statistics, logins, and the limits of `/usage`. |
+| [Claude Code](#claude-code-agent) | agent    | Profiles, sessions, tokens, logins, and the limits of `/usage`. |
 | [Anthropic](#anthropic-provider)  | provider | The limits of a Claude login and the bill of an organization.            |
 
 The limits of a Claude Code profile come from the [Anthropic part](#anthropic-provider) first.
@@ -25,7 +25,7 @@ admin key, else an [estimate](../../overview/#the-money).
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profiles       | `CLAUDE_CONFIG_DIR` or `~/.claude`, and the folders `~/.claude-<name>` and `~/.claude_<name>` that hold a login or sessions. |
-| Reads          | The session files `projects/**/*.jsonl` (sessions, tokens, the agent's version, statistics); `.claude.json` (the account and email of the login); `settings.json` (`ANTHROPIC_BASE_URL`, to tell whom a key is for). |
+| Reads          | The session files `projects/**/*.jsonl` (sessions, the tokens of each answer with its session and project, the agent's version); `.claude.json` (the account and email of the login); `settings.json` (`ANTHROPIC_BASE_URL`, to tell whom a key is for). |
 | Logins, as handles | `.credentials.json`: `claudeAiOauth.accessToken`, `refreshToken`. `.claude.json` (next to `~/.claude` for the default profile): `primaryApiKey`. `settings.json`: `env.ANTHROPIC_AUTH_TOKEN`, `env.ANTHROPIC_API_KEY`. |
 | Variables      | `CLAUDE_CONFIG_DIR`; `DISABLE_AUTOUPDATER`, passed to the `/usage` run only.                           |
 | Runs           | `claude` in a hidden terminal for `/usage`, see below.                                                 |

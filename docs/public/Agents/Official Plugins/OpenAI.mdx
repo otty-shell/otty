@@ -11,7 +11,7 @@ Built into OTTY · version 0.2.0 · `github.com/otty-shell/otty-plugin-openai`
 
 | Part                       | Kind     | Gives                                                                         |
 | -------------------------- | -------- | ----------------------------------------------------------------------------- |
-| [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens, statistics, logins, and the limits Codex reports. |
+| [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens, logins, and the limits Codex reports. |
 | [OpenAI](#openai-provider) | provider | The limits and credits of a ChatGPT login and the bill of an organization.    |
 
 The limits of a Codex profile come from the [OpenAI part](#openai-provider) first. When it gives
@@ -26,7 +26,7 @@ admin key, else an [estimate](../../overview/#the-money).
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profiles       | `CODEX_HOME` or `~/.codex`, and the folders `~/.codex-<name>` and `~/.codex_<name>` that hold a login or sessions. |
-| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, tokens, the agent's version, statistics, the last limits); `session_index.jsonl` (session names); `config.toml` (`chatgpt_base_url`, `model_provider` and `[model_providers.*]`, to tell whom a login is for). |
+| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, the tokens of each answer with its session and project, the agent's version, the last limits); `session_index.jsonl` (session names); `config.toml` (`chatgpt_base_url`, `model_provider` and `[model_providers.*]`, to tell whom a login is for). |
 | Logins, as handles | `auth.json`: `OPENAI_API_KEY`, `tokens.access_token`, `tokens.id_token`, `tokens.refresh_token`. The part reads the claims of the id token (account, email, plan), never a token. |
 | Variables      | `CODEX_HOME`.                                                                                          |
 | Runs           | `codex -s read-only -a never app-server`, see below. `codex --version` is listed too; OTTY runs it only for a profile whose session files name no version. |

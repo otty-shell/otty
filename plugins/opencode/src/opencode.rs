@@ -3,14 +3,14 @@
 
 use otty_plugin_sdk::agents::{
     Agent, Answers, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats,
+    ProfileStatus, ReadError, Session,
 };
-use otty_plugin_sdk::{Command, HostError, Need};
+use otty_plugin_sdk::{Command, Need};
 
 use crate::database::{Database, database_places};
 use crate::location::{database_of, profiles, start_command};
 use crate::sessions::newest_version;
-use crate::{OpenCode, answers, logins, needs, sessions, stats};
+use crate::{OpenCode, answers, logins, needs, sessions};
 
 impl Agent for OpenCode {
     /// The default data folder; OpenCode has no other.
@@ -74,33 +74,6 @@ impl Agent for OpenCode {
         };
 
         start_command(profile, args)
-    }
-
-    fn read_session_stats(
-        profile: &Profile,
-        session: &str,
-    ) -> Result<SessionStats, ReadError> {
-        let database = database_of(profile).ok_or_else(|| {
-            ReadError::Host(HostError::NotFound(format!(
-                "the session {session}"
-            )))
-        })?;
-
-        stats::session_stats(&database, session)
-    }
-
-    fn read_project_stats(
-        profile: &Profile,
-        folder: &str,
-    ) -> Result<ProjectStats, ReadError> {
-        match database_of(profile) {
-            Some(database) => stats::project_stats(&database, folder),
-            None => Ok(ProjectStats {
-                first_ms: None,
-                last_ms: None,
-                models: Vec::new(),
-            }),
-        }
     }
 
     /// A provider refused a login OpenCode keeps, such as a ChatGPT login
@@ -223,21 +196,17 @@ mod tests {
     }
 
     #[test]
-    fn the_fixture_folder_has_its_sessions_version_and_statistics() {
+    fn the_fixture_folder_has_its_sessions_and_version() {
         let host = host();
         let profile = default_profile(&host);
 
         let items =
             host.place_items(AGENT, &OpenCode::session_places(&profile));
-        let (sessions, version, session, project) = as_part(&host, || {
+        let (sessions, version) = as_part(&host, || {
             (
                 OpenCode::read_sessions(&profile, &items[0])
                     .expect("the sessions"),
                 OpenCode::version(&profile),
-                OpenCode::read_session_stats(&profile, SHOP_SESSION)
-                    .expect("the session"),
-                OpenCode::read_project_stats(&profile, "/home/dev/shop")
-                    .expect("the project"),
             )
         });
 
@@ -248,13 +217,11 @@ mod tests {
         assert!(items.iter().all(|item| item.kind == PlaceKind::Database));
         assert_eq!(ids, ["ses_blog", SHOP_SESSION]);
         assert_eq!(version.as_deref(), Some("2.3.2"));
-        assert_eq!(session.messages, 1);
-        assert_eq!(session.models[0].model, "gpt-5.5");
-        assert_eq!(project.models[0].tokens.input, 1210);
     }
 
     /// The host walks the spend places, the database and its log, and
-    /// asks for the answers of what changed.
+    /// asks for the answers of what changed: every answer of the history,
+    /// the old one too, each naming its session.
     #[test]
     fn the_answers_of_the_fixture_database_are_read() {
         let host = host().with_now_ms(millis(NOW));
@@ -265,14 +232,19 @@ mod tests {
             OpenCode::read_answers(&profile, &items[0]).expect("the answers")
         });
 
-        assert_eq!(answers.answers.len(), 2);
+        assert_eq!(answers.answers.len(), 3);
+        assert!(
+            answers.answers.iter().any(|answer| {
+                answer.session.as_deref() == Some(SHOP_SESSION)
+            })
+        );
         assert!(
             answers
                 .answers
                 .iter()
                 .all(|answer| answer.cost_microdollars.is_some())
         );
-        assert_eq!((answers.records.seen, answers.records.understood), (2, 2));
+        assert_eq!((answers.records.seen, answers.records.understood), (3, 3));
     }
 
     /// A database kept in memory has no file: nothing to read.
@@ -281,16 +253,14 @@ mod tests {
         let host = host().with_var(DATABASE_VARIABLE, ":memory:");
         let profile = default_profile(&host);
 
-        let (places, session_places, project) = as_part(&host, || {
+        let (places, session_places) = as_part(&host, || {
             (
                 OpenCode::spend_places(&profile),
                 OpenCode::session_places(&profile),
-                OpenCode::read_project_stats(&profile, "/home/dev/shop"),
             )
         });
 
         assert!(places.is_empty());
         assert!(session_places.is_empty());
-        assert_eq!(project.map(|stats| stats.models.len()), Ok(0));
     }
 }

@@ -1407,8 +1407,6 @@ pub enum Key {
     AgentsStatsFirstActivity,
     /// Label of how long a session ran, in its statistics.
     AgentsStatsLength,
-    /// Label of how many messages the user wrote in a session.
-    AgentsStatsMessages,
     /// Label of how many answers the model gave in a session.
     AgentsStatsAnswers,
     /// Title of the table of the sessions and tokens of each profile in the statistics of a project.
@@ -1982,7 +1980,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 927] = [
+    pub(super) const ALL: [Self; 926] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2627,7 +2625,6 @@ impl Key {
         Self::AgentsStatsLastActivity,
         Self::AgentsStatsFirstActivity,
         Self::AgentsStatsLength,
-        Self::AgentsStatsMessages,
         Self::AgentsStatsAnswers,
         Self::AgentsStatsByProfile,
         Self::AgentsStatsLimits,

@@ -1,6 +1,6 @@
 //! The official OpenAI plugin of OTTY. Its agent part `codex` reads
 //! Codex: its config folders (profiles), the login of each, its sessions,
-//! the tokens of its answers, its statistics and the limits Codex tells
+//! the tokens of its answers and the limits Codex tells
 //! (`codex app-server` and the records of its session files). Codex keeps
 //! everything in its config folder, `CODEX_HOME` or `~/.codex`: the login
 //! in `auth.json`, one file for each session in
@@ -49,7 +49,6 @@ mod session_index;
 mod session_limits;
 mod sessions;
 mod spend_file;
-mod stats;
 #[cfg(test)]
 mod testing;
 mod timestamp;

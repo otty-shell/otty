@@ -23,13 +23,14 @@ use otty_plugin_sdk::files::{self, BATCH_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::project_folder::{fallback_project, projects_folder};
+use crate::project_folder::{
+    fallback_project, projects_folder, session_of_file,
+};
 use crate::session_file::has_marker;
 use crate::timestamp::millis_of;
 
 /// What marks a line that may be an answer of the model.
-pub(crate) const ANSWER_MARKERS: [&[u8]; 2] =
-    [b"\"usage\"", b"\"type\":\"assistant\""];
+const ANSWER_MARKERS: [&[u8]; 2] = [b"\"usage\"", b"\"type\":\"assistant\""];
 
 /// What marks a line that may tell the working folder.
 const FOLDER_MARKER: &[u8] = b"\"cwd\"";
@@ -158,12 +159,14 @@ impl SpendFile {
         self.answers.extend(answer_of(record));
     }
 
-    /// The answers for OTTY, each under the file's working folder, else
-    /// `fallback_project`, and the provider `provider`.
+    /// The answers for OTTY, each in the session `session`, under the
+    /// file's working folder, else `fallback_project`, and the provider
+    /// `provider`.
     pub(crate) fn into_answers(
         self,
         fallback_project: &str,
         provider: Option<&ProviderRef>,
+        session: Option<&str>,
     ) -> Answers {
         let project =
             self.project.unwrap_or_else(|| fallback_project.to_string());
@@ -172,6 +175,7 @@ impl SpendFile {
             .answers
             .into_iter()
             .map(|answer| Answer {
+                session: session.map(str::to_string),
                 project: Some(project.clone()),
                 provider: provider.cloned(),
                 ..answer
@@ -224,20 +228,11 @@ pub(crate) fn read_answers(
         offset = batch.next_offset;
     }
 
-    let fallback = fallback_project(&projects_folder(folder), path);
+    let projects = projects_folder(folder);
+    let fallback = fallback_project(&projects, path);
+    let session = session_of_file(&projects, path);
 
-    Ok(file.into_answers(&fallback, provider))
-}
-
-/// The answer on `line` of a session file, when it is an answer of the
-/// model with a time and some tokens, read the same way as the lines of
-/// [`SpendFile`]; with no project and no provider.
-pub(crate) fn answer_on_line(line: &[u8]) -> Option<Answer> {
-    if !is_answer_line(line) {
-        return None;
-    }
-
-    serde_json::from_slice(line).ok().and_then(answer_of)
+    Ok(file.into_answers(&fallback, provider, session.as_deref()))
 }
 
 /// Whether `line` may be an answer of the model.
@@ -337,6 +332,7 @@ fn answer_of(record: Record) -> Option<Answer> {
 
     Some(Answer {
         identity,
+        session: None,
         at_ms,
         model: message.model,
         provider: None,
@@ -388,7 +384,7 @@ mod tests {
             file.add_line(line.as_bytes());
         }
 
-        file.into_answers("/fallback", None)
+        file.into_answers("/fallback", None, None)
     }
 
     #[test]
@@ -562,6 +558,10 @@ mod tests {
         for answer in &spend.answers {
             assert_eq!(answer.project.as_deref(), Some("/home/dev/shop"));
             assert_eq!(answer.provider.as_ref(), Some(&anthropic));
+            assert_eq!(
+                answer.session.as_deref(),
+                Some("1f0c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b")
+            );
         }
     }
 
@@ -579,6 +579,11 @@ mod tests {
 
         assert_eq!(spend.answers.len(), 1);
         assert_eq!(spend.answers[0].project.as_deref(), Some("/home/dev/shop"));
+        // The answers of a helper agent count in the session that ran it.
+        assert_eq!(
+            spend.answers[0].session.as_deref(),
+            Some("1f0c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b")
+        );
     }
 
     #[test]

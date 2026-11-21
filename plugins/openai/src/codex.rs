@@ -3,8 +3,7 @@
 
 use otty_plugin_sdk::agents::{
     Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, PlaceKind,
-    Profile, ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
-    SessionStats,
+    Profile, ProfilePlace, ProfileStatus, ReadError, Session,
 };
 use otty_plugin_sdk::{Command, KeyPlace, Need, clock, keys};
 
@@ -15,7 +14,7 @@ use crate::sessions::session_file_globs;
 use crate::token_expiry::expires_at_ms;
 use crate::{
     OpenAi, accounts, app_server, detect, needs, session_limits, sessions,
-    spend_file, stats, version,
+    spend_file, version,
 };
 
 /// The program, looked up on `PATH`.
@@ -113,20 +112,6 @@ impl Agent for OpenAi {
         now.or_else(|error| {
             session_limits::read_limits(&profile.folder).map_err(|_| error)
         })
-    }
-
-    fn read_session_stats(
-        profile: &Profile,
-        session: &str,
-    ) -> Result<SessionStats, ReadError> {
-        stats::session_stats(&profile.folder, session)
-    }
-
-    fn read_project_stats(
-        profile: &Profile,
-        folder: &str,
-    ) -> Result<ProjectStats, ReadError> {
-        stats::project_stats(&profile.folder, folder)
     }
 
     /// A provider part refused the ChatGPT login of the profile, or saw it

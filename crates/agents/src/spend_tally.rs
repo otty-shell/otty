@@ -106,10 +106,25 @@ pub(crate) fn tally<'a>(
     Spend::new(days, sorted_projects(projects)).with_hours(hours)
 }
 
+/// The tokens of `answers` by provider, account and model, the most
+/// first, counted as [`tally`] counts the models of a day.
+pub(crate) fn models_of<'a>(
+    answers: impl Iterator<Item = &'a CountedAnswer>,
+) -> Vec<ModelTokens> {
+    let mut models = HashMap::new();
+    for answer in answers {
+        count_answer(&mut models, answer, None);
+    }
+
+    let mut models: Vec<ModelTokens> = models.into_values().collect();
+    sort_models(&mut models);
+    models
+}
+
 /// The answers of `files` with their file, each answer once: of the
 /// answers with the same identity, the one with the most output tokens.
 /// An answer with no identity is always counted.
-fn once_each<'a>(
+pub(crate) fn once_each<'a>(
     files: impl Iterator<Item = &'a FileSpend>,
 ) -> Vec<(&'a FileSpend, &'a CountedAnswer)> {
     let mut by_identity: HashMap<u64, (&FileSpend, &CountedAnswer)> =

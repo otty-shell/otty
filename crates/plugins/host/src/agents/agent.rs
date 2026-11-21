@@ -14,9 +14,9 @@ use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
-    Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens, Place,
-    PlaceItem, PlaceKind, Profile, ProfilePlace, ProfileStatus, ProjectStats,
-    ProviderRef, RecordCounts, Session, SessionStats, TokenCount,
+    Answer, Answers, Billing, Connection, Login, LoginRef, Place, PlaceItem,
+    PlaceKind, Profile, ProfilePlace, ProfileStatus, ProviderRef, RecordCounts,
+    Session, TokenCount,
 };
 use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Guest, GuestIndices,
@@ -200,28 +200,6 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         }
 
         Ok(answer)
-    }
-
-    /// What the files of one session tell.
-    pub fn read_session_stats(
-        &mut self,
-        profile: &Profile,
-        session: &str,
-    ) -> Result<Result<SessionStats, ReadError>, CallError> {
-        self.call(CallKind::Reading, |guest, store| {
-            guest.call_read_session_stats(store, profile, session)
-        })
-    }
-
-    /// What the files of one project folder tell.
-    pub fn read_project_stats(
-        &mut self,
-        profile: &Profile,
-        folder: &str,
-    ) -> Result<Result<ProjectStats, ReadError>, CallError> {
-        self.call(CallKind::Reading, |guest, store| {
-            guest.call_read_project_stats(store, profile, folder)
-        })
     }
 
     /// What the user must do now that a provider refused `login` of

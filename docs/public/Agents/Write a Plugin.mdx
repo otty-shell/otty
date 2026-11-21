@@ -45,6 +45,12 @@ JSON shapes, SQL, screen text, URLs) lives in the plugin. OTTY does the generic 
 and re-reading only the changed ones, adding up tokens, counting an answer once, the "format
 changed" verdict, prices, joining accounts and the whole interface.
 
+**A plugin gives rows, OTTY sums.** A row is one fact as the agent wrote it: one answer of the model
+with its time, model, provider, login, session, project and tokens; a limit or a balance a
+provider told; a bill. Every total is OTTY's: today, this week, by project, by model, money, and
+the numbers of one session or one project in their statistics. So your plugin never adds tokens
+up, and the statistics always agree with the totals.
+
 ## Start from the template
 
 Copy `plugins/template/` of the [OTTY repository](https://github.com/otty-shell/otty) into a new
@@ -172,10 +178,9 @@ A plugin with only agent parts and texts only in English writes
 | `session_places(profile)`                 | File globs or a database that hold the sessions. OTTY re-reads only what changed. |
 | `read_sessions(profile, item)`            | What one file tells about its sessions: the id, and the folder and the title when the file names them. |
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
-| `read_answers(profile, item)`             | Every answer of one file with its tokens and an identity, and the records seen and understood. |
+| `read_answers(profile, item)`             | Every answer of one file, of the whole history, with its tokens, an identity, and the session and the project it was given in, and the records seen and understood. OTTY makes the statistics of a session and of a project from these answers, reading for them only the files your session places tie to that session or project. |
 | `launch(profile, session)`                | The commands for New session and Continue.                          |
 | `read_limits(profile, login)`             | Optional: the limits the agent itself shows for a login. Where they come from is the plugin's business: try your own program, files or servers in your order, and return the first limits or one error. OTTY asks the provider part of the login first, and this only when that gives nothing. |
-| `read_session_stats`, `read_project_stats` | Optional: statistics of a session or a project.                   |
 | `login_refused(profile, login)`           | Optional: the [need](#a-refused-login) to show when a provider part refused a login this profile keeps. |
 
 | `Provider`                        | Gives OTTY                                                               |
@@ -193,6 +198,12 @@ record that names them. So a file may tell only a part, such as an index of titl
 its session files and `session_index.jsonl` as session places. A session no file gives a folder
 is not listed, and one with no title shows its id. For a database, return every session it holds
 from each of its files (the database and its write-ahead log).
+
+Make every answer file a session place too, even one that only adds to a session, such as the file
+of a helper agent: from it return just the session id, with no folder and no title. The statistics
+of a session or a project read only the answer files tied to their sessions; while one answer file
+is no session place, OTTY can not tell whose answers it holds and reads the whole history for every
+panel, which is slow on a large history.
 
 `key` is the account's own key; `given` holds the keys the user gave for the account after one of
 your needs asked for them ([below](#keys-you-ask-for)). An optional function returns "not supported"
@@ -349,7 +360,7 @@ import only `wasi:cli`, `wasi:io` and OTTY's own interfaces, so `std::fs`, `std:
 
 Each read gets a new instance of the plugin, so nothing is kept between calls. A call has 2 seconds
 for the quick functions (`profiles`, `detect`, `version`, `logins`, `launch`), 120 seconds for
-reading answers, sessions and statistics, and 90 seconds for limits and provider calls, with at most
+reading answers and sessions, and 90 seconds for limits and provider calls, with at most
 64 MiB of memory. A call that traps or runs out of time fails alone; three failures in a row pause
 the part.
 

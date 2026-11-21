@@ -7,7 +7,7 @@
 //! session id is joined into one session, so a file may tell only part of
 //! it, such as an index of the sessions' titles.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -45,6 +45,39 @@ impl FoundSession {
     /// The same session, titled `title`.
     pub(crate) fn with_title(self, title: Option<String>) -> Self {
         Self { title, ..self }
+    }
+}
+
+/// The files of the session places of one config folder as the last read
+/// of the sessions kept them, and those of them tied to the sessions of
+/// one statistics panel (issue 22).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PanelFiles {
+    session_files: HashSet<PathBuf>,
+    tied: HashSet<PathBuf>,
+}
+
+impl PanelFiles {
+    /// The files of `answer_files`, the files of the spend places, that
+    /// the panel reads: the ones tied to its sessions.
+    ///
+    /// When an answer file is no session file, every answer file is read,
+    /// over the whole history: no read of the sessions tells whose
+    /// answers that file holds, so it may hold answers of any session,
+    /// and leaving it out would show a session or a project smaller than
+    /// it is.
+    pub(crate) fn of(&self, answer_files: Vec<PathBuf>) -> Vec<PathBuf> {
+        let all_are_session_files = answer_files
+            .iter()
+            .all(|path| self.session_files.contains(path));
+        if !all_are_session_files {
+            return answer_files;
+        }
+
+        answer_files
+            .into_iter()
+            .filter(|path| self.tied.contains(path))
+            .collect()
     }
 }
 
@@ -109,6 +142,40 @@ pub(crate) fn read_session_files(
     memory.keep(config_dir, read);
 
     Ok(sessions)
+}
+
+/// The files of `config_dir` that the last read of the sessions kept in
+/// `memory`, and those that tell about a session `wanted` picks among the
+/// sessions the list shows, such as the one of a session panel or those
+/// in the folder of a project panel.
+pub(crate) fn panel_files(
+    memory: &FileMemory<Vec<FoundSession>>,
+    config_dir: &Path,
+    wanted: impl Fn(&AgentSession) -> bool,
+) -> PanelFiles {
+    memory.with(config_dir, |files| {
+        let sessions = joined(files.values().map(|file| file.content()));
+        let ids: HashSet<&str> = sessions
+            .iter()
+            .filter(|session| wanted(session))
+            .map(|session| session.id().as_str())
+            .collect();
+
+        let tied = files
+            .iter()
+            .filter(|(_, file)| {
+                file.content()
+                    .iter()
+                    .any(|found| ids.contains(found.id.as_str()))
+            })
+            .map(|(path, _)| path.clone())
+            .collect();
+
+        PanelFiles {
+            session_files: files.keys().cloned().collect(),
+            tied,
+        }
+    })
 }
 
 /// The sessions `files` tell about, one for each id, newest first; of two
@@ -386,6 +453,69 @@ mod tests {
 
         assert_eq!(ids(&sessions), ["a"]);
         assert_eq!(sessions[0].title(), "a");
+    }
+
+    /// Issue 22: a session panel reads only the files the reads of the
+    /// sessions tied to its session, and a project panel those of the
+    /// sessions in its folder; the index that only titles them is not an
+    /// answer file, so it is not read.
+    #[test]
+    fn a_panel_reads_only_the_answer_files_of_its_sessions() {
+        let folder = Folder::new();
+        let names = ["a.jsonl", "a-helper.jsonl", "b.jsonl", "c.jsonl"];
+        folder.write("a.jsonl", &["a /shop - 10"], NOW);
+        folder.write("a-helper.jsonl", &["a - - 12"], NOW);
+        folder.write("b.jsonl", &["b /shop - 20"], NOW);
+        folder.write("c.jsonl", &["c /blog - 30"], NOW);
+        folder.write("index.jsonl", &["a - Fix 15", "c - Notes 35"], NOW);
+        let _ = folder.read(&[names.as_slice(), &["index.jsonl"]].concat());
+        let answer_files = || names.map(|name| folder.path(name)).to_vec();
+
+        let session = panel_files(&folder.memory, folder.temp.path(), |s| {
+            s.id().as_str() == "a"
+        });
+        let project = panel_files(&folder.memory, folder.temp.path(), |s| {
+            s.folder() == Path::new("/shop")
+        });
+
+        let mut session = session.of(answer_files());
+        session.sort();
+        let mut project = project.of(answer_files());
+        project.sort();
+        assert_eq!(
+            session,
+            [folder.path("a-helper.jsonl"), folder.path("a.jsonl")]
+        );
+        assert_eq!(
+            project,
+            [
+                folder.path("a-helper.jsonl"),
+                folder.path("a.jsonl"),
+                folder.path("b.jsonl")
+            ]
+        );
+    }
+
+    /// Issue 22: when an answer file is no session file, no read of the
+    /// sessions tells whose answers it holds, so a panel reads every
+    /// answer file.
+    #[test]
+    fn an_answer_file_that_is_no_session_file_makes_a_panel_read_all() {
+        let folder = Folder::new();
+        folder.write("a.jsonl", &["a /shop - 10"], NOW);
+        folder.write("b.jsonl", &["b /blog - 20"], NOW);
+        let _ = folder.read(&["a.jsonl", "b.jsonl"]);
+        let answer_files = vec![
+            folder.path("a.jsonl"),
+            folder.path("b.jsonl"),
+            folder.path("helper.jsonl"),
+        ];
+
+        let session = panel_files(&folder.memory, folder.temp.path(), |s| {
+            s.id().as_str() == "a"
+        });
+
+        assert_eq!(session.of(answer_files.clone()), answer_files);
     }
 
     #[test]

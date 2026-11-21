@@ -69,15 +69,6 @@ pub(crate) fn session_files(folder: &str) -> Result<Vec<FileInfo>, HostError> {
     files_named(folder, "*")
 }
 
-/// The session files of the profile in `folder` that can hold the session
-/// `session`: Codex ends the name of a session file with the session's id.
-pub(crate) fn files_of_session(
-    folder: &str,
-    session: &str,
-) -> Result<Vec<FileInfo>, HostError> {
-    files_named(folder, &format!("*{}", escaped(session)))
-}
-
 /// `found` with the file that changed last first. Of two files that
 /// changed at the same time, the one with the later path comes first.
 pub(crate) fn newest_first(mut found: Vec<FileInfo>) -> Vec<FileInfo> {
@@ -295,32 +286,6 @@ mod tests {
 
         assert!(nomode.iter().all(|item| is_index(&item.file.path)));
         assert!(gone.is_empty());
-    }
-
-    #[test]
-    fn the_files_of_a_session_are_found_by_its_id() {
-        let host = host();
-        let folder = path(&host, ".codex");
-
-        let found = as_part(&host, || files_of_session(&folder, BLOG_SESSION))
-            .expect("the listing");
-
-        let mut names: Vec<String> = found
-            .iter()
-            .map(|file| file.path.replace(&folder, ""))
-            .collect();
-        names.sort();
-        assert_eq!(
-            names,
-            [
-                format!(
-                    "/archived_sessions/rollout-2026-11-15T09-00-00-{BLOG_SESSION}.jsonl"
-                ),
-                format!(
-                    "/sessions/2026/11/15/rollout-2026-11-15T09-00-00-{BLOG_SESSION}.jsonl.zst"
-                ),
-            ]
-        );
     }
 
     #[test]

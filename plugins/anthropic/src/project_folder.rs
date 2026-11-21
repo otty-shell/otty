@@ -33,21 +33,6 @@ pub(crate) fn project_folder_name(working_folder: &str) -> Option<String> {
     (name.len() <= LONGEST_FOLDER_NAME).then_some(name)
 }
 
-/// The names a project folder of `working_folder` can have: the one
-/// Claude Code gives it, and the one [`decoded_folder`] would guess back
-/// as that folder, which a folder with a `-` in its path has not.
-pub(crate) fn project_folder_names(working_folder: &str) -> Vec<String> {
-    let mut names: Vec<String> =
-        project_folder_name(working_folder).into_iter().collect();
-
-    let guessed_back = working_folder.replace('/', "-");
-    if !working_folder.contains('-') && !names.contains(&guessed_back) {
-        names.push(guessed_back);
-    }
-
-    names
-}
-
 /// The working folder guessed from the name of its project folder `name`.
 ///
 /// The guess turns every `-` back into `/`, so it is right only for a
@@ -71,6 +56,26 @@ pub(crate) fn fallback_project(projects: &str, path: &str) -> String {
     decoded_folder(&name)
 }
 
+/// The id of the session the file at `path` belongs to, inside
+/// `projects`, the `projects` folder of its profile: the name of a session
+/// file right in its project folder, without `.jsonl`, or, for a file of a
+/// helper agent deeper in, the folder named after the session that ran it.
+/// `None` for a file outside a project folder.
+pub(crate) fn session_of_file(projects: &str, path: &str) -> Option<String> {
+    let inside = Path::new(path).strip_prefix(projects).ok()?;
+    let mut parts = inside.components().skip(1);
+    let first = Path::new(parts.next()?.as_os_str());
+
+    let is_session_file = parts.next().is_none();
+    let name = if is_session_file {
+        first.file_stem()?
+    } else {
+        first.as_os_str()
+    };
+
+    Some(name.to_string_lossy().into_owned())
+}
+
 /// The name of the folder `path` is right in, such as the project folder
 /// of a session file.
 pub(crate) fn parent_name(path: &str) -> String {
@@ -84,6 +89,21 @@ pub(crate) fn parent_name(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_belongs_to_the_session_it_or_its_folder_is_named_after() {
+        let projects = "/home/dev/.claude/projects";
+        let main = format!("{projects}/-home-dev-shop/s1.jsonl");
+        let helper = format!("{projects}/-home-dev-shop/s1/subagents/a.jsonl");
+
+        assert_eq!(session_of_file(projects, &main).as_deref(), Some("s1"));
+        assert_eq!(session_of_file(projects, &helper).as_deref(), Some("s1"));
+        assert_eq!(session_of_file(projects, "/elsewhere/s2.jsonl"), None);
+        assert_eq!(
+            session_of_file(projects, &format!("{projects}/x.jsonl")),
+            None
+        );
+    }
 
     #[test]
     fn the_folder_name_replaces_every_character_but_letters_and_digits() {
@@ -110,20 +130,6 @@ mod tests {
         let long = format!("/home/dev/{}", "a".repeat(200));
 
         assert_eq!(project_folder_name(&long), None);
-        assert_eq!(project_folder_names(&long), [long.replace('/', "-")]);
-    }
-
-    #[test]
-    fn a_project_folder_is_found_by_its_name_or_by_the_guess() {
-        assert_eq!(
-            project_folder_names("/home/dev/.otty"),
-            ["-home-dev--otty", "-home-dev-.otty"]
-        );
-        assert_eq!(project_folder_names("/home/dev/docs"), ["-home-dev-docs"]);
-        assert_eq!(
-            project_folder_names("/home/dev/my-app"),
-            ["-home-dev-my-app"]
-        );
     }
 
     #[test]

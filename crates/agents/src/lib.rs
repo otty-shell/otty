@@ -36,8 +36,10 @@
 //! fails with [`SourceError::FormatChanged`], whose [`FormatChange`] names
 //! the agent's version and gives a report with no value of a record.
 //!
-//! An agent's [`StatsSource`] reads the [`SessionStats`] of one session and
-//! the [`ProjectStats`] of one project folder over the whole history;
+//! An agent's [`StatsSource`] makes the [`SessionStats`] of one session and
+//! the [`ProjectStats`] of one project folder over the whole history: a
+//! plugin part gives the answers as rows, each naming its session and
+//! project, and OTTY sums them with the same dedupe as the totals;
 //! [`MoneyTotal::of_models`] prices their tokens.
 //!
 //! Limits, credits and bills belong to an [`Account`]: a login or a key at
@@ -153,6 +155,7 @@ mod spend;
 mod spend_files;
 mod spend_tally;
 mod stats;
+mod stats_tally;
 #[cfg(test)]
 mod testing;
 mod timestamp;

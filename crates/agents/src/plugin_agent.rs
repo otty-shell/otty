@@ -23,7 +23,7 @@ use crate::hidden_terminal::StartTerminal;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::{BillingKind, LimitSource};
 use crate::part_need::{PartNeed, agent_command};
-use crate::plugin_sources::{PluginLimits, PluginSessions, PluginStats};
+use crate::plugin_sources::{PluginLimits, PluginSessions};
 use crate::plugin_spend::PluginSpend;
 use crate::plugin_values::{part_profile, provider_of};
 use crate::profile::{Profile, ProfileStatus};
@@ -104,6 +104,7 @@ impl PluginAgent {
         let sessions = Arc::new(PluginSessions::new(Arc::clone(&part)));
         let spend = Arc::new(PluginSpend::new(
             Arc::clone(&part),
+            Arc::clone(&sessions),
             tested_version.clone(),
             Arc::clone(&writes_cost),
         ));
@@ -302,7 +303,7 @@ impl Agent for PluginAgent {
     }
 
     fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
-        Some(Box::new(PluginStats::new(Arc::clone(&self.part))))
+        Some(Box::new(Arc::clone(&self.spend)))
     }
 
     fn found_config_dirs(&self, _env: &AgentEnv) -> Vec<PathBuf> {

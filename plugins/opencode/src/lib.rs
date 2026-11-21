@@ -1,6 +1,6 @@
 //! The official OpenCode plugin of OTTY. Its one agent part, `opencode`,
 //! reads OpenCode: its data folder (the profile), its logins, its
-//! sessions, the tokens and the cost of its answers, and its statistics.
+//! sessions, and the tokens and the cost of its answers.
 //!
 //! OpenCode keeps everything in one data folder, `~/.local/share/opencode`
 //! (`XDG_DATA_HOME` moves it): the logins in `auth.json` and in the
@@ -32,7 +32,6 @@ mod opencode;
 mod plan;
 mod provider_ids;
 mod sessions;
-mod stats;
 #[cfg(test)]
 mod testing;
 

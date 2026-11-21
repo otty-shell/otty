@@ -79,6 +79,7 @@ pub(crate) fn read_record(row: &MessageRow) -> Record {
 
     Record::Answer(Box::new(Answer {
         identity: Some(row.id.clone()),
+        session: None,
         at_ms: row.at_ms,
         model: model.map(String::from),
         provider: provider.and_then(provider_of),
@@ -200,6 +201,7 @@ mod tests {
     fn expected_answer(provider: &str, model: &str) -> Answer {
         Answer {
             identity: Some("msg_1".to_string()),
+            session: None,
             at_ms: millis(NOW),
             model: Some(model.to_string()),
             provider: Some(ProviderRef::Id(provider.to_string())),

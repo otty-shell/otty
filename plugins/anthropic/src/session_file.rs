@@ -16,9 +16,6 @@ use crate::timestamp::millis_of;
 /// The longest title, in characters, before it is cut.
 const MAX_TITLE_CHARS: usize = 100;
 
-/// What marks a record of the user, the only lines that can be prompts.
-pub(crate) const USER_MARKER: &[u8] = b"\"type\":\"user\"";
-
 /// What marks a record that names the version of `claude` that wrote it.
 const VERSION_MARKER: &[u8] = b"\"version\"";
 
@@ -158,22 +155,6 @@ pub(crate) fn read_version(file: &FileInfo, end_bytes: u64) -> Option<String> {
             let record = serde_json::from_slice::<VersionRecord>(line).ok()?;
             record.version.filter(|version| !version.is_empty())
         })
-}
-
-/// When the prompt on `line` was written, when the line is a prompt the
-/// user typed, with a time: the same prompts the session title is taken
-/// from.
-pub(crate) fn prompt_at_ms(line: &[u8]) -> Option<i64> {
-    // Most lines are answers and tool calls: only the records of the user
-    // are parsed.
-    if !has_marker(line, USER_MARKER) {
-        return None;
-    }
-
-    let record: Record = serde_json::from_slice(line).ok()?;
-    record.prompt()?;
-
-    record.timestamp.as_deref().and_then(millis_of)
 }
 
 /// The id of the session file at `path`: its name without `.jsonl`.
@@ -345,18 +326,6 @@ mod tests {
                 changed_ms: 7,
             }
         );
-    }
-
-    #[test]
-    fn only_typed_prompts_have_a_prompt_time() {
-        let tool_result = r#"{"type":"user","timestamp":"2026-11-16T10:00:30Z","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#;
-
-        assert_eq!(
-            prompt_at_ms(USER.as_bytes()),
-            Some(FIVE_PAST_TEN - 300_000)
-        );
-        assert_eq!(prompt_at_ms(ASSISTANT.as_bytes()), None);
-        assert_eq!(prompt_at_ms(tool_result.as_bytes()), None);
     }
 
     #[test]

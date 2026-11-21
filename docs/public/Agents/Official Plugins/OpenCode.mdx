@@ -11,7 +11,7 @@ Built into OTTY · version 0.1.0 · `github.com/otty-shell/otty-plugin-opencode`
 
 | Part                        | Kind  | Gives                                                                  |
 | --------------------------- | ----- | ---------------------------------------------------------------------- |
-| [OpenCode](#opencode-agent) | agent | The profile, sessions, tokens, the cost OpenCode wrote, statistics, logins. |
+| [OpenCode](#opencode-agent) | agent | The profile, sessions, tokens, the cost OpenCode wrote, logins. |
 
 It has no provider part: the accounts of OpenCode's logins are read by the plugins of their
 providers.
@@ -21,7 +21,7 @@ providers.
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profile        | The data folder `~/.local/share/opencode`, or `opencode` in `XDG_DATA_HOME`.                          |
-| Reads          | The database `opencode.db` in it, or the one `OPENCODE_DB` names, read-only, with its write-ahead log: sessions, answers (provider, model, tokens, cost, folder), the agent's version, statistics. Never the tables with the text of a conversation. |
+| Reads          | The database `opencode.db` in it, or the one `OPENCODE_DB` names, read-only, with its write-ahead log: sessions, every answer of the history (provider, model, tokens, cost, session, folder), the agent's version. Never the tables with the text of a conversation. |
 | Logins, as handles | `auth.json`: the `key`, `access` and `refresh` field of each login. The `credential` table of the database: the same fields of its `value` column. |
 | Variables      | `XDG_DATA_HOME`, `OPENCODE_DB`.                                                                        |
 | Runs           | Nothing. OTTY runs `opencode --version` itself only when the database names no version.                 |

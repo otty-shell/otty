@@ -1,6 +1,6 @@
 //! The official Anthropic plugin of OTTY. Its agent part `claude-code`
 //! reads Claude Code: its config folders (profiles), its sessions, the
-//! tokens of its answers, its statistics, its logins and the limits its
+//! tokens of its answers, its logins and the limits its
 //! `/usage` panel shows, read in a hidden terminal. Claude Code
 //! keeps everything in its config folder, `CLAUDE_CONFIG_DIR` or
 //! `~/.claude`: the login in `.credentials.json` (the account in the
@@ -43,7 +43,6 @@ mod requests;
 mod session_file;
 mod sessions;
 mod spend_file;
-mod stats;
 #[cfg(test)]
 mod testing;
 mod timestamp;

@@ -96,8 +96,8 @@ pub(crate) enum StatsBodyViewModel {
 /// The statistics of a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionStatsViewModel {
-    /// Agent, profile, started, last activity, length, messages, answers,
-    /// tokens and the account that paid.
+    /// Agent, profile, first and last answer, length, answers, tokens and
+    /// the account that paid.
     pub(crate) facts: Vec<FactViewModel>,
     /// Each usage window as its name and "12 % → 31 %"; empty for an agent
     /// that writes no limits into its sessions.
@@ -145,7 +145,6 @@ impl SessionStatsViewModel {
                 time_text(stats.last_active_at(), time_zone),
             ),
             fact(Key::AgentsStatsLength, length),
-            fact(Key::AgentsStatsMessages, digit_groups(stats.messages())),
             fact(Key::AgentsStatsAnswers, digit_groups(stats.answers())),
             fact(Key::AgentsTokens, short_count(stats.tokens().total())),
             fact(Key::AgentsFieldAccount, account),
@@ -696,7 +695,6 @@ mod tests {
         let stats = SessionStats::new(
             Some(at(NOW)),
             Some(at(NOW + 2 * 3600 + 600)),
-            4,
             vec![million_in("opus", 3), million_in("mystery", 2)],
         );
 
@@ -727,7 +725,6 @@ mod tests {
                         &[("hours", "2"), ("minutes", "10")]
                     )
                 ),
-                (Key::AgentsStatsMessages, String::from("4")),
                 (Key::AgentsStatsAnswers, String::from("5")),
                 (Key::AgentsTokens, short_count(2_005_000)),
                 (Key::AgentsFieldAccount, String::from(UNKNOWN)),
@@ -748,7 +745,6 @@ mod tests {
         let stats = SessionStats::new(
             None,
             None,
-            1,
             vec![
                 million_in("opus", 1)
                     .with_provider(Some(ProviderRef::of_id("anthropic"))),
@@ -776,7 +772,7 @@ mod tests {
     fn the_usage_of_a_session_is_its_own_tokens() {
         let mut state = state_with_accounts();
         session_dialog(&mut state);
-        let stats = SessionStats::new(None, None, 1, Vec::new()).with_spend(
+        let stats = SessionStats::new(None, None, Vec::new()).with_spend(
             spend_in_otty("opus", ProviderRef::of_id("anthropic"), 3_000),
         );
 
@@ -802,8 +798,7 @@ mod tests {
         let mut priced = state_with(api_key());
         let mut no_prices = state_with_no_prices(api_key());
         let mut plan = state_with(connected());
-        let stats =
-            SessionStats::new(None, None, 0, vec![million_in("opus", 3)]);
+        let stats = SessionStats::new(None, None, vec![million_in("opus", 3)]);
         let money_reason = |state: &mut AgentsState| {
             session_dialog(state);
             let _ = reduce(state, session_stats_loaded(Ok(stats.clone())));
@@ -844,8 +839,7 @@ mod tests {
             ),
         );
         session_dialog(&mut state);
-        let stats =
-            SessionStats::new(None, None, 0, vec![million_in("opus", 3)]);
+        let stats = SessionStats::new(None, None, vec![million_in("opus", 3)]);
 
         let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
 
@@ -884,7 +878,7 @@ mod tests {
             &mut state,
             AgentsIntent::SessionMenu(SessionAction::ShowStatistics),
         );
-        let stats = SessionStats::new(None, None, 0, Vec::new())
+        let stats = SessionStats::new(None, None, Vec::new())
             .with_limit_changes(vec![
                 LimitChange::new(
                     WindowId::hours(5),

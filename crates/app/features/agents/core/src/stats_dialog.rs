@@ -282,7 +282,6 @@ mod tests {
         SessionStats::new(
             None,
             None,
-            1,
             vec![ModelTokens::new(Some("gpt-5"), TokenCount::new(1, 0, 1), 1)],
         )
     }

@@ -1,6 +1,7 @@
-//! The answers of a profile, read from its database: each answer with its
-//! provider, model, tokens, the cost OpenCode wrote and the folder of its
-//! session.
+//! The answers of a profile, read from its database over the whole
+//! history: each answer with its provider, model, tokens, the cost
+//! OpenCode wrote, its session and the folder of its session. OTTY sums
+//! the totals and the panels of a session and of a project from them.
 //!
 //! The database and its write-ahead log are the profile's spend places:
 //! when either file changes, the whole database is read; each answer
@@ -9,19 +10,10 @@
 use std::collections::BTreeMap;
 
 use otty_plugin_sdk::agents::{Answers, PlaceItem, ReadError, RecordCounts};
-use otty_plugin_sdk::clock;
 
 use crate::database::{Database, SessionRow, database_path};
 use crate::message::{Record, read_record};
 use crate::sessions::newest_version;
-
-/// How many days back the answers are read: OTTY counts the tokens of the
-/// last 30 days, or of the current month on its 31st day; three days more
-/// cover any time zone.
-const READ_DAYS: i64 = 33;
-
-/// Milliseconds in a day.
-const DAY_MS: i64 = 24 * 3600 * 1000;
 
 /// How many of the newest answers tell the format OpenCode writes now: old
 /// answers in an older format neither hide a change nor make one.
@@ -34,11 +26,10 @@ struct Seen {
     not_understood: Option<(&'static str, &'static str, Vec<String>)>,
 }
 
-/// The answers of the last days in the database of `item`, the database
-/// itself or its write-ahead log. No database gives no answers.
+/// Every answer in the database of `item`, the database itself or its
+/// write-ahead log. No database gives no answers.
 pub(crate) fn read_answers(item: &PlaceItem) -> Result<Answers, ReadError> {
     let path = database_path(item);
-    let since_ms = clock::now_ms().saturating_sub(READ_DAYS * DAY_MS);
 
     let Some(database) = Database::open(path).map_err(ReadError::Host)? else {
         return Ok(Answers {
@@ -48,14 +39,17 @@ pub(crate) fn read_answers(item: &PlaceItem) -> Result<Answers, ReadError> {
     };
     let sessions = database.sessions().map_err(ReadError::Host)?;
     let folders = folders_of(&sessions);
+    let parents = parents_of(&sessions);
 
     let mut answers = Vec::new();
     let mut seen = Vec::new();
     database
-        .for_each_message(since_ms, |row| match read_record(&row) {
+        .for_each_message(0, |row| match read_record(&row) {
             Record::Answer(mut answer) => {
                 answer.project =
                     folders.get(row.session_id.as_str()).map(|f| f.to_string());
+                answer.session =
+                    Some(first_session(&parents, &row.session_id).to_string());
                 seen.push(Seen {
                     at_ms: row.at_ms,
                     not_understood: None,
@@ -91,6 +85,38 @@ fn folders_of(sessions: &[SessionRow]) -> BTreeMap<&str, &str> {
         .map(|session| (session.id.as_str(), session.directory.trim()))
         .filter(|(_, folder)| !folder.is_empty())
         .collect()
+}
+
+/// The session that started each helper session of `sessions`, by the id
+/// of the helper session.
+fn parents_of(sessions: &[SessionRow]) -> BTreeMap<&str, &str> {
+    sessions
+        .iter()
+        .filter_map(|session| {
+            let parent = session.parent_id.as_deref()?;
+            Some((session.id.as_str(), parent))
+        })
+        .collect()
+}
+
+/// The session `session` counts in: the one that started its helper
+/// session, and so on up, by `parents`; the session itself when nobody
+/// started it. Only sessions nobody started are listed.
+fn first_session<'a>(
+    parents: &BTreeMap<&str, &'a str>,
+    session: &'a str,
+) -> &'a str {
+    let mut first = session;
+
+    // A loop of parents in a broken database ends after one turn around.
+    for _ in 0..=parents.len() {
+        match parents.get(first) {
+            Some(parent) => first = parent,
+            None => break,
+        }
+    }
+
+    first
 }
 
 /// The counts of the [`NEWEST_RECORDS`] newest records of `seen`.
@@ -183,6 +209,13 @@ mod tests {
         assert_eq!(first.project.as_deref(), Some("/home/user/otty"));
         assert_eq!(first.cost_microdollars, Some(250_000));
         assert_eq!(read.answers[1].project.as_deref(), Some("/home/user/otty"));
+        assert_eq!(first.session.as_deref(), Some("ses_1"));
+        assert_eq!(
+            read.answers[1].session.as_deref(),
+            Some("ses_1"),
+            "a helper session counts in the session that started it"
+        );
+        assert_eq!(read.answers[3].session.as_deref(), Some("ses_gone"));
         assert_eq!(read.answers[2].provider, None, "a local model");
         assert_eq!(read.answers[3].project, None, "a session that is gone");
         assert_eq!((read.records.seen, read.records.understood), (4, 4));
@@ -218,8 +251,10 @@ mod tests {
         assert_eq!(read.records.version.as_deref(), Some("2.3.2"));
     }
 
+    /// Issue 22: OTTY sums the panel of a project over its whole history
+    /// from these answers, so the old ones are read too.
     #[test]
-    fn answers_older_than_the_counted_days_are_left_out() {
+    fn answers_of_the_whole_history_are_read() {
         let (data, mut database) = data_folder();
         database.message(
             "msg_1",
@@ -238,8 +273,12 @@ mod tests {
 
         let read = read(&data, "opencode.db");
 
-        assert_eq!(read.answers.len(), 1);
-        assert_eq!(read.answers[0].identity.as_deref(), Some("msg_2"));
+        let ids: Vec<&str> = read
+            .answers
+            .iter()
+            .filter_map(|answer| answer.identity.as_deref())
+            .collect();
+        assert_eq!(ids, ["msg_1", "msg_2"]);
     }
 
     #[test]

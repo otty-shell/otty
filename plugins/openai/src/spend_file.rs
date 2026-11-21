@@ -38,7 +38,7 @@ use crate::timestamp::millis_of;
 
 /// What marks the lines the tokens are read from: the answers, the turns
 /// that name the model and the first line that names the project.
-pub(crate) const ANSWER_MARKERS: [&[u8]; 3] =
+const ANSWER_MARKERS: [&[u8]; 3] =
     [b"\"token_count\"", b"\"turn_context\"", b"\"session_meta\""];
 
 /// What marks a line that names a `token_count`.
@@ -130,6 +130,8 @@ pub(crate) struct SessionTokens {
     project: Option<String>,
     /// Whether the first `session_meta`, the session's own, was read.
     has_meta: bool,
+    /// The id of the session, from its own `session_meta`.
+    session: Option<String>,
     /// The id of the provider of the session, such as `openai`.
     model_provider: Option<String>,
     /// The ChatGPT account that started the session.
@@ -156,12 +158,13 @@ impl SessionTokens {
         }
     }
 
-    /// Takes what `line` tells: the project, the provider and the version
-    /// of `session_meta`, the model of `turn_context`, the answer of
-    /// `token_count`.
+    /// Takes what `line` tells: the project, the session, the provider and
+    /// the version of `session_meta`, the model of `turn_context`, the
+    /// answer of `token_count`.
     ///
-    /// The provider comes from the first `session_meta` only: a forked
-    /// session copies the records of its parent after its own.
+    /// The session and the provider come from the first `session_meta`
+    /// only: a forked session copies the records of its parent after its
+    /// own.
     pub(crate) fn add(&mut self, line: &Line) {
         let Some(payload) = &line.payload else {
             return;
@@ -169,6 +172,7 @@ impl SessionTokens {
 
         if line.kind() == Some("session_meta") && !self.has_meta {
             self.has_meta = true;
+            self.session = filled_text(payload, "id");
             self.model_provider = filled_text(payload, "model_provider");
             self.creator_account_id =
                 filled_text(payload, "creator_account_id");
@@ -205,8 +209,8 @@ impl SessionTokens {
         Self { login, ..self }
     }
 
-    /// What the lines told: each answer with the project, the provider
-    /// and the login of the session, and the records seen.
+    /// What the lines told: each answer with the session, the project, the
+    /// provider and the login of the session, and the records seen.
     pub(crate) fn into_answers(self) -> Answers {
         let provider = provider_of(self.model_provider.as_deref());
 
@@ -214,6 +218,7 @@ impl SessionTokens {
             .answers
             .into_iter()
             .map(|answer| Answer {
+                session: self.session.clone(),
                 project: self.project.clone(),
                 provider: provider.clone(),
                 login: self.login.clone(),
@@ -295,6 +300,7 @@ impl SessionTokens {
                 last,
                 total,
             )),
+            session: None,
             at_ms,
             model: self.model.clone(),
             provider: None,
@@ -330,11 +336,6 @@ pub(crate) fn read_profile_answers(
         .and_then(|account_id| place_of_account(folder, account_id));
 
     Ok(session.paid_by(login).into_answers())
-}
-
-/// The answers of the session file at `path`, with the records seen.
-pub(crate) fn read_answers(path: &str) -> Result<Answers, ReadError> {
-    Ok(read_session(path)?.into_answers())
 }
 
 /// What the lines of the session file at `path` tell.
@@ -515,6 +516,11 @@ mod tests {
         )
     }
 
+    /// The answers of the session file at `path`, paid by no login.
+    fn read_answers(path: &str) -> Result<Answers, ReadError> {
+        Ok(read_session(path)?.into_answers())
+    }
+
     fn fixture_answers(relative: &str) -> Result<Answers, ReadError> {
         let host = host();
         let file = path(&host, relative);
@@ -542,6 +548,7 @@ mod tests {
         );
         let answers = &spend.answers;
         assert_eq!(answers[0].project.as_deref(), Some("/home/user/otty"));
+        assert_eq!(answers[0].session.as_deref(), Some("019a8f3e"));
         assert_eq!(answers[0].at_ms, TEN);
         assert_eq!(answers[0].model.as_deref(), Some("gpt-5-codex"));
         assert_eq!(answers[1].model.as_deref(), Some("gpt-5.1-codex"));
@@ -723,6 +730,7 @@ mod tests {
         let spend = spend_of(&[&line]);
 
         assert_eq!(spend.answers[0].project, None);
+        assert_eq!(spend.answers[0].session, None);
         assert_eq!(spend.answers[0].model, None);
     }
 
@@ -769,9 +777,12 @@ mod tests {
         let own = meta_of(Some("openai"), Some("made-up-own"));
         let parent = meta_of(Some("ollama"), Some("made-up-parent"));
 
+        let parent = parent.replace("019a8f3e", "made-up-parent-session");
+
         let spend = spend_of(&[&own, &parent, &line]);
 
         assert_eq!(spend.answers[0].provider, openai());
+        assert_eq!(spend.answers[0].session.as_deref(), Some("019a8f3e"));
     }
 
     #[test]

@@ -1,13 +1,13 @@
 //! The values of the plugin contracts turned into the values of this crate
 //! and back: a profile as a part is asked about it, and the tokens,
-//! times, providers, limits and statistics a part answers.
+//! times, providers and limits a part answers.
 
 use std::time::{Duration, SystemTime};
 
 use otty_plugin_host::agents::agent::{
     Credits as PartCredits, KeyPlace, Limits as PartLimits,
-    ModelTokens as PartModelTokens, Profile as PartProfile,
-    ProviderRef as PartProviderRef, TokenCount as PartTokenCount,
+    Profile as PartProfile, ProviderRef as PartProviderRef,
+    TokenCount as PartTokenCount,
 };
 
 use crate::limits::{
@@ -15,7 +15,6 @@ use crate::limits::{
 };
 use crate::profile::Profile;
 use crate::provider::ProviderRef;
-use crate::spend::ModelTokens;
 use crate::timestamp::time_from_millis;
 use crate::token_count::TokenCount;
 
@@ -51,20 +50,6 @@ pub(crate) fn provider_of(provider: &PartProviderRef) -> ProviderRef {
             ProviderRef::Host(host.trim().to_ascii_lowercase())
         },
     }
-}
-
-/// The tokens of each model a part counted for its statistics.
-pub(crate) fn models_of(models: &[PartModelTokens]) -> Vec<ModelTokens> {
-    models
-        .iter()
-        .map(|model| {
-            ModelTokens::new(
-                Some(model.model.as_str()),
-                tokens_of(&model.tokens),
-                model.answers,
-            )
-        })
-        .collect()
 }
 
 /// The limits a part read: its usage windows, else its credits; a plan

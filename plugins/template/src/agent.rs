@@ -149,13 +149,9 @@ impl Agent for Example {
         item: &PlaceItem,
     ) -> Result<Vec<Session>, ReadError> {
         let session = SessionFile::read(&item.file.path)?;
-        let id = Path::new(&item.file.path)
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
 
         Ok(vec![Session {
-            id,
+            id: session_id(&item.file.path),
             folder: session.project().map(str::to_string),
             title: session.title().map(str::to_string),
             changed_ms: session.last_at_ms().unwrap_or(item.file.changed_ms),
@@ -169,11 +165,16 @@ impl Agent for Example {
         }]
     }
 
+    /// Each answer names its session, the file's: OTTY sums the panel of
+    /// one session from the answers that name it.
     fn read_answers(
         _profile: &Profile,
         item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
-        SessionFile::read(&item.file.path).map(SessionFile::into_answers)
+        let session = session_id(&item.file.path);
+
+        SessionFile::read(&item.file.path)
+            .map(|file| file.into_answers(&session))
     }
 
     fn launch(profile: &Profile, session: Option<&str>) -> Command {
@@ -213,6 +214,15 @@ fn read_auth(profile: &Profile) -> Result<AuthFile, HostError> {
     serde_json::from_str(document.json()).map_err(|_| {
         HostError::Failed("auth.json is not an auth file".to_string())
     })
+}
+
+/// The id of the session kept in the session file at `path`: its name
+/// without `.jsonl`.
+fn session_id(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// The session files of the profile: `sessions/*.jsonl`.
@@ -501,6 +511,7 @@ mod tests {
 
         assert_eq!(answers.answers.len(), 1);
         assert_eq!(answers.answers[0].identity.as_deref(), Some("b1"));
+        assert_eq!(answers.answers[0].session.as_deref(), Some("s2"));
         assert_eq!(answers.answers[0].tokens.output, 900);
         assert_eq!(
             answers.answers[0].project.as_deref(),

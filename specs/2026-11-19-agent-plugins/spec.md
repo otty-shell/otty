@@ -261,6 +261,24 @@ after, as today (`account_numbers/mod.rs`).
   identity the plugin returns, prices and money
   estimates, joining accounts, and the "format changed" verdict from the
   counts of records the plugin saw and understood.
+- **A plugin gives rows, OTTY sums** (owner, 2026-11-21; issue 22). A
+  row is one fact as the agent or the provider wrote it: one answer of
+  the model with its time, model, provider, login, session, project and
+  tokens; a limit or a balance a provider told; a bill. Every total is
+  OTTY's: today, this week, by project, by model, money estimates,
+  accounts joined across agents, and the numbers of one session (first
+  and last answer, answers, tokens by model, tokens by day) and of one
+  project (first and last answer, tokens by model) in their statistics.
+  These come from the same answers, deduplicated and priced the same way
+  as the totals, so the statistics agree with the totals. The contract
+  has no call for statistics: `read-answers` gives every answer of the
+  whole history, each naming the session `read-sessions` lists it under.
+  A panel reads only the answer files the session places tie to its
+  session, or to the sessions in its project folder; only while some
+  answer file is no session place does it read the whole history, since
+  then no file tells whose answers that one holds. A number no row can
+  give, such as how many messages the user typed, is not shown until the
+  owner decides how a plugin tells it.
 - **Prices are OTTY's** (owner, 2026-11-21). The price table (LiteLLM) is
   an OTTY feature, fetched once for all plugins. Plugins report tokens,
   and OTTY prices them. A host operation for a plugin to ask OTTY for the
@@ -596,8 +614,10 @@ pub trait Agent {
     /// host walks them and asks again only for what changed.
     fn spend_places(profile: &Profile) -> Vec<Place>;
 
-    /// Every answer of the model in one file or database, with the counts
-    /// of records seen and understood.
+    /// Every answer of the model in one file or database, of the whole
+    /// history, each with its session and project, with the counts of
+    /// records seen and understood. OTTY sums the totals and the
+    /// statistics of a session and of a project from these rows.
     fn read_answers(profile: &Profile, item: &PlaceItem) -> Result<Answers, ReadError>;
 
     /// The command that starts a new session, or continues `session`.
@@ -608,12 +628,6 @@ pub trait Agent {
     /// limits it gets, or one error. Default: not supported.
     fn read_limits(_profile: &Profile, _login: &LoginRef)
         -> Result<Limits, ReadError> { Err(ReadError::NotSupported) }
-
-    /// Statistics of one session or one project folder. Default: none.
-    fn session_stats(_profile: &Profile, _session: &SessionId)
-        -> Result<SessionStats, ReadError> { Err(ReadError::NotSupported) }
-    fn project_stats(_profile: &Profile, _folder: &str)
-        -> Result<ProjectStats, ReadError> { Err(ReadError::NotSupported) }
 
     /// What the user must do now that a provider part refused `login` of
     /// the profile (`ReadError::LoginRefused`), such as run the agent so
@@ -698,6 +712,7 @@ pub enum KeyPlace {
 /// One answer of the model.
 pub struct Answer {
     pub identity: Option<String>,   // the host counts answers with the same identity once
+    pub session: Option<String>,    // the id `read-sessions` gives; the host sums a session from it
     pub at_ms: i64,
     pub model: Option<String>,
     pub provider: Option<ProviderRef>,
@@ -938,7 +953,8 @@ interface agent {
   /* profile, profile-status (connected, not-logged-in(need),
      config-folder-not-found), login, session (id, and the folder and
      title when the file names them), place (glob, kind), place-item
-     (the listed file-info, kind), answer, answers, record-counts, stats */
+     (the listed file-info, kind), answer (with its session and
+     project), answers, record-counts */
   profiles: func(agent: string, env: environment) -> list<profile-place>;
   detect: func(profile: profile) -> profile-status;
   version: func(profile: profile) -> option<string>;
@@ -949,8 +965,6 @@ interface agent {
   read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
   read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;   // the part picks its sources
-  session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
-  project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
   login-refused: func(profile: profile, login: login-ref) -> option<need>;
 }
 
@@ -1235,7 +1249,7 @@ token.
 | Memory per plugin | 64 MiB, trap when it can not grow | Spike: 7.5 MiB peak on real files |
 | Instances per store | 4 | One component, a few inner instances |
 | Deadline, quick calls (`detect`, `version`, `logins`, `launch`, `profiles`) | 2 s | |
-| Deadline, `read-answers`, `read-sessions`, stats | 120 s per call | One 1 GB file at 400 MB/s plus margin |
+| Deadline, `read-answers`, `read-sessions` | 120 s per call | One 1 GB file at 400 MB/s plus margin |
 | Deadline, `read-limits`, provider calls | 90 s | Host waits (HTTP, terminal) count |
 | Epoch tick | 10 ms (spike: 1.005 s for 1 s) | |
 | Plugin state between refreshes | none: a new instance per refresh of one profile or account (0.1 ms) | Nothing leaks between reads |

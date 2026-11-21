@@ -4,7 +4,9 @@
 //!
 //! A file with the same stamp as on the last count is not read again. A
 //! file that did not change since the first counted day is not opened at
-//! all: it can hold no record of the counted days.
+//! all: it can hold no record of the counted days. The statistics of a
+//! session or of a project read every file, over the whole history, into
+//! the same memory, and the count keeps what they read.
 //!
 //! Each file also tells how many records of the kind its reader reads it
 //! saw and understood; when the newest files show the agent changed their
@@ -36,6 +38,7 @@ use crate::token_count::TokenCount;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CountedAnswer {
     identity: Option<u64>,
+    session: Option<String>,
     at: SystemTime,
     model: Option<String>,
     tokens: TokenCount,
@@ -50,6 +53,12 @@ impl CountedAnswer {
     /// Two records with the same identity are the same answer.
     pub(crate) fn identity(&self) -> Option<u64> {
         self.identity
+    }
+
+    /// The id of the session the answer was given in, when the agent
+    /// records it.
+    pub(crate) fn session(&self) -> Option<&str> {
+        self.session.as_deref()
     }
 
     /// When the answer was written.
@@ -95,6 +104,7 @@ impl CountedAnswer {
     ) -> Self {
         Self {
             identity: None,
+            session: None,
             at,
             model: model.map(String::from),
             tokens,
@@ -108,6 +118,11 @@ impl CountedAnswer {
     /// The same answer, which cost `cost` as the agent wrote it.
     pub(crate) fn with_cost(self, cost: Option<Dollars>) -> Self {
         Self { cost, ..self }
+    }
+
+    /// The same answer, given in the session `session`.
+    pub(crate) fn with_session(self, session: Option<String>) -> Self {
+        Self { session, ..self }
     }
 
     /// The same answer, given in the project folder `project`.
@@ -182,6 +197,19 @@ impl FileSpend {
         self.records = records;
         self
     }
+
+    /// The same file with only the answers `keep` takes, such as those of
+    /// one session, and no record counts.
+    pub(crate) fn only(&self, keep: impl Fn(&CountedAnswer) -> bool) -> Self {
+        let answers = self
+            .answers
+            .iter()
+            .filter(|answer| keep(answer))
+            .cloned()
+            .collect();
+
+        Self::new(self.project.clone(), answers)
+    }
 }
 
 /// The tokens spent in the session files `paths` of `config_dir` at `now`.
@@ -209,6 +237,7 @@ pub(crate) fn count_spend(
 
     let mut previous = memory.take(config_dir);
     let mut counted = ReadFiles::new();
+    let mut old = ReadFiles::new();
     for path in paths {
         let Ok(metadata) = std::fs::metadata(&path) else {
             continue;
@@ -218,6 +247,12 @@ pub(crate) fn count_spend(
             .changed_at()
             .is_some_and(|changed_at| changed_at < counted_since)
         {
+            // What a panel read from it over the whole history is kept.
+            if let Some(file) = previous.remove(&path)
+                && file.stamp() == stamp
+            {
+                old.insert(path, file);
+            }
             continue;
         }
 
@@ -227,6 +262,7 @@ pub(crate) fn count_spend(
             },
             Err(error) => {
                 counted.extend(previous);
+                counted.extend(old);
                 memory.keep(config_dir, counted);
                 return Err(error);
             },
@@ -239,12 +275,57 @@ pub(crate) fn count_spend(
         now,
         profile_provider,
     );
+    counted.extend(old);
     memory.keep(config_dir, counted);
 
     match change {
         Some(change) => Err(SourceError::FormatChanged(Box::new(change))),
         None => Ok(spend),
     }
+}
+
+/// What `made` makes of the session files `paths` of `config_dir`, over
+/// the whole history, such as the statistics of one session or of one
+/// project from the files of its sessions.
+///
+/// A file is read with `read_file` only when it changed since it was last
+/// read, by a count or by an earlier call, as kept in `memory`; a file
+/// that is gone is skipped and forgotten. What was kept of the files not
+/// in `paths` stays kept. When `read_file` fails, so does the call, and
+/// the files read before it are kept.
+pub(crate) fn read_every_file<T>(
+    memory: &FileMemory<FileSpend>,
+    config_dir: &Path,
+    paths: Vec<PathBuf>,
+    mut read_file: impl FnMut(&Path) -> Result<FileSpend, SourceError>,
+    made: impl FnOnce(Vec<&FileSpend>) -> T,
+) -> Result<T, SourceError> {
+    let mut previous = memory.take(config_dir);
+    let mut read = ReadFiles::new();
+    for path in paths {
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            previous.remove(&path);
+            continue;
+        };
+        let stamp = FileStamp::of(&metadata);
+
+        match try_read_if_changed(&mut previous, &path, stamp, &mut read_file) {
+            Ok(file) => {
+                read.insert(path, file);
+            },
+            Err(error) => {
+                read.extend(previous);
+                memory.keep(config_dir, read);
+                return Err(error);
+            },
+        }
+    }
+
+    let made = made(read.values().map(ReadFile::content).collect());
+    read.extend(previous);
+    memory.keep(config_dir, read);
+
+    Ok(made)
 }
 
 /// The record counts of the `files`, the file changed last first.
@@ -503,5 +584,103 @@ mod tests {
         );
         assert_eq!(folder.opened.borrow().clone(), ["b.jsonl"]);
         assert_eq!(spend.today(), TokenCount::new(30, 0, 0));
+    }
+
+    impl Folder {
+        /// Reads every file of `names`, over the whole history, and says
+        /// how many input tokens they hold and which were opened.
+        fn read_all(&self, names: &[&str]) -> (u64, Vec<String>) {
+            let paths = names.iter().map(|name| self.path(name)).collect();
+            self.opened.borrow_mut().clear();
+
+            let input = read_every_file(
+                &self.memory,
+                self.temp.path(),
+                paths,
+                |path| Ok(self.read(path)),
+                |files| {
+                    files
+                        .iter()
+                        .flat_map(|file| file.answers())
+                        .map(|answer| answer.tokens().input())
+                        .sum()
+                },
+            )
+            .expect("every file is read");
+
+            let mut opened = self.opened.borrow().clone();
+            opened.sort();
+            (input, opened)
+        }
+    }
+
+    /// Issue 22: the panel of a project reads its whole history, the files
+    /// older than the counted days too, each once.
+    #[test]
+    fn every_file_of_the_history_is_read_once() {
+        let folder = Folder::new();
+        folder.write("old.jsonl", 10, NOW - 90 * DAY);
+        folder.write("new.jsonl", 20, NOW);
+
+        let (first, opened) = folder.read_all(&["old.jsonl", "new.jsonl"]);
+        let (again, opened_again) =
+            folder.read_all(&["old.jsonl", "new.jsonl"]);
+
+        assert_eq!(first, 30);
+        assert_eq!(opened, ["new.jsonl", "old.jsonl"]);
+        assert_eq!(again, 30);
+        assert!(opened_again.is_empty());
+    }
+
+    /// Issue 22: what a panel read from an old file stays remembered
+    /// across the counts of the totals, which neither open it nor add it.
+    #[test]
+    fn an_old_file_a_panel_read_stays_remembered_by_the_count() {
+        let folder = Folder::new();
+        folder.write("old.jsonl", 10, NOW - 90 * DAY);
+        folder.write("new.jsonl", 20, NOW);
+        let names = ["old.jsonl", "new.jsonl"];
+
+        let _ = folder.read_all(&names);
+        let (spend, counted) = folder.count(&names);
+        let (input, opened) = folder.read_all(&names);
+
+        assert!(counted.is_empty());
+        assert_eq!(spend.today(), TokenCount::new(20, 0, 0));
+        assert_eq!(input, 30);
+        assert!(opened.is_empty());
+    }
+
+    /// Issue 22: a panel reads only its own files and gives only them to
+    /// what it makes; the files it does not read stay remembered.
+    #[test]
+    fn a_panel_reads_only_its_files_and_the_others_stay_remembered() {
+        let folder = Folder::new();
+        folder.write("a.jsonl", 10, NOW);
+        folder.write("b.jsonl", 20, NOW);
+
+        let _ = folder.count(&["a.jsonl", "b.jsonl"]);
+        let (input, opened) = folder.read_all(&["a.jsonl"]);
+        let (spend, counted) = folder.count(&["a.jsonl", "b.jsonl"]);
+
+        assert_eq!(input, 10);
+        assert!(opened.is_empty());
+        assert!(counted.is_empty(), "{counted:?}");
+        assert_eq!(spend.today(), TokenCount::new(30, 0, 0));
+    }
+
+    #[test]
+    fn a_file_keeps_only_the_answers_asked_for() {
+        let mine =
+            CountedAnswer::new(at(NOW), Some("m"), TokenCount::default())
+                .with_session(Some("s1".to_string()));
+        let other = mine.clone().with_session(Some("s2".to_string()));
+        let file = FileSpend::new(Some(PathBuf::from("/p")), vec![mine, other]);
+
+        let kept = file.only(|answer| answer.session() == Some("s1"));
+
+        assert_eq!(kept.project(), Some(Path::new("/p")));
+        assert_eq!(kept.answers().len(), 1);
+        assert_eq!(kept.answers()[0].session(), Some("s1"));
     }
 }

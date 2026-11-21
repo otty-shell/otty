@@ -3,8 +3,7 @@
 
 use otty_plugin_sdk::agents::{
     Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, PlaceKind,
-    Profile, ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
-    SessionStats,
+    Profile, ProfilePlace, ProfileStatus, ReadError, Session,
 };
 use otty_plugin_sdk::{Command, Need};
 
@@ -13,7 +12,7 @@ use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::project_folder::projects_folder;
 use crate::provider::profile_provider;
 use crate::{
-    Anthropic, detect, logins, needs, sessions, spend_file, stats, usage_probe,
+    Anthropic, detect, logins, needs, sessions, spend_file, usage_probe,
     version,
 };
 
@@ -40,17 +39,17 @@ impl Agent for Anthropic {
         logins::logins(&profile.folder)
     }
 
-    /// The `*.jsonl` files right inside the project folders: the files of
-    /// helper agents, deeper, are not sessions of their own.
+    /// Every `*.jsonl` file in the project folders: the files of helper
+    /// agents, deeper, name the session that ran them.
     fn session_places(profile: &Profile) -> Vec<Place> {
         sessions::session_places(&profile.folder)
     }
 
     fn read_sessions(
-        _profile: &Profile,
+        profile: &Profile,
         item: &PlaceItem,
     ) -> Result<Vec<Session>, ReadError> {
-        Ok(sessions::read_sessions(item))
+        Ok(sessions::read_sessions(&profile.folder, item))
     }
 
     /// Every `*.jsonl` file in the project folders, at any depth, so the
@@ -96,20 +95,6 @@ impl Agent for Anthropic {
         _login: &LoginRef,
     ) -> Result<Limits, ReadError> {
         usage_probe::read_limits(profile)
-    }
-
-    fn read_session_stats(
-        profile: &Profile,
-        session: &str,
-    ) -> Result<SessionStats, ReadError> {
-        stats::session_stats(&profile.folder, session)
-    }
-
-    fn read_project_stats(
-        profile: &Profile,
-        folder: &str,
-    ) -> Result<ProjectStats, ReadError> {
-        stats::project_stats(&profile.folder, folder)
     }
 
     /// A provider part refused the Claude login of the profile, wherever

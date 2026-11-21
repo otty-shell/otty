@@ -4,7 +4,7 @@ The official Anthropic plugin of OTTY. OTTY has no code for any agent by
 name: this plugin teaches it Claude Code. Its agent part `claude-code`
 finds Claude Code's config folders (`~/.claude`, `CLAUDE_CONFIG_DIR` and
 folders such as `~/.claude-work`), lists their sessions, reads the tokens
-of every answer and the statistics of a session or a project, and tells
+of every answer with its session and project, and tells
 which logins and keys a profile holds and whom each is for. A key in
 `settings.json` behind another server, such as DeepSeek's, is reported as
 a key for that server's host. The plugin never sees a key or a token:

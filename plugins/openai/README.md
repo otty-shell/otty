@@ -3,9 +3,9 @@
 The official OpenAI plugin of OTTY. OTTY has no code for any agent by
 name: this plugin teaches it Codex. Its agent part `codex` finds Codex's
 config folders (`~/.codex`, `CODEX_HOME` and folders such as
-`~/.codex-work`), lists their sessions, reads the tokens of every answer
-from the session files, plain or compressed, and the statistics of a
-session or a project. It tells which ChatGPT login or API key a profile
+`~/.codex-work`), lists their sessions, and reads the tokens of every
+answer, with its session and project, from the session files, plain or
+compressed. It tells which ChatGPT login or API key a profile
 holds and whom it is for, but the plugin never sees a key or a token:
 OTTY hands it handles in their place. The limits come from `codex
 app-server`, which it asks only for the limits and never for the list

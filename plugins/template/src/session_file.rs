@@ -54,10 +54,20 @@ impl SessionFile {
         Ok(file)
     }
 
-    /// The answers and what was seen, for OTTY.
-    pub(crate) fn into_answers(self) -> Answers {
+    /// The answers, each in the session `session`, and what was seen, for
+    /// OTTY.
+    pub(crate) fn into_answers(self, session: &str) -> Answers {
+        let answers = self
+            .answers
+            .into_iter()
+            .map(|answer| Answer {
+                session: Some(session.to_string()),
+                ..answer
+            })
+            .collect();
+
         Answers {
-            answers: self.answers,
+            answers,
             records: self.records,
         }
     }
@@ -109,6 +119,7 @@ impl SessionFile {
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_string),
+            session: None,
             at_ms,
             model: record
                 .get("model")

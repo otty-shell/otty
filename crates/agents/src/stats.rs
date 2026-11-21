@@ -1,5 +1,6 @@
-//! Statistics of one session and of one project folder, read from the
-//! agent's own files (spec Decisions 14 and 15).
+//! Statistics of one session and of one project folder, which OTTY sums
+//! from the answers in the agent's own files (spec Decisions 14 and 15;
+//! issue 22: a plugin gives the answers, OTTY sums them).
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -14,28 +15,27 @@ use crate::session::SessionId;
 use crate::spend::{ModelTokens, Spend, merge_models, total_tokens};
 use crate::token_count::TokenCount;
 
-/// What the files of one session tell: when it started and was last
-/// active, how many messages the user wrote, the tokens of each model, its
-/// tokens by day and today by the hour, and, for an agent that writes
-/// them, how its usage windows moved while it ran.
+/// What the answers of one session tell: when its first and its last
+/// answer were written, the tokens of each model, its tokens by day and
+/// today by the hour, and, for an agent that writes them, how its usage
+/// windows moved while it ran.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionStats {
     started_at: Option<SystemTime>,
     last_active_at: Option<SystemTime>,
-    messages: u64,
     models: Vec<ModelTokens>,
     spend: Spend,
     limit_changes: Vec<LimitChange>,
 }
 
 impl SessionStats {
-    /// When the first message or answer was written; `None` when the
-    /// files tell no time.
+    /// When the first answer was written; `None` when the session has no
+    /// answer.
     pub fn started_at(&self) -> Option<SystemTime> {
         self.started_at
     }
 
-    /// When the last message or answer was written.
+    /// When the last answer was written.
     pub fn last_active_at(&self) -> Option<SystemTime> {
         self.last_active_at
     }
@@ -46,11 +46,6 @@ impl SessionStats {
         let last_active_at = self.last_active_at?;
 
         last_active_at.duration_since(started_at).ok()
-    }
-
-    /// How many messages the user wrote.
-    pub fn messages(&self) -> u64 {
-        self.messages
     }
 
     /// How many answers the model gave: the requests of every model.
@@ -83,8 +78,7 @@ impl SessionStats {
     }
 
     /// The statistics of a session that ran from `started_at` to
-    /// `last_active_at`, with `messages` of the user and the tokens of
-    /// `models`, the most first.
+    /// `last_active_at`, with the tokens of `models`, the most first.
     ///
     /// ```
     /// use std::time::{Duration, SystemTime};
@@ -95,7 +89,6 @@ impl SessionStats {
     /// let stats = SessionStats::new(
     ///     Some(start),
     ///     Some(start + Duration::from_secs(600)),
-    ///     3,
     ///     vec![ModelTokens::new(
     ///         Some("gpt-5"),
     ///         TokenCount::new(10, 0, 2),
@@ -109,13 +102,11 @@ impl SessionStats {
     pub fn new(
         started_at: Option<SystemTime>,
         last_active_at: Option<SystemTime>,
-        messages: u64,
         models: Vec<ModelTokens>,
     ) -> Self {
         Self {
             started_at,
             last_active_at,
-            messages,
             models,
             spend: Spend::default(),
             limit_changes: Vec::new(),
@@ -184,7 +175,7 @@ impl LimitChange {
     }
 }
 
-/// What the session files of a project folder tell over the whole history:
+/// What the answers given in a project folder tell over the whole history:
 /// when the first and the last answer were written, and the tokens of each
 /// model. One profile reads its own part; [`merged`](Self::merged) adds the
 /// parts of several profiles up.
@@ -273,13 +264,12 @@ impl ProjectStats {
     }
 }
 
-/// Reads the statistics of a session or a project folder from the agent's
-/// own files, never changing them.
+/// Makes the statistics of a session or a project folder from the answers
+/// in the agent's own files, never changing them.
 ///
-/// It is a trait because each agent writes its sessions its own way: each
-/// agent part reads them, and reading crosses into files. An agent
-/// that can not read statistics gives none, and the mode turns off Show
-/// statistics for its sessions.
+/// It is a trait because reading the answers crosses into files through
+/// the agent part of a plugin. An agent that can not read statistics gives
+/// none, and the mode turns off Show statistics for its sessions.
 #[cfg_attr(test, mockall::automock)]
 pub trait StatsSource: Send {
     /// The statistics of the session `session` of `profile`, its days
@@ -357,12 +347,10 @@ mod tests {
         let stats = SessionStats::new(
             Some(at(100)),
             Some(at(700)),
-            2,
             vec![model("opus", 30, 3), model("haiku", 5, 1)],
         );
 
         assert_eq!(stats.length(), Some(Duration::from_secs(600)));
-        assert_eq!(stats.messages(), 2);
         assert_eq!(stats.answers(), 4);
         assert_eq!(stats.tokens(), TokenCount::new(35, 0, 2));
         assert!(stats.limit_changes().is_empty());
@@ -370,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_session_with_no_times_has_no_length() {
-        let stats = SessionStats::new(None, None, 0, Vec::new());
+        let stats = SessionStats::new(None, None, Vec::new());
 
         assert_eq!(stats.length(), None);
         assert_eq!(stats.answers(), 0);

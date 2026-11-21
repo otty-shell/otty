@@ -26,7 +26,7 @@ use crate::plugin_log::PluginLog;
 pub enum CallKind {
     /// `detect`, `version`, `logins`, `launch`, `profiles`: 2 s.
     Quick,
-    /// `read-answers`, `sessions` and stats: 120 s.
+    /// `read-answers` and `read-sessions`: 120 s.
     Reading,
     /// `read-limits` and the provider calls: 90 s.
     Numbers,

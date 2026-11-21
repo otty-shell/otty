@@ -53,6 +53,20 @@ impl<T> FileMemory<T> {
         folders.remove(config_dir).unwrap_or_default()
     }
 
+    /// What `look` makes of what was read in `config_dir` on its last
+    /// refresh, left in place.
+    pub(crate) fn with<R>(
+        &self,
+        config_dir: &Path,
+        look: impl FnOnce(&ReadFiles<T>) -> R,
+    ) -> R {
+        let folders =
+            self.folders.lock().unwrap_or_else(PoisonError::into_inner);
+        let empty = ReadFiles::new();
+
+        look(folders.get(config_dir).unwrap_or(&empty))
+    }
+
     /// Keeps what was read in `config_dir` for its next refresh, in place
     /// of what was kept before.
     pub(crate) fn keep(&self, config_dir: &Path, files: ReadFiles<T>) {

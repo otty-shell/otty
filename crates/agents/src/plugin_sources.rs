@@ -1,8 +1,7 @@
-//! The sessions, limits and statistics of a profile as an agent part
-//! reads them. Each is one read of the part; what the part answers it can
+//! The sessions and limits of a profile as an agent part reads them. Each is one read of the part; what the part answers it can
 //! not do becomes the error of that read.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use otty_plugin_host::agents::agent::{
@@ -10,21 +9,20 @@ use otty_plugin_host::agents::agent::{
 };
 use otty_plugin_host::{CallBatch, CallError, CalledPart, PluginFailureKind};
 
-use crate::agent::AgentId;
 use crate::error::{SourceError, Unavailable};
 use crate::file_memory::FileMemory;
 use crate::limits::{LimitSource, Limits};
-use crate::local_time::LocalNow;
 use crate::part_need::PartNeed;
 use crate::plugin_places::place_items;
-use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
+use crate::plugin_values::{limits_of, part_profile, time_of};
 use crate::profile::Profile;
 use crate::read_failure::read_failure;
 use crate::refused_login::RefusedLogin;
-use crate::session::{AgentSession, SessionId, SessionSource};
-use crate::session_files::{FoundSession, read_session_files};
+use crate::session::{AgentSession, SessionSource};
+use crate::session_files::{
+    FoundSession, PanelFiles, panel_files, read_session_files,
+};
 use crate::source_id::SourceId;
-use crate::stats::{ProjectStats, SessionStats, StatsSource};
 
 /// The name of the read of a part's sessions in reports.
 const READ_SESSIONS: &str = "read-sessions";
@@ -43,6 +41,24 @@ impl PluginSessions {
             part,
             memory: FileMemory::default(),
         }
+    }
+
+    /// The files of the session places of `profile`, and those tied to
+    /// the sessions `wanted` picks, after a read of the sessions that
+    /// brings what each file tells up to date: the files a statistics
+    /// panel reads (issue 22).
+    pub(crate) fn panel_files(
+        &self,
+        profile: &Profile,
+        wanted: impl Fn(&AgentSession) -> bool,
+    ) -> Result<PanelFiles, SourceError> {
+        self.part.read(READ_SESSIONS, |batch| {
+            let mut calls = batch.agent()?;
+
+            self.read(&mut calls, profile)
+        })??;
+
+        Ok(panel_files(&self.memory, profile.config_dir(), wanted))
     }
 
     /// The sessions of `profile` in one read of the part: its session
@@ -169,81 +185,6 @@ impl LimitSource for PluginLimits {
         } else {
             self.part.read_starting_nothing("read-limits", read)?
         }
-    }
-}
-
-/// The statistics of a session and of a project folder, as the part
-/// reads them.
-pub(crate) struct PluginStats {
-    part: Arc<CalledPart>,
-}
-
-impl PluginStats {
-    /// The statistics `part` reads.
-    pub(crate) fn new(part: Arc<CalledPart>) -> Self {
-        Self { part }
-    }
-
-    /// What a part that reads no statistics gives.
-    fn no_statistics(&self) -> SourceError {
-        let agent = AgentId::new(self.part.part().id());
-
-        SourceError::NotAvailable(Unavailable::NoStatistics(agent))
-    }
-}
-
-impl StatsSource for PluginStats {
-    fn session_stats(
-        &self,
-        profile: &Profile,
-        session: &SessionId,
-        _now: &LocalNow,
-    ) -> Result<SessionStats, SourceError> {
-        let asked = part_profile(profile);
-        let call = "read-session-stats";
-
-        let stats = self
-            .part
-            .read(call, |batch| {
-                batch.agent()?.read_session_stats(&asked, session.as_str())
-            })?
-            .map_err(|error| {
-                let none = self.no_statistics();
-                read_error(&self.part, call, &error, none, Some(profile))
-            })?;
-
-        Ok(SessionStats::new(
-            stats.started_ms.map(time_of),
-            stats.last_active_ms.map(time_of),
-            stats.messages,
-            models_of(&stats.models),
-        ))
-    }
-
-    fn project_stats(
-        &self,
-        profile: &Profile,
-        folder: &Path,
-    ) -> Result<ProjectStats, SourceError> {
-        let asked = part_profile(profile);
-        let folder = folder.display().to_string();
-        let call = "read-project-stats";
-
-        let stats = self
-            .part
-            .read(call, |batch| {
-                batch.agent()?.read_project_stats(&asked, &folder)
-            })?
-            .map_err(|error| {
-                let none = self.no_statistics();
-                read_error(&self.part, call, &error, none, Some(profile))
-            })?;
-
-        Ok(ProjectStats::new(
-            stats.first_ms.map(time_of),
-            stats.last_ms.map(time_of),
-            models_of(&stats.models),
-        ))
     }
 }
 

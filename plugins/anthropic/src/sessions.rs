@@ -2,8 +2,10 @@
 //! `<config>/projects/`.
 //!
 //! Each folder in `projects/` is one project, and each `*.jsonl` file
-//! right inside it is one session. The sessions of helper agents are kept
-//! deeper, in `<session id>/subagents/`, so they are not listed.
+//! right inside it is one session. The files of helper agents are kept
+//! deeper, in `<session id>/subagents/`: each tells only the session that
+//! ran it, so OTTY reads its answers for that session and lists no
+//! session of its own.
 
 use otty_plugin_sdk::HostError;
 use otty_plugin_sdk::agents::{Place, PlaceItem, PlaceKind, Session};
@@ -11,20 +13,40 @@ use otty_plugin_sdk::files::{self, FileInfo};
 
 use crate::file_ends::END_BYTES;
 use crate::glob::escaped;
-use crate::project_folder::{decoded_folder, parent_name, projects_folder};
+use crate::project_folder::{
+    decoded_folder, parent_name, projects_folder, session_of_file,
+};
 use crate::session_file::read_session;
 
-/// Where the sessions of the profile in `folder` are: its session files.
+/// Where the sessions of the profile in `folder` are: every `*.jsonl`
+/// file in its project folders, the files of helper agents too.
 pub(crate) fn session_places(folder: &str) -> Vec<Place> {
+    let projects = escaped(&projects_folder(folder));
+
     vec![Place {
-        glob: session_files_glob(folder),
+        glob: format!("{projects}/*/**/*.jsonl"),
         kind: PlaceKind::Files,
     }]
 }
 
-/// The session the file of `item` keeps; none when the file can not be
-/// read.
-pub(crate) fn read_sessions(item: &PlaceItem) -> Vec<Session> {
+/// The session the file of `item` of the profile in `folder` keeps; none
+/// when the file can not be read. The file of a helper agent is not read:
+/// it names only the session that ran it.
+pub(crate) fn read_sessions(folder: &str, item: &PlaceItem) -> Vec<Session> {
+    let path = &item.file.path;
+    let projects = projects_folder(folder);
+    let Some(session) = session_of_file(&projects, path) else {
+        return Vec::new();
+    };
+    if !is_session_file(path, &session) {
+        return vec![Session {
+            id: session,
+            folder: None,
+            title: None,
+            changed_ms: item.file.changed_ms,
+        }];
+    }
+
     let fallback = decoded_folder(&parent_name(&item.file.path));
 
     read_session(&item.file, &fallback, END_BYTES)
@@ -36,6 +58,12 @@ pub(crate) fn read_sessions(item: &PlaceItem) -> Vec<Session> {
 /// inside its project folders.
 pub(crate) fn session_files(folder: &str) -> Result<Vec<FileInfo>, HostError> {
     files::list(&session_files_glob(folder))
+}
+
+/// Whether the file at `path` is the session file of `session`, not the
+/// file of one of its helper agents.
+fn is_session_file(path: &str, session: &str) -> bool {
+    path.ends_with(&format!("/{session}.jsonl"))
 }
 
 /// The glob of the session files of the profile in `folder`.
@@ -59,7 +87,9 @@ mod tests {
 
         let mut sessions: Vec<Session> = items
             .iter()
-            .flat_map(|item| as_part(&host, || read_sessions(item)))
+            .flat_map(|item| {
+                as_part(&host, || read_sessions(&path(&host, folder), item))
+            })
             .collect();
         sessions.sort_by_key(|session| std::cmp::Reverse(session.changed_ms));
         sessions
@@ -71,6 +101,7 @@ mod tests {
 
         let listed: Vec<(&str, Option<&str>, Option<&str>, i64)> = found
             .iter()
+            .filter(|session| session.folder.is_some())
             .map(|session| {
                 (
                     session.id.as_str(),
@@ -105,15 +136,32 @@ mod tests {
         );
     }
 
-    /// Helper sessions in `<id>/subagents/`, other files and a session
-    /// file outside a project folder are not session files.
+    /// Other files and a session file outside a project folder are not
+    /// session files.
     #[test]
     fn only_session_files_in_project_folders_are_read() {
         let found = sessions_of(".claude");
 
-        assert_eq!(found.len(), 3);
+        assert_eq!(found.len(), 4);
         assert!(found.iter().all(|session| !session.id.starts_with("agent")));
         assert!(found.iter().all(|session| session.id != "stray"));
+    }
+
+    /// Issue 22: the file of a helper agent in `<id>/subagents/` tells
+    /// only that it belongs to the session `<id>`, with no folder and no
+    /// title, so OTTY reads it for that session's statistics and lists no
+    /// session of its own.
+    #[test]
+    fn a_helper_file_tells_only_the_session_that_ran_it() {
+        let found = sessions_of(".claude");
+
+        let helpers: Vec<&Session> = found
+            .iter()
+            .filter(|session| session.folder.is_none())
+            .collect();
+        assert_eq!(helpers.len(), 1);
+        assert_eq!(helpers[0].id, "1f0c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b");
+        assert_eq!(helpers[0].title, None);
     }
 
     #[test]
