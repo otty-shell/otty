@@ -101,7 +101,7 @@ impl AccountMoney {
 
         let spend = spend_of_account(account, profiles, registry);
 
-        Self::Estimate(MoneyEstimate::new(&spend, prices))
+        Self::Estimate(MoneyEstimate::new(&spend, prices, registry))
     }
 }
 

@@ -216,7 +216,11 @@ mod tests {
             "a helper session counts in the session that started it"
         );
         assert_eq!(read.answers[3].session.as_deref(), Some("ses_gone"));
-        assert_eq!(read.answers[2].provider, None, "a local model");
+        assert_eq!(
+            read.answers[2].provider,
+            Some(ProviderRef::Id("test".to_string())),
+            "a local model keeps the name OpenCode gave it"
+        );
         assert_eq!(read.answers[3].project, None, "a session that is gone");
         assert_eq!((read.records.seen, read.records.understood), (4, 4));
         assert_eq!(read.records.version.as_deref(), Some("1.4.0"));

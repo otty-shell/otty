@@ -135,7 +135,8 @@ pub(crate) fn group_usage(
                 if !is_in_project(part, input.project) {
                     continue;
                 }
-                let value = value_of(part.tokens(), measure, prices);
+                let value =
+                    value_of(part.tokens(), measure, prices, input.registry);
                 if value == 0 {
                     continue;
                 }
@@ -237,16 +238,20 @@ fn name_of(
 }
 
 /// The value of `tokens` in `measure`: all its tokens, or what they cost
-/// at `prices` in micro-dollars; nothing with no prices.
+/// at `prices` for who served them, as `registry` names it, in
+/// micro-dollars; nothing with no prices.
 fn value_of(
     tokens: &ModelTokens,
     measure: UsageMeasure,
     prices: Option<&PriceTable>,
+    registry: &Registry,
 ) -> u64 {
     match measure {
         UsageMeasure::Tokens => tokens.tokens().total(),
         UsageMeasure::Money => prices.map_or(0, |prices| {
-            MoneyTotal::of_models(std::slice::from_ref(tokens), prices)
+            let tokens = std::slice::from_ref(tokens);
+
+            MoneyTotal::of_models(tokens, prices, registry)
                 .cost()
                 .micro_dollars()
         }),

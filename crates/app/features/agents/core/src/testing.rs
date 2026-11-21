@@ -762,7 +762,8 @@ pub(crate) fn estimated_money() -> ShownMoney {
     let tokens =
         ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1);
     let prices = fetched_prices(at(10));
-    let total = MoneyTotal::of_models(&[tokens], prices.table());
+    let total =
+        MoneyTotal::of_models(&[tokens], prices.table(), &Registry::default());
 
     ShownMoney::of_total(&total, &prices, None)
 }

@@ -50,8 +50,11 @@ interface agent {
     config-folder-not-found,
   }
 
-  /// Whom a login or an answer is for: a provider id, or the host a key
-  /// is for when the agent names no provider.
+  /// Whom a login or an answer is for: the provider's name as the agent
+  /// wrote it, or the host a key is for when the agent names no provider.
+  /// A name passes even when no installed plugin serves it, such as
+  /// `google` or a local model: the host joins it to the provider part
+  /// with that id when one is installed, and prices an answer by it.
   variant provider-ref {
     id(string),
     host(string),
@@ -128,7 +131,12 @@ interface agent {
     /// session from the answers that name it.
     session: option<string>,
     at-ms: s64,
+    /// The model as the provider names it.
     model: option<string>,
+    /// Who served the answer, read from the agent's settings and files:
+    /// the provider the agent wrote, else the host of its server. The
+    /// host prices the tokens at this provider's price of the model,
+    /// else at the maker's.
     provider: option<provider-ref>,
     /// The login that served it, when the agent records it.
     login: option<login-ref>,

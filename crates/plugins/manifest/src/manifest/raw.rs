@@ -135,6 +135,7 @@ pub(crate) struct RawProvider {
     pub(crate) plan_usage_page: Option<String>,
     #[serde(default)]
     pub(crate) add_by_hand: bool,
+    pub(crate) priced_as: Option<String>,
     #[serde(default)]
     pub(crate) permissions: RawProviderPermissions,
 }

@@ -10,15 +10,18 @@ use crate::token_count::TokenCount;
 /// How many tokens a price in the table is for.
 const TOKENS_PER_PRICE: u128 = 1_000_000;
 
-/// List prices of models, by model id.
+/// List prices of models: the price of each model under its plain name,
+/// the maker's own as a rule, and the prices of named providers, such as
+/// clouds, resellers and the makers the table names only with a prefix.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PriceTable {
-    models: HashMap<String, ModelPrice>,
+    makers: HashMap<String, ModelPrice>,
+    providers: HashMap<String, HashMap<String, ModelPrice>>,
 }
 
 impl PriceTable {
     /// A table of the prices of `models`. Of two prices of the same model
-    /// id, the first is kept.
+    /// id and provider, the first is kept.
     ///
     /// ```
     /// use otty_agents::{Dollars, ModelPrice, PriceTable, TokenPrices};
@@ -29,37 +32,55 @@ impl PriceTable {
     /// };
     /// let table = PriceTable::new(vec![ModelPrice::new("gpt-5", prices)]);
     ///
-    /// assert!(table.price_of("gpt-5").is_some());
+    /// assert!(table.price_of("gpt-5", None).is_some());
     /// ```
     pub fn new(models: Vec<ModelPrice>) -> Self {
-        let mut by_id = HashMap::with_capacity(models.len());
+        let mut table = Self::default();
         for price in models {
-            by_id.entry(price.model.clone()).or_insert(price);
+            let rows = match &price.provider {
+                Some(provider) => {
+                    table.providers.entry(provider.clone()).or_default()
+                },
+                None => &mut table.makers,
+            };
+            rows.entry(price.model.clone()).or_insert(price);
         }
 
-        Self { models: by_id }
+        table
     }
 
-    /// The price of the model named `model` as the agent wrote it: the row
-    /// of the same id, else the row of the model a dated snapshot belongs
-    /// to (`claude-opus-4-5-20251101` is priced as `claude-opus-4-5`,
-    /// `gpt-5-2025-08-07` as `gpt-5`). `None` when the table has no price
-    /// for it; a similar model is never used instead.
-    pub fn price_of(&self, model: &str) -> Option<&ModelPrice> {
-        if let Some(price) = self.models.get(model) {
+    /// The price of the model named `model` as the agent wrote it, served
+    /// by the provider the table names `served_by`, such as `openrouter`:
+    ///
+    /// 1. the row of that provider and the model;
+    /// 2. else the row of the plain model name, the maker's own price;
+    /// 3. else `None`: a similar model is never used instead.
+    ///
+    /// Each step takes the row of the same id, else the row of the model a
+    /// dated snapshot belongs to (`claude-opus-4-5-20251101` is priced as
+    /// `claude-opus-4-5`, `gpt-5-2025-08-07` as `gpt-5`).
+    pub fn price_of(
+        &self,
+        model: &str,
+        served_by: Option<&str>,
+    ) -> Option<&ModelPrice> {
+        let provider_rows =
+            served_by.and_then(|provider| self.providers.get(provider));
+        if let Some(price) = provider_rows.and_then(|rows| row_of(rows, model))
+        {
             return Some(price);
         }
 
-        let base = snapshot_base(model)?;
-        self.models.get(base)
+        row_of(&self.makers, model)
     }
 }
 
 #[cfg(test)]
 impl PriceTable {
-    /// How many models have a price.
+    /// How many prices the table has, of makers and providers.
     pub(crate) fn len(&self) -> usize {
-        self.models.len()
+        self.makers.len()
+            + self.providers.values().map(HashMap::len).sum::<usize>()
     }
 }
 
@@ -69,6 +90,7 @@ impl PriceTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelPrice {
     model: String,
+    provider: Option<String>,
     standard: TokenPrices,
     long_prompt: Option<LongPromptPrice>,
 }
@@ -77,6 +99,12 @@ impl ModelPrice {
     /// The model id, such as `claude-opus-5-5` or `gpt-6.1-sol`.
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// The provider whose price this is, by the name the price table
+    /// gives it, such as `openrouter`; `None` for the maker's own price.
+    pub fn provider(&self) -> Option<&str> {
+        self.provider.as_deref()
     }
 
     /// The prices of `model` per million tokens, the same for every
@@ -100,9 +128,27 @@ impl ModelPrice {
     pub fn new(model: &str, prices: TokenPrices) -> Self {
         Self {
             model: model.to_string(),
+            provider: None,
             standard: prices,
             long_prompt: None,
         }
+    }
+
+    /// The same prices as the price of `provider`, named as the price
+    /// table names it, such as `openrouter` or `xai`: they price only the
+    /// answers that provider served.
+    ///
+    /// ```
+    /// use otty_agents::{ModelPrice, TokenPrices};
+    ///
+    /// let price = ModelPrice::new("anthropic/claude-x", TokenPrices::default())
+    ///     .with_provider("openrouter");
+    ///
+    /// assert_eq!(price.provider(), Some("openrouter"));
+    /// ```
+    pub fn with_provider(mut self, provider: &str) -> Self {
+        self.provider = Some(provider.to_string());
+        self
     }
 
     /// The same prices, with other `prices` per million tokens for a
@@ -241,6 +287,20 @@ fn price_of_count(count: u64, price: Dollars) -> u128 {
     u128::from(count) * u128::from(price.micro_dollars())
 }
 
+/// The price of `model` among `rows`: the row of the same id, else the row
+/// of the model a dated snapshot belongs to.
+fn row_of<'a>(
+    rows: &'a HashMap<String, ModelPrice>,
+    model: &str,
+) -> Option<&'a ModelPrice> {
+    if let Some(price) = rows.get(model) {
+        return Some(price);
+    }
+
+    let base = snapshot_base(model)?;
+    rows.get(base)
+}
+
 /// The model a dated snapshot `model` belongs to: `claude-opus-4-5` of
 /// `claude-opus-4-5-20251101` as Anthropic writes the date, `gpt-5` of
 /// `gpt-5-2025-08-07` as OpenAI does. `None` when `model` does not end with
@@ -303,14 +363,14 @@ mod tests {
     }
 
     fn model_of<'a>(table: &'a PriceTable, model: &str) -> Option<&'a str> {
-        table.price_of(model).map(ModelPrice::model)
+        table.price_of(model, None).map(ModelPrice::model)
     }
 
     #[test]
     fn a_known_model_is_priced_by_its_id() {
         let table = table();
 
-        let price = table.price_of("gpt-5");
+        let price = table.price_of("gpt-5", None);
 
         assert_eq!(price.map(ModelPrice::model), Some("gpt-5"));
         assert_eq!(
@@ -471,10 +531,95 @@ mod tests {
         ]);
 
         let input = table
-            .price_of("gpt-5")
+            .price_of("gpt-5", None)
             .map(|price| price.standard().input.micro_dollars());
 
         assert_eq!(input, Some(1_250_000));
         assert_eq!(table.len(), 1);
+    }
+
+    /// The input price of `model` served by `served_by`, in micro-dollars
+    /// per million tokens.
+    fn input_of(
+        table: &PriceTable,
+        model: &str,
+        served_by: Option<&str>,
+    ) -> Option<u64> {
+        table
+            .price_of(model, served_by)
+            .map(|price| price.standard().input.micro_dollars())
+    }
+
+    /// Made-up prices of one model sold by its maker and by two
+    /// resellers, and of a model only a reseller sells.
+    fn table_of_resellers() -> PriceTable {
+        PriceTable::new(vec![
+            ModelPrice::new(
+                "claude-opus-4-5",
+                token_prices(5_000_000, 0, 0, 0),
+            ),
+            ModelPrice::new(
+                "claude-opus-4-5",
+                token_prices(6_000_000, 0, 0, 0),
+            )
+            .with_provider("example-cloud"),
+            ModelPrice::new(
+                "anthropic/claude-opus-4-5",
+                token_prices(7_000_000, 0, 0, 0),
+            )
+            .with_provider("example-router"),
+            ModelPrice::new("grok-9", token_prices(3_000_000, 0, 0, 0))
+                .with_provider("example-maker"),
+        ])
+    }
+
+    #[test]
+    fn the_row_of_who_served_the_answer_prices_it() {
+        let table = table_of_resellers();
+
+        assert_eq!(
+            input_of(&table, "claude-opus-4-5", Some("example-cloud")),
+            Some(6_000_000)
+        );
+        assert_eq!(
+            input_of(
+                &table,
+                "anthropic/claude-opus-4-5",
+                Some("example-router")
+            ),
+            Some(7_000_000)
+        );
+        assert_eq!(
+            input_of(&table, "grok-9", Some("example-maker")),
+            Some(3_000_000)
+        );
+        assert_eq!(
+            input_of(&table, "claude-opus-4-5-20251101", Some("example-cloud")),
+            Some(6_000_000),
+            "a dated snapshot finds the row of who served it"
+        );
+    }
+
+    #[test]
+    fn with_no_row_of_who_served_it_an_answer_gets_the_makers_price() {
+        let table = table_of_resellers();
+
+        for served_by in [None, Some("example-other"), Some("example-router")] {
+            assert_eq!(
+                input_of(&table, "claude-opus-4-5", served_by),
+                Some(5_000_000),
+                "{served_by:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_row_of_a_provider_never_prices_what_another_served() {
+        let table = table_of_resellers();
+
+        assert_eq!(input_of(&table, "grok-9", None), None);
+        assert_eq!(input_of(&table, "grok-9", Some("example-cloud")), None);
+        assert_eq!(input_of(&table, "anthropic/claude-opus-4-5", None), None);
+        assert_eq!(table.len(), 4);
     }
 }

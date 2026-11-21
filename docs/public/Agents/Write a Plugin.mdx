@@ -113,6 +113,7 @@ icon = "example-cloud.svg"
 hosts = ["example.com"]         # keys found for these hosts go to this part
 usage_page = "https://example.com/usage"
 add_by_hand = true              # Add account offers this provider for a key no agent uses
+# priced_as = "example_cloud"   # its name in the LiteLLM price table, when not the id
 
 [agents.provider.permissions]
 http = ["api.example.com"]
@@ -174,7 +175,7 @@ A plugin with only agent parts and texts only in English writes
 | `profiles(agent)`                         | The agent's config folders on this computer, default first.         |
 | `detect(profile)`                         | Logged in; `ProfileStatus::NotLoggedIn(need)` with the [need](#needs) that says how to log in; or no folder. |
 | `version(profile)`                        | The version written in the newest files; `None` makes OTTY run `<program> --version`. |
-| `logins(profile)`                         | Each login and key: its kind, where it sits, whom it is for (a provider id or a host), the account or email when the files say. |
+| `logins(profile)`                         | Each login and key: its kind, where it sits, whom it is for (a provider name or a host), the account or email when the files say. |
 | `session_places(profile)`                 | File globs or a database that hold the sessions. OTTY re-reads only what changed. |
 | `read_sessions(profile, item)`            | What one file tells about its sessions: the id, and the folder and the title when the file names them. |
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
@@ -209,6 +210,20 @@ panel, which is slow on a large history.
 your needs asked for them ([below](#keys-you-ask-for)). An optional function returns "not supported"
 by default. Count records with `RecordCounts` (`add_understood`, `add_not_understood`,
 `add_broken`, `saw_version`) so OTTY can tell a changed format from fewer tokens.
+
+### Who served an answer
+
+Give each answer the model as the provider names it and who served it, read from your agent's
+settings and files: `ProviderRef::Id` with the provider's name as the agent wrote it, or
+`ProviderRef::Host` with the host of its server when the agent names no provider. Pass the name
+even when no plugin serves that provider, such as OpenCode's `google` or a local model; do not map
+it to the providers you know. OTTY joins the name to the provider part with that id, and prices the
+answer with the [LiteLLM](https://github.com/BerriAI/litellm) price table: the row of who served
+it and the model (`openrouter/anthropic/claude-x`), else the row of the plain model name, the
+maker's own price, else no price.
+
+A provider part is known to the price table by its id. When the table names the provider otherwise,
+give that name in the part's manifest: `priced_as = "gemini"` for a part whose id is `google`.
 
 ### Needs
 

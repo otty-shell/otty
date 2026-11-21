@@ -6,8 +6,9 @@
 //! dollars per token: `input_cost_per_token`, `output_cost_per_token`,
 //! `cache_read_input_token_cost` and `cache_creation_input_token_cost`, and,
 //! for a model that costs more for a long prompt, the same names with
-//! `_above_<N>k_tokens` at the end. `litellm_provider` says who sells the
-//! model at these prices.
+//! `_above_<N>k_tokens` at the end. A key names whose price it is: the
+//! plain model name for the maker's own price, `<provider>/<model>` for
+//! the price of a cloud or a reseller.
 //!
 //! The token counter knows the `<N>` the file uses: it keeps the tokens of
 //! long prompts only over the limits of `PROMPT_LIMITS` in `spend.rs`. A
@@ -24,33 +25,21 @@ use crate::error::{SourceError, Unexpected};
 use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
 use crate::spend::PROMPT_LIMITS;
 
-/// The `litellm_provider` of the makers that sell their own models, whose
-/// prices are used. Clouds and resellers, such as `bedrock`, `vertex_ai-*`,
-/// `azure` or `openrouter`, are not here.
-const MODEL_MAKERS: [&str; 10] = [
-    "anthropic",
-    "openai",
-    "deepseek",
-    "gemini",
-    "xai",
-    "mistral",
-    "moonshot",
-    "zai",
-    "minimax",
-    "dashscope",
-];
+/// The key of the example row at the top of the file, not a model.
+const SAMPLE_ROW: &str = "sample_spec";
 /// Tokens in the million a price is given for.
 const TOKENS_IN_MILLION: f64 = 1e6;
 
 /// Reads the LiteLLM price table `json`.
 ///
-/// A key is used when the model is sold by its maker, as the agents use
-/// it: a plain key such as `claude-sonnet-4-5`, or one written as
-/// `<provider>/<model>`, such as `deepseek/deepseek-v3.2`, whose provider is
-/// the maker. The plain key wins when both are there. The keys of clouds
-/// and resellers (Bedrock, Vertex, Azure, OpenRouter and the like) are
-/// left out, so their prices never mix in. An entry with no input or no
-/// output price is left out.
+/// A plain key, such as `claude-sonnet-4-5`, is the price of the model by
+/// that name: the maker's own price, as the agents use it (Vertex writes
+/// the Gemini models plain too, at Google's list prices). A key written
+/// as `<provider>/<model>`, such as `openrouter/anthropic/claude-x` or
+/// `azure/gpt-5`, is the price of that provider, a cloud or a reseller,
+/// and prices only what it served (see [`PriceTable::price_of`]). No list
+/// of makers or providers is kept: the key tells whose price it is. An
+/// entry with no input or no output price is left out.
 ///
 /// A missing cache price is the input price of the same prompt length: no
 /// discount is guessed. A cache write never costs less than plain input:
@@ -64,46 +53,31 @@ pub(crate) fn read_litellm(json: &[u8]) -> Result<PriceTable, SourceError> {
     let entries: BTreeMap<String, Value> = serde_json::from_slice(json)
         .map_err(|_| unexpected(Unexpected::NotJsonObject))?;
 
-    let mut plain = Vec::new();
-    let mut with_provider = Vec::new();
-    for (key, entry) in &entries {
-        let Some((model, is_plain)) = maker_model(key, entry) else {
-            continue;
-        };
-        let Some(price) = model_price(model, entry) else {
-            continue;
-        };
+    let prices: Vec<ModelPrice> = entries
+        .iter()
+        .filter(|(key, _)| key.as_str() != SAMPLE_ROW)
+        .filter_map(|(key, entry)| row_price(key, entry))
+        .collect();
 
-        if is_plain {
-            plain.push(price);
-        } else {
-            with_provider.push(price);
-        }
-    }
-
-    if plain.is_empty() && with_provider.is_empty() {
+    if prices.is_empty() {
         return Err(unexpected(Unexpected::NoPrices));
     }
 
-    plain.extend(with_provider);
-    Ok(PriceTable::new(plain))
+    Ok(PriceTable::new(prices))
 }
 
-/// The model the entry of `key` prices, and whether `key` is plain; `None`
-/// when the entry is not sold by a maker of [`MODEL_MAKERS`] or its key is
-/// not the plain model or `<provider>/<model>`.
-fn maker_model<'a>(key: &'a str, entry: &Value) -> Option<(&'a str, bool)> {
-    let provider = entry.get("litellm_provider")?.as_str()?;
-    if !MODEL_MAKERS.contains(&provider) {
+/// The price the entry of `key` gives: the maker's own price for a plain
+/// key, the price of `<provider>` for a key `<provider>/<model>`. `None`
+/// when it has no price or names no provider or no model.
+fn row_price(key: &str, entry: &Value) -> Option<ModelPrice> {
+    let Some((provider, model)) = key.split_once('/') else {
+        return model_price(key, entry);
+    };
+    if provider.is_empty() || model.is_empty() {
         return None;
     }
 
-    if !key.contains('/') {
-        return Some((key, true));
-    }
-
-    let model = key.strip_prefix(provider)?.strip_prefix('/')?;
-    (!model.is_empty() && !model.contains('/')).then_some((model, false))
+    model_price(model, entry).map(|price| price.with_provider(provider))
 }
 
 /// The prices of `model` in `entry`; `None` without an input or an output
@@ -334,13 +308,22 @@ mod tests {
     }
 
     fn standard(table: &PriceTable, model: &str) -> Option<[u64; 4]> {
+        served(table, model, None)
+    }
+
+    /// The standard prices of `model` served by `served_by`.
+    fn served(
+        table: &PriceTable,
+        model: &str,
+        served_by: Option<&str>,
+    ) -> Option<[u64; 4]> {
         table
-            .price_of(model)
+            .price_of(model, served_by)
             .map(|price| in_micro_dollars(price.standard()))
     }
 
     fn long_prompt(table: &PriceTable, model: &str) -> Option<(u64, [u64; 4])> {
-        let long = table.price_of(model)?.long_prompt()?;
+        let long = table.price_of(model, None)?.long_prompt()?;
 
         Some((long.over_tokens(), in_micro_dollars(long.prices())))
     }
@@ -362,39 +345,74 @@ mod tests {
     }
 
     #[test]
-    fn a_key_with_its_makers_provider_is_read_and_a_plain_key_wins() {
+    fn a_key_with_a_provider_prices_only_what_that_provider_served() {
         let table = table();
 
         assert_eq!(
-            standard(&table, "deepseek-v3.2"),
+            served(&table, "deepseek-v3.2", Some("deepseek")),
             Some([280_000, 28_000, 280_000, 400_000])
+        );
+        assert_eq!(standard(&table, "deepseek-v3.2"), None);
+        assert_eq!(
+            served(&table, "deepseek-chat", Some("deepseek")),
+            Some([9_000_000, 9_000_000, 9_000_000, 9_000_000]),
+            "the row of who served it, not the plain key"
         );
         assert_eq!(
             standard(&table, "deepseek-chat"),
-            Some([280_000, 28_000, 280_000, 420_000]),
-            "the plain key, not deepseek/deepseek-chat"
+            Some([280_000, 28_000, 280_000, 420_000])
         );
-        assert_eq!(table.price_of("deepseek/deepseek-v3.2"), None);
+        assert_eq!(table.price_of("deepseek/deepseek-v3.2", None), None);
     }
 
     #[test]
-    fn the_keys_of_clouds_and_resellers_are_left_out() {
+    fn the_keys_of_clouds_and_resellers_price_only_what_they_served() {
         let table = table();
 
+        assert_eq!(
+            served(&table, "gpt-5.5", Some("azure")),
+            Some([9_000_000, 9_000_000, 9_000_000, 90_000_000])
+        );
+        for served_by in [None, Some("openai"), Some("openrouter")] {
+            assert_eq!(
+                served(&table, "gpt-5.5", served_by),
+                Some([5_000_000, 500_000, 5_000_000, 30_000_000]),
+                "Azure's price does not mix in: {served_by:?}"
+            );
+        }
+        assert_eq!(
+            served(&table, "claude-opus-4-5", Some("vertex_ai")),
+            Some([9_000_000, 9_000_000, 9_000_000, 90_000_000])
+        );
+        assert_eq!(
+            served(&table, "anthropic/claude-opus-4-5", Some("openrouter")),
+            Some([9_000_000, 9_000_000, 9_000_000, 90_000_000])
+        );
         for model in [
-            "gemini-2.5-flash",
             "claude-opus-4-5",
             "anthropic/claude-opus-4-5",
-            "us.anthropic.claude-sonnet-4-5",
             "1024-x-1024/gpt-image-9",
             "gpt-image-9",
         ] {
-            assert_eq!(table.price_of(model), None, "{model}");
+            assert_eq!(table.price_of(model, None), None, "{model}");
         }
+    }
+
+    /// The reader has no list of makers: a plain key is the price of the
+    /// model by that name, whoever sells it. Clouds use plain keys only
+    /// for their own model ids, and Vertex for the Gemini models, at
+    /// Google's list prices.
+    #[test]
+    fn a_plain_key_prices_its_model_whoever_sells_it() {
+        let table = table();
+
         assert_eq!(
-            standard(&table, "gpt-5.5"),
-            Some([5_000_000, 500_000, 5_000_000, 30_000_000]),
-            "Azure's price of the same model does not mix in"
+            standard(&table, "gemini-2.5-flash"),
+            Some([300_000, 300_000, 300_000, 2_500_000])
+        );
+        assert_eq!(
+            standard(&table, "us.anthropic.claude-sonnet-4-5"),
+            Some([9_000_000, 9_000_000, 9_000_000, 90_000_000])
         );
     }
 
@@ -433,7 +451,7 @@ mod tests {
         let table = table();
 
         let written = table
-            .price_of("deepseek-v3.2")
+            .price_of("deepseek-v3.2", Some("deepseek"))
             .map(|price| price.standard().cache_written.micro_dollars());
 
         assert_eq!(written, Some(280_000));
@@ -460,9 +478,9 @@ mod tests {
             "o9-broken",
             "o9-negative",
         ] {
-            assert_eq!(table.price_of(model), None, "{model}");
+            assert_eq!(table.price_of(model, None), None, "{model}");
         }
-        assert_eq!(table.len(), 7);
+        assert_eq!(table.len(), 14);
     }
 
     #[test]
@@ -518,8 +536,9 @@ mod tests {
     fn the_model_of_a_price_is_its_name_without_the_provider() {
         let table = table();
 
-        let model = table.price_of("deepseek-v3.2").map(ModelPrice::model);
+        let price = table.price_of("deepseek-v3.2", Some("deepseek"));
 
-        assert_eq!(model, Some("deepseek-v3.2"));
+        assert_eq!(price.map(ModelPrice::model), Some("deepseek-v3.2"));
+        assert_eq!(price.and_then(ModelPrice::provider), Some("deepseek"));
     }
 }

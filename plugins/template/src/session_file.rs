@@ -10,7 +10,9 @@ use serde_json::Value;
 /// What marks the lines the part reads; the host leaves out the others.
 const MARKERS: [&[u8]; 2] = [b"\"type\":\"meta\"", b"\"type\":\"answer\""];
 
-/// The provider every answer of the made-up agent is for.
+/// Who served every answer of the made-up agent. Name the provider as
+/// your agent writes it, even one no plugin serves: OTTY joins the name to
+/// the provider part with that id and prices the answer by it.
 const PROVIDER: &str = "example-cloud";
 
 /// What a session file said: its title and project from the `meta`

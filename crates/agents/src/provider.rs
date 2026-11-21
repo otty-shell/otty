@@ -162,6 +162,7 @@ pub struct ProviderEntry {
     plan_usage_page: Option<String>,
     hosts: Vec<String>,
     can_add_by_hand: bool,
+    priced_as: Option<String>,
     part: PluginPart,
     keyring_services: Vec<String>,
 }
@@ -193,6 +194,23 @@ impl ProviderEntry {
     /// an account by hand (spec 2026-11-19, Decision 7).
     pub fn can_add_by_hand(&self) -> bool {
         self.can_add_by_hand
+    }
+
+    /// The name the price table knows the provider by: the one its part
+    /// gives in `priced_as`, else its id.
+    ///
+    /// ```
+    /// use otty_agents::{ProviderEntry, ProviderId};
+    /// use otty_plugin_host::PluginPart;
+    ///
+    /// let part = PluginPart::new("example", "Example", "0.1.0", "", "google");
+    /// let google = ProviderEntry::new(ProviderId::new("google"), "Google", part);
+    ///
+    /// assert_eq!(google.price_name(), "google");
+    /// assert_eq!(google.with_priced_as("gemini").price_name(), "gemini");
+    /// ```
+    pub fn price_name(&self) -> &str {
+        self.priced_as.as_deref().unwrap_or(self.id.as_str())
     }
 
     /// The plugin part that reads the provider's accounts.
@@ -252,6 +270,7 @@ impl ProviderEntry {
             plan_usage_page: None,
             hosts: Vec::new(),
             can_add_by_hand: false,
+            priced_as: None,
             part,
             keyring_services: Vec::new(),
         }
@@ -293,6 +312,13 @@ impl ProviderEntry {
     /// The same entry offered by Add account.
     pub fn with_add_by_hand(mut self) -> Self {
         self.can_add_by_hand = true;
+        self
+    }
+
+    /// The same entry known to the price table as `name`, when that is
+    /// not its id.
+    pub fn with_priced_as(mut self, name: impl Into<String>) -> Self {
+        self.priced_as = Some(name.into());
         self
     }
 

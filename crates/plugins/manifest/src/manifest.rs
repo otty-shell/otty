@@ -323,6 +323,7 @@ pub struct ProviderPart {
     usage_page: Option<String>,
     plan_usage_page: Option<String>,
     add_by_hand: bool,
+    priced_as: Option<String>,
     permissions: PartPermissions,
 }
 
@@ -366,6 +367,12 @@ impl ProviderPart {
         self.add_by_hand
     }
 
+    /// The name the LiteLLM price table knows the provider by, when it is
+    /// not the id, such as `gemini` for the id `google`.
+    pub fn priced_as(&self) -> Option<&str> {
+        self.priced_as.as_deref()
+    }
+
     /// What this part may do.
     pub fn permissions(&self) -> &PartPermissions {
         &self.permissions
@@ -404,6 +411,16 @@ impl ProviderPart {
                 });
             }
         }
+        if raw
+            .priced_as
+            .as_ref()
+            .is_some_and(|name| name.trim().is_empty())
+        {
+            return Err(ManifestError::BadPart {
+                part,
+                reason: "has an empty `priced_as`".to_string(),
+            });
+        }
         Ok(Self {
             id: raw.id.clone(),
             name: raw.name.clone(),
@@ -412,6 +429,7 @@ impl ProviderPart {
             usage_page: raw.usage_page.clone(),
             plan_usage_page: raw.plan_usage_page.clone(),
             add_by_hand: raw.add_by_hand,
+            priced_as: raw.priced_as.clone(),
             permissions: PartPermissions::of_provider(&raw.permissions, &part)?,
         })
     }
@@ -755,6 +773,25 @@ mod tests {
             Some("https://chatgpt.com/codex/settings/usage")
         );
         assert_eq!(without.providers()[0].plan_usage_page(), None);
+        assert!(matches!(error, ManifestError::BadPart { .. }), "{error:?}");
+    }
+
+    /// Issue 23: a provider whose name in the LiteLLM price table is not
+    /// its id gives that name.
+    #[test]
+    fn a_provider_may_name_the_name_the_price_table_knows_it_by() {
+        let priced = edited(
+            OPENAI_MANIFEST,
+            "add_by_hand",
+            "priced_as = \"example_ai\"\nadd_by_hand",
+        );
+
+        let manifest = Manifest::parse(&priced).expect("valid");
+        let without = Manifest::parse(OPENAI_MANIFEST).expect("valid");
+        let error = refusal(&edited(&priced, "\"example_ai\"", "\" \""));
+
+        assert_eq!(manifest.providers()[0].priced_as(), Some("example_ai"));
+        assert_eq!(without.providers()[0].priced_as(), None);
         assert!(matches!(error, ManifestError::BadPart { .. }), "{error:?}");
     }
 

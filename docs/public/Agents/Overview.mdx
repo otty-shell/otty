@@ -242,7 +242,12 @@ a Refresh in between shows its last answer.
 Money comes, best first, from the provider's bill (for an Anthropic or OpenAI organization, with an
 admin key), from the cost the agent wrote itself (OpenCode does), or from an **estimate**:
 
-> money = tokens of each model × the list price of that model
+> money = tokens of each model × the list price of that model where it was served
+
+The price of a model depends on who served it: the maker itself, a cloud or a reseller such as
+OpenRouter. Each plugin says who served each answer, as the agent wrote it, and OTTY picks the
+price: the list price of who served the answer, else the maker's own list price of the model, else
+no price. OTTY never takes the price of a similar model instead.
 
 The prices cover input, cached input, writing to the cache and output, with the higher prices of a
 long prompt where a model has them. Discounts are not known to OTTY. A model with no price adds

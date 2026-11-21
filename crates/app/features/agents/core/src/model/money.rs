@@ -180,7 +180,7 @@ impl EstimateMarkViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{Dollars, ModelTokens, TokenCount};
+    use otty_agents::{Dollars, ModelTokens, Registry, TokenCount};
 
     use super::*;
     use crate::testing::{at, fetched_prices, price_table};
@@ -231,7 +231,11 @@ mod tests {
     #[test]
     fn an_estimate_shows_the_mark_with_the_time_of_the_prices_in_both_forms() {
         let prices = fetched_prices(at(10));
-        let total = MoneyTotal::of_models(&[gpt_5(None)], prices.table());
+        let total = MoneyTotal::of_models(
+            &[gpt_5(None)],
+            prices.table(),
+            &Registry::default(),
+        );
 
         let money = ShownMoney::of_total(&total, &prices, None);
 
@@ -247,8 +251,11 @@ mod tests {
     #[test]
     fn the_cost_the_agent_wrote_is_exact() {
         let prices = fetched_prices(at(10));
-        let total =
-            MoneyTotal::of_models(&[gpt_5(Some(500_000))], &price_table());
+        let total = MoneyTotal::of_models(
+            &[gpt_5(Some(500_000))],
+            &price_table(),
+            &Registry::default(),
+        );
 
         let money = ShownMoney::of_total(&total, &prices, None);
 

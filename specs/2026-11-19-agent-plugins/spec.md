@@ -284,6 +284,20 @@ after, as today (`account_numbers/mod.rs`).
   and OTTY prices them. A host operation for a plugin to ask OTTY for the
   price of a model is added only when a plugin needs to compute money
   itself; none does today.
+- **The plugin says who served an answer, OTTY picks the price** (owner,
+  2026-11-21; issue 23). Each answer names the model as the provider
+  names it and who served it, read from the agent's settings and files:
+  the provider's name as the agent wrote it, even one no plugin serves
+  (OpenCode's `providerID`, such as `google`), or the host of its
+  server. OTTY, not the plugin, joins the name to the provider part that
+  serves it. The table's key tells whose price a row is: the plain model
+  name (`claude-sonnet-4-5`) is the maker's own price, `<provider>/…`
+  (`openrouter/…`, `azure/…`) the price of that provider. OTTY prices an
+  answer at the row of who served it and the model; else at the row of
+  the plain model name; else it has no price and shows "no price", never
+  a guess. A provider is known to the table by its id, unless its part
+  names another name with `priced_as` in its manifest. No list of makers
+  or providers is in OTTY.
 
 ### 7. Permissions: declared per part, shown, and applied by context
 
@@ -506,6 +520,7 @@ hosts = ["openai.com", "chatgpt.com"]  # a host is this or ends with "." + this
 usage_page = "https://platform.openai.com/usage"            # of a key or an organization
 plan_usage_page = "https://chatgpt.com/codex/settings/usage" # of a subscription; usage_page when absent
 add_by_hand = true                # Add account offers it for a key no agent uses
+# priced_as = "gemini"            # its name in the LiteLLM price table, when not the id
 
 [agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
@@ -1458,13 +1473,10 @@ Dependencies:
 
 ## Open questions for the owner
 
-- `MODEL_MAKERS` in `crates/agents/src/litellm.rs` names providers in
-  OTTY's code (`anthropic`, `openai`, `deepseek` and others), against
-  Decision 1: it picks the LiteLLM entries of the makers that sell their
-  own models. An idea to check after issue 21: take the LiteLLM entry
-  with the plain model name and drop the list. Otherwise a provider
-  plugin names its LiteLLM provider, or the agent reports who served each
-  session.
+- Settled on 2026-11-21 (issue 23): `MODEL_MAKERS` is gone. The answer
+  names who served it, and OTTY prices it by the row of that provider,
+  else by the row of the plain model name; see "The plugin says who
+  served an answer" in Decision 6.
 
 The earlier question (how official plugins reach users before they have
 their own repositories) was settled on 2026-11-20: all five are embedded,

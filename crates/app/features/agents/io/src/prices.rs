@@ -94,7 +94,7 @@ mod tests {
                 answers.as_slice(),
                 [AgentsIntent::PricesLoaded(LoadedPrices { prices: Ok(answer), .. })]
                     if answer.source() == SourceId::LiteLlmPrices
-                        && answer.value().table().price_of("gpt-5").is_some()
+                        && answer.value().table().price_of("gpt-5", None).is_some()
             ),
             "{answers:?}"
         );

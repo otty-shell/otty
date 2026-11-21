@@ -1,6 +1,7 @@
-//! The ids OpenCode gives the providers, as in `providerID` of an answer,
-//! the keys of `auth.json` and `integration_id` of a login, and the ids of
-//! the provider parts that serve them in OTTY.
+//! The ids OpenCode gives the providers of its logins, as in the keys of
+//! `auth.json` and `integration_id` of a login, and the ids of the
+//! provider parts that serve them in OTTY. An answer names its provider
+//! as OpenCode wrote it instead (`message.rs`).
 
 use otty_plugin_sdk::agents::ProviderRef;
 

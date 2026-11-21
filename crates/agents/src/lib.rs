@@ -31,7 +31,8 @@
 //! billed by an API key, [`MoneyEstimate`] turns those tokens into an
 //! estimate of the money, at the list prices of a [`PriceTable`] that a
 //! [`PriceSource`] reads from the LiteLLM price table, fetched at most once
-//! a day, or from its kept copy. Each reader counts the records it saw and
+//! a day, or from its kept copy: each model at the price of who served it,
+//! else at its maker's ([`PriceTable::price_of`]). Each reader counts the records it saw and
 //! understood; when the newest session files are not understood, the count
 //! fails with [`SourceError::FormatChanged`], whose [`FormatChange`] names
 //! the agent's version and gives a report with no value of a record.

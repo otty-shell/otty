@@ -88,6 +88,20 @@ impl Registry {
         }
     }
 
+    /// The name the price table knows the provider `reference` by (issue
+    /// 23): the name its provider part gives, else the id the agent
+    /// wrote, even when no part serves it. `None` for the host of a
+    /// server no part serves.
+    pub fn price_name_of<'a>(
+        &'a self,
+        reference: &'a ProviderRef,
+    ) -> Option<&'a str> {
+        match self.provider_of(reference) {
+            Some(entry) => Some(entry.price_name()),
+            None => reference.as_id().map(ProviderId::as_str),
+        }
+    }
+
     /// Whether `one` and `other` name the same provider, once each host is
     /// turned into the id of the provider that serves it.
     pub fn is_same_provider(
@@ -230,6 +244,39 @@ mod tests {
         assert_eq!(cloud.map(ProviderEntry::name), Some("example-cloud"));
         assert!(registry.agent(&AgentId::new("cursor")).is_none());
         assert!(registry.provider(&ProviderId::new("mistral")).is_none());
+    }
+
+    /// Issue 23: the price table knows a provider by its id, by the name
+    /// its part gives, or, with no part, by the name the agent wrote; a
+    /// server no part serves has no name there.
+    #[test]
+    fn a_provider_is_priced_by_its_id_the_name_its_part_gives_or_as_written() {
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                provider("example-cloud", &["example.com"]),
+                provider("example-google", &["example.org"])
+                    .with_priced_as("example-gemini"),
+            ],
+        );
+        let cases = [
+            (ProviderRef::of_id("example-cloud"), Some("example-cloud")),
+            (
+                ProviderRef::Host("api.example.com".to_string()),
+                Some("example-cloud"),
+            ),
+            (ProviderRef::of_id("example-google"), Some("example-gemini")),
+            (
+                ProviderRef::Host("api.example.org".to_string()),
+                Some("example-gemini"),
+            ),
+            (ProviderRef::of_id("openrouter"), Some("openrouter")),
+            (ProviderRef::Host("llm.example.net".to_string()), None),
+        ];
+
+        for (provider, name) in cases {
+            assert_eq!(registry.price_name_of(&provider), name, "{provider:?}");
+        }
     }
 
     /// A host is a provider's when it is one of its hosts or ends with `.`

@@ -50,7 +50,7 @@ impl FetchedPrices {
     /// let prices =
     ///     FetchedPrices::new(PriceTable::default(), SystemTime::UNIX_EPOCH);
     ///
-    /// assert_eq!(prices.table().price_of("gpt-5"), None);
+    /// assert_eq!(prices.table().price_of("gpt-5", None), None);
     /// ```
     pub fn new(table: PriceTable, fetched_at: SystemTime) -> Self {
         Self { table, fetched_at }
@@ -272,7 +272,7 @@ mod tests {
     fn input_price(prices: &FetchedPrices) -> Option<u64> {
         prices
             .table()
-            .price_of("gpt-5")
+            .price_of("gpt-5", None)
             .map(|price| price.standard().input.micro_dollars())
     }
 

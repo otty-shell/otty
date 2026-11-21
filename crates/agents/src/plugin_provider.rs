@@ -121,6 +121,9 @@ impl PluginProvider {
         if manifest_part.can_add_by_hand() {
             entry = entry.with_add_by_hand();
         }
+        if let Some(name) = manifest_part.priced_as() {
+            entry = entry.with_priced_as(name);
+        }
 
         let health = part.health().clone();
         Some(Self::of_calls(entry, health, Box::new(PartCalls { part })))

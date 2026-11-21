@@ -44,6 +44,10 @@ icon = "example-cloud.svg"
 hosts = ["example.com"]
 usage_page = "https://example.com/usage"
 add_by_hand = true
+# OTTY prices the answers this provider served at its rows of the LiteLLM
+# price table, found by the id. A provider the table names otherwise
+# gives that name, such as `priced_as = "gemini"` for the id `google`.
+# priced_as = "example_cloud"
 
 [agents.provider.permissions]
 http = ["api.example.com"]

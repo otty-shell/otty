@@ -1,6 +1,6 @@
 //! One message of the database read as what OTTY counts: a question of
-//! the user, or an answer of a model with its provider, model, tokens and
-//! the cost OpenCode wrote.
+//! the user, or an answer of a model with its provider as OpenCode names
+//! it, model, tokens and the cost OpenCode wrote.
 //!
 //! Both shapes write an answer the same way, apart from where the model
 //! is: `providerID` and `modelID` in the first, `model.providerID` and
@@ -8,11 +8,10 @@
 //! `reasoning` and `cache.read` and `cache.write`, none of them part of
 //! another; the cost is in dollars.
 
-use otty_plugin_sdk::agents::{Answer, TokenCount};
+use otty_plugin_sdk::agents::{Answer, ProviderRef, TokenCount};
 use serde_json::Value;
 
 use crate::database::MessageRow;
-use crate::provider_ids::provider_of;
 
 /// Millionths of a dollar in a dollar.
 const MICRODOLLARS_IN_DOLLAR: f64 = 1_000_000.0;
@@ -22,7 +21,7 @@ const MICRODOLLARS_IN_DOLLAR: f64 = 1_000_000.0;
 pub(crate) enum Record {
     /// A message the user wrote.
     Question,
-    /// An answer of a model, with its provider, when OTTY reads it; its
+    /// An answer of a model, with its provider as OpenCode names it; its
     /// project is left for the caller, who knows the session.
     Answer(Box<Answer>),
     /// An answer OTTY does not understand: the field it needs that was
@@ -82,12 +81,22 @@ pub(crate) fn read_record(row: &MessageRow) -> Record {
         session: None,
         at_ms: row.at_ms,
         model: model.map(String::from),
-        provider: provider.and_then(provider_of),
+        provider: provider.and_then(provider_as_written),
         login: None,
         project: None,
         tokens,
         cost_microdollars: cost,
     }))
+}
+
+/// The provider OpenCode names `id`, as it wrote it (issue 23): OTTY joins
+/// the name to the provider part that serves it, and prices the answer by
+/// it even when no part does, such as `google` or a local model. `None`
+/// for a name of only spaces.
+fn provider_as_written(id: &str) -> Option<ProviderRef> {
+    let id = id.trim();
+
+    (!id.is_empty()).then(|| ProviderRef::Id(id.to_string()))
 }
 
 /// Whether the answer `data` is finished: it says why it stopped or when
@@ -176,8 +185,6 @@ fn not_understood(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::ProviderRef;
-
     use super::*;
     use crate::testing::{
         NOW, first_shape_answer, first_shape_question, millis,
@@ -242,16 +249,34 @@ mod tests {
         );
     }
 
+    /// Issue 23: the provider passes as OpenCode wrote it, even when no
+    /// plugin serves it; OTTY joins it to the part that serves it, and
+    /// prices the answer by it.
     #[test]
-    fn an_answer_of_a_provider_otty_does_not_read_names_none() {
-        let data = first_shape_answer("test", "qwen-local", TOKENS, 0.0);
+    fn an_answer_keeps_the_provider_name_opencode_wrote() {
+        let google = first_shape_answer("google", "gemini-x", TOKENS, 0.0);
+        let local = first_shape_answer("test", "qwen-local", TOKENS, 0.0);
+        let router = second_shape_answer(
+            " openrouter ",
+            "anthropic/claude-x",
+            TOKENS,
+            0.0,
+        );
 
-        let Record::Answer(answer) = read_record(&row(None, &data)) else {
-            panic!("an answer");
-        };
+        for (data, provider) in
+            [(google, "google"), (local, "test"), (router, "openrouter")]
+        {
+            let record = read_record(&row(Some("assistant"), &data));
 
-        assert_eq!(answer.provider, None);
-        assert_eq!(answer.cost_microdollars, Some(0));
+            let Record::Answer(answer) = record else {
+                panic!("an answer: {data}");
+            };
+            assert_eq!(
+                answer.provider,
+                Some(ProviderRef::Id(provider.to_string()))
+            );
+            assert_eq!(answer.cost_microdollars, Some(0));
+        }
     }
 
     #[test]

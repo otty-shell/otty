@@ -3,7 +3,9 @@
 //! only a profile that pays with an API key has a cost (spec Decisions 9
 //! and 14).
 
-use otty_agents::{ModelTokens, MoneyTotal, PriceTable, Profile, ProjectStats};
+use otty_agents::{
+    ModelTokens, MoneyTotal, PriceTable, Profile, ProjectStats, Registry,
+};
 
 use super::state::AgentsState;
 
@@ -27,18 +29,21 @@ impl StatsCost {
     }
 
     /// The cost of `models` of a profile that `pays_per_token`, at
-    /// `prices`.
+    /// `prices` for who served them, as `registry` names it.
     pub(crate) fn of(
         models: &[ModelTokens],
         pays_per_token: bool,
         prices: Option<&PriceTable>,
+        registry: &Registry,
     ) -> Self {
         if !pays_per_token {
             return Self::Unpaid;
         }
 
         match prices {
-            Some(prices) => Self::Priced(MoneyTotal::of_models(models, prices)),
+            Some(prices) => {
+                Self::Priced(MoneyTotal::of_models(models, prices, registry))
+            },
             None => Self::NoPrices,
         }
     }
@@ -100,6 +105,7 @@ impl ProjectSummary {
                         part.models(),
                         profiles.is_api_key(profile),
                         prices,
+                        state.registry(),
                     );
                     sum.plus(cost)
                 });
