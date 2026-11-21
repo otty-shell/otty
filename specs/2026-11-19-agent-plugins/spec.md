@@ -241,6 +241,16 @@ that hold keys are readable by plugins only with the keys replaced by
 handles. The host reads the key right before each use and drops it right
 after, as today (`account_numbers/mod.rs`).
 
+OTTY gives a provider part a handle only to a key that is there now
+(2026-11-21, issue 13). Before it calls the part with the key of a login
+an agent part found, the host reads the key at that place, with the
+permissions of the agent part, which declares the place. When no key is
+there, such as a Claude Code profile whose `.credentials.json` is `{}`
+while the agent still works, the provider part is not called and no
+failure is shown: the account has no numbers from the provider, and the
+limits the agent part reads are what the user sees. A key OTTY may not
+read, or could not read, still goes to the part, which reports it.
+
 Of where a key came from, a handle tells one fact: whether the user gave
 it in OTTY (on Add account, or in the field of an `ask-key` need) or OTTY
 read it from a place of an agent (`given-in-otty`). It never tells the

@@ -105,6 +105,14 @@ pub enum Unavailable {
     /// key taken out of the agent's file since.
     #[error("the key is no longer where OTTY found it")]
     KeyGone,
+    /// The login an agent part found has no key at its place now, such
+    /// as a Claude Code profile whose credentials file is `{}` while the
+    /// agent still works (spec 2026-11-19-agent-plugins, issue 13). OTTY
+    /// gives a provider part a handle only to a key that is there, so the
+    /// part is not asked: the account has no numbers of it, and this is
+    /// no failure to show.
+    #[error("the login has no key at its place")]
+    NoLoginKey,
     /// The name of the variable of a key the user gave is not a variable
     /// name.
     /// The name is not kept: it may be the key typed in the wrong field.

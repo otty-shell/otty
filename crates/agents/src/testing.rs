@@ -19,6 +19,7 @@ use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
+use crate::error::Unavailable;
 use crate::fixtures::stand_in::{default_config_dir, profile_command};
 use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::key_fingerprint::KeyFingerprint;
@@ -79,7 +80,7 @@ mock! {
             &self,
             profile: &Profile,
             account: &Account,
-        ) -> Option<Login>;
+        ) -> Result<Login, Unavailable>;
         fn login_refused(
             &self,
             profile: &Profile,

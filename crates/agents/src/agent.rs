@@ -10,6 +10,7 @@ use otty_plugin_host::agents::agent::Login;
 use crate::account::Account;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
+use crate::error::Unavailable;
 use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
 use crate::part_need::PartNeed;
@@ -298,14 +299,20 @@ pub trait Agent: Send + Sync {
 
     /// The login of `account` as the plugin part that found it in
     /// `profile` names it, with the place its key sits, so that a
-    /// provider part can be given a handle to it. `None` when the part no
-    /// longer finds it there.
+    /// provider part can be given a handle to it.
+    ///
+    /// # Errors
+    ///
+    /// [`Unavailable::KeyGone`] when the part no longer finds the login
+    /// there, and [`Unavailable::NoLoginKey`] when it does but no key is
+    /// at the login's place now: a provider part gets a handle only to a
+    /// key that is there (spec 2026-11-19-agent-plugins, issue 13).
     fn found_login(
         &self,
         _profile: &Profile,
         _account: &Account,
-    ) -> Option<Login> {
-        None
+    ) -> Result<Login, Unavailable> {
+        Err(Unavailable::KeyGone)
     }
 
     /// What the user must do now that a provider refused `login`, which

@@ -96,7 +96,9 @@ pub fn own_reader_of<'a>(
 /// # Errors
 ///
 /// An account no part serves, or whose key is no longer where it was
-/// found, is "not available" and nothing is sent; what the user must do,
+/// found, is "not available" and nothing is sent. So is a login with no
+/// key at its place now, [`Unavailable::NoLoginKey`], which is no failure
+/// to show (issue 13). What the user must do,
 /// such as give another key, is the part's need,
 /// [`SourceError::NeedsUser`]. A login of the profile the provider
 /// refused is the need of the agent part that found it, else
@@ -132,7 +134,9 @@ pub fn read_account_numbers(
         KeyPlace::ProfileFiles(profile) => {
             let gone = || SourceError::NotAvailable(Unavailable::KeyGone);
             let agent = agent_of(agents, profile.agent()).ok_or_else(gone)?;
-            let login = agent.found_login(profile, account).ok_or_else(gone)?;
+            let login = agent
+                .found_login(profile, account)
+                .map_err(SourceError::NotAvailable)?;
             let given = read_given_keys(given, &env_var)?;
 
             provider.read(account, &login, &given).map_err(|error| {
@@ -365,7 +369,7 @@ mod tests {
         agent
             .expect_found_login()
             .times(1)
-            .returning(|_, _| Some(example_login()));
+            .returning(|_, _| Ok(example_login()));
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
@@ -404,6 +408,46 @@ mod tests {
         assert_eq!(
             added,
             Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
+        );
+    }
+
+    /// Issue 13: the login an agent part found has no key at its place
+    /// now, such as a Claude Code profile whose credentials file is `{}`.
+    /// The provider part is not asked, and the answer is the quiet "no
+    /// key of the login" rather than a failure of the part.
+    #[test]
+    fn a_login_without_its_key_does_not_ask_the_provider_part() {
+        use crate::testing::{MockAgent, mock_entry, profile};
+
+        let mut agent = MockAgent::new();
+        agent
+            .expect_entry()
+            .return_const(mock_entry("test-agent", "test-agent"));
+        agent
+            .expect_found_login()
+            .returning(|_, _| Err(Unavailable::NoLoginKey));
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().never();
+        let providers = [PluginProvider::made_up(
+            "example-cloud",
+            &["example.com"],
+            calls,
+        )];
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
+
+        let numbers = read_account_numbers(
+            &agents,
+            &providers,
+            &key_account(ProviderRef::of_id("example-cloud"), "made-up"),
+            &KeyPlace::ProfileFiles(profile("Example")),
+            &[],
+            at(NOW),
+            no_variables,
+        );
+
+        assert_eq!(
+            numbers,
+            Err(SourceError::NotAvailable(Unavailable::NoLoginKey))
         );
     }
 

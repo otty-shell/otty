@@ -9,7 +9,7 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Account, AccountNumbers, Balance, Bill, KeyPlace, SourceError,
-    SourceFailure, SourceId,
+    SourceFailure, SourceId, Unavailable,
 };
 
 use super::freshness::{ReadState, Which};
@@ -85,7 +85,9 @@ impl OwnRead {
     }
 
     /// Take the answer of a read that ended at `read_at`: numbers replace
-    /// the last good ones, a failure keeps them and says why.
+    /// the last good ones, a failure keeps them and says why. A login with
+    /// no key at its place now has no numbers and no failure (issue 13 of
+    /// spec 2026-11-19-agent-plugins).
     fn apply(
         &mut self,
         numbers: Result<AccountNumbers, SourceError>,
@@ -96,6 +98,10 @@ impl OwnRead {
         match numbers {
             Ok(numbers) => {
                 self.last_good = Some((numbers, read_at));
+                self.failure = None;
+            },
+            Err(SourceError::NotAvailable(Unavailable::NoLoginKey)) => {
+                self.last_good = None;
                 self.failure = None;
             },
             Err(failure) => self.failure = Some(failure),
@@ -251,6 +257,30 @@ mod tests {
             Some((Balance::new(Amount::new(110.0, "CNY"), None), at(10)))
         );
         assert_eq!(read.failure(), Some(&crate::testing::refused_key_need()));
+        assert_eq!(read.reads().read_at(), Some(at(20)));
+    }
+
+    /// Issue 13 of spec 2026-11-19-agent-plugins: a login whose key is not
+    /// at its place now, such as a Claude Code profile whose credentials
+    /// file is `{}`, has no numbers of its provider and no failure to
+    /// show; what its profile reads is what the user sees.
+    #[test]
+    fn a_login_without_its_key_has_no_numbers_and_no_failure() {
+        let account = crate::testing::chatgpt_login();
+        let place = KeyPlace::ProfileFiles(crate::testing::codex());
+        let no_key = Err(SourceError::NotAvailable(
+            otty_agents::Unavailable::NoLoginKey,
+        ));
+        let mut reads = OwnReads::default();
+        let _ = reads.start(vec![(account.clone(), place)], Which::Every);
+        reads.apply(loaded(account.clone(), Ok(left(110.0)), at(10)));
+        reads.apply(loaded(account.clone(), no_key, at(20)));
+
+        let read = reads.of(&account).expect("the account was read");
+
+        assert_eq!(read.failure(), None);
+        assert_eq!(read.balance(), None);
+        assert_eq!(read.limits(), None);
         assert_eq!(read.reads().read_at(), Some(at(20)));
     }
 

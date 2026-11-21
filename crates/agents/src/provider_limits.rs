@@ -22,7 +22,8 @@ use crate::walk::{Answer, SourceFailure, walk};
 /// `agent` finds in the profile ([`SourceId::ProviderPart`]), then
 /// `agent_limits`, the agent part's own read ([`SourceId::AgentPart`]).
 /// The agent part is asked only when the provider part failed or there
-/// is none.
+/// is none. A login with no key at its place now is not given to the
+/// provider part, and that is no failure (issue 13).
 ///
 /// When no part answered, the error holds the failure of each part in
 /// order; it is empty when neither reads limits for the profile.
@@ -34,10 +35,13 @@ pub fn read_profile_limits(
 ) -> Result<Answer<Limits>, Vec<SourceFailure>> {
     let subscription = subscription_of(agent, providers, profile);
 
-    let from_provider = subscription.iter().map(|(provider, account)| {
-        let limits = provider_limits(agent, provider, account, profile);
-        (SourceId::ProviderPart, limits)
-    });
+    let from_provider =
+        subscription.iter().filter_map(|(provider, account)| {
+            match provider_limits(agent, provider, account, profile) {
+                Err(SourceError::NotAvailable(Unavailable::NoLoginKey)) => None,
+                limits => Some((SourceId::ProviderPart, limits)),
+            }
+        });
     let from_agent = agent_limits.into_iter().filter_map(|source| {
         let limits = source.limits(profile).transpose()?;
         Some((SourceId::AgentPart, limits))
@@ -76,7 +80,7 @@ fn provider_limits(
 ) -> Result<Limits, SourceError> {
     let login = agent
         .found_login(profile, account)
-        .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
+        .map_err(SourceError::NotAvailable)?;
 
     let numbers = provider
         .read(account, &login, &[])
@@ -143,7 +147,7 @@ mod tests {
             .expect_entry()
             .return_const(mock_entry("claude-code", "claude-code"));
         agent.expect_accounts().returning(move |_| accounts.clone());
-        agent.expect_found_login().returning(|_, _| Some(login()));
+        agent.expect_found_login().returning(|_, _| Ok(login()));
         agent
     }
 
@@ -306,6 +310,44 @@ mod tests {
         assert_eq!(failures[0].error(), &login_expired());
     }
 
+    /// Issue 13: a Claude Code profile whose credentials file is `{}`
+    /// still has its login, but no key at the login's place. The provider
+    /// part is not asked and leaves no failure: the limits are the agent
+    /// part's, or nothing reads them.
+    #[test]
+    fn a_login_without_its_key_asks_only_the_agent_part_and_fails_nothing() {
+        let without_key = || {
+            let mut agent = MockAgent::new();
+            agent
+                .expect_entry()
+                .return_const(mock_entry("claude-code", "claude-code"));
+            agent.expect_accounts().returning(|_| vec![claude_login()]);
+            agent
+                .expect_found_login()
+                .returning(|_, _| Err(Unavailable::NoLoginKey));
+            agent
+        };
+        let screen = usage_screen(1);
+
+        let with_screen = read_profile_limits(
+            &without_key(),
+            &[anthropic(Ok(()), 0)],
+            Some(&screen),
+            &profile("Example"),
+        );
+        let without_screen = read_profile_limits(
+            &without_key(),
+            &[anthropic(Ok(()), 0)],
+            None,
+            &profile("Example"),
+        );
+
+        let answer = with_screen.expect("the agent part's limits");
+        assert_eq!(answer.source(), SourceId::AgentPart);
+        assert!(answer.earlier_failures().is_empty());
+        assert_eq!(without_screen, Err(Vec::new()));
+    }
+
     /// A ChatGPT login only OpenCode keeps, in its own profile.
     fn chatgpt_in_opencode() -> Account {
         Account::new(
@@ -339,7 +381,7 @@ mod tests {
         agent
             .expect_accounts()
             .returning(|_| vec![chatgpt_in_opencode()]);
-        agent.expect_found_login().returning(|_, _| Some(login()));
+        agent.expect_found_login().returning(|_, _| Ok(login()));
         agent
             .expect_login_refused()
             .times(1)

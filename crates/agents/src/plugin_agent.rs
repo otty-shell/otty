@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    Billing as PartBilling, Login, LoginKind, ProfilePlace,
+    Billing as PartBilling, HostError, Login, LoginKind, ProfilePlace,
     ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{CalledPart, LoadedPlugin, PartHealth, PartRef};
@@ -19,6 +19,7 @@ use crate::account::{
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
+use crate::error::Unavailable;
 use crate::hidden_terminal::StartTerminal;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::{BillingKind, LimitSource};
@@ -212,14 +213,27 @@ impl Agent for PluginAgent {
             .collect()
     }
 
+    /// The host reads the key of the login now, with the permissions of
+    /// this part, which declares its place: a provider part, maybe of
+    /// another plugin, may not. Only "no key there" keeps the login from
+    /// the provider part; a key OTTY may not or could not read is left to
+    /// the part's own read, which reports it.
     fn found_login(
         &self,
         profile: &Profile,
         account: &Account,
-    ) -> Option<Login> {
+    ) -> Result<Login, Unavailable> {
         let logins = self.logins(profile);
+        let login = self
+            .login_of(&logins, profile, account)
+            .ok_or(Unavailable::KeyGone)?;
 
-        self.login_of(&logins, profile, account).cloned()
+        let key = self.part.plugin().read_key(self.part.part(), &login.place);
+        if let Err(HostError::NotFound(_)) = key {
+            return Err(Unavailable::NoLoginKey);
+        }
+
+        Ok(login.clone())
     }
 
     /// The need the part gives for `login` of `profile` once a provider
@@ -526,7 +540,27 @@ mod tests {
                 FoundIn::ProfileFolder(home.folder()),
             )]
         );
-        assert!(login.is_some_and(|login| login.kind == LoginKind::ApiKey));
+        assert!(login.is_ok_and(|login| login.kind == LoginKind::ApiKey));
+    }
+
+    /// Issue 13: a login whose key is not at its place now, such as a
+    /// Claude Code profile whose credentials file is `{}`, is still an
+    /// account, but it gives no login for a provider part: OTTY gives no
+    /// part a handle to a key that is not there.
+    #[test]
+    fn a_login_whose_key_is_not_there_gives_no_login_for_a_provider_part() {
+        let home = TemplateHome::new();
+        crate::testing::write_file(
+            &home.folder().join("auth.json"),
+            r#"{"api_key": "", "email": "dev@example.com"}"#,
+        );
+        let agent = agent(&home);
+
+        let accounts = agent.accounts(&home.profile());
+        let login = agent.found_login(&home.profile(), &accounts[0]);
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(login.map(|_| ()), Err(Unavailable::NoLoginKey));
     }
 
     #[test]
