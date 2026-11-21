@@ -205,6 +205,7 @@ fn profile_chips<'a>(
             icon: chip.icon,
             name: chip.name,
             note: None,
+            tip: None,
             on_press: AgentsIntent::SelectProfile(chip.profile),
         })
         .collect();

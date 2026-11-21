@@ -7,6 +7,7 @@
 use otty_agents::{Account, AccountKind};
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
@@ -14,7 +15,7 @@ use super::UNKNOWN;
 use super::account_name::account_name;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
-use super::short_number::account_number;
+use super::short_number::{AccountNumber, account_number};
 
 /// The Found by OTTY report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,8 +115,8 @@ pub(crate) struct FoundAccountRowViewModel {
     /// What OTTY reads of it: limits, credits or money.
     pub(crate) reads: &'static str,
     /// Its number now with its word, as its row in the left panel shows
-    /// it, or "—".
-    pub(crate) now: String,
+    /// it, or "—", which draws itself in the tight form.
+    pub(crate) now: AccountNumber,
 }
 
 impl FoundAccountRowViewModel {
@@ -126,8 +127,9 @@ impl FoundAccountRowViewModel {
             .iter()
             .map(|place| found_in_text(place, home))
             .collect();
-        let now = account_number(state, account)
-            .map_or_else(|| UNKNOWN.to_string(), |(number, _)| number);
+        let now = account_number(state, account).unwrap_or_else(|| {
+            AccountNumber::word(UNKNOWN.to_string(), SessionTone::Muted)
+        });
 
         Self {
             account: account_name(
@@ -276,7 +278,10 @@ mod tests {
                 account: String::from("OpenAI · you@example.com"),
                 found_in: String::from("~/.codex, ~/.codex-work"),
                 reads: i18n::t(Key::AgentsReadsLimits),
-                now: i18n::with_count(Key::TplAgentsPercentUsed, 42),
+                now: AccountNumber::word(
+                    i18n::with_count(Key::TplAgentsPercentUsed, 42),
+                    SessionTone::Muted
+                ),
             }]
         );
     }
@@ -299,7 +304,10 @@ mod tests {
                 ),
                 found_in: String::from("~/.codex"),
                 reads: i18n::t(Key::AgentsReadsMoney),
-                now: String::from(UNKNOWN),
+                now: AccountNumber::word(
+                    String::from(UNKNOWN),
+                    SessionTone::Muted
+                ),
             }]
         );
     }

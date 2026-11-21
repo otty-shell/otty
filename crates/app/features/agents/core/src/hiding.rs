@@ -102,7 +102,7 @@ mod tests {
             .accounts
             .accounts
             .into_iter()
-            .map(|row| (row.name, row.number))
+            .map(|row| (row.name, row.number.map(|number| number.text())))
             .collect()
     }
 

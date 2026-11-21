@@ -28,7 +28,7 @@ use super::super::model::{
     AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
     AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
-use super::{entry_icon, projects_section};
+use super::{entry_icon, money, projects_section};
 
 /// Props for the left panel.
 pub(crate) struct LeftPanelProps<'a> {
@@ -264,21 +264,22 @@ fn all_row<'a>(
 
 /// An account: the logo of its provider, its name and its number. A press
 /// shows it; a right press opens its menu at the pointer, the same as "⋯"
-/// of the account page.
+/// of the account page. The number is drawn in the tight form: money
+/// estimated at the list prices brings the tooltip of its mark.
 fn account_row<'a>(
     vm: AccountRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
     let mut row = entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon)
-        .count_tone(vm.tone)
         .selected(vm.is_selected)
         .on_press(AgentsIntent::SelectAccount(vm.account));
-    if let Some(number) = vm.number {
-        row = row.state(number);
+    if let Some(number) = &vm.number {
+        row = row.count_tone(number.tone()).state(number.text());
     }
 
-    mouse_area(row).on_right_press(menu).into()
+    let tip = vm.number.as_ref().and_then(|number| number.tip());
+    money::with_tip(mouse_area(row).on_right_press(menu), tip, palette)
 }
 
 /// A profile: the logo of its agent, its name and its number. A press
@@ -346,8 +347,10 @@ mod tests {
                 is_selected: false,
                 icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
-                number: Some(String::from("42 % used")),
-                tone: SessionTone::Muted,
+                number: Some(crate::model::AccountNumber::word(
+                    String::from("42 % used"),
+                    SessionTone::Muted,
+                )),
             }],
             can_add: true,
             note: None,
@@ -505,6 +508,23 @@ mod tests {
         ui.find("42 % used").expect("the number should show");
         assert_eq!(all, vec![AgentsIntent::SelectAllAccounts]);
         assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt())]);
+    }
+
+    /// Owner, 2026-11-21: the row only hands over the number; money
+    /// estimated at the list prices brings the tight form of the mark by
+    /// itself, and a press still opens the account.
+    #[test]
+    fn an_estimated_account_shows_the_sum_with_the_mark() {
+        let estimate = crate::testing::estimated_money();
+        let mut vm = panel(agents());
+        vm.accounts.accounts[0].number =
+            Some(crate::model::AccountNumber::month_money(estimate.clone()));
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(vm, &themes));
+
+        ui.find(estimate.short_text().as_str())
+            .expect("the sum with its mark shows");
+        assert!(ui.find("~ $1.25").is_err(), "no \"~\"");
     }
 
     #[test]

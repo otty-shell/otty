@@ -29,7 +29,7 @@ use super::super::model::{
 use super::profile_page::{
     BUTTON_GAP, HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X,
 };
-use super::{blocks, entry_icon, needs};
+use super::{blocks, entry_icon, money, needs};
 
 /// Render the All accounts page.
 pub(crate) fn all_accounts<'a>(
@@ -149,10 +149,12 @@ fn accounts_table<'a>(
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
+        let cell = number_cell(row.now.text(), row.now.tone(), row.is_hidden);
+        let now = money::cell_with_tip(cell, row.now.tip());
         table = table.row_without_menu(vec![
             TableCell::link(row.name),
             TableCell::plain(row.provider),
-            number_cell(row.now, row.tone, row.is_hidden),
+            now,
         ]);
     }
     let table = table
@@ -271,7 +273,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::NeedFixViewModel;
+    use crate::model::{AccountNumber, NeedFixViewModel};
     use crate::need::NeedAction;
 
     fn codex() -> Profile {
@@ -311,8 +313,10 @@ mod tests {
                 account: chatgpt(),
                 name: String::from("OpenAI · you@example.com"),
                 provider: String::from("OpenAI"),
-                now: String::from("42 % used"),
-                tone: SessionTone::Muted,
+                now: AccountNumber::word(
+                    String::from("42 % used"),
+                    SessionTone::Muted,
+                ),
                 is_hidden: false,
             }],
             needs: Vec::new(),
@@ -464,7 +468,8 @@ mod tests {
         let themes = ThemeManager::new();
         let palette = themes.current().ui();
         let mut page = accounts_page();
-        page.rows[0].now = String::from("hidden");
+        page.rows[0].now =
+            AccountNumber::word(String::from("hidden"), SessionTone::Muted);
         page.rows[0].is_hidden = true;
 
         let mut ui = simulator(all_accounts(page, palette));

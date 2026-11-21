@@ -21,7 +21,7 @@ use super::super::event::AgentsIntent;
 use super::super::model::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };
-use super::{blocks, needs};
+use super::{blocks, money, needs};
 
 /// Width of the report (`width={760}` of the prototype).
 const REPORT_WIDTH: f32 = 760.0;
@@ -121,11 +121,13 @@ fn accounts_table<'a>(
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
+        let cell = TableCell::number(row.now.text());
+        let now = money::cell_with_tip(cell, row.now.tip());
         table = table.row_without_menu(vec![
             TableCell::plain(row.account),
             TableCell::muted_mono(row.found_in),
             TableCell::badge(row.reads, StatusTone::Ok),
-            TableCell::number(row.now),
+            now,
         ]);
     }
 
@@ -175,7 +177,10 @@ mod tests {
                 account: String::from("Anthropic · dev@example.com"),
                 found_in: String::from("~/.claude-work"),
                 reads: "Limits",
-                now: String::from("42 %"),
+                now: crate::model::AccountNumber::word(
+                    String::from("42 %"),
+                    otty_ui_kit::components::session_row::SessionTone::Muted,
+                ),
             }],
             account_needs: Vec::new(),
             profile_needs: vec![NeedViewModel {

@@ -19,7 +19,8 @@ use super::super::state::AgentsState;
 use super::super::stats_dialog::{StatsRead, StatsSubject};
 use super::super::types::ProjectStatsFailure;
 use super::super::usage::{UsageChoice, UsageTab};
-use super::numbers::{digit_groups, dollars_text, short_count};
+use super::account_numbers::shown_total;
+use super::numbers::{digit_groups, short_count};
 use super::profile_page::{account_reason, money_reason};
 use super::reset_time::{date_time_text, duration_text};
 use super::session_account::session_account_text;
@@ -179,7 +180,7 @@ impl SessionStatsViewModel {
             sources: &sources,
             project: None,
             tabs: &UsageTab::SESSION_POPUP,
-            prices: profiles.prices().table(),
+            prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
             account_reason: account_reason.as_deref(),
             left_out: None,
@@ -246,7 +247,8 @@ impl ProjectStatsViewModel {
             fact(Key::AgentsTokens, short_count(all.tokens().total())),
         ];
         if summary.cost().is_paid() {
-            facts.push(fact(Key::AgentsColumnCost, sum_text(summary.cost())));
+            let cost = sum_text(state, summary.cost());
+            facts.push(fact(Key::AgentsColumnCost, cost));
         }
 
         let sources: Vec<UsageSource> = shown
@@ -275,7 +277,7 @@ impl ProjectStatsViewModel {
             sources: &sources,
             project: folder,
             tabs: &UsageTab::PROJECT_POPUP,
-            prices: profiles.prices().table(),
+            prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
             account_reason: account_reason.as_deref(),
             left_out,
@@ -351,12 +353,14 @@ fn fact(key: Key, value: String) -> FactViewModel {
     FactViewModel::new(i18n::t(key), value)
 }
 
-/// What a sum of costs reads: the dollars of the requests with a price, a
-/// dash while there are no prices, and nothing when no profile pays per
-/// token.
-fn sum_text(cost: StatsCost) -> String {
+/// What a sum of costs reads, in the tight form of a shown sum: the
+/// dollars of the requests with a price, followed by the mark when some
+/// are at the list prices; a dash while there are no prices, and nothing
+/// when no profile pays per token.
+fn sum_text(state: &AgentsState, cost: StatsCost) -> String {
     match cost {
-        StatsCost::Priced(total) => dollars_text(total.cost()),
+        StatsCost::Priced(total) => shown_total(state, &total)
+            .map_or_else(|| String::from(UNKNOWN), |money| money.short_text()),
         StatsCost::NoPrices => String::from(UNKNOWN),
         StatsCost::Unpaid => String::new(),
     }
@@ -961,6 +965,15 @@ mod tests {
                 &[("date", &date), ("year", "2026"), ("time", time)],
             )
         };
+        // Owner, 2026-11-21: the cost at the list prices has the short
+        // form of the one mark of an estimate.
+        let cost = i18n::filled(
+            Key::TplAgentsEstimatedAmount,
+            &[
+                ("amount", "$1.00"),
+                ("mark", i18n::t(Key::AgentsEstimateMark)),
+            ],
+        );
         assert_eq!(
             vm.facts,
             [
@@ -972,7 +985,7 @@ mod tests {
                     String::from("Claude Code, Codex")
                 ),
                 (Key::AgentsTokens, short_count(3_007_500)),
-                (Key::AgentsColumnCost, String::from("$1.00")),
+                (Key::AgentsColumnCost, cost),
             ]
             .map(|(key, value)| FactViewModel::new(i18n::t(key), value))
         );
@@ -1031,14 +1044,14 @@ mod tests {
         assert_eq!(names(&usage.rows), ["Claude Code"]);
         assert_eq!(
             usage.notes,
-            [
-                i18n::t(Key::AgentsUsageMoneyNote).to_string(),
-                i18n::filled(
-                    Key::TplAgentsLeftOutOfMoney,
-                    &[("names", "Codex")]
-                ),
-            ]
+            [i18n::filled(
+                Key::TplAgentsLeftOutOfMoney,
+                &[("names", "Codex")]
+            )]
         );
+        let kind = usage.money_kind.expect("the usage is money");
+        let mark = kind.mark().expect("the estimate is marked");
+        assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
     }
 
     #[test]

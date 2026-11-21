@@ -9,7 +9,9 @@ use super::super::state::AgentsState;
 use super::account_name::account_name;
 use super::entry_icon::EntryIcon;
 use super::projects_section::ProjectsSectionViewModel;
-use super::short_number::{account_number, hidden_word, profile_number};
+use super::short_number::{
+    AccountNumber, account_number, hidden_word, profile_number,
+};
 
 /// The Agents mode left panel under the switcher: the Accounts section,
 /// the Profiles section and the Projects section (spec 2026-11-19,
@@ -106,11 +108,9 @@ pub(crate) struct AccountRowViewModel {
     pub(crate) icon: EntryIcon,
     /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
-    /// Its number with its word, such as "42 % used"; `None` while
-    /// nothing is known.
-    pub(crate) number: Option<String>,
-    /// The color of the number.
-    pub(crate) tone: SessionTone,
+    /// Its number with its word and color, such as "42 % used", which
+    /// draws itself in the tight form; `None` while nothing is known.
+    pub(crate) number: Option<AccountNumber>,
 }
 
 impl AccountRowViewModel {
@@ -121,11 +121,6 @@ impl AccountRowViewModel {
     ) -> Self {
         let is_selected =
             selected.is_some_and(|selected| selected.is_same_account(&account));
-        let (number, tone) = match account_number(state, &account) {
-            Some((number, tone)) => (Some(number), tone),
-            None => (None, SessionTone::Muted),
-        };
-
         Self {
             is_selected,
             icon: state.provider_icon(account.provider()),
@@ -134,8 +129,7 @@ impl AccountRowViewModel {
                 state.profiles().saved(),
                 &account,
             ),
-            number,
-            tone,
+            number: account_number(state, &account),
             account,
         }
     }
@@ -309,18 +303,16 @@ mod tests {
                     icon: crate::testing::provider_icon("anthropic"),
                     name: String::from("Anthropic · dev@example.com"),
                     number: None,
-                    tone: SessionTone::Muted,
                 },
                 AccountRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
                     is_selected: false,
                     icon: crate::testing::provider_icon("openai"),
                     name: String::from("OpenAI · you@example.com"),
-                    number: Some(i18n::with_count(
-                        Key::TplAgentsPercentUsed,
-                        42
+                    number: Some(AccountNumber::word(
+                        i18n::with_count(Key::TplAgentsPercentUsed, 42),
+                        SessionTone::Muted
                     )),
-                    tone: SessionTone::Muted,
                 },
             ]
         );

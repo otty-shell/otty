@@ -1294,6 +1294,8 @@ pub enum Key {
     TplAgentsMoneyEstimate,
     /// Short mark next to money that is an estimate at the LiteLLM list prices, not the provider's bill.
     AgentsEstimateMark,
+    /// The short form of an estimated amount where there is no room for the mark under it, such as "$42.10 · estimate, list prices" in the left panel. Placeholders: `{amount}`, `{mark}`.
+    TplAgentsEstimatedAmount,
     /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
     TplAgentsBillReadFailed,
     /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
@@ -1493,8 +1495,6 @@ pub enum Key {
     AgentsNoSessions,
     /// Money spent this month by the bill, such as "$44.87 this month". Placeholder: `{amount}`.
     TplAgentsAmountThisMonth,
-    /// Money spent this month by an estimate, such as "~ $42.10 this month". Placeholder: `{amount}`.
-    TplAgentsAboutThisMonth,
     /// Title of the to-do list of an account page: what the account needs from the user.
     AgentsNeedsFromYou,
     /// Title of the profiles that use an account, on its page.
@@ -1507,8 +1507,6 @@ pub enum Key {
     AgentsFieldKey,
     /// Row of the money an account spent this month.
     AgentsSpentThisMonth,
-    /// An amount that is an estimate, such as "~ $42.10". Placeholder: `{amount}`.
-    TplAgentsAboutAmount,
     /// A profile whose tokens are not split between its accounts of one provider, such as "uses 2 Example Cloud accounts". Placeholders: `{count}`, `{provider}`.
     TplAgentsUsesAccounts,
     /// A profile that has spent no tokens through an account yet.
@@ -1567,8 +1565,6 @@ pub enum Key {
     TplAgentsShare,
     /// Column of the usage block: the share of each row.
     AgentsColumnShare,
-    /// Under the usage block in money: what the money is.
-    AgentsUsageMoneyNote,
     /// Why the usage of a subscription can not be shown in money.
     AgentsMoneySubscription,
     /// Why the usage can not be shown in money before the list prices are read.
@@ -2004,7 +2000,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 939] = [
+    pub(super) const ALL: [Self; 937] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2594,6 +2590,7 @@ impl Key {
         Self::AgentsThisMonth,
         Self::TplAgentsMoneyEstimate,
         Self::AgentsEstimateMark,
+        Self::TplAgentsEstimatedAmount,
         Self::TplAgentsBillReadFailed,
         Self::TplAgentsMoneyUnpriced,
         Self::AgentsSessions,
@@ -2692,14 +2689,12 @@ impl Key {
         Self::AgentsNeedsYou,
         Self::AgentsNoSessions,
         Self::TplAgentsAmountThisMonth,
-        Self::TplAgentsAboutThisMonth,
         Self::AgentsNeedsFromYou,
         Self::AgentsUsedBy,
         Self::AgentsAccountInfo,
         Self::AgentsFieldEmail,
         Self::AgentsFieldKey,
         Self::AgentsSpentThisMonth,
-        Self::TplAgentsAboutAmount,
         Self::TplAgentsUsesAccounts,
         Self::AgentsNoTokensYet,
         Self::AgentsNeedLoginExpiredTitle,
@@ -2729,7 +2724,6 @@ impl Key {
         Self::TplAgentsBarTipLit,
         Self::TplAgentsShare,
         Self::AgentsColumnShare,
-        Self::AgentsUsageMoneyNote,
         Self::AgentsMoneySubscription,
         Self::AgentsMoneyNoPrices,
         Self::TplAgentsMoneyOff,

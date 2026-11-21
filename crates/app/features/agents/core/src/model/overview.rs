@@ -11,7 +11,9 @@ use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::account_name::account_name;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
-use super::short_number::{account_number, hidden_word, profile_number};
+use super::short_number::{
+    AccountNumber, account_number, hidden_word, profile_number,
+};
 
 /// The All accounts page: the table Account, Provider, Now and the needs
 /// of the accounts.
@@ -48,18 +50,19 @@ pub(crate) struct AccountTableRowViewModel {
     pub(crate) name: String,
     /// The name of the provider, such as "Example Cloud".
     pub(crate) provider: String,
-    /// Its number with its word, such as "42 % used", or "—".
-    pub(crate) now: String,
-    /// The color of the number: a state that needs the user is a badge.
-    pub(crate) tone: SessionTone,
+    /// Its number with its word and color, such as "42 % used", or "—",
+    /// which draws itself in the tight form; a state that needs the user
+    /// is a badge.
+    pub(crate) now: AccountNumber,
     /// Whether the user hid the account: Now is a "hidden" badge.
     pub(crate) is_hidden: bool,
 }
 
 impl AccountTableRowViewModel {
     fn of(state: &AgentsState, account: Account) -> Self {
-        let (now, tone) = account_number(state, &account)
-            .unwrap_or_else(|| (UNKNOWN.to_string(), SessionTone::Muted));
+        let now = account_number(state, &account).unwrap_or_else(|| {
+            AccountNumber::word(UNKNOWN.to_string(), SessionTone::Muted)
+        });
 
         Self {
             name: account_name(
@@ -69,7 +72,6 @@ impl AccountTableRowViewModel {
             ),
             provider: state.provider_name(account.provider()).to_string(),
             now,
-            tone,
             is_hidden: state.profiles().is_account_hidden(&account),
             account,
         }
@@ -237,16 +239,20 @@ mod tests {
                     account: organization(),
                     name: String::from("Anthropic · dev@example.com"),
                     provider: String::from("Anthropic"),
-                    now: String::from(UNKNOWN),
-                    tone: SessionTone::Muted,
+                    now: AccountNumber::word(
+                        String::from(UNKNOWN),
+                        SessionTone::Muted
+                    ),
                     is_hidden: false,
                 },
                 AccountTableRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
                     name: String::from("OpenAI · you@example.com"),
                     provider: String::from("OpenAI"),
-                    now: i18n::with_count(Key::TplAgentsPercentUsed, 42),
-                    tone: SessionTone::Muted,
+                    now: AccountNumber::word(
+                        i18n::with_count(Key::TplAgentsPercentUsed, 42),
+                        SessionTone::Muted
+                    ),
                     is_hidden: false,
                 },
             ]

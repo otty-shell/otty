@@ -3,15 +3,17 @@
 //! the total of the period and two drop-downs, a bar per hour of today or
 //! per day in the look of the kit `DayBars`, the tabs of the block and a
 //! table of the rows of the tab with their value and share. The row picked
-//! or under the pointer lights its part of every bar. The last good
-//! numbers stay, greyed, after a failed count.
+//! or under the pointer lights its part of every bar. Money at the list
+//! prices carries the mark "estimate, list prices". The last good numbers
+//! stay, greyed, after a failed count.
 
 use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Dollars, LocalNow, PriceTable, Registry, SavedProfiles, SourceError, Spend,
+    Dollars, FetchedPrices, LocalNow, Registry, SavedProfiles, SourceError,
+    Spend,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -19,6 +21,7 @@ use super::super::usage::{
     UsageChoice, UsageList, UsageMeasure, UsagePeriod, UsageTab,
 };
 use super::UNKNOWN;
+use super::money::MoneyKind;
 use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
 use super::tokens::count_failed_text;
@@ -58,8 +61,12 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) picked: Option<usize>,
     /// Whether the numbers are the last good ones, drawn greyed.
     pub(crate) is_stale: bool,
-    /// What the money is and who it leaves out, while it is shown.
+    /// Who the money leaves out, while it is shown.
     pub(crate) notes: Vec<String>,
+    /// What the sums are while they are money: exact, or an estimate at
+    /// the LiteLLM list prices, which brings its mark under them, as on
+    /// the account page. `None` for tokens.
+    pub(crate) money_kind: Option<MoneyKind>,
     /// Why the latest count failed.
     pub(crate) failure: Option<String>,
     /// The lists of the drop-downs in a statistics popup, where no menu of
@@ -91,26 +98,28 @@ impl UsageBlockViewModel {
         let input = UsageInput {
             sources: subject.sources,
             project: subject.project,
-            prices: subject.prices,
+            prices: subject.prices.map(FetchedPrices::table),
             home: subject.home,
             saved: subject.saved,
             registry: subject.registry,
         };
         let amount = match measure {
-            UsageMeasure::Money if money_is_estimate(&input, period) => {
-                Amount::EstimatedMoney
-            },
             UsageMeasure::Money => Amount::Money,
             _ => Amount::Tokens,
         };
 
-        let mut notes = Vec::new();
-        if amount == Amount::EstimatedMoney {
-            notes.push(i18n::t(Key::AgentsUsageMoneyNote).to_string());
-        }
-        if measure == UsageMeasure::Money {
-            notes.extend(subject.left_out.clone());
-        }
+        let money_kind = match (amount, subject.prices) {
+            (Amount::Money, Some(prices)) => Some(MoneyKind::at_prices(
+                money_is_estimate(&input, period),
+                prices,
+                subject.time_zone,
+            )),
+            _ => None,
+        };
+        let notes = match measure {
+            UsageMeasure::Money => subject.left_out.iter().cloned().collect(),
+            _ => Vec::new(),
+        };
 
         let labels = point_labels(subject.sources, period);
         let groups = group_usage(&input, period, tab, measure);
@@ -158,6 +167,7 @@ impl UsageBlockViewModel {
             picked,
             is_stale: false,
             notes,
+            money_kind,
             failure: None,
             lists: None,
         }
@@ -191,6 +201,7 @@ impl UsageBlockViewModel {
         self.axis = None;
         self.rows = Vec::new();
         self.picked = None;
+        self.money_kind = None;
         self.failure = Some(count_failed_text(failure));
 
         self
@@ -239,7 +250,7 @@ pub(crate) struct UsageBarViewModel {
 pub(crate) struct UsageTableRowViewModel {
     /// The project, the profile, the model or the account.
     pub(crate) name: String,
-    /// Its value, such as "1.2M" or "~ $3.40".
+    /// Its value, such as "1.2M" or "$3.40".
     pub(crate) value: String,
     /// Its share of the period, such as "62 %".
     pub(crate) share: String,
@@ -255,8 +266,9 @@ pub(crate) struct UsageSubject<'a> {
     pub(crate) project: Option<&'a Path>,
     /// The tabs of the block.
     pub(crate) tabs: &'a [UsageTab],
-    /// The list prices the money is counted at.
-    pub(crate) prices: Option<&'a PriceTable>,
+    /// The list prices the money is counted at, with when they were
+    /// fetched, which the mark of an estimate tells.
+    pub(crate) prices: Option<&'a FetchedPrices>,
     /// Whether the money can be shown: a profile pays per token and the
     /// prices are known.
     pub(crate) can_show_money: bool,
@@ -280,10 +292,9 @@ pub(crate) struct UsageSubject<'a> {
 enum Amount {
     /// Tokens.
     Tokens,
-    /// Money the agents wrote for each answer: exact.
+    /// Money: what the agents wrote for each answer, or the tokens at the
+    /// list prices, which the mark of an estimate tells.
     Money,
-    /// Money with some tokens at the list prices: an estimate, with "~".
-    EstimatedMoney,
 }
 
 /// The bars of the points with the `totals` and `labels`: each with the
@@ -414,15 +425,11 @@ fn total_text(amount: &str, period: UsagePeriod) -> String {
 }
 
 /// `value` as `amount` writes it: tokens written short, such as "1.2M",
-/// or micro-dollars, such as "$3.40", or "~ $3.40" for an estimate.
+/// or micro-dollars, such as "$3.40".
 fn amount_text(value: u64, amount: Amount) -> String {
     match amount {
         Amount::Tokens => short_count(value),
         Amount::Money => dollars_text(Dollars::from_micro_dollars(value)),
-        Amount::EstimatedMoney => {
-            let dollars = dollars_text(Dollars::from_micro_dollars(value));
-            i18n::filled(Key::TplAgentsAboutAmount, &[("amount", &dollars)])
-        },
     }
 }
 
@@ -451,7 +458,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::testing::{now, price_table};
+    use crate::testing::{fetched_prices, now};
 
     fn part(project: &str, model: &str, input: u64) -> ProjectModelTokens {
         ProjectModelTokens::new(
@@ -502,7 +509,7 @@ mod tests {
 
     fn subject<'a>(
         sources: &'a [UsageSource<'a>],
-        prices: Option<&'a PriceTable>,
+        prices: Option<&'a FetchedPrices>,
     ) -> UsageSubject<'a> {
         UsageSubject {
             sources,
@@ -654,11 +661,15 @@ mod tests {
         );
     }
 
+    /// Owner, 2026-11-21: one mark everywhere. Money at the list prices
+    /// carries the mark "estimate, list prices" with the time of the
+    /// prices in its tooltip, as the account page does; the sums have no
+    /// "~" and there is no note of an estimate.
     #[test]
-    fn money_is_an_estimate_at_the_list_prices_with_its_note() {
+    fn money_is_an_estimate_at_the_list_prices_with_the_mark() {
         let spend = spend();
         let sources = [source(&spend)];
-        let prices = price_table();
+        let prices = fetched_prices(now());
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
         choice.pick_measure(UsageMeasure::Money);
@@ -666,22 +677,25 @@ mod tests {
         let vm = block(&subject(&sources, Some(&prices)), &choice);
 
         assert_eq!(vm.measure, UsageMeasure::Money);
+        assert_eq!(vm.rows, [row("gpt-5", "$1.25", "100 %")]);
         assert_eq!(
-            vm.rows,
-            [row(
-                "gpt-5",
-                &i18n::filled(
-                    Key::TplAgentsAboutAmount,
-                    &[("amount", "$1.25")]
-                ),
-                "100 %"
-            )]
+            vm.line,
+            Some(i18n::filled(
+                Key::TplAgentsAmountToday,
+                &[("amount", "$1.25")]
+            ))
         );
-        assert_eq!(vm.notes, [i18n::t(Key::AgentsUsageMoneyNote)]);
+        assert!(vm.notes.is_empty(), "{:?}", vm.notes);
+        let mark = vm.money_kind.as_ref().and_then(MoneyKind::mark);
+        assert_eq!(
+            mark,
+            MoneyKind::at_prices(true, &prices, None).mark(),
+            "the mark of the account page"
+        );
     }
 
     /// An agent that writes what each answer cost: that money is exact,
-    /// with no "~" and no note of an estimate.
+    /// with no mark of an estimate.
     #[test]
     fn money_the_agent_wrote_is_exact() {
         let tokens =
@@ -694,7 +708,7 @@ mod tests {
             )]);
         let spend = Spend::new(vec![today], Vec::new());
         let sources = [source(&spend)];
-        let prices = price_table();
+        let prices = fetched_prices(now());
         let mut choice = UsageChoice::default();
         choice.pick_measure(UsageMeasure::Money);
 
@@ -702,6 +716,7 @@ mod tests {
 
         assert_eq!(vm.rows, [row("gpt-5", "$0.50", "100 %")]);
         assert!(vm.notes.is_empty(), "{:?}", vm.notes);
+        assert_eq!(vm.money_kind, Some(MoneyKind::Exact));
     }
 
     /// Spec 2026-11-19, issue 07: the money of a project names the
@@ -710,7 +725,7 @@ mod tests {
     fn the_money_names_the_profiles_it_leaves_out() {
         let spend = spend();
         let sources = [source(&spend)];
-        let prices = price_table();
+        let prices = fetched_prices(now());
         let left_out = String::from("Left out: Codex");
         let project = UsageSubject {
             left_out: Some(left_out.clone()),
@@ -723,10 +738,25 @@ mod tests {
         let money = block(&project, &choice);
 
         assert!(tokens.notes.is_empty(), "only the money leaves out");
-        assert_eq!(
-            money.notes,
-            [i18n::t(Key::AgentsUsageMoneyNote).to_string(), left_out]
-        );
+        assert_eq!(tokens.money_kind, None, "tokens are no money");
+        assert_eq!(money.notes, [left_out]);
+        assert!(money.money_kind.is_some_and(|kind| kind.mark().is_some()));
+    }
+
+    /// A failure with nothing counted shows no sums, so no mark either.
+    #[test]
+    fn a_failure_with_no_count_has_no_mark() {
+        let spend = spend();
+        let sources = [source(&spend)];
+        let prices = fetched_prices(now());
+        let mut choice = UsageChoice::default();
+        choice.pick_measure(UsageMeasure::Money);
+        let down = SourceError::Network(String::from("down"));
+
+        let vm = block(&subject(&sources, Some(&prices)), &choice)
+            .only_failure(&down);
+
+        assert_eq!(vm.money_kind, None);
     }
 
     #[test]

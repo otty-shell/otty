@@ -12,7 +12,6 @@ use otty_agents::{
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
@@ -23,7 +22,7 @@ use super::entry_icon::EntryIcon;
 use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::read_by::profile_read_by;
-use super::short_number::account_number;
+use super::short_number::{AccountNumber, account_number};
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
 use super::used_by::untold_accounts;
@@ -117,9 +116,10 @@ pub(crate) struct PaysThroughViewModel {
     pub(crate) icon: EntryIcon,
     /// The provider and the login, such as "Example Cloud · you@example.com".
     pub(crate) name: String,
-    /// Its number and its color, as in the left panel ("42 % used",
-    /// "login expired"); `None` while nothing is known.
-    pub(crate) number: Option<(String, SessionTone)>,
+    /// Its number, its color and the tooltip of an estimate, as in the
+    /// left panel ("42 % used", "login expired"); `None` while nothing is
+    /// known.
+    pub(crate) number: Option<AccountNumber>,
 }
 
 /// Why the usage of `shown` can not be shown as money, for the Money
@@ -205,7 +205,7 @@ fn usage_block(
         sources: &sources,
         project: None,
         tabs: &UsageTab::PROFILE_PAGE,
-        prices: profiles.prices().table(),
+        prices: profiles.prices().last_good(),
         can_show_money: money_reason.is_none(),
         account_reason: account_reason.as_deref(),
         left_out: None,

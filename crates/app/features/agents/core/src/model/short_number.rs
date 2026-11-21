@@ -1,25 +1,86 @@
 //! The short numbers of the rows of the left panel and of the All
 //! accounts and All profiles tables (spec Decision 1): each number with
 //! its word. An account shows what is used, left or spent of it ("62 %
-//! used", "3 760 left", "¥110.00 left", "$12.30 used", "~ $42.10 this
-//! month"); a profile shows the tokens
-//! it spent today ("30.6M today", "no sessions"), or the state that needs
-//! the user.
+//! used", "3 760 left", "¥110.00 left", "$12.30 used", "$44.87 this
+//! month", or "$42.10 · estimate, list prices" for an estimate); a profile
+//! shows the tokens it spent today ("30.6M today", "no sessions"), or the
+//! state that needs the user.
 
-use otty_agents::{Account, AccountKind, Billing, Dollars};
+use otty_agents::{Account, AccountKind, Billing};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
-use super::account_numbers::{account_estimate, amount_text};
+use super::account_numbers::{account_estimate, amount_text, shown_total};
 use super::limits::credits_left;
+use super::money::ShownMoney;
 use super::numbers::{dollars_text, short_count};
 use super::user_need::UserNeed;
 
 /// From this percent on, the most used window is drawn in the waiting
 /// color: the window is nearly used up.
 const NEARLY_USED: u8 = 80;
+
+/// The short number of an account in the lists, with its color: a word
+/// such as "42 % used", or the money spent this month, which draws itself
+/// in the tight form ("$42.10 · estimate, list prices" with the tooltip of
+/// the mark for an estimate; owner, 2026-11-21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountNumber {
+    value: NumberValue,
+    tone: SessionTone,
+}
+
+impl AccountNumber {
+    /// The color of the number.
+    pub(crate) fn tone(&self) -> SessionTone {
+        self.tone
+    }
+
+    /// The number with its word, such as "42 % used" or "$44.87 this
+    /// month".
+    pub(crate) fn text(&self) -> String {
+        match &self.value {
+            NumberValue::Word(word) => word.clone(),
+            NumberValue::MonthMoney(money) => money.month_short_text(),
+        }
+    }
+
+    /// The tooltip of the number: the tooltip of the mark of an estimate;
+    /// `None` for any other number.
+    pub(crate) fn tip(&self) -> Option<&str> {
+        match &self.value {
+            NumberValue::MonthMoney(money) => money.tip(),
+            _ => None,
+        }
+    }
+
+    /// The number `word` in the color `tone`, such as "42 % used".
+    pub(crate) fn word(word: String, tone: SessionTone) -> Self {
+        Self {
+            value: NumberValue::Word(word),
+            tone,
+        }
+    }
+
+    /// The money spent this month, in the muted color.
+    pub(crate) fn month_money(money: ShownMoney) -> Self {
+        Self {
+            value: NumberValue::MonthMoney(money),
+            tone: SessionTone::Muted,
+        }
+    }
+}
+
+/// What a short number of an account shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NumberValue {
+    /// A number with its word, or a state.
+    Word(String),
+    /// The money spent this month.
+    MonthMoney(ShownMoney),
+}
 
 /// The number of the profile `shown` and its color: the state that needs
 /// the user ("needs login", "program not found", "format changed") in the
@@ -54,20 +115,22 @@ pub(crate) fn profile_number(
 /// the money left its key told ("¥110.00 left") or what a key with a limit
 /// used ("$12.30 used"), or the money spent this month by the bill
 /// ("$44.87 this month") or by an estimate over the tokens of its profiles
-/// ("~ $42.10 this month"), or "hidden" for an account the user hid, which
-/// is not read. `None` while nothing is known yet.
+/// ("$42.10 · estimate, list prices"), or "hidden" for an account the user
+/// hid, which is not read. `None` while nothing is known yet.
 pub(crate) fn account_number(
     state: &AgentsState,
     account: &Account,
-) -> Option<(String, SessionTone)> {
+) -> Option<AccountNumber> {
     if state.profiles().is_account_hidden(account) {
-        return Some((hidden_word(), SessionTone::Muted));
+        return Some(AccountNumber::word(hidden_word(), SessionTone::Muted));
     }
 
+    let word = |(word, tone)| AccountNumber::word(word, tone);
     match account.kind() {
         AccountKind::Money => balance_now(state, account)
+            .map(word)
             .or_else(|| money_this_month(state, account)),
-        _ => limits_now(state, account),
+        _ => limits_now(state, account).map(word),
     }
 }
 
@@ -134,13 +197,13 @@ fn balance_now(
 }
 
 /// The money an account paid per token spent this month: its bill when
-/// one of its profiles, or its own admin key, read it, else the money of the tokens of the
-/// profiles it was found in: the cost their agent wrote, else an estimate
-/// at the list prices, with "~".
+/// one of its profiles, or its own admin key, read it, else the money of
+/// the tokens of the profiles it was found in: the cost their agent
+/// wrote, or an estimate at the list prices.
 fn money_this_month(
     state: &AgentsState,
     account: &Account,
-) -> Option<(String, SessionTone)> {
+) -> Option<AccountNumber> {
     let bill = state
         .profiles()
         .shown()
@@ -152,38 +215,20 @@ fn money_this_month(
             own.bill().map(|(bill, _)| bill)
         });
     if let Some(bill) = bill {
-        return Some(this_month(
-            Key::TplAgentsAmountThisMonth,
-            bill.this_month(),
-        ));
+        let money = ShownMoney::exact(dollars_text(bill.this_month()));
+        return Some(AccountNumber::month_money(money));
     }
 
     let month = account_estimate(state, account)?.this_month();
-    let key = if month.is_estimate() {
-        Key::TplAgentsAboutThisMonth
-    } else {
-        Key::TplAgentsAmountThisMonth
-    };
-
-    Some(this_month(key, month.cost()))
-}
-
-/// `amount` written with the template `key`, such as "$44.87 this month".
-fn this_month(key: Key, amount: Dollars) -> (String, SessionTone) {
-    let amount = dollars_text(amount);
-
-    (
-        i18n::filled(key, &[("amount", &amount)]),
-        SessionTone::Muted,
-    )
+    shown_total(state, &month).map(AccountNumber::month_money)
 }
 
 #[cfg(test)]
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        Credits, DaySpend, Limits, ModelTokens, ProfileStatus, ProviderRef,
-        SavedProfiles, SourceError, Spend, TokenCount,
+        Credits, DaySpend, Dollars, Limits, ModelTokens, ProfileStatus,
+        ProviderRef, SavedProfiles, SourceError, Spend, TokenCount,
     };
 
     use super::*;
@@ -237,8 +282,20 @@ mod tests {
         state
     }
 
+    /// The text and the color of the number of `account`, for the cases
+    /// with no estimate, whose tooltip [`account_number`] leaves empty.
+    fn number_of(
+        state: &AgentsState,
+        account: &Account,
+    ) -> Option<(String, SessionTone)> {
+        let number = account_number(state, account)?;
+        assert_eq!(number.tip(), None, "no estimate: {number:?}");
+
+        Some((number.text(), number.tone()))
+    }
+
     fn chatgpt_number(state: &AgentsState) -> Option<(String, SessionTone)> {
-        account_number(state, &chatgpt_login())
+        number_of(state, &chatgpt_login())
     }
 
     fn profile_of(state: &AgentsState) -> Option<(String, SessionTone)> {
@@ -328,13 +385,13 @@ mod tests {
             &[(claude(), api_key(), vec![organization()])],
             saved_with_admin_key(),
         );
-        let before = account_number(&state, &organization());
+        let before = number_of(&state, &organization());
 
         let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(40, 2))));
 
         assert_eq!(before, None, "nothing was read yet");
         assert_eq!(
-            account_number(&state, &organization()),
+            number_of(&state, &organization()),
             muted(i18n::filled(
                 Key::TplAgentsAmountThisMonth,
                 &[("amount", "$42.00")]
@@ -343,7 +400,9 @@ mod tests {
     }
 
     /// With no bill the money is an estimate over the tokens its profiles
-    /// sent to its provider, marked with "~".
+    /// sent to its provider. Owner, 2026-11-21: the short form of the one
+    /// mark, "$6.00 · estimate, list prices", with no "~", and the tooltip
+    /// of the mark of the account page.
     #[test]
     fn an_organization_with_no_bill_shows_an_estimate_of_the_month() {
         let mut state = with_accounts(
@@ -361,19 +420,28 @@ mod tests {
             ),
         );
 
+        let number = account_number(&state, &organization())
+            .expect("the estimate of the month");
+
         assert_eq!(
-            account_number(&state, &organization()),
-            muted(i18n::filled(
-                Key::TplAgentsAboutThisMonth,
-                &[("amount", "$6.00")]
-            ))
+            number.text(),
+            i18n::filled(
+                Key::TplAgentsEstimatedAmount,
+                &[
+                    ("amount", "$6.00"),
+                    ("mark", i18n::t(Key::AgentsEstimateMark))
+                ]
+            )
         );
+        assert_eq!(number.tone(), SessionTone::Muted);
+        let tip = number.tip().expect("the tooltip of the mark");
+        assert!(tip.contains("LiteLLM"), "{tip}");
     }
 
     /// An agent that writes what each answer cost: money made of that cost
-    /// is exact, with no "~".
+    /// is exact, with no mark.
     #[test]
-    fn money_the_agent_wrote_shows_with_no_tilde() {
+    fn money_the_agent_wrote_shows_with_no_mark() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             SavedProfiles::default(),
@@ -395,7 +463,7 @@ mod tests {
         );
 
         assert_eq!(
-            account_number(&state, &organization()),
+            number_of(&state, &organization()),
             muted(i18n::filled(
                 Key::TplAgentsAmountThisMonth,
                 &[("amount", "$1.50")]
@@ -561,7 +629,7 @@ mod tests {
                     },
                 ),
             );
-            account_number(&state, &account)
+            number_of(&state, &account)
         };
         let left = otty_agents::Balance::new(
             otty_agents::Amount::new(110.0, "CNY"),

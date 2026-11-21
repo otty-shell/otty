@@ -2,7 +2,9 @@
 //! 2026-11-19, Decision 6): the title with its line and two drop-downs at
 //! its right, the bars in the look of the kit `DayBars`, the tabs of the
 //! block and the table of the rows of the tab. Pressing a row, or the
-//! pointer over it, lights its part of every bar. On a page a drop-down
+//! pointer over it, lights its part of every bar. Money at the list prices
+//! has the mark "estimate, list prices" under the table, as the Money
+//! block of an account page has under its sum. On a page a drop-down
 //! opens the menu of the mode at the pointer; in a popup, over which no
 //! menu shows, its list opens under it.
 
@@ -24,7 +26,7 @@ use super::super::model::{
     UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
 };
 use super::super::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
-use super::blocks;
+use super::{blocks, money};
 
 /// Width of each drop-down at the right of the title.
 const DROPDOWN_WIDTH: f32 = 112.0;
@@ -60,6 +62,13 @@ pub(super) fn view<'a>(
             block = block.push(small_text(line, palette.text_muted()));
         }
         block = block.push(table(&vm, palette));
+    }
+    if let Some(mark) = vm
+        .money_kind
+        .as_ref()
+        .and_then(|kind| money::mark(kind, palette))
+    {
+        block = block.push(mark);
     }
 
     block
@@ -303,4 +312,72 @@ fn row_at(point: Point) -> Option<usize> {
     }
 
     Some(((point.y - top) / (size::TABLE_ROW + size::LINE)) as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::Rectangle;
+    use iced::widget::container;
+    use iced_test::{Simulator, simulator};
+    use otty_app_theme::theme::ThemeManager;
+
+    use super::*;
+    use crate::model::MoneyKind;
+    use crate::testing::{estimated_money, usage_block};
+
+    /// Width of the block in the tests.
+    const WIDTH: f32 = 600.0;
+
+    fn at(ui: &mut Simulator<'_, AgentsIntent>, label: &str) -> Rectangle {
+        ui.find(label).expect("the text should show").bounds()
+    }
+
+    /// Owner, 2026-11-21: one mark everywhere. Money at the list prices
+    /// carries the mark of the account page under the sums of the table,
+    /// at the right end, and no note of an estimate.
+    #[test]
+    fn an_estimate_is_marked_under_the_table_of_its_sums() {
+        let themes = ThemeManager::new();
+        let vm = UsageBlockViewModel {
+            measure: UsageMeasure::Money,
+            money_kind: Some(estimated_money().kind().clone()),
+            ..usage_block()
+        };
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        let last_row = at(&mut ui, "gpt-5.4");
+        let mark = at(&mut ui, i18n::t(Key::AgentsEstimateMark));
+
+        assert!(mark.y >= last_row.y + last_row.height, "{mark:?}");
+        assert!(
+            (mark.x + mark.width - WIDTH).abs() < 1.0,
+            "the mark ends the row: {mark:?}"
+        );
+    }
+
+    #[test]
+    fn tokens_have_no_mark() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(
+            container(view(usage_block(), themes.current().ui())).width(WIDTH),
+        );
+
+        assert!(ui.find(i18n::t(Key::AgentsEstimateMark)).is_err());
+    }
+
+    /// The cost the agent wrote is exact: the block shows no mark.
+    #[test]
+    fn exact_money_has_no_mark() {
+        let themes = ThemeManager::new();
+        let vm = UsageBlockViewModel {
+            measure: UsageMeasure::Money,
+            money_kind: Some(MoneyKind::Exact),
+            ..usage_block()
+        };
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        assert!(ui.find(i18n::t(Key::AgentsEstimateMark)).is_err());
+    }
 }

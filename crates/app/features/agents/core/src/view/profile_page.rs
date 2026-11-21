@@ -203,7 +203,10 @@ mod tests {
                 account: chatgpt(),
                 icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI · you@example.com"),
-                number: Some((String::from("42 % used"), SessionTone::Muted)),
+                number: Some(crate::model::AccountNumber::word(
+                    String::from("42 % used"),
+                    SessionTone::Muted,
+                )),
             }],
             facts: vec![
                 FactViewModel::new(

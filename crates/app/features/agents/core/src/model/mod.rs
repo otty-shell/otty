@@ -56,7 +56,9 @@ pub(crate) use menus::{
     MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
     SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
 };
-pub(crate) use money::{EstimateMarkViewModel, MoneyViewModel};
+#[cfg(test)]
+pub(crate) use money::ShownMoney;
+pub(crate) use money::{MoneyKind, MoneyViewModel};
 pub(crate) use needs::NeedViewModel;
 #[cfg(test)]
 pub(crate) use needs::{NeedFixViewModel, account_needs};
@@ -77,6 +79,8 @@ pub(crate) use projects_section::{
 };
 pub(crate) use remove_dialog::RemoveDialogViewModel;
 pub(crate) use rename_dialog::RenameDialogViewModel;
+#[cfg(test)]
+pub(crate) use short_number::AccountNumber;
 pub(crate) use stats_dialog::{
     ProjectStatsViewModel, SessionStatsViewModel, StatsBodyViewModel,
     StatsDialogViewModel,

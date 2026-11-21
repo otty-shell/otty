@@ -12,7 +12,7 @@ use otty_ui_kit::{fonts, radius, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{EntryIcon, PaysThroughViewModel};
-use super::entry_icon;
+use super::{entry_icon, money};
 
 /// Edge of the icon of a chip (`size={14}`).
 const CHIP_ICON: f32 = 14.0;
@@ -34,6 +34,9 @@ pub(super) struct Chip {
     pub(super) name: String,
     /// The small number after the name, with its color.
     pub(super) note: Option<(String, Color)>,
+    /// The tooltip of the number in the tight form: the tooltip of the
+    /// mark of money estimated at the list prices.
+    pub(super) tip: Option<String>,
     /// What a press sends.
     pub(super) on_press: AgentsIntent,
 }
@@ -53,26 +56,32 @@ pub(super) fn view<'a>(
 }
 
 /// The chips of accounts: the provider icon, the account name and its
-/// number, in the error color when it needs the user; a press opens the
-/// account.
+/// number in the tight form, in the error color when it needs the user;
+/// a press opens the account.
 pub(super) fn account_chips<'a>(
     accounts: Vec<PaysThroughViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let chips = accounts
         .into_iter()
-        .map(|chip| Chip {
-            icon: chip.icon,
-            name: chip.name,
-            note: chip.number.map(|(number, tone)| {
-                let color = match tone {
+        .map(|chip| {
+            let note = chip.number.as_ref().map(|number| {
+                let color = match number.tone() {
                     SessionTone::Failed => palette.status_error(),
                     SessionTone::Waiting => palette.status_warn(),
                     _ => palette.text_muted(),
                 };
-                (number, color)
-            }),
-            on_press: AgentsIntent::SelectAccount(chip.account),
+                (number.text(), color)
+            });
+            let tip = chip.number.as_ref().and_then(|number| number.tip());
+
+            Chip {
+                icon: chip.icon,
+                name: chip.name,
+                note,
+                tip: tip.map(String::from),
+                on_press: AgentsIntent::SelectAccount(chip.account),
+            }
         })
         .collect();
 
@@ -100,7 +109,7 @@ fn chip<'a>(chip: Chip, palette: &UiPalette) -> Element<'a, AgentsIntent> {
 
     let line = palette.line();
     let hover = palette.surface_hover();
-    button(content)
+    let framed = button(content)
         .padding(CHIP_PADDING)
         .on_press(chip.on_press)
         .style(move |_, status| button::Style {
@@ -116,6 +125,7 @@ fn chip<'a>(chip: Chip, palette: &UiPalette) -> Element<'a, AgentsIntent> {
                 radius: radius::RADIUS_MD.into(),
             },
             ..button::Style::default()
-        })
-        .into()
+        });
+
+    money::with_tip(framed, chip.tip.as_deref(), palette)
 }

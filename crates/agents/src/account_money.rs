@@ -15,7 +15,7 @@ use crate::spend::{DaySpend, ModelTokens, Spend};
 
 /// The money of an account, for the "Spent this month" of its page: the
 /// bill of the account as its provider counts it, or an estimate at list
-/// prices, which the screen marks with "~".
+/// prices, which the screen marks "estimate, list prices".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountMoney {
     /// The bill of the account.

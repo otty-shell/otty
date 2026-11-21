@@ -111,6 +111,7 @@ fn used_by_chips<'a>(
             icon: chip.icon,
             name: chip.name,
             note: chip.usage.map(|usage| (usage, muted)),
+            tip: None,
             on_press: AgentsIntent::SelectProfile(chip.profile),
         })
         .collect();
@@ -138,6 +139,7 @@ mod tests {
         UsedByViewModel,
     };
     use crate::need::NeedAction;
+    use crate::testing::estimated_money;
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 1000.0;
@@ -295,16 +297,11 @@ mod tests {
         let vm = AccountPageViewModel {
             numbers: Some(AccountNumbersViewModel::Money(MoneyViewModel {
                 updated: None,
-                rows: vec![UsageRowViewModel {
-                    name: i18n::t(Key::AgentsSpentThisMonth).to_string(),
-                    used: String::from("~ $42.10"),
-                    percent: None,
-                    resets: None,
-                }],
+                rows: Vec::new(),
+                spent: Some(estimated_money()),
                 note: None,
                 is_stale: false,
                 failure: None,
-                estimate: None,
             })),
             ..page()
         };
@@ -316,7 +313,9 @@ mod tests {
             .expect("the block is named Money");
         ui.find(i18n::t(Key::AgentsSpentThisMonth))
             .expect("the row shows");
-        ui.find("~ $42.10").expect("the estimate shows");
+        ui.find("$1.25").expect("the estimate shows");
+        ui.find(i18n::t(Key::AgentsEstimateMark))
+            .expect("the mark of the estimate shows");
     }
 
     /// Spec 2026-11-19, Decision 7: "⋯" ends the title line and opens the

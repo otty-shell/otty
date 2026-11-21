@@ -10,8 +10,8 @@ use otty_agents::{
     Account, AccountIdentity, AccountKind, AccountLogin, AddAccountKind,
     AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
     Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitWindow,
-    Limits, ModelPrice, ModelTokens, PluginPart, PriceTable, Profile,
-    ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
+    Limits, ModelPrice, ModelTokens, MoneyTotal, PluginPart, PriceTable,
+    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
     SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
     TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
@@ -20,7 +20,8 @@ use otty_ui_kit::components::context_menu::MenuPlace;
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
 use crate::model::{
-    EntryIcon, UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
+    EntryIcon, ShownMoney, UsageBarViewModel, UsageBlockViewModel,
+    UsageTableRowViewModel,
 };
 use crate::reducer::reduce;
 use crate::state::AgentsState;
@@ -678,6 +679,17 @@ pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
     FetchedPrices::new(price_table(), fetched_at)
 }
 
+/// An estimate of $1.25: one million input tokens of `gpt-5` at the
+/// made-up list prices, fetched at `at(10)`.
+pub(crate) fn estimated_money() -> ShownMoney {
+    let tokens =
+        ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1);
+    let prices = fetched_prices(at(10));
+    let total = MoneyTotal::of_models(&[tokens], prices.table());
+
+    ShownMoney::of_total(&total, &prices, None)
+}
+
 /// What a walk over the price sources gave: the sources of `failures`
 /// failed in order, then `prices` answered, from LiteLLM when nothing
 /// failed before, else from the kept file.
@@ -876,6 +888,7 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
         picked: None,
         is_stale: false,
         notes: Vec::new(),
+        money_kind: None,
         failure: None,
         lists: None,
     }

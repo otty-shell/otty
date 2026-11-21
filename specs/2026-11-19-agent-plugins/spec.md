@@ -313,6 +313,13 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
   user must do in "Needs from you", marks money estimated at the list
   prices "estimate, list prices", and names the plugin in "Read by". The
   card of a part on the Plugins page shows its last failed call.
+- One mark of an estimate everywhere (owner, 2026-11-21): money at the
+  list prices has no "~" and no note; the mark "estimate, list prices"
+  stands under the sum (account page, usage block in Money) with the
+  time of the prices in its tooltip, or follows the sum where there is no
+  room under it: "$42.10 · estimate, list prices" in the left panel, the
+  All accounts table, Found by OTTY, the account chips and the Cost of a
+  project.
 - The "format changed" need and its report name the plugin, its version
   and its repository.
 - New needs: "Key for <host> found in <agent>: no provider plugin [Add
@@ -1108,7 +1115,7 @@ table above.
 
 | Situation | Accounts | Profiles | Needs and messages |
 | --- | --- | --- | --- |
-| No provider part installed | Listed by provider id or host, letter icon; Used by, tokens and "~ money" from LiteLLM prices; no Left, Limits, Key limit or bill rows; Account info "Read by: no plugin" | Pays through chips stay, with letter icons | Account need "Key for api.deepseek.com found in Claude Code: no provider plugin [Add plugin…]"; Add plugin opens the Plugins page with the URL field empty |
+| No provider part installed | Listed by provider id or host, letter icon; Used by, tokens and money from LiteLLM prices with the mark "estimate, list prices"; no Left, Limits, Key limit or bill rows; Account info "Read by: no plugin" | Pays through chips stay, with letter icons | Account need "Key for api.deepseek.com found in Claude Code: no provider plugin [Add plugin…]"; Add plugin opens the Plugins page with the URL field empty |
 | Provider part off | As above, Account info "Read by: DeepSeek 0.2.0 (off)" | Same | Need "DeepSeek of the DeepSeek plugin is off [Turn on]" |
 | Agent part off, or its plugin removed | Accounts found only in its profiles leave the lists; accounts also found elsewhere stay, without its chips | Its profiles leave the lists | None. Names and hidden items in `agents.json` (keyed by agent id + folder) are kept and come back when the part is on again |
 | Plugin updated to a new version | Nothing moves: ids are stable, names and hidden items stay | Same | "Read by" shows the new version |
