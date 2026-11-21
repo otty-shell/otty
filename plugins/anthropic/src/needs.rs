@@ -413,14 +413,20 @@ pub(crate) fn bill_key() -> Need {
 }
 
 /// Anthropic refused the admin key the bill was read with: the button asks
-/// for a new one under the same slot.
-pub(crate) fn new_bill_key() -> Need {
+/// for a new one under `slot`, or with no slot in place of the account's
+/// own key, which the user gave in OTTY.
+pub(crate) fn new_bill_key(slot: Option<&str>) -> Need {
+    let ask = KeyAsk {
+        slot: slot.map(str::to_string),
+        ..bill_key_ask()
+    };
+
     Need {
         id: "new-bill-key".to_string(),
         title: in_language(NEW_BILL_KEY_TITLE).to_string(),
         text: in_language(NEW_BILL_KEY_TEXT)
             .replace("{provider}", PROVIDER_NAME),
-        action: NeedAction::AskKey(bill_key_ask()),
+        action: NeedAction::AskKey(ask),
     }
 }
 
@@ -428,7 +434,7 @@ pub(crate) fn new_bill_key() -> Need {
 /// starts with and the page where it is made.
 fn bill_key_ask() -> KeyAsk {
     KeyAsk {
-        slot: ADMIN_SLOT.to_string(),
+        slot: Some(ADMIN_SLOT.to_string()),
         label: in_language(BILL_KEY_LABEL).to_string(),
         hint: in_language(BILL_KEY_HINT).to_string(),
         prefix: Some(ADMIN_PREFIX.to_string()),
@@ -465,7 +471,7 @@ mod tests {
                 not_logged_in(claude()),
                 login_expired(claude()),
                 bill_key(),
-                new_bill_key(),
+                new_bill_key(Some(ADMIN_SLOT)),
             ]
         })
     }
@@ -550,7 +556,7 @@ mod tests {
         let NeedAction::AskKey(ask) = &needs[2].action else {
             panic!("a key to ask for: {:?}", needs[2]);
         };
-        assert_eq!(ask.slot, ADMIN_SLOT);
+        assert_eq!(ask.slot.as_deref(), Some(ADMIN_SLOT));
         assert_eq!(ask.prefix.as_deref(), Some(ADMIN_PREFIX));
         assert_eq!(ask.page.as_deref(), Some(ADMIN_PAGE));
     }

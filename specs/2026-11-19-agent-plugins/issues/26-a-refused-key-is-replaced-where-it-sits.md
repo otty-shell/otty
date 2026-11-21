@@ -1,6 +1,6 @@
 # 26 A refused key is replaced where it sits
 
-Status: ready-for-agent
+Status: done
 Blocked by: 21
 
 ## Why
@@ -31,3 +31,13 @@ to see how this works in practice.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-21: Done. A key handle tells one more fact, `given-in-otty`
+  (`Key::is_given_in_otty` in the SDK), and `key-ask.slot` is optional:
+  no slot means the account's own key. DeepSeek, OpenRouter and the
+  template answer a refused key given in OTTY with `ask-key` and no slot
+  (the field opens with the old file or variable and saves the new one in
+  its stead, as Edit key… does; the account is read again), and a key an
+  agent keeps with the keys page as before. Anthropic and OpenAI ask for
+  a refused own admin key added by hand in its place, and take a key given
+  under `admin` before the account's own one.

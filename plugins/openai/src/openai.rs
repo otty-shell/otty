@@ -51,9 +51,12 @@ impl Provider for OpenAi {
         })
     }
 
-    /// The costs of the organization over `days`, read with an admin key:
-    /// the account's own key when it is one, else the one the user gave
-    /// under [`ADMIN_SLOT`], else the part asks for one and sends nothing.
+    /// The costs of the organization over `days`, read with an admin
+    /// key: the one the user gave under [`ADMIN_SLOT`], else the
+    /// account's own key when it is one, else the part asks for one and
+    /// sends nothing. A refused key is asked for again where it sits: the
+    /// account's own key the user gave in OTTY in its place, any other
+    /// under [`ADMIN_SLOT`], which the next read takes first.
     fn read_bill(
         _provider: &str,
         _account: &AccountFacts,
@@ -61,15 +64,23 @@ impl Provider for OpenAi {
         given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
+        if let Some(admin_key) = given_key(given, ADMIN_SLOT) {
+            return organization_costs::bill(admin_key, Some(ADMIN_SLOT), days);
+        }
+
         let is_bill_key =
             key.has_prefix(ADMIN_PREFIX).map_err(ReadError::Host)?;
-        let bill_key = match is_bill_key {
-            true => key,
-            false => given_key(given, ADMIN_SLOT)
-                .ok_or_else(|| ReadError::NeedsUser(needs::bill_key()))?,
-        };
+        if !is_bill_key {
+            return Err(ReadError::NeedsUser(needs::bill_key()));
+        }
 
-        organization_costs::bill(bill_key, days)
+        let is_given_in_otty =
+            key.is_given_in_otty().map_err(ReadError::Host)?;
+        let refused_slot = match is_given_in_otty {
+            true => None,
+            false => Some(ADMIN_SLOT),
+        };
+        organization_costs::bill(key, refused_slot, days)
     }
 }
 
@@ -223,7 +234,7 @@ mod tests {
         let NeedAction::AskKey(ask) = need.action else {
             panic!("a key to ask for: {need:?}");
         };
-        assert_eq!(ask.slot, "admin");
+        assert_eq!(ask.slot.as_deref(), Some("admin"));
         assert_eq!(ask.label, "Admin key");
         assert_eq!(ask.prefix.as_deref(), Some("sk-admin-"));
         assert_eq!(
@@ -283,6 +294,102 @@ mod tests {
 
         assert!(bill.is_ok(), "{bill:?}");
         assert_eq!(host.requests().len(), 1);
+    }
+
+    /// The need of a bill read with the account's own key `key` and the
+    /// keys of `given` that OpenAI refuses.
+    fn refused_bill_need(
+        host: &otty_plugin_sdk::test_host::TestHost,
+        key: &Key,
+        given: &[GivenKey],
+    ) -> otty_plugin_sdk::Need {
+        host.answer("GET", COSTS_URL, 401, b"{}");
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(PROVIDER, &organization(), key, given, &one_day())
+        });
+
+        match bill {
+            Err(ReadError::NeedsUser(need)) => need,
+            other => panic!("a need: {other:?}"),
+        }
+    }
+
+    /// The slot the need asks for its key under.
+    fn asked_slot(need: otty_plugin_sdk::Need) -> Option<String> {
+        match need.action {
+            NeedAction::AskKey(ask) => ask.slot,
+            other => panic!("a key to ask for: {other:?}"),
+        }
+    }
+
+    /// Issue 26: the account's own admin key, which the user added by
+    /// hand, is refused: the new key takes its place, with no slot.
+    #[test]
+    fn a_refused_own_admin_key_given_in_otty_is_asked_for_in_its_place() {
+        let host = host();
+        let key = host.given_key(MADE_UP_ADMIN);
+
+        let need = refused_bill_need(&host, &key, &[]);
+
+        assert_eq!(need.id, "new-bill-key");
+        assert_eq!(asked_slot(need), None);
+    }
+
+    /// Issue 26: an admin key an agent keeps is not OTTY's to replace: the
+    /// new one is asked for under `admin`, and the next bill reads with it.
+    #[test]
+    fn a_refused_own_admin_key_of_an_agent_is_asked_for_under_admin() {
+        let host = host();
+        let key = host.key(MADE_UP_ADMIN);
+
+        let need = refused_bill_need(&host, &key, &[]);
+
+        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
+    }
+
+    /// A refused admin key given under `admin` is asked for again under
+    /// it, never in place of the account's own key.
+    #[test]
+    fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
+        let host = host();
+        let key = host.given_key("sk-proj-made-up-openai-key");
+        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+
+        let need = refused_bill_need(&host, &key, &given);
+
+        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
+    }
+
+    /// The admin key given under `admin` reads the bill before the
+    /// account's own admin key, which was refused before it was given.
+    #[test]
+    fn a_key_given_under_admin_reads_the_bill_before_the_accounts_own() {
+        let host = host();
+        host.answer(
+            "GET",
+            COSTS_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = host.key("sk-admin-made-up-refused");
+        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(
+                PROVIDER,
+                &organization(),
+                &key,
+                &given,
+                &one_day(),
+            )
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some(format!("Bearer {MADE_UP_ADMIN}").as_str())
+        );
     }
 
     /// Spec Decision 7: a key handle goes only into a request to a host

@@ -74,8 +74,8 @@ per-file numbers.
   a keyring entry.
 - **Key handle**: a number the plugin holds in place of a key or a login
   token. The plugin can put it into a request header, ask for its
-  fingerprint or read the claims of a JWT through it, but never sees the
-  key itself.
+  fingerprint, read the claims of a JWT through it or ask whether the
+  user gave the key in OTTY, but never sees the key itself.
 - **Registry**: the one list, in memory, of the agents and providers OTTY
   knows right now, filled from the parts that are on. The UI takes names
   and icons only from it.
@@ -197,8 +197,9 @@ OTTY release.
 - **A part gives its own needs** (owner, 2026-11-21, issue 20). A need is
   a stable id (so the same need from two reads shows once), a title, a
   text and one action: `run(command)` in a terminal tab, `ask-key` (a
-  field for a key: the part's slot, a label, a hint, an optional prefix
-  and an optional `https` page), `open-page(url)` (`https` only) or
+  field for a key: the part's slot, or none for the account's own key
+  (Decision 5, issue 26), a label, a hint, an optional prefix and an
+  optional `https` page), `open-page(url)` (`https` only) or
   `copy-report(text)`. Everything the user must do for an agent or a
   provider comes from the part: not logged in, the login expired, a key
   missing or refused, a key of another kind to read a bill. OTTY shows it
@@ -239,6 +240,18 @@ claims (the middle part) of a JWT. Files, variables and database columns
 that hold keys are readable by plugins only with the keys replaced by
 handles. The host reads the key right before each use and drops it right
 after, as today (`account_numbers/mod.rs`).
+
+Of where a key came from, a handle tells one fact: whether the user gave
+it in OTTY (on Add account, or in the field of an `ask-key` need) or OTTY
+read it from a place of an agent (`given-in-otty`). It never tells the
+place or its path. A part needs that fact for one thing: a refused key is
+replaced where it sits (owner, 2026-11-21, issue 26). A refused key the
+user gave in OTTY gets an `ask-key` need with no slot: OTTY opens the
+field with the place of the old key and saves the new place in its stead,
+as Edit key… does, and the next read gets the new key. A refused key an
+agent keeps gets an `open-page` need for the provider's page of new keys,
+and the user puts the new key where the agent keeps it. A refused key
+given under a slot is asked for again under its slot.
 
 ### 6. Host operations are low-level and know no format
 
@@ -691,7 +704,7 @@ pub struct Need {
 
 pub enum NeedAction {
     Run(Command),                   // in a terminal tab: `codex login`, or the agent itself
-    AskKey(KeyAsk),                 // slot, label, hint, prefix, page
+    AskKey(KeyAsk),                 // slot (none: the account's own key), label, hint, prefix, page
     OpenPage(String),               // `https` only
     CopyReport(String),
 }
@@ -860,7 +873,8 @@ package otty:host@0.1.0;
 
 interface types {
   /* host-error, command: what any domain could use */
-  record key-ask { slot: string, label: string, hint: string,
+  record key-ask { slot: option<string>,   // none: replaces the account's own key
+                   label: string, hint: string,
                    prefix: option<string>, page: option<string> }
   variant need-action { run(command), ask-key(key-ask), open-page(string),
                         copy-report(string) }
@@ -874,6 +888,7 @@ interface keys {
     fingerprint: func() -> string;            // SHA-256, hex
     has-prefix: func(text: string) -> bool;
     jwt-claims: func() -> option<string>;     // JSON of the middle part, never the token
+    given-in-otty: func() -> bool;            // given on Add account or for ask-key, not read from an agent
   }
   variant key-place {
     json-field(tuple<string, string>),        // file, JSON pointer
@@ -1065,6 +1080,7 @@ each part.
 | `sqlite.query(db, sql, params)` | One read-only `SELECT`; a declared key column in the result comes back as a handle, a JSON key column as JSON with handles in its key fields (rule below) | `sqlite` (+ `keys` for key columns) | Read-only open, `query_only`, no `ATTACH`, 10 s, 50,000 rows |
 | `keys.open(place)` | A key handle for a declared key place | `keys` / `env` / `keyring` | Read again right before each use |
 | `key.fingerprint`, `has-prefix`, `jwt-claims` | Use a key without reading it | none (needs a handle) | `jwt-claims` never returns the signature |
+| `key.given-in-otty` | Whether the user gave the key in OTTY, not where | none (needs a handle) | The key is not read |
 | `http.request(req)` | HTTPS request; a key handle in a header is filled in by the host | `http` hosts | No redirects, 30 s, 8 MiB answer, OTTY `User-Agent` |
 | `programs.run(program, args, env)` | Runs a program once and returns its output | `run` (program + argument pattern) | 10 s, 1 MiB output, only listed variables passed |
 | `programs.talk(...)` | Talks to a program line by line (`codex app-server`) | `run` | Stopped with the call; 60 s in all |
@@ -1400,7 +1416,10 @@ then the cleanup and the docs.
   Add account named by the part's label, with its hint, the prefix the
   key starts with and a button to its page; the user gives a file or a
   variable. There is no admin key field or menu item of OTTY's own
-  (issue 20).
+  (issue 20). With no slot, the dialog holds the place of the refused key
+  of an account the user added and saves the new place in its stead, as
+  Edit key… does; for an account an agent keeps it does not open
+  (issue 26).
 - **Language**: when the user changes it, the needs of plugins with the
   language receiver show in the new language at once (issue 20).
 - **Add account**: the providers come from the registry (`add_by_hand`);

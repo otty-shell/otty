@@ -322,7 +322,7 @@ mod tests {
             panic!("a need: {bill:?}");
         };
         assert!(
-            matches!(&need.action, NeedAction::AskKey(ask) if ask.slot == "admin"),
+            matches!(&need.action, NeedAction::AskKey(ask) if ask.slot.as_deref() == Some("admin")),
             "{need:?}"
         );
     }

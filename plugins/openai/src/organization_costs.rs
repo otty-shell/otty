@@ -102,10 +102,15 @@ impl CostResult {
 }
 
 /// The bill of the organization of the admin key `key` over the UTC days
-/// of `days`. A refused key asks for a new one; an answer that is not a
-/// page of costs is unexpected. A day, or a cost, that can not be read is
-/// skipped.
-pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
+/// of `days`. A refused key asks for a new one under `refused_slot`, or
+/// with no slot in place of the account's own key; an answer that is not
+/// a page of costs is unexpected. A day, or a cost, that can not be read
+/// is skipped.
+pub(crate) fn bill(
+    key: &Key,
+    refused_slot: Option<&str>,
+    days: &DayRange,
+) -> Result<Bill, ReadError> {
     let mut sums = DaySums::new(days)?;
     let start = utc_seconds(sums.first())?;
     let end = utc_seconds(next_day(sums.last())?)?;
@@ -117,7 +122,7 @@ pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
             .header_with_key("authorization", "Bearer ", key)
             .header("accept", "application/json");
         let answer = json_answer(&request, COSTS_URL, || {
-            ReadError::NeedsUser(needs::new_bill_key())
+            ReadError::NeedsUser(needs::new_bill_key(refused_slot))
         })?;
         let costs: CostsPage =
             serde_json::from_value(answer).map_err(|_| {
@@ -217,7 +222,7 @@ mod tests {
     fn bill_of(host: &TestHost) -> Result<Bill, ReadError> {
         let key = host.key(MADE_UP_KEY);
 
-        host.as_provider("openai", || bill(&key, &days()))
+        host.as_provider("openai", || bill(&key, Some("admin"), &days()))
     }
 
     fn days_of(bill: &Bill) -> Vec<(&str, f64)> {
@@ -308,7 +313,7 @@ mod tests {
         let NeedAction::AskKey(ask) = need.action else {
             panic!("a key to ask for: {need:?}");
         };
-        assert_eq!(ask.slot, "admin");
+        assert_eq!(ask.slot.as_deref(), Some("admin"));
         assert!(matches!(bill_of(&other), Err(ReadError::Unexpected(_))));
     }
 

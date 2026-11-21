@@ -84,7 +84,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 | Needs login                      | Claude Code | Nobody is logged in with the profile's folder.                       | **Run claude**, with the profile's folder: Claude Code asks you to log in on its first start there. |
 | The login expired                | Claude Code | The Claude login of the profile expired or Anthropic refused it, wherever it was read, or `/usage` asked to log in. | **Run claude**: Claude Code renews the login or asks you to log in again. |
 | The real bill needs an admin key | Anthropic   | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
-| The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. |
+| The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. When the refused key is the key of an account you added with **Add account**, the new one takes its place; otherwise the next bill reads with the new one. |
 
 ## What it changes
 

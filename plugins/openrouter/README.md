@@ -9,8 +9,10 @@ The plugin never sees the key: OTTY hands it a handle, which goes only
 into the request to `openrouter.ai`. With no OpenRouter key found it does
 nothing.
 
-A refused key the part asks the user to replace, in OTTY's language,
-which it follows when the user picks another.
+A refused key the part asks the user to replace where it sits: in a
+field of OTTY for a key added there, on the keys page for a key an agent
+keeps. Its texts are in OTTY's language, which it follows when the user
+picks another.
 
 The icon is a letter icon ("O" on a rounded square) until a
 single-color OpenRouter logo with a licence that allows shipping it is found.

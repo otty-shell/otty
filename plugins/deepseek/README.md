@@ -10,8 +10,10 @@ as the key of a Claude Code profile whose `ANTHROPIC_BASE_URL` is
 OTTY hands it a handle, which goes only into the request to
 `api.deepseek.com`. With no DeepSeek account found it does nothing.
 
-A refused key the part asks the user to replace, in OTTY's language,
-which it follows when the user picks another.
+A refused key the part asks the user to replace where it sits: in a
+field of OTTY for a key added there, on the keys page for a key an agent
+keeps. Its texts are in OTTY's language, which it follows when the user
+picks another.
 
 The icon is a letter icon ("D" on a rounded square) until a
 single-color DeepSeek logo with a licence that allows shipping it is found.

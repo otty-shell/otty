@@ -259,9 +259,16 @@ impl TestHost {
         self.state.borrow_mut().language = tag.to_string();
     }
 
-    /// A handle to the made-up key `value`, as OTTY gives a provider part.
+    /// A handle to the made-up key `value`, as OTTY gives a provider part
+    /// a key it read from a place of an agent.
     pub fn key(&self, value: &str) -> Key {
         self.state.borrow_mut().add_key(value.to_string())
+    }
+
+    /// A handle to the made-up key `value` the user gave in OTTY: the key
+    /// of an account added by hand, or one given for an `AskKey` slot.
+    pub fn given_key(&self, value: &str) -> Key {
+        self.state.borrow_mut().add_given_key(value.to_string())
     }
 
     /// Runs `run` as the agent part `id`: its host operations get only
@@ -384,7 +391,7 @@ struct HostState {
     keyring: Vec<(String, String, String)>,
     keyring_allowed: bool,
     terminal_folder: PathBuf,
-    keys: Vec<String>,
+    keys: Vec<HeldKey>,
     answers: Vec<CannedAnswer>,
     requests: Vec<SentRequest>,
     removed: Vec<PathBuf>,
@@ -398,7 +405,7 @@ impl HostState {
     fn key_text(&self, id: usize) -> Result<&str, HostError> {
         self.keys
             .get(id)
-            .map(String::as_str)
+            .map(|key| key.text.as_str())
             .filter(|key| !key.trim().is_empty())
             .ok_or_else(|| HostError::NotFound(format!("key handle {id}")))
     }
@@ -445,12 +452,37 @@ impl HostState {
         Ok(text)
     }
 
-    /// A handle to `value`.
+    /// Whether the user gave the key of the handle `id` in OTTY.
+    fn is_given_key(&self, id: usize) -> Result<bool, HostError> {
+        self.keys
+            .get(id)
+            .map(|key| key.is_given)
+            .ok_or_else(|| HostError::NotFound(format!("key handle {id}")))
+    }
+
+    /// A handle to `value`, read from a place of an agent.
     fn add_key(&mut self, value: String) -> Key {
-        self.keys.push(value);
+        self.hold_key(value, false)
+    }
+
+    /// A handle to `value`, which the user gave in OTTY.
+    fn add_given_key(&mut self, value: String) -> Key {
+        self.hold_key(value, true)
+    }
+
+    /// A handle to `value`, given in OTTY or not.
+    fn hold_key(&mut self, text: String, is_given: bool) -> Key {
+        self.keys.push(HeldKey { text, is_given });
 
         Key::from_test_host(self.keys.len() - 1)
     }
+}
+
+/// A made-up key the host holds for a handle, and where it came from.
+#[derive(Debug)]
+struct HeldKey {
+    text: String,
+    is_given: bool,
 }
 
 /// An answer to every request of one method to one URL.
@@ -483,6 +515,10 @@ pub(crate) fn key_fingerprint(id: usize) -> Result<String, HostError> {
 
 pub(crate) fn key_has_prefix(id: usize, text: &str) -> Result<bool, HostError> {
     with_host(|state, _| Ok(state.key_text(id)?.starts_with(text)))
+}
+
+pub(crate) fn key_is_given_in_otty(id: usize) -> Result<bool, HostError> {
+    with_host(|state, _| state.is_given_key(id))
 }
 
 pub(crate) fn key_jwt_claims(id: usize) -> Result<Option<String>, HostError> {

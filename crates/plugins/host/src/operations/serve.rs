@@ -57,6 +57,13 @@ impl keys::HostKey for CallState {
         operations::keys::jwt_claims(self, &key)
     }
 
+    fn given_in_otty(
+        &mut self,
+        key: Resource<KeyHandle>,
+    ) -> Result<bool, HostError> {
+        operations::keys::given_in_otty(self, &key)
+    }
+
     fn drop(&mut self, key: Resource<KeyHandle>) -> wasmtime::Result<()> {
         self.table().delete(key)?;
 

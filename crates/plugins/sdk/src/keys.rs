@@ -88,6 +88,23 @@ impl Key {
             crate::test_host::key_jwt_claims(self.id)
         }
     }
+
+    /// Whether the user gave the key in OTTY: the key of an account they
+    /// added by hand, or one given for an
+    /// [`NeedAction::AskKey`](crate::NeedAction) slot. `false` for a key
+    /// read from a place of an agent: a file field, a variable, a keyring
+    /// entry or a database. A refused key given in OTTY is replaced with
+    /// an `AskKey` need; one of an agent, where the agent keeps it.
+    pub fn is_given_in_otty(&self) -> Result<bool, HostError> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.handle.given_in_otty()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            crate::test_host::key_is_given_in_otty(self.id)
+        }
+    }
 }
 
 impl fmt::Debug for Key {
@@ -211,5 +228,28 @@ mod tests {
         assert!(given_key(&given, "admin").is_some());
         assert!(given_key(&given, "other").is_none());
         assert!(given_key(&[], "admin").is_none());
+    }
+
+    /// Issue 26: a part learns only where a key came from, OTTY or an
+    /// agent's place, so it knows which need replaces a refused key.
+    #[test]
+    fn a_key_tells_whether_the_user_gave_it_in_otty() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let found = host.key("made-up-found-key");
+        let given = host.given_key("made-up-given-key");
+
+        let (is_found_given, is_given, given_prefix) =
+            host.as_provider("made-up-cloud", || {
+                (
+                    found.is_given_in_otty(),
+                    given.is_given_in_otty(),
+                    given.has_prefix("made-up-given"),
+                )
+            });
+
+        assert_eq!(is_found_given, Ok(false));
+        assert_eq!(is_given, Ok(true));
+        assert_eq!(given_prefix, Ok(true));
     }
 }

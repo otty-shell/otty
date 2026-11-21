@@ -37,10 +37,14 @@ interface types {
 
   /// A key OTTY asks the user for. OTTY keeps only where the user keeps
   /// it, a file or a variable, never the key, and gives it back to the
-  /// part as a handle with its `slot` (`keys.given-key`).
+  /// part as a handle with its `slot` (`keys.given-key`), or as the
+  /// call's `key` when it has no slot.
   record key-ask {
-    /// The part's own name for the key, such as `admin`.
-    slot: string,
+    /// The part's own name for the key, such as `admin`. None for the
+    /// account's own key, the `key` of a call, when the user gave it in
+    /// OTTY (`key.given-in-otty`): the new key takes its place, so the
+    /// next read gets it as `key`.
+    slot: option<string>,
     /// The name of the field, such as "Admin key".
     label: string,
     /// One line under the field, such as what the key reads.
@@ -95,6 +99,12 @@ interface keys {
     /// The claims (the decoded middle part) of a JWT as JSON; none when
     /// the key is not a JWT. Never the signature or the token.
     jwt-claims: func() -> result<option<string>, host-error>;
+    /// Whether the user gave the key in OTTY: the key of an account they
+    /// added by hand, or a key given for an `ask-key` slot. False for a
+    /// key read from a place of an agent: a file field, a variable, a
+    /// keyring entry or a database. A refused key given in OTTY is
+    /// replaced with `ask-key`; one of an agent, where the agent keeps it.
+    given-in-otty: func() -> result<bool, host-error>;
   }
 
   /// A field of a JSON file.

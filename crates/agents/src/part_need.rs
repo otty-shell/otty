@@ -149,10 +149,11 @@ pub enum PartNeedAction {
 }
 
 /// A key a part asks the user for: OTTY keeps only where the user keeps
-/// it and gives it back to the part under `slot`.
+/// it and gives it back to the part under `slot`, or, with no slot, in
+/// place of the account's own key (issue 26).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyAsk {
-    slot: String,
+    slot: Option<String>,
     label: String,
     hint: String,
     prefix: Option<String>,
@@ -160,9 +161,11 @@ pub struct KeyAsk {
 }
 
 impl KeyAsk {
-    /// The part's own name for the key, such as `admin`.
-    pub fn slot(&self) -> &str {
-        &self.slot
+    /// The part's own name for the key, such as `admin`; `None` for the
+    /// account's own key, the key of an account the user added, which the
+    /// new key replaces.
+    pub fn slot(&self) -> Option<&str> {
+        self.slot.as_deref()
     }
 
     /// The name of the field, such as "Admin key".
@@ -192,7 +195,30 @@ impl KeyAsk {
         hint: impl Into<String>,
     ) -> Self {
         Self {
-            slot: slot.into(),
+            slot: Some(slot.into()),
+            label: label.into(),
+            hint: hint.into(),
+            prefix: None,
+            page: None,
+        }
+    }
+
+    /// A key asked for in place of the account's own key, with the
+    /// field's `label` and `hint`.
+    ///
+    /// ```
+    /// use otty_agents::KeyAsk;
+    ///
+    /// let ask = KeyAsk::for_account_key("API key", "Replaces the old key.");
+    ///
+    /// assert_eq!(ask.slot(), None);
+    /// ```
+    pub fn for_account_key(
+        label: impl Into<String>,
+        hint: impl Into<String>,
+    ) -> Self {
+        Self {
+            slot: None,
             label: label.into(),
             hint: hint.into(),
             prefix: None,
@@ -213,8 +239,12 @@ impl KeyAsk {
 
     /// The ask a part gave.
     fn of(ask: &PartKeyAsk) -> Self {
-        Self::new(ask.slot.as_str(), ask.label.as_str(), ask.hint.as_str())
-            .with_prefix_and_page(ask.prefix.clone(), ask.page.clone())
+        let ask_of_slot = match &ask.slot {
+            Some(slot) => Self::new(slot, &ask.label, &ask.hint),
+            None => Self::for_account_key(&ask.label, &ask.hint),
+        };
+
+        ask_of_slot.with_prefix_and_page(ask.prefix.clone(), ask.page.clone())
     }
 }
 
@@ -293,7 +323,7 @@ mod tests {
     fn the_page_of_a_key_to_ask_for_is_https_only() {
         let ask = |page: &str| {
             need(PartAction::AskKey(PartKeyAsk {
-                slot: "admin".to_string(),
+                slot: Some("admin".to_string()),
                 label: "Admin key".to_string(),
                 hint: "Reads the bill.".to_string(),
                 prefix: Some("ex-admin-".to_string()),
@@ -315,6 +345,38 @@ mod tests {
         assert_eq!(good.page(), Some("https://example.com/k"));
         assert_eq!(good.prefix(), Some("ex-admin-"));
         assert_eq!(bad.page(), None);
+    }
+
+    /// Issue 26: a key asked for with no slot replaces the account's own
+    /// key; one with a slot is kept under it.
+    #[test]
+    fn a_key_asked_for_with_no_slot_is_the_accounts_own_key() {
+        let ask = |slot: Option<&str>| {
+            need(PartAction::AskKey(PartKeyAsk {
+                slot: slot.map(str::to_string),
+                label: "API key".to_string(),
+                hint: "Replaces the refused key.".to_string(),
+                prefix: None,
+                page: None,
+            }))
+        };
+
+        let own = PartNeed::of_part(&part(), &ask(None)).expect("shown");
+        let admin =
+            PartNeed::of_part(&part(), &ask(Some("admin"))).expect("shown");
+
+        let PartNeedAction::AskKey(own) = own.action() else {
+            panic!("a key to ask for");
+        };
+        let PartNeedAction::AskKey(admin) = admin.action() else {
+            panic!("a key to ask for");
+        };
+        assert_eq!(own.slot(), None);
+        assert_eq!(
+            own,
+            &KeyAsk::for_account_key("API key", "Replaces the refused key.")
+        );
+        assert_eq!(admin.slot(), Some("admin"));
     }
 
     #[test]

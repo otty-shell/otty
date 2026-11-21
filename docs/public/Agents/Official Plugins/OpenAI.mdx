@@ -82,7 +82,7 @@ Each need carries the label "OpenAI plugin". Its texts come in all ten languages
 | Needs login                      | Codex  | Nobody is logged in with the profile's folder.                       | **Run codex login**, with the profile's folder. |
 | The login expired                | Codex  | The ChatGPT login of the profile expired or OpenAI refused it, wherever it was read. | **Run codex**: Codex renews the login or asks you to log in again. |
 | The real bill needs an admin key | OpenAI | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
-| The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. |
+| The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. When the refused key is the key of an account you added with **Add account**, the new one takes its place; otherwise the next bill reads with the new one. |
 
 ## What it changes
 

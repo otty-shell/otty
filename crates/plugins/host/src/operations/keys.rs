@@ -8,8 +8,8 @@ use wasmtime::component::Resource;
 
 use crate::calls::CallState;
 use crate::keys::{
-    KeyHandle, KeyText, permission_place, place_text, read_json_file, read_key,
-    read_source, take_key_fields,
+    KeyHandle, KeySource, KeyText, permission_place, place_text,
+    read_json_file, read_key, read_source, take_key_fields,
 };
 use crate::operations::v0_1::otty::host::keys::{
     JsonField, JsonWithKeys, KeyPlace,
@@ -54,6 +54,20 @@ pub(crate) fn jwt_claims(
     key: &Resource<KeyHandle>,
 ) -> Result<Option<String>, HostError> {
     Ok(key_of(state, key)?.jwt_claims())
+}
+
+/// Whether the user gave the key of `key` in OTTY, rather than OTTY
+/// reading it from a place of an agent. The key is not read.
+pub(crate) fn given_in_otty(
+    state: &mut CallState,
+    key: &Resource<KeyHandle>,
+) -> Result<bool, HostError> {
+    let handle = state
+        .table()
+        .get(key)
+        .map_err(|_| HostError::Failed("no such key handle".to_string()))?;
+
+    Ok(matches!(handle.source(), KeySource::Given(_)))
 }
 
 /// The key file `path` as JSON, the key fields the called part declares
@@ -130,7 +144,6 @@ mod tests {
 
     use super::*;
     use crate::https::MockHttpsSend;
-    use crate::keys::KeySource;
     use crate::operations::v0_1::otty::host::keys::{
         KeyringEntry, SqliteField,
     };
@@ -413,6 +426,33 @@ mod tests {
         assert!(is_jwt.expect("a prefix"));
         assert!(!other_prefix.expect("a prefix"));
         assert_eq!(plain_claims.expect("no claims"), None);
+    }
+
+    /// Issue 26: a handle tells whether the user gave its key in OTTY,
+    /// and nothing of the place an agent keeps it in.
+    #[test]
+    fn a_handle_tells_whether_its_key_was_given_in_otty() {
+        let home = Home::new();
+        let cache = TempDir::new();
+        let engine =
+            engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
+        let plugin = load_keys_plugin(&engine, &home.env());
+        let given_key = KeyText::new(KEY).expect("a filled key");
+
+        let (found, given) =
+            in_call(&plugin, &PartRef::agent("test-agent"), |state| {
+                let found = open(state, home.json_field("/work/key"))
+                    .expect("a handle");
+                let given = state
+                    .table()
+                    .push(KeyHandle::of(KeySource::Given(given_key)))
+                    .expect("a handle");
+
+                (given_in_otty(state, &found), given_in_otty(state, &given))
+            });
+
+        assert!(matches!(found, Ok(false)), "{found:?}");
+        assert!(matches!(given, Ok(true)), "{given:?}");
     }
 
     #[test]

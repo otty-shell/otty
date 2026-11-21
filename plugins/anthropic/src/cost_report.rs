@@ -101,10 +101,15 @@ impl CostItem {
 }
 
 /// The bill of the organization of the admin key `key` over the UTC days
-/// of `days`. A refused key asks for a new one; any other status fails and
-/// an answer that is not a report is unexpected. A day, or a cost of a
-/// day, that can not be read is skipped.
-pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
+/// of `days`. A refused key asks for a new one under `refused_slot`, or
+/// with no slot in place of the account's own key; any other status fails
+/// and an answer that is not a report is unexpected. A day, or a cost of
+/// a day, that can not be read is skipped.
+pub(crate) fn bill(
+    key: &Key,
+    refused_slot: Option<&str>,
+    days: &DayRange,
+) -> Result<Bill, ReadError> {
     let mut sums = DaySums::new(days)?;
     let end = sums
         .last()
@@ -119,7 +124,7 @@ pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("accept", "application/json");
         let answer = json_answer(&request, COST_REPORT_URL, || {
-            ReadError::NeedsUser(needs::new_bill_key())
+            ReadError::NeedsUser(needs::new_bill_key(refused_slot))
         })?;
         let report: ReportPage =
             serde_json::from_value(answer).map_err(|_| {
@@ -223,7 +228,7 @@ mod tests {
     fn bill_of(host: &TestHost) -> Result<Bill, ReadError> {
         let key = host.key(MADE_UP_KEY);
 
-        host.as_provider("anthropic", || bill(&key, &days()))
+        host.as_provider("anthropic", || bill(&key, Some("admin"), &days()))
     }
 
     fn report(host: &TestHost, body: &str) -> Result<Bill, ReadError> {
@@ -354,7 +359,7 @@ mod tests {
             let NeedAction::AskKey(ask) = need.action else {
                 panic!("a key to ask for: {need:?}");
             };
-            assert_eq!(ask.slot, "admin");
+            assert_eq!(ask.slot.as_deref(), Some("admin"));
         }
     }
 

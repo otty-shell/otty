@@ -261,7 +261,7 @@ pub(crate) fn not_logged_in(login: Command) -> Need {
 | `NeedAction`        | The button                                                                  |
 | ------------------- | --------------------------------------------------------------------------- |
 | `Run(Command)`      | Runs the command in a new terminal tab, such as `codex login`, or the agent itself so it renews its login. The same rules as for `launch`. |
-| `AskKey(KeyAsk)`    | Opens a field for a key. `KeyAsk` has a `slot` (your own name for the key, such as `admin`), a `label` (the name of the field, which also names the button, "Admin key…"), a `hint` (one line under the field), an optional `prefix` the key starts with, such as `sk-admin-`, and an optional `https` `page` where the user makes the key. |
+| `AskKey(KeyAsk)`    | Opens a field for a key. `KeyAsk` has a `slot` (your own name for the key, such as `admin`, or `None` for the account's own key, [below](#a-refused-key)), a `label` (the name of the field, which also names the button, "Admin key…"), a `hint` (one line under the field), an optional `prefix` the key starts with, such as `sk-admin-`, and an optional `https` `page` where the user makes the key. |
 | `OpenPage(url)`     | Opens an `https` page in the browser, such as the page of new keys.         |
 | `CopyReport(text)`  | Puts the text on the clipboard, such as a report for you.                  |
 
@@ -296,6 +296,34 @@ fn read_bill(_provider: &str, _account: &AccountFacts, key: &Key, given: &[Given
 
 When the provider refuses a key the part asked for, answer `NeedsUser` again with an `AskKey` under
 the same slot, so the user replaces it.
+
+### A refused key
+
+When the provider refuses the account's own key (the `key` of the call), the new key belongs where
+the old one sits, and `key.is_given_in_otty()` tells you which place that is. It is the one thing a
+part learns about where a key came from:
+
+- `true`: the user gave the key in OTTY, on **Add account** or in the field of an `AskKey`. Answer
+  `NeedsUser` with an `AskKey` whose `slot` is `None`: OTTY opens the field with the place of the
+  old key, saves the new place in its stead, and the next read gets the new key as `key`.
+- `false`: OTTY read the key from a place of an agent, such as a field of its settings file, a
+  variable, a keyring entry or its database. OTTY can not write there, so answer with an
+  `OpenPage` need for the page of new keys, and say to put the new key where the agent keeps it.
+
+```rust
+fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
+    Ok(match key.is_given_in_otty().map_err(ReadError::Host)? {
+        true => needs::replace_key(KEYS_PAGE),   // AskKey { slot: None, page: Some(KEYS_PAGE), .. }
+        false => needs::new_key(KEYS_PAGE),      // OpenPage(KEYS_PAGE)
+    })
+}
+```
+
+A key the user gave under a slot is also given in OTTY: when it is refused, ask for it again under
+its slot, never with `slot: None`, which would replace the account's own key. `slot: None` replaces
+only the key of an account the user added; for an account an agent keeps, OTTY does not open the
+field. In tests, `TestHost::given_key` makes a key given in OTTY and `TestHost::key` one read from
+an agent's place.
 
 ### A refused login
 
@@ -364,7 +392,8 @@ permissions of the called part; a refused call returns `HostError::NotAllowed`.
 | `env::language`, `env::in_language`                  | The language OTTY shows now; one of your translations.   | none               |
 | `clock::now_ms`, `log::info` and the other levels    | The time; a line in the plugin's log.                    | none               |
 
-A `Key` has `fingerprint()`, `has_prefix(text)` and `jwt_claims()`; the plugin never reads the key.
+A `Key` has `fingerprint()`, `has_prefix(text)`, `jwt_claims()` and `is_given_in_otty()` (whether
+the user gave it in OTTY, [above](#a-refused-key)); the plugin never reads the key.
 
 <Aside type="caution" title="Do not use HashMap or HashSet">
 `std::collections::HashMap` and `HashSet` take a random seed, which makes the `.wasm` import

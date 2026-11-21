@@ -106,7 +106,7 @@ impl<'a> AddAccountDialogViewModel<'a> {
             },
             Ok(_) => None,
         };
-        let slot = asked.map(|asked| asked.ask().slot());
+        let slot = asked.and_then(|asked| asked.ask().slot());
 
         Some(Self {
             title,

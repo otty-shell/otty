@@ -5,8 +5,10 @@
 //! of an account the user added opens the same dialog with its provider
 //! fixed, and so does a key a plugin part asks for with a need (spec
 //! 2026-11-19-agent-plugins, issue 20): named by the part's label, with
-//! its hint and its page, saved for the account under the part's slot.
-//! The dialog waits for the save, and a failed save shows in it.
+//! its hint and its page, saved for the account under the part's slot,
+//! or, with no slot, in place of the refused key of an account the user
+//! added, as Edit key… saves it (issue 26). The dialog waits for the
+//! save, and a failed save shows in it.
 
 use otty_agents::{Account, KeyAsk, KeyRef, ProviderRef, Registry};
 use otty_app_i18n::{self as i18n, Key};
@@ -118,6 +120,16 @@ impl AddAccountDialog {
         dialog
     }
 
+    /// The dialog that gives `asked`, a key a plugin part asks for in
+    /// place of `key`, the refused key of an account the user added: it
+    /// saves like Edit key, under the part's label and hint.
+    fn replace(asked: AskedKey, key: &KeyRef) -> Self {
+        let mut dialog = Self::edit(asked.account.clone(), key);
+
+        dialog.asked = Some(asked);
+        dialog
+    }
+
     /// Show `text` as why the save failed, and let the dialog save again.
     pub(crate) fn fail(&mut self, text: String) {
         self.error = Some(text);
@@ -175,7 +187,9 @@ pub(crate) fn open_edit_key(
 /// Open the dialog of the key `ask` the plugin named `plugin` asks for,
 /// given for `account`, with the place given before under its slot. An
 /// account `agents.json` can not keep, such as a key OTTY found, takes no
-/// key.
+/// key. A key asked for with no slot replaces the account's own key
+/// (issue 26), which only an account the user added keeps in OTTY; the
+/// dialog then shows where that key is now.
 pub(crate) fn open_ask(
     state: &mut AgentsState,
     account: Account,
@@ -185,15 +199,26 @@ pub(crate) fn open_ask(
     if !account.can_be_saved() {
         return Vec::new();
     }
+    let added_key = account.added_key().cloned();
     let given = state.profiles().given_keys_of(&account);
-    let saved = given.iter().find(|given| given.slot() == ask.slot());
+    let saved = ask.slot().and_then(|slot| {
+        given
+            .iter()
+            .find(|given| given.slot() == slot)
+            .map(|given| given.key().clone())
+    });
 
+    let is_own_key = ask.slot().is_none();
     let asked = AskedKey {
         account,
         plugin,
         ask,
     };
-    let dialog = AddAccountDialog::ask(asked, saved.map(|given| given.key()));
+    let dialog = match (is_own_key, added_key) {
+        (false, _) => AddAccountDialog::ask(asked, saved.as_ref()),
+        (true, Some(key)) => AddAccountDialog::replace(asked, &key),
+        (true, None) => return Vec::new(),
+    };
     state.open_add_account(dialog);
     Vec::new()
 }
@@ -309,8 +334,12 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let Some(saved) = state.profiles().saved() else {
         return vec![unread_file()];
     };
-    if let Some(asked) = dialog.asked.clone() {
-        return submit_asked(state, &asked, key);
+    let given_for = dialog.asked.as_ref().and_then(|asked| {
+        let slot = asked.ask.slot()?.to_string();
+        Some((asked.account.clone(), slot))
+    });
+    if let Some((account, slot)) = given_for {
+        return submit_given(state, &account, &slot, key);
     }
 
     let account = Account::added(dialog.provider.clone(), key.clone());
@@ -338,39 +367,39 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             .with_account_added(dialog.provider.clone(), key),
     };
 
+    let edited = dialog.editing.clone();
     if let Some(dialog) = state.add_account_mut() {
         dialog.is_saving = true;
         dialog.error = None;
     }
     state.profiles_mut().apply_saved(changed.clone());
+    if let Some(edited) = &edited {
+        state.profiles_mut().forget_own_read(edited);
+    }
     state.select_account(account);
     vec![save(changed)]
 }
 
-/// Save `key` as the key given for the account of `asked` under the
-/// part's slot. The account is read again with it: its earlier read and
-/// its need go.
-fn submit_asked(
+/// Save `key` as the key given for `account` under the part's `slot`.
+/// The account is read again with it: its earlier read and its need go.
+fn submit_given(
     state: &mut AgentsState,
-    asked: &AskedKey,
+    account: &Account,
+    slot: &str,
     key: KeyRef,
 ) -> Vec<AgentsOutcome> {
     let Some(saved) = state.profiles().saved() else {
         return vec![unread_file()];
     };
 
-    let changed = saved.clone().with_given_key_of(
-        &asked.account,
-        asked.ask.slot(),
-        Some(key),
-    );
+    let changed = saved.clone().with_given_key_of(account, slot, Some(key));
 
     if let Some(dialog) = state.add_account_mut() {
         dialog.is_saving = true;
         dialog.error = None;
     }
     state.profiles_mut().apply_saved(changed.clone());
-    state.profiles_mut().forget_own_read(&asked.account);
+    state.profiles_mut().forget_own_read(account);
     vec![save(changed)]
 }
 
@@ -397,7 +426,7 @@ mod tests {
         key_ask, now, open_account_menu, organization,
         profiles_with_accounts_loaded, with_accounts,
     };
-    use crate::types::LoadedBill;
+    use crate::types::{LoadedAccountNumbers, LoadedBill};
 
     fn send(
         state: &mut AgentsState,
@@ -680,5 +709,135 @@ mod tests {
             organization: organization(),
             given,
         }));
+    }
+
+    /// The field a part opens for a refused key the user added by hand:
+    /// no slot, so the new key takes the account's own place.
+    fn refused_key_ask() -> KeyAsk {
+        KeyAsk::for_account_key("DeepSeek key", "Replaces the refused key.")
+            .with_prefix_and_page(
+                Some(String::from("sk-")),
+                Some(String::from("https://platform.deepseek.com/api_keys")),
+            )
+    }
+
+    fn ask_for_new_key(state: &mut AgentsState, account: Account) {
+        let _ = reduce_all(
+            state,
+            AgentsIntent::FixNeed(NeedAction::AskKey {
+                account,
+                plugin: String::from("DeepSeek"),
+                ask: refused_key_ask(),
+            }),
+        );
+    }
+
+    fn own_reads_of(
+        outcomes: &[AgentsOutcome],
+    ) -> Vec<(&Account, &otty_agents::KeyPlace)> {
+        outcomes
+            .iter()
+            .filter_map(|outcome| match outcome {
+                AgentsOutcome::LoadAccountNumbers {
+                    account, place, ..
+                } => Some((account, place)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Issue 26: DeepSeek refused the key of an account the user added;
+    /// the need's field takes the new key in the old one's place, and the
+    /// next read of the account uses it.
+    #[test]
+    fn a_refused_key_added_by_hand_is_replaced_and_the_next_read_uses_it() {
+        let provider = ProviderRef::of_id("deepseek");
+        let added = Account::added(provider.clone(), deepseek_file());
+        let saved = SavedProfiles::default()
+            .with_account_added(provider.clone(), deepseek_file());
+        let profiles = [(codex(), connected(), vec![chatgpt_login()])];
+        let mut state = with_accounts(&profiles, saved);
+        state.select_account(added.clone());
+        ask_for_new_key(&mut state, added.clone());
+        let old_place = state.add_account().map(|dialog| dialog.key().text());
+        assert_eq!(old_place, Some("/home/user/.config/deepseek-key"));
+
+        let _ = send(
+            &mut state,
+            AddAccountIntent::KeyChoicePicked(KeyPlaceChoice::Variable),
+        );
+        let _ = send(
+            &mut state,
+            AddAccountIntent::KeyChanged(String::from("DEEPSEEK_NEW_KEY")),
+        );
+        let submitted = send(&mut state, AddAccountIntent::Submitted);
+        let saved = saved_of(&submitted).expect("the key is saved").clone();
+        let _ = reduce_all(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
+        let reloaded = reduce_all(
+            &mut state,
+            profiles_with_accounts_loaded(&profiles, saved.clone()),
+        );
+
+        let replaced = Account::added(
+            provider,
+            KeyRef::EnvVar(String::from("DEEPSEEK_NEW_KEY")),
+        );
+        assert_eq!(saved.added_accounts(), std::slice::from_ref(&replaced));
+        assert!(saved.given_keys_of(&replaced).is_empty(), "no slot key");
+        assert_eq!(state.selected_account(), Some(replaced.clone()));
+        assert_eq!(state.add_account(), None);
+        assert_eq!(
+            own_reads_of(&reloaded),
+            [(&replaced, &otty_agents::KeyPlace::Added)]
+        );
+    }
+
+    /// Issue 26: the user wrote the new key into the same file and saves
+    /// the field as it is: the need of the refused key goes at once and
+    /// the account is read again.
+    #[test]
+    fn a_key_replaced_in_the_same_file_is_read_again() {
+        let provider = ProviderRef::of_id("deepseek");
+        let added = Account::added(provider.clone(), deepseek_file());
+        let saved = SavedProfiles::default()
+            .with_account_added(provider, deepseek_file());
+        let profiles = [(codex(), connected(), vec![chatgpt_login()])];
+        let mut state = with_accounts(&profiles, saved);
+        let _ = reduce_all(
+            &mut state,
+            AgentsIntent::AccountNumbersLoaded(LoadedAccountNumbers {
+                account: added.clone(),
+                numbers: Err(crate::testing::refused_key_need()),
+                read_at: now(),
+            }),
+        );
+        ask_for_new_key(&mut state, added.clone());
+
+        let submitted = send(&mut state, AddAccountIntent::Submitted);
+        let need_after_save = state.profiles().own_reads().of(&added).cloned();
+        let saved = saved_of(&submitted).expect("the key is saved").clone();
+        let _ = reduce_all(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
+        let reloaded = reduce_all(
+            &mut state,
+            profiles_with_accounts_loaded(&profiles, saved.clone()),
+        );
+
+        assert_eq!(need_after_save, None, "the refused read is forgotten");
+        assert_eq!(saved.added_accounts(), std::slice::from_ref(&added));
+        assert_eq!(
+            own_reads_of(&reloaded),
+            [(&added, &otty_agents::KeyPlace::Added)]
+        );
+    }
+
+    /// A key an agent keeps is replaced in the agent: OTTY has no place
+    /// of its own to put a new one in.
+    #[test]
+    fn a_found_account_has_no_own_key_to_replace() {
+        let mut state = state_with(SavedProfiles::default());
+
+        ask_for_new_key(&mut state, chatgpt_login());
+
+        assert_eq!(state.add_account(), None);
     }
 }

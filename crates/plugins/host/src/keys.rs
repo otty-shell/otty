@@ -58,9 +58,11 @@ pub enum KeySource {
     /// A place an agent part named; the host reads the key there right
     /// before each use and drops it right after.
     Place(KeyPlace),
-    /// A key the user gave OTTY by hand on Add account (a file or a
-    /// variable), which only OTTY can read: OTTY reads it for one read of
-    /// a provider part, and it is dropped with that read.
+    /// A key the user gave in OTTY, the key of an account added by hand
+    /// or one given for an `ask-key` slot (a file or a variable), which
+    /// only OTTY can read: OTTY reads it for one read of a provider part,
+    /// and it is dropped with that read. Its handle tells the part that
+    /// the key was given in OTTY (`given-in-otty`).
     Given(KeyText),
 }
 

@@ -143,7 +143,7 @@ const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
     ),
 ];
 
-/// The title of [`new_key`].
+/// The title of [`new_key`] and [`replace_key`].
 const NEW_KEY_TITLE: &[(&str, &str)] = &[
     ("en", "The key was refused"),
     ("zh-CN", "密钥被拒绝"),
@@ -210,6 +210,131 @@ const NEW_KEY_TEXT: &[(&str, &str)] = &[
         "ru",
         "{provider} отклонил ключ: он неверный, истёк или отозван. Создайте \
          новый ключ на его странице и положите туда, где его читает агент.",
+    ),
+];
+
+/// The text of [`replace_key`]; `{provider}` is the provider's name.
+const REPLACE_KEY_TEXT: &[(&str, &str)] = &[
+    (
+        "en",
+        "{provider} refused the key: it is wrong, expired or revoked. Make a \
+         new key on its page and give it here in place of the old one.",
+    ),
+    (
+        "zh-CN",
+        "{provider} 拒绝了该密钥：它有误、已过期或已被吊销。请在其页面上创建新密钥，\
+         并在此处提供它来替换旧密钥。",
+    ),
+    (
+        "zh-TW",
+        "{provider} 拒絕了此金鑰：它有誤、已過期或已被撤銷。請在其頁面上建立新金鑰，\
+         並在此處提供它來取代舊金鑰。",
+    ),
+    (
+        "ja",
+        "{provider} がキーを拒否しました。キーが間違っているか、期限切れか、\
+         取り消されています。ページで新しいキーを作り、古いキーの代わりにここで指定してください。",
+    ),
+    (
+        "ko",
+        "{provider}이(가) 키를 거부했습니다. 키가 잘못되었거나 만료되었거나 \
+         폐기되었습니다. 페이지에서 새 키를 만들어 이전 키 대신 여기에 지정하세요.",
+    ),
+    (
+        "fr",
+        "{provider} a refusé la clé : elle est fausse, expirée ou révoquée. \
+         Créez une nouvelle clé sur sa page et indiquez-la ici à la place de \
+         l’ancienne.",
+    ),
+    (
+        "de",
+        "{provider} hat den Schlüssel abgelehnt: Er ist falsch, abgelaufen \
+         oder widerrufen. Erstelle auf der Seite einen neuen Schlüssel und \
+         gib ihn hier an Stelle des alten an.",
+    ),
+    (
+        "es",
+        "{provider} rechazó la clave: es incorrecta, caducó o fue revocada. \
+         Crea una clave nueva en su página e indícala aquí en lugar de la \
+         anterior.",
+    ),
+    (
+        "pt-BR",
+        "O {provider} recusou a chave: ela está errada, expirou ou foi \
+         revogada. Crie uma chave nova na página dele e informe-a aqui no \
+         lugar da antiga.",
+    ),
+    (
+        "ru",
+        "{provider} отклонил ключ: он неверный, истёк или отозван. Создайте \
+         новый ключ на его странице и укажите его здесь вместо старого.",
+    ),
+];
+
+/// The name of the field of [`replace_key`]; `{provider}` is the
+/// provider's name.
+const KEY_LABEL: &[(&str, &str)] = &[
+    ("en", "{provider} key"),
+    ("zh-CN", "{provider} 密钥"),
+    ("zh-TW", "{provider} 金鑰"),
+    ("ja", "{provider} キー"),
+    ("ko", "{provider} 키"),
+    ("fr", "Clé {provider}"),
+    ("de", "{provider}-Schlüssel"),
+    ("es", "Clave de {provider}"),
+    ("pt-BR", "Chave do {provider}"),
+    ("ru", "Ключ {provider}"),
+];
+
+/// The line under the field of [`replace_key`].
+const KEY_HINT: &[(&str, &str)] = &[
+    (
+        "en",
+        "Takes the place of the refused key. OTTY saves only this path or \
+         name, never the key.",
+    ),
+    (
+        "zh-CN",
+        "替换被拒绝的密钥。OTTY 只保存这个路径或名称，从不保存密钥。",
+    ),
+    (
+        "zh-TW",
+        "取代遭拒的金鑰。OTTY 只儲存這個路徑或名稱，從不儲存金鑰。",
+    ),
+    (
+        "ja",
+        "拒否されたキーと置き換わります。OTTY が保存するのはこのパスか名前\
+         だけで、キーは保存しません。",
+    ),
+    (
+        "ko",
+        "거부된 키를 대신합니다. OTTY는 이 경로나 이름만 저장하고 키는 \
+         저장하지 않습니다.",
+    ),
+    (
+        "fr",
+        "Remplace la clé refusée. OTTY n'enregistre que ce chemin ou ce nom, \
+         jamais la clé.",
+    ),
+    (
+        "de",
+        "Ersetzt den abgelehnten Schlüssel. OTTY speichert nur diesen Pfad \
+         oder Namen, nie den Schlüssel.",
+    ),
+    (
+        "es",
+        "Reemplaza la clave rechazada. OTTY guarda solo esta ruta o nombre, \
+         nunca la clave.",
+    ),
+    (
+        "pt-BR",
+        "Substitui a chave recusada. O OTTY salva só este caminho ou nome, \
+         nunca a chave.",
+    ),
+    (
+        "ru",
+        "Заменяет отклонённый ключ. OTTY сохраняет только этот путь или имя, \
+         но не сам ключ.",
     ),
 ];
 
@@ -383,7 +508,7 @@ pub(crate) fn bill_key(slot: &str, prefix: &str, page: &str) -> Need {
         title: in_language(BILL_KEY_TITLE).to_string(),
         text: in_language(BILL_KEY_TEXT).to_string(),
         action: NeedAction::AskKey(KeyAsk {
-            slot: slot.to_string(),
+            slot: Some(slot.to_string()),
             label: in_language(BILL_KEY_LABEL).to_string(),
             hint: in_language(BILL_KEY_HINT).to_string(),
             prefix: Some(prefix.to_string()),
@@ -392,14 +517,33 @@ pub(crate) fn bill_key(slot: &str, prefix: &str, page: &str) -> Need {
     }
 }
 
-/// `provider` refused the key: the button opens `keys_page`, where the
-/// user makes a new one.
+/// `provider` refused the key, one an agent keeps: the button opens
+/// `keys_page`, where the user makes a new one, which they put where the
+/// agent reads the old one.
 pub(crate) fn new_key(provider: &str, keys_page: &str) -> Need {
     Need {
         id: "new-key".to_string(),
         title: in_language(NEW_KEY_TITLE).to_string(),
         text: in_language(NEW_KEY_TEXT).replace("{provider}", provider),
         action: NeedAction::OpenPage(keys_page.to_string()),
+    }
+}
+
+/// `provider` refused the account's key, one the user gave in OTTY: the
+/// button opens a field for the new key with no slot, so it takes the old
+/// one's place, and `keys_page` at hand.
+pub(crate) fn replace_key(provider: &str, keys_page: &str) -> Need {
+    Need {
+        id: "replace-key".to_string(),
+        title: in_language(NEW_KEY_TITLE).to_string(),
+        text: in_language(REPLACE_KEY_TEXT).replace("{provider}", provider),
+        action: NeedAction::AskKey(KeyAsk {
+            slot: None,
+            label: in_language(KEY_LABEL).replace("{provider}", provider),
+            hint: in_language(KEY_HINT).to_string(),
+            prefix: None,
+            page: Some(keys_page.to_string()),
+        }),
     }
 }
 
@@ -423,6 +567,9 @@ mod tests {
             LOGIN_REFUSED_TEXT,
             NEW_KEY_TITLE,
             NEW_KEY_TEXT,
+            REPLACE_KEY_TEXT,
+            KEY_LABEL,
+            KEY_HINT,
             BILL_KEY_TITLE,
             BILL_KEY_TEXT,
             BILL_KEY_LABEL,
@@ -437,9 +584,11 @@ mod tests {
     #[test]
     fn the_name_of_the_provider_goes_into_every_refusal() {
         for language in LANGUAGES {
-            let text = pick_language(language, NEW_KEY_TEXT);
+            for texts in [NEW_KEY_TEXT, REPLACE_KEY_TEXT, KEY_LABEL] {
+                let text = pick_language(language, texts);
 
-            assert!(text.contains("{provider}"), "{language}: {text}");
+                assert!(text.contains("{provider}"), "{language}: {text}");
+            }
         }
     }
 }

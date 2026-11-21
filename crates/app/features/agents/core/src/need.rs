@@ -165,7 +165,7 @@ mod tests {
             state
                 .add_account()
                 .and_then(|dialog| dialog.asked())
-                .is_some_and(|asked| asked.ask().slot() == "admin")
+                .is_some_and(|asked| asked.ask().slot() == Some("admin"))
         );
     }
 

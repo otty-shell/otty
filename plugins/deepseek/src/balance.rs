@@ -9,7 +9,7 @@ use otty_plugin_sdk::agents::{
     ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, Key};
+use otty_plugin_sdk::{GivenKey, Key, Need};
 use serde_json::Value;
 
 use crate::{DeepSeek, needs};
@@ -91,8 +91,9 @@ fn number_in(value: &Value) -> Option<f64> {
 }
 
 /// The JSON answer of a `GET` of `url` with `key` as its bearer token. A
-/// refused key (401 or 403) asks the user for a new one. The error never
-/// holds what the answer said.
+/// refused key (401 or 403) asks the user for a new one where the old one
+/// sits: in OTTY when the user gave it there, else where the agent keeps
+/// it. The error never holds what the answer said.
 fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
     let request = Request::get(url)
         .header("accept", "application/json")
@@ -104,9 +105,20 @@ fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
         200 => serde_json::from_slice(&response.body).map_err(|_| {
             ReadError::Unexpected(format!("the answer of {url} is not JSON"))
         }),
-        401 | 403 => Err(ReadError::NeedsUser(needs::new_key(KEYS_PAGE))),
+        401 | 403 => Err(ReadError::NeedsUser(refused_key_need(key)?)),
         status => Err(ReadError::Failed(format!("{url} answered {status}"))),
     }
+}
+
+/// What the user does about the refused `key`: a key given in OTTY is
+/// replaced in OTTY's field, one an agent keeps where the agent keeps it.
+fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
+    let is_given_in_otty = key.is_given_in_otty().map_err(ReadError::Host)?;
+
+    Ok(match is_given_in_otty {
+        true => needs::replace_key(KEYS_PAGE),
+        false => needs::new_key(KEYS_PAGE),
+    })
 }
 
 #[cfg(test)]
@@ -132,17 +144,29 @@ mod tests {
     }
 
     /// The numbers the part reads when the balance request answers
-    /// `status` and `body`.
+    /// `status` and `body`, with a key read from a place of an agent.
     fn numbers_on(
         host: &TestHost,
         status: u16,
         body: &str,
     ) -> Result<AccountNumbers, ReadError> {
-        host.answer("GET", BALANCE_URL, status, body.as_bytes());
         let key = host.key(MADE_UP_KEY);
 
+        numbers_with(host, &key, status, body)
+    }
+
+    /// The numbers the part reads with `key` when the balance request
+    /// answers `status` and `body`.
+    fn numbers_with(
+        host: &TestHost,
+        key: &Key,
+        status: u16,
+        body: &str,
+    ) -> Result<AccountNumbers, ReadError> {
+        host.answer("GET", BALANCE_URL, status, body.as_bytes());
+
         host.as_provider(PROVIDER, || {
-            DeepSeek::numbers(PROVIDER, &account(), &key, &[])
+            DeepSeek::numbers(PROVIDER, &account(), key, &[])
         })
     }
 
@@ -233,10 +257,11 @@ mod tests {
         }
     }
 
-    /// A refused key is a need of the part: its button opens the page
-    /// where the user makes a new DeepSeek key.
+    /// A refused key an agent keeps is a need of the part: its button
+    /// opens the page where the user makes a new DeepSeek key, which the
+    /// user puts where the agent keeps the old one.
     #[test]
-    fn a_refused_key_asks_for_a_new_one_on_the_keys_page() {
+    fn a_refused_key_of_an_agent_asks_for_a_new_one_on_the_keys_page() {
         for status in [401, 403] {
             let host = host();
 
@@ -258,6 +283,61 @@ mod tests {
                 "{status}"
             );
         }
+    }
+
+    /// Issue 26: a refused key the user gave in OTTY is replaced in OTTY:
+    /// the need's field takes the new key in place of the old one, with
+    /// the keys page at hand.
+    #[test]
+    fn a_refused_key_given_in_otty_asks_for_a_new_one_in_its_place() {
+        for status in [401, 403] {
+            let host = host();
+            let key = host.given_key(MADE_UP_KEY);
+
+            let numbers = numbers_with(&host, &key, status, "{}");
+
+            let Err(ReadError::NeedsUser(need)) = numbers else {
+                panic!("{status}: a need: {numbers:?}");
+            };
+            assert_eq!(need.id, "replace-key", "{status}");
+            assert_eq!(need.title, "The key was refused", "{status}");
+            assert!(
+                need.text.starts_with("DeepSeek refused the key"),
+                "{status}: {}",
+                need.text
+            );
+            let NeedAction::AskKey(ask) = need.action else {
+                panic!("{status}: a field for the key");
+            };
+            assert_eq!(ask.slot, None, "the account's own key");
+            assert_eq!(ask.label, "DeepSeek key");
+            assert_eq!(ask.prefix.as_deref(), Some("sk-"));
+            assert_eq!(ask.page.as_deref(), Some(KEYS_PAGE));
+        }
+    }
+
+    /// The field of a refused key given in OTTY is in the language of
+    /// OTTY's interface too.
+    #[test]
+    fn the_field_of_a_refused_key_given_in_otty_is_in_the_language_of_otty() {
+        let host = host().with_language("ru");
+        let key = host.given_key(MADE_UP_KEY);
+
+        let numbers = numbers_with(&host, &key, 401, "");
+
+        let Err(ReadError::NeedsUser(need)) = numbers else {
+            panic!("a need: {numbers:?}");
+        };
+        let NeedAction::AskKey(ask) = need.action else {
+            panic!("a field for the key");
+        };
+        assert_eq!(need.title, "Ключ отклонён");
+        assert!(
+            need.text.starts_with("DeepSeek отклонил ключ"),
+            "{}",
+            need.text
+        );
+        assert_eq!(ask.label, "Ключ DeepSeek");
     }
 
     /// The need is written in the language of OTTY's interface, and in
