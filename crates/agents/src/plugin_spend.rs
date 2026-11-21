@@ -5,14 +5,12 @@
 //! answer with one identity once, and judges "format changed" from what
 //! the part says it saw.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    AgentCalls, Answers, HostError, KeyPlace, Profile as PartProfile,
-    ReadError, SpendItem, SpendKind,
+    AgentCalls, Answers, HostError, KeyPlace, Profile as PartProfile, ReadError,
 };
 use otty_plugin_host::{CallError, CalledPart, PluginFailureKind};
 
@@ -22,6 +20,7 @@ use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
 use crate::plugin_agent::account_of;
+use crate::plugin_places::place_items;
 use crate::plugin_values::{
     is_same_place, part_profile, provider_of, time_of, tokens_of,
 };
@@ -73,13 +72,8 @@ impl PluginSpend {
         let asked = part_profile(profile);
         let places = calls.spend_places(&asked)?;
 
-        let mut kinds: HashMap<PathBuf, SpendKind> = HashMap::new();
-        for place in &places {
-            for file in self.listed(&place.glob) {
-                kinds.insert(PathBuf::from(file), place.kind);
-            }
-        }
-        let paths = kinds.keys().cloned().collect();
+        let items = place_items(&self.part, &places);
+        let paths = items.keys().cloned().collect();
         let format = RecordFormat::of_plugin(
             self.part.named().clone(),
             self.tested_version.as_deref(),
@@ -95,12 +89,11 @@ impl PluginSpend {
             None,
             format,
             |path| {
-                let item = SpendItem {
-                    path: path.display().to_string(),
-                    kind: kinds.get(path).copied().unwrap_or(SpendKind::Files),
+                let Some(item) = items.get(path) else {
+                    return Ok(FileSpend::default());
                 };
 
-                match calls.read_answers(&asked, &item) {
+                match calls.read_answers(&asked, item) {
                     Ok(Ok(answers)) => {
                         let names_a_login = answers
                             .answers
@@ -131,24 +124,6 @@ impl PluginSpend {
         match failed_call {
             Some(error) => Err(error),
             None => Ok(counted),
-        }
-    }
-
-    /// The paths of the files of `glob` the part may read; none when the
-    /// host refused the glob.
-    fn listed(&self, glob: &str) -> Vec<String> {
-        let found = self.part.plugin().list_files(self.part.part(), glob);
-
-        match found {
-            Ok(files) => files.into_iter().map(|file| file.path).collect(),
-            Err(error) => {
-                log::warn!(
-                    "the spend place {glob} of the part {} was not listed: \
-                     {error:?}",
-                    self.part.part()
-                );
-                Vec::new()
-            },
         }
     }
 

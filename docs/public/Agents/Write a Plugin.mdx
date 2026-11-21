@@ -169,7 +169,8 @@ A plugin with only agent parts and texts only in English writes
 | `detect(profile)`                         | Logged in; `ProfileStatus::NotLoggedIn(need)` with the [need](#needs) that says how to log in; or no folder. |
 | `version(profile)`                        | The version written in the newest files; `None` makes OTTY run `<program> --version`. |
 | `logins(profile)`                         | Each login and key: its kind, where it sits, whom it is for (a provider id or a host), the account or email when the files say. |
-| `sessions(profile)`                       | The sessions, newest first.                                         |
+| `session_places(profile)`                 | File globs or a database that hold the sessions. OTTY re-reads only what changed. |
+| `read_sessions(profile, item)`            | What one file tells about its sessions: the id, and the folder and the title when the file names them. |
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
 | `read_answers(profile, item)`             | Every answer of one file with its tokens and an identity, and the records seen and understood. |
 | `launch(profile, session)`                | The commands for New session and Continue.                          |
@@ -182,6 +183,16 @@ A plugin with only agent parts and texts only in English writes
 | `account(provider, key, found)`   | Whose account the key is: account or organization id, email, plan.      |
 | `numbers(provider, account, key, given)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. |
 | `read_bill(provider, account, key, given, days)` | Optional: the bill of an organization per UTC day.        |
+
+A place is a glob and its kind, files or a database. OTTY lists the files of the places, keeps
+what each file gave, and asks your part again only for a file that is new or whose size or change
+time changed; a file that is gone drops what it gave. Your part keeps nothing between reads. The
+`item` names the file with its size and change time as OTTY listed it. OTTY joins what all the
+files tell about one session id: the latest time, and the folder and the title of the latest
+record that names them. So a file may tell only a part, such as an index of titles: Codex names
+its session files and `session_index.jsonl` as session places. A session no file gives a folder
+is not listed, and one with no title shows its id. For a database, return every session it holds
+from each of its files (the database and its write-ahead log).
 
 `key` is the account's own key; `given` holds the keys the user gave for the account after one of
 your needs asked for them ([below](#keys-you-ask-for)). An optional function returns "not supported"
@@ -378,7 +389,8 @@ fn numbers_read_the_balance_with_the_key_in_the_header() {
 }
 ```
 
-`answer_run`, `answer_talk` and `answer_terminal` give the output of a declared program,
+`place_items(part, &places)` lists the files of your places as OTTY does, to call
+`read_sessions` and `read_answers` with. `answer_run`, `answer_talk` and `answer_terminal` give the output of a declared program,
 `with_var` sets a variable, and `with_keyring_entry` with `with_keyring_allowed` makes up a keyring
 entry. `with_language` starts the host in another language, and `set_language` switches it between
 two calls. `GivenKey::new(slot, host.key(...))` makes up a key the user gave. `requests()`, `removed()`, `started()` and `log()` show what the plugin did. Keep only

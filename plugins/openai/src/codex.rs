@@ -2,9 +2,9 @@
 //! that start it.
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
-    SpendKind, SpendPlace,
+    Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, PlaceKind,
+    Profile, ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
+    SessionStats,
 };
 use otty_plugin_sdk::{Command, KeyPlace, Need, clock, keys};
 
@@ -43,28 +43,37 @@ impl Agent for OpenAi {
         accounts::logins(&profile.folder)
     }
 
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError> {
-        sessions::sessions(&profile.folder)
+    /// Every session file, plain or compressed, in both session folders,
+    /// and the index of their names.
+    fn session_places(profile: &Profile) -> Vec<Place> {
+        sessions::session_places(&profile.folder)
+    }
+
+    fn read_sessions(
+        _profile: &Profile,
+        item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        Ok(sessions::read_sessions(item))
     }
 
     /// Every session file, plain or compressed, in both session folders.
     /// The files of helper agents count too: they are session files like
     /// the others.
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace> {
+    fn spend_places(profile: &Profile) -> Vec<Place> {
         session_file_globs(&escaped(&profile.folder), "*")
             .into_iter()
-            .map(|glob| SpendPlace {
+            .map(|glob| Place {
                 glob,
-                kind: SpendKind::Files,
+                kind: PlaceKind::Files,
             })
             .collect()
     }
 
     fn read_answers(
         profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
-        spend_file::read_profile_answers(&profile.folder, &item.path)
+        spend_file::read_profile_answers(&profile.folder, &item.file.path)
     }
 
     /// `codex` for a new session, `codex resume <id>` to continue one.
@@ -178,7 +187,9 @@ mod tests {
 
     use super::*;
     use crate::app_server::APP_SERVER_ARGS;
-    use crate::testing::{BLOG_SESSION, TEN, as_part, host, path, profile};
+    use crate::testing::{
+        AGENT, BLOG_SESSION, TEN, as_part, host, path, profile,
+    };
 
     const ID: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
 
@@ -445,7 +456,7 @@ mod tests {
                 "sessions/2026/11/16/rollout-2026-11-16T10-05-00-019a9001-2222-7333-8444-555566667777.jsonl".to_string(),
             ]
         );
-        assert!(places.iter().all(|place| place.kind == SpendKind::Files));
+        assert!(places.iter().all(|place| place.kind == PlaceKind::Files));
     }
 
     /// The tokens of a session on a provider of the user's own config are
@@ -454,15 +465,13 @@ mod tests {
     fn answers_are_read_with_the_provider_of_the_session() {
         let host = host();
         let profile = profile(&host, ".codex-work", false);
-        let item = SpendItem {
-            path: path(
-                &host,
-                ".codex-work/sessions/2026/11/17/rollout-2026-11-17T08-00-00-019aa000-3333-7444-8555-666677778888.jsonl",
-            ),
-            kind: SpendKind::Files,
-        };
+        let items = host.place_items(AGENT, &OpenAi::spend_places(&profile));
+        let item = items
+            .iter()
+            .find(|item| item.file.path.ends_with("666677778888.jsonl"))
+            .expect("the session file");
 
-        let answers = as_part(&host, || OpenAi::read_answers(&profile, &item))
+        let answers = as_part(&host, || OpenAi::read_answers(&profile, item))
             .expect("the answers");
 
         assert_eq!(answers.answers.len(), 1);

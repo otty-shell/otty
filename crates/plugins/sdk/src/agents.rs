@@ -29,8 +29,8 @@ pub use crate::agents::provider::Provider;
 /// The types of the agent contract.
 pub use crate::bindings::agents_agent::exports::otty::agents_agent::agent::{
     Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens,
-    Profile, ProfilePlace, ProfileStatus, ProjectStats, ProviderRef,
-    RecordCounts, Session, SessionStats, SpendItem, SpendKind, SpendPlace,
+    Place, PlaceItem, PlaceKind, Profile, ProfilePlace, ProfileStatus,
+    ProjectStats, ProviderRef, RecordCounts, Session, SessionStats,
     TokenCount,
 };
 /// The values the agent and provider contracts share: whom a login is

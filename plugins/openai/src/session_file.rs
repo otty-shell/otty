@@ -60,17 +60,6 @@ impl SessionMeta {
     }
 }
 
-#[cfg(test)]
-impl SessionMeta {
-    /// The session `id` that ran in `folder`.
-    pub(crate) fn new(id: &str, folder: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            folder: folder.to_string(),
-        }
-    }
-}
-
 /// What the session file at `path` tells about its session.
 ///
 /// `None` when the file can not be read, when its first line is not the

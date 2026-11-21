@@ -107,23 +107,20 @@ impl SessionSummary {
     }
 
     /// The session `id`, filling what the records did not tell: the
-    /// folder from `fallback_folder`, the title from the id, the time from
-    /// `file_changed_ms`.
+    /// folder from `fallback_folder`, the time from `file_changed_ms`. A
+    /// session with no title OTTY shows by its id.
     pub(crate) fn into_session(
         self,
         id: &str,
         fallback_folder: &str,
         file_changed_ms: i64,
     ) -> Session {
-        let title = self
-            .ai_title
-            .or(self.first_prompt)
-            .or(self.last_prompt)
-            .unwrap_or_else(|| id.to_string());
+        let title = self.ai_title.or(self.first_prompt).or(self.last_prompt);
+        let folder = self.folder.unwrap_or_else(|| fallback_folder.to_string());
 
         Session {
             id: id.to_string(),
-            folder: self.folder.unwrap_or_else(|| fallback_folder.to_string()),
+            folder: Some(folder),
             title,
             changed_ms: self.changed_ms.unwrap_or(file_changed_ms),
         }
@@ -246,8 +243,8 @@ mod tests {
             session,
             Session {
                 id: ID.to_string(),
-                folder: "/home/dev/otty".to_string(),
-                title: "Stop the tab bar flicker".to_string(),
+                folder: Some("/home/dev/otty".to_string()),
+                title: Some("Stop the tab bar flicker".to_string()),
                 changed_ms: FIVE_PAST_TEN,
             }
         );
@@ -255,12 +252,15 @@ mod tests {
 
     #[test]
     fn a_session_with_no_title_shows_its_first_prompt() {
-        assert_eq!(session_from(&[USER, ASSISTANT]).title, "Fix the tab bar");
+        assert_eq!(
+            session_from(&[USER, ASSISTANT]).title.as_deref(),
+            Some("Fix the tab bar")
+        );
     }
 
     #[test]
     fn a_session_with_no_title_and_no_prompt_shows_its_id() {
-        assert_eq!(session_from(&[ASSISTANT]).title, ID);
+        assert_eq!(session_from(&[ASSISTANT]).title, None);
     }
 
     #[test]
@@ -271,8 +271,11 @@ mod tests {
         let long_text = format!(r#""{}""#, "a".repeat(300));
         let long = session_from(&[&user_prompt(&long_text)]);
 
-        assert_eq!(multi_line.title, "Rename the panel");
-        assert_eq!(long.title, format!("{}...", "a".repeat(100)));
+        assert_eq!(multi_line.title.as_deref(), Some("Rename the panel"));
+        assert_eq!(
+            long.title.as_deref(),
+            Some(format!("{}...", "a".repeat(100)).as_str())
+        );
     }
 
     #[test]
@@ -286,7 +289,7 @@ mod tests {
             ),
         ]);
 
-        assert_eq!(session.title, "Add a test");
+        assert_eq!(session.title.as_deref(), Some("Add a test"));
     }
 
     #[test]
@@ -295,7 +298,7 @@ mod tests {
             r#"{"type":"last-prompt","lastPrompt":"Run the tests"}"#,
         ]);
 
-        assert_eq!(session.title, "Run the tests");
+        assert_eq!(session.title.as_deref(), Some("Run the tests"));
     }
 
     #[test]
@@ -305,7 +308,7 @@ mod tests {
             r#"{"type":"ai-title","aiTitle":"Better title"}"#,
         ]);
 
-        assert_eq!(session.title, "Better title");
+        assert_eq!(session.title.as_deref(), Some("Better title"));
     }
 
     #[test]
@@ -323,22 +326,22 @@ mod tests {
             AI_TITLE,
         ]);
 
-        assert_eq!(session.folder, "/home/dev/otty");
-        assert_eq!(session.title, "Stop the tab bar flicker");
+        assert_eq!(session.folder.as_deref(), Some("/home/dev/otty"));
+        assert_eq!(session.title.as_deref(), Some("Stop the tab bar flicker"));
         assert_eq!(session.changed_ms, FIVE_PAST_TEN);
     }
 
     #[test]
-    fn an_empty_or_garbled_file_gives_its_id_the_fallback_folder_and_file_time()
-    {
+    fn an_empty_or_garbled_file_gives_no_title_the_fallback_folder_and_file_time()
+     {
         let session = session_from(&["\u{0}\u{1}garbage with no line end"]);
 
         assert_eq!(
             session,
             Session {
                 id: ID.to_string(),
-                folder: "/home/dev/fallback".to_string(),
-                title: ID.to_string(),
+                folder: Some("/home/dev/fallback".to_string()),
+                title: None,
                 changed_ms: 7,
             }
         );
@@ -381,7 +384,7 @@ mod tests {
         .expect("the session");
 
         assert_eq!(session.id, "2a1d3c8f-9e5b-4f70-8c1d-2b3e4f5a6b7c");
-        assert_eq!(session.folder, "/home/dev/blog");
-        assert_eq!(session.title, "Write the release notes");
+        assert_eq!(session.folder.as_deref(), Some("/home/dev/blog"));
+        assert_eq!(session.title.as_deref(), Some("Write the release notes"));
     }
 }

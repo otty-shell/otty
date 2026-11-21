@@ -254,8 +254,11 @@ after, as today (`account_numbers/mod.rs`).
   URLs, file names) lives in the plugin. A plugin may carry its own parser
   for a new format over raw bytes.
 - The host does the generic work: walking files and noticing which
-  changed, adding up tokens by day, hour, project and model, removing
-  repeated answers by an identity the plugin returns, prices and money
+  changed, for the sessions as for the tokens (issue 25: a part names its
+  session places and reads one file at a time, and keeps nothing between
+  reads), joining what several files tell about one session, adding up
+  tokens by day, hour, project and model, removing repeated answers by an
+  identity the plugin returns, prices and money
   estimates, joining accounts, and the "format changed" verdict from the
   counts of records the plugin saw and understood.
 - **Prices are OTTY's** (owner, 2026-11-21). The price table (LiteLLM) is
@@ -579,17 +582,23 @@ pub trait Agent {
     /// and whom it is for. Never the key itself.
     fn logins(profile: &Profile) -> Vec<Login>;
 
-    /// The sessions of the profile, newest first.
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError>;
+    /// What holds the profile's sessions: file globs or a database. The
+    /// host walks them, keeps what each file gave and asks again only for
+    /// what is new or changed (issue 25).
+    fn session_places(profile: &Profile) -> Vec<Place>;
 
-    /// What holds the profile's answers: file globs with the markers the
-    /// host filters lines by, or a database. The host walks them and
-    /// asks again only for what changed.
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace>;
+    /// What one file or database tells about its sessions: the id, and
+    /// the folder and the title when the file names them. The host joins
+    /// what all files tell about one id.
+    fn read_sessions(profile: &Profile, item: &PlaceItem) -> Result<Vec<Session>, ReadError>;
+
+    /// What holds the profile's answers: file globs or a database. The
+    /// host walks them and asks again only for what changed.
+    fn spend_places(profile: &Profile) -> Vec<Place>;
 
     /// Every answer of the model in one file or database, with the counts
     /// of records seen and understood.
-    fn read_answers(profile: &Profile, item: &SpendItem) -> Result<Answers, ReadError>;
+    fn read_answers(profile: &Profile, item: &PlaceItem) -> Result<Answers, ReadError>;
 
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&SessionId>) -> Command;
@@ -765,7 +774,7 @@ one plain struct for the whole file; the host has already left out the
 lines without a marker and decoded `.zst`):
 
 ```rust
-use otty_plugin_sdk::agents::{Agent, Answer, Answers, RecordCounts, SpendItem, TokenCount};
+use otty_plugin_sdk::agents::{Agent, Answer, Answers, PlaceItem, RecordCounts, TokenCount};
 use otty_plugin_sdk::files;
 
 const MARKERS: [&[u8]; 3] = [b"\"token_count\"", b"\"turn_context\"", b"\"session_meta\""];
@@ -782,10 +791,10 @@ struct FileState {
 }
 
 impl Agent for OpenAi {
-    fn read_answers(_profile: &Profile, item: &SpendItem) -> Result<Answers, ReadError> {
+    fn read_answers(_profile: &Profile, item: &PlaceItem) -> Result<Answers, ReadError> {
         let mut state = FileState::default();
 
-        for batch in files::lines(item.path(), &MARKERS) {
+        for batch in files::lines(&item.file.path, &MARKERS) {
             for line in batch?.lines() {
                 state.add_line(line);
             }
@@ -927,15 +936,17 @@ package otty:agents-agent@0.1.0;
 interface agent {
   use types.{read-error, identity, login-kind, limits};
   /* profile, profile-status (connected, not-logged-in(need),
-     config-folder-not-found), login, session, spend-place,
-     answer, answers, record-counts, stats */
+     config-folder-not-found), login, session (id, and the folder and
+     title when the file names them), place (glob, kind), place-item
+     (the listed file-info, kind), answer, answers, record-counts, stats */
   profiles: func(agent: string, env: environment) -> list<profile-place>;
   detect: func(profile: profile) -> profile-status;
   version: func(profile: profile) -> option<string>;
   logins: func(profile: profile) -> list<login>;
-  sessions: func(profile: profile) -> result<list<session>, read-error>;
-  spend-places: func(profile: profile) -> list<spend-place>;
-  read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
+  session-places: func(profile: profile) -> list<place>;
+  read-sessions: func(profile: profile, item: place-item) -> result<list<session>, read-error>;
+  spend-places: func(profile: profile) -> list<place>;
+  read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
   read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;   // the part picks its sources
   session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
@@ -1052,8 +1063,11 @@ key. A key column with no key in it, or a JSON key column that is not
 JSON, comes back as `null`.
 
 What the host does with the results, with no agent or provider in mind:
-walks spend places and re-reads only files whose size or change time
-changed (today's `FileMemory`, in memory only); adds up answers by day,
+walks session and spend places and re-reads only files whose size or
+change time changed (today's `FileMemory`, in memory only); joins what
+the files tell about one session id (`session_files.rs`: the latest
+time, and the folder and the title of the latest record naming them);
+adds up answers by day,
 hour, project, model, provider and login (`spend_tally.rs`); counts an
 answer identity once across files (`CountedAnswer::identity`); gives the
 "format changed" verdict from the newest files' seen and understood counts
@@ -1221,7 +1235,7 @@ token.
 | Memory per plugin | 64 MiB, trap when it can not grow | Spike: 7.5 MiB peak on real files |
 | Instances per store | 4 | One component, a few inner instances |
 | Deadline, quick calls (`detect`, `version`, `logins`, `launch`, `profiles`) | 2 s | |
-| Deadline, `read-answers`, `sessions`, stats | 120 s per call | One 1 GB file at 400 MB/s plus margin |
+| Deadline, `read-answers`, `read-sessions`, stats | 120 s per call | One 1 GB file at 400 MB/s plus margin |
 | Deadline, `read-limits`, provider calls | 90 s | Host waits (HTTP, terminal) count |
 | Epoch tick | 10 ms (spike: 1.005 s for 1 s) | |
 | Plugin state between refreshes | none: a new instance per refresh of one profile or account (0.1 ms) | Nothing leaks between reads |

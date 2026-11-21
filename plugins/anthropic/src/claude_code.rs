@@ -2,9 +2,9 @@
 //! and the commands that start it.
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
-    SpendKind, SpendPlace,
+    Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, PlaceKind,
+    Profile, ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
+    SessionStats,
 };
 use otty_plugin_sdk::{Command, Need};
 
@@ -40,18 +40,27 @@ impl Agent for Anthropic {
         logins::logins(&profile.folder)
     }
 
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError> {
-        sessions::sessions(&profile.folder)
+    /// The `*.jsonl` files right inside the project folders: the files of
+    /// helper agents, deeper, are not sessions of their own.
+    fn session_places(profile: &Profile) -> Vec<Place> {
+        sessions::session_places(&profile.folder)
+    }
+
+    fn read_sessions(
+        _profile: &Profile,
+        item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        Ok(sessions::read_sessions(item))
     }
 
     /// Every `*.jsonl` file in the project folders, at any depth, so the
     /// files of helper agents in `<session id>/subagents/` count too.
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace> {
+    fn spend_places(profile: &Profile) -> Vec<Place> {
         let projects = escaped(&projects_folder(&profile.folder));
 
-        vec![SpendPlace {
+        vec![Place {
             glob: format!("{projects}/*/**/*.jsonl"),
-            kind: SpendKind::Files,
+            kind: PlaceKind::Files,
         }]
     }
 
@@ -59,11 +68,15 @@ impl Agent for Anthropic {
     /// send Claude Code to: Claude Code does not write it.
     fn read_answers(
         profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
         let provider = profile_provider(&profile.folder);
 
-        spend_file::read_answers(&profile.folder, &item.path, provider.as_ref())
+        spend_file::read_answers(
+            &profile.folder,
+            &item.file.path,
+            provider.as_ref(),
+        )
     }
 
     /// `claude` for a new session, `claude --resume <id>` to continue one.
@@ -268,7 +281,7 @@ mod tests {
                 "-home-dev-shop/3b2e4d9a-af6c-4081-9d2e-3c4f5a6b7c8d.jsonl",
             ]
         );
-        assert_eq!(places[0].kind, SpendKind::Files);
+        assert_eq!(places[0].kind, PlaceKind::Files);
     }
 
     /// The tokens of a profile whose settings send Claude Code to DeepSeek
@@ -277,16 +290,14 @@ mod tests {
     fn answers_are_counted_under_the_server_of_the_settings() {
         let host = host();
         let profile = profile(&host, ".claude-deepseek", false);
-        let item = SpendItem {
-            path: path(
-                &host,
-                ".claude-deepseek/projects/-home-dev-shop/5d4a6fbc-c18e-42a3-bf4a-5e6b7c8d9eaf.jsonl",
-            ),
-            kind: SpendKind::Files,
-        };
+        let items = host.place_items(AGENT, &Anthropic::spend_places(&profile));
+        let item = items
+            .iter()
+            .find(|item| item.file.path.ends_with("5e6b7c8d9eaf.jsonl"))
+            .expect("the session file");
 
         let answers =
-            as_part(&host, || Anthropic::read_answers(&profile, &item))
+            as_part(&host, || Anthropic::read_answers(&profile, item))
                 .expect("the answers");
 
         assert_eq!(answers.answers.len(), 1);

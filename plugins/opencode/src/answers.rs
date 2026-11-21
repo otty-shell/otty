@@ -2,28 +2,18 @@
 //! provider, model, tokens, the cost OpenCode wrote and the folder of its
 //! session.
 //!
-//! The database is the profile's one spend place, together with its
-//! write-ahead log, `opencode.db-wal`: OpenCode writes new rows to the log
-//! first and copies them into the database only now and then, so the
-//! database file alone may not change for a long time. When either file
-//! changes, the whole database is read; each answer carries the id of its
-//! message, so OTTY counts it once.
+//! The database and its write-ahead log are the profile's spend places:
+//! when either file changes, the whole database is read; each answer
+//! carries the id of its message, so OTTY counts it once.
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::agents::{
-    Answers, ReadError, RecordCounts, SpendItem, SpendKind, SpendPlace,
-};
+use otty_plugin_sdk::agents::{Answers, PlaceItem, ReadError, RecordCounts};
 use otty_plugin_sdk::clock;
 
-use crate::database::{Database, SessionRow};
-use crate::glob::escaped;
+use crate::database::{Database, SessionRow, database_path};
 use crate::message::{Record, read_record};
 use crate::sessions::newest_version;
-
-/// What follows the name of the database in the name of its write-ahead
-/// log.
-const LOG_SUFFIX: &str = "-wal";
 
 /// How many days back the answers are read: OTTY counts the tokens of the
 /// last 30 days, or of the current month on its 31st day; three days more
@@ -44,27 +34,10 @@ struct Seen {
     not_understood: Option<(&'static str, &'static str, Vec<String>)>,
 }
 
-/// Where the answers of the profile whose database is `database` are: the
-/// database and its write-ahead log.
-pub(crate) fn spend_places(database: &str) -> Vec<SpendPlace> {
-    let database = escaped(database);
-
-    vec![
-        SpendPlace {
-            glob: database.clone(),
-            kind: SpendKind::Database,
-        },
-        SpendPlace {
-            glob: format!("{database}{LOG_SUFFIX}"),
-            kind: SpendKind::Database,
-        },
-    ]
-}
-
 /// The answers of the last days in the database of `item`, the database
 /// itself or its write-ahead log. No database gives no answers.
-pub(crate) fn read_answers(item: &SpendItem) -> Result<Answers, ReadError> {
-    let path = item.path.strip_suffix(LOG_SUFFIX).unwrap_or(&item.path);
+pub(crate) fn read_answers(item: &PlaceItem) -> Result<Answers, ReadError> {
+    let path = database_path(item);
     let since_ms = clock::now_ms().saturating_sub(READ_DAYS * DAY_MS);
 
     let Some(database) = Database::open(path).map_err(ReadError::Host)? else {
@@ -171,26 +144,10 @@ mod tests {
     }
 
     fn read(data: &DataFolder, name: &str) -> Answers {
-        let item = SpendItem {
-            path: data.file(name),
-            kind: SpendKind::Database,
-        };
+        let item = data.item(name);
 
         data.run(|| read_answers(&item))
             .expect("the database is read")
-    }
-
-    #[test]
-    fn the_spend_places_are_the_database_and_its_log() {
-        let places = spend_places("/data/[x]/opencode.db");
-
-        let globs: Vec<&str> =
-            places.iter().map(|place| place.glob.as_str()).collect();
-        assert_eq!(
-            globs,
-            ["/data/\\[x\\]/opencode.db", "/data/\\[x\\]/opencode.db-wal"]
-        );
-        assert!(places.iter().all(|place| place.kind == SpendKind::Database));
     }
 
     #[test]

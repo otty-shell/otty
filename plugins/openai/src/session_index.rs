@@ -39,14 +39,24 @@ impl IndexEntry {
     }
 }
 
-/// The entries of the index of the profile in `folder`, by session id.
+/// The path of the index of the profile in `folder`.
+pub(crate) fn index_path(folder: &str) -> String {
+    format!("{folder}/{INDEX_FILE}")
+}
+
+/// Whether the file at `path` is the index of a profile.
+pub(crate) fn is_index(path: &str) -> bool {
+    path.rsplit('/').next() == Some(INDEX_FILE)
+}
+
+/// The entries of the index at `path`, by session id.
 ///
 /// When an id has several lines, the last one wins. A missing file gives
 /// no entries, and a broken line is skipped.
-pub(crate) fn read_index(folder: &str) -> BTreeMap<String, IndexEntry> {
+pub(crate) fn read_index(path: &str) -> BTreeMap<String, IndexEntry> {
     let mut entries = BTreeMap::new();
 
-    for batch in files::lines(&format!("{folder}/{INDEX_FILE}"), &[]) {
+    for batch in files::lines(path, &[]) {
         let Ok(batch) = batch else {
             break;
         };
@@ -152,7 +162,7 @@ mod tests {
         let host = host();
         let folder = path(&host, ".codex");
 
-        let index = as_part(&host, || read_index(&folder));
+        let index = as_part(&host, || read_index(&index_path(&folder)));
 
         assert_eq!(index.len(), 2);
         assert_eq!(
@@ -163,10 +173,17 @@ mod tests {
     }
 
     #[test]
+    fn the_index_is_told_by_its_name() {
+        assert!(is_index("/home/dev/.codex/session_index.jsonl"));
+        assert!(!is_index("/home/dev/.codex/sessions/rollout-a.jsonl"));
+        assert!(!is_index("/home/dev/.codex/old_session_index.jsonl"));
+    }
+
+    #[test]
     fn a_missing_index_has_no_entries() {
         let host = host();
         let folder = path(&host, ".codex-work");
 
-        assert!(as_part(&host, || read_index(&folder)).is_empty());
+        assert!(as_part(&host, || read_index(&index_path(&folder))).is_empty());
     }
 }

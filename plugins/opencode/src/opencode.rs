@@ -2,12 +2,12 @@
 //! the commands that start it.
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, LoginRef, Profile, ProfilePlace, ProfileStatus,
-    ProjectStats, ReadError, Session, SessionStats, SpendItem, SpendPlace,
+    Agent, Answers, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
+    ProfileStatus, ProjectStats, ReadError, Session, SessionStats,
 };
 use otty_plugin_sdk::{Command, HostError, Need};
 
-use crate::database::Database;
+use crate::database::{Database, database_places};
 use crate::location::{database_of, profiles, start_command};
 use crate::sessions::newest_version;
 use crate::{OpenCode, answers, logins, needs, sessions, stats};
@@ -36,26 +36,32 @@ impl Agent for OpenCode {
         logins::logins(profile)
     }
 
-    /// The sessions in the database; none while the database is kept in
-    /// memory.
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError> {
-        match database_of(profile) {
-            Some(database) => sessions::sessions(&database),
-            None => Ok(Vec::new()),
-        }
+    /// The database and its write-ahead log; none while the database is
+    /// kept in memory.
+    fn session_places(profile: &Profile) -> Vec<Place> {
+        database_of(profile)
+            .map(|database| database_places(&database))
+            .unwrap_or_default()
+    }
+
+    fn read_sessions(
+        _profile: &Profile,
+        item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        sessions::read_sessions(item)
     }
 
     /// The database and its write-ahead log; none while the database is
     /// kept in memory.
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace> {
+    fn spend_places(profile: &Profile) -> Vec<Place> {
         database_of(profile)
-            .map(|database| answers::spend_places(&database))
+            .map(|database| database_places(&database))
             .unwrap_or_default()
     }
 
     fn read_answers(
         _profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
         answers::read_answers(item)
     }
@@ -114,9 +120,8 @@ impl Agent for OpenCode {
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::agents::{
-        Billing, Connection, LoginKind, ProviderRef, SpendKind,
+        Billing, Connection, LoginKind, PlaceKind, ProviderRef,
     };
-    use otty_plugin_sdk::files;
 
     use super::*;
     use crate::location::DATABASE_VARIABLE;
@@ -222,9 +227,12 @@ mod tests {
         let host = host();
         let profile = default_profile(&host);
 
+        let items =
+            host.place_items(AGENT, &OpenCode::session_places(&profile));
         let (sessions, version, session, project) = as_part(&host, || {
             (
-                OpenCode::sessions(&profile).expect("the sessions"),
+                OpenCode::read_sessions(&profile, &items[0])
+                    .expect("the sessions"),
                 OpenCode::version(&profile),
                 OpenCode::read_session_stats(&profile, SHOP_SESSION)
                     .expect("the session"),
@@ -233,8 +241,11 @@ mod tests {
             )
         });
 
-        let ids: Vec<&str> =
+        let mut ids: Vec<&str> =
             sessions.iter().map(|session| session.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(items.len(), 1, "the fixtures keep no write-ahead log");
+        assert!(items.iter().all(|item| item.kind == PlaceKind::Database));
         assert_eq!(ids, ["ses_blog", SHOP_SESSION]);
         assert_eq!(version.as_deref(), Some("2.3.2"));
         assert_eq!(session.messages, 1);
@@ -249,20 +260,9 @@ mod tests {
         let host = host().with_now_ms(millis(NOW));
         let profile = default_profile(&host);
 
+        let items = host.place_items(AGENT, &OpenCode::spend_places(&profile));
         let answers = as_part(&host, || {
-            let found: Vec<String> = OpenCode::spend_places(&profile)
-                .iter()
-                .flat_map(|place| {
-                    files::list(&place.glob).expect("the listing")
-                })
-                .map(|file| file.path)
-                .collect();
-            let item = SpendItem {
-                path: found[0].clone(),
-                kind: SpendKind::Database,
-            };
-
-            OpenCode::read_answers(&profile, &item).expect("the answers")
+            OpenCode::read_answers(&profile, &items[0]).expect("the answers")
         });
 
         assert_eq!(answers.answers.len(), 2);
@@ -281,16 +281,16 @@ mod tests {
         let host = host().with_var(DATABASE_VARIABLE, ":memory:");
         let profile = default_profile(&host);
 
-        let (places, sessions, project) = as_part(&host, || {
+        let (places, session_places, project) = as_part(&host, || {
             (
                 OpenCode::spend_places(&profile),
-                OpenCode::sessions(&profile),
+                OpenCode::session_places(&profile),
                 OpenCode::read_project_stats(&profile, "/home/dev/shop"),
             )
         });
 
         assert!(places.is_empty());
-        assert_eq!(sessions, Ok(Vec::new()));
+        assert!(session_places.is_empty());
         assert_eq!(project.map(|stats| stats.models.len()), Ok(0));
     }
 }

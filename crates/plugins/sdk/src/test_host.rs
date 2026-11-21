@@ -47,6 +47,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
 pub use self::programs::StartedProgram;
+use crate::agents::{Place, PlaceItem};
 use crate::files::{Batch, FileInfo};
 use crate::http::{Request, Response};
 use crate::log::Level;
@@ -281,6 +282,35 @@ impl TestHost {
     /// When the manifest lists no provider part `id`.
     pub fn as_provider<R>(&self, id: &str, run: impl FnOnce() -> R) -> R {
         self.as_part(&PartRef::provider(id), run)
+    }
+
+    /// The files of `places` the agent part `id` may read, each as OTTY
+    /// asks the part to read it: with its size, its change time and the
+    /// kind of its place, in the order of their paths and each once. A
+    /// place the part may not list gives no files, as in OTTY.
+    ///
+    /// # Panics
+    ///
+    /// When the manifest lists no agent part `id`.
+    pub fn place_items(&self, id: &str, places: &[Place]) -> Vec<PlaceItem> {
+        let mut items: Vec<PlaceItem> = self.as_agent(id, || {
+            places
+                .iter()
+                .flat_map(|place| {
+                    let found = crate::files::list(&place.glob);
+                    let kind = place.kind;
+
+                    found
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(move |file| PlaceItem { file, kind })
+                })
+                .collect()
+        });
+
+        items.sort_by(|one, other| one.file.path.cmp(&other.file.path));
+        items.dedup_by(|one, other| one.file.path == other.file.path);
+        items
     }
 
     fn as_part<R>(&self, part: &PartRef, run: impl FnOnce() -> R) -> R {
@@ -735,6 +765,33 @@ mod tests {
             found.iter().map(|file| file.path.as_str()).collect();
         assert_eq!(paths, [text(&first)]);
         assert_eq!(found[0].size, 3);
+    }
+
+    /// Issue 25: the files of the places, once each, with their kind.
+    #[test]
+    fn the_items_of_places_are_their_files_once_each() {
+        let plugin = MadeUpPlugin::new();
+        let first = plugin.write(".made-up/sessions/a.jsonl", b"{}\n");
+        let second = plugin.write(".made-up/sessions/b.jsonl", b"");
+        let host = TestHost::new(plugin.folder());
+        let sessions = text(&host.home().join(".made-up/sessions"));
+        let places = [
+            Place {
+                glob: format!("{sessions}/*.jsonl"),
+                kind: crate::agents::PlaceKind::Files,
+            },
+            Place {
+                glob: format!("{sessions}/a.jsonl"),
+                kind: crate::agents::PlaceKind::Files,
+            },
+        ];
+
+        let items = host.place_items(AGENT, &places);
+
+        let paths: Vec<&str> =
+            items.iter().map(|item| item.file.path.as_str()).collect();
+        assert_eq!(paths, [text(&first), text(&second)]);
+        assert_eq!(items[0].file.size, 3);
     }
 
     /// A variable the part lists may name a folder outside the fixtures:

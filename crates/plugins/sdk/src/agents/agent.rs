@@ -3,8 +3,8 @@
 use std::marker::PhantomData;
 
 use crate::agents::{
-    Answers, Limits, Login, LoginRef, Profile, ProfilePlace, ProfileStatus,
-    ProjectStats, ReadError, Session, SessionStats, SpendItem, SpendPlace,
+    Answers, Limits, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
+    ProfileStatus, ProjectStats, ReadError, Session, SessionStats,
 };
 use crate::bindings::agents_agent::exports::otty::agents_agent::agent::Guest;
 use crate::{Command, Need};
@@ -37,18 +37,31 @@ pub trait Agent {
     /// whom it is for. Never the key itself.
     fn logins(profile: &Profile) -> Vec<Login>;
 
-    /// The sessions of the profile, newest first.
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError>;
+    /// What holds the profile's sessions. The host walks the files, keeps
+    /// what each gave and asks again only for the ones that are new or
+    /// changed, so the part keeps nothing between reads.
+    fn session_places(profile: &Profile) -> Vec<Place>;
+
+    /// What one file or database of a session place tells about its
+    /// sessions. The host joins what several files tell about one id: the
+    /// latest time, and the folder and the title of the latest record
+    /// that names them, so a file may name only some of them, such as an
+    /// index of titles. A session no file names a folder for is not
+    /// listed.
+    fn read_sessions(
+        profile: &Profile,
+        item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError>;
 
     /// What holds the profile's answers. The host walks the files and asks
     /// again only for the ones that changed.
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace>;
+    fn spend_places(profile: &Profile) -> Vec<Place>;
 
     /// Every answer of the model in one file or database of a spend place,
     /// with the counts of records seen and understood.
     fn read_answers(
         profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Answers, ReadError>;
 
     /// The command that starts a new session, or continues `session`.
@@ -116,17 +129,24 @@ impl<T: Agent> Guest for AgentExport<T> {
         T::logins(&profile)
     }
 
-    fn sessions(profile: Profile) -> Result<Vec<Session>, ReadError> {
-        T::sessions(&profile)
+    fn session_places(profile: Profile) -> Vec<Place> {
+        T::session_places(&profile)
     }
 
-    fn spend_places(profile: Profile) -> Vec<SpendPlace> {
+    fn read_sessions(
+        profile: Profile,
+        item: PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        T::read_sessions(&profile, &item)
+    }
+
+    fn spend_places(profile: Profile) -> Vec<Place> {
         T::spend_places(&profile)
     }
 
     fn read_answers(
         profile: Profile,
-        item: SpendItem,
+        item: PlaceItem,
     ) -> Result<Answers, ReadError> {
         T::read_answers(&profile, &item)
     }

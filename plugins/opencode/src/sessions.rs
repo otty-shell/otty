@@ -1,25 +1,26 @@
-//! The sessions of a profile, listed from its database, and the version
+//! The sessions of a profile, read from its database, and the version
 //! of OpenCode that wrote them. The sessions of helper agents, which
 //! another session started, are not listed: their tokens count with the
 //! others.
 
-use otty_plugin_sdk::agents::{ReadError, Session};
+use otty_plugin_sdk::agents::{PlaceItem, ReadError, Session};
 
-use crate::database::{Database, SessionRow};
+use crate::database::{Database, SessionRow, database_path};
 
-/// The sessions in the database at `path`, the one that changed last
-/// first. No database means no sessions yet.
-pub(crate) fn sessions(path: &str) -> Result<Vec<Session>, ReadError> {
+/// The sessions in the database of `item`, the database itself or its
+/// write-ahead log: the whole session table, since OpenCode keeps few
+/// sessions and reading them all takes milliseconds. No database means
+/// no sessions yet.
+pub(crate) fn read_sessions(
+    item: &PlaceItem,
+) -> Result<Vec<Session>, ReadError> {
+    let path = database_path(item);
     let Some(database) = Database::open(path).map_err(ReadError::Host)? else {
         return Ok(Vec::new());
     };
     let rows = database.sessions().map_err(ReadError::Host)?;
 
-    let mut listed: Vec<Session> =
-        rows.iter().filter_map(listed_session).collect();
-    listed.sort_by_key(|session| std::cmp::Reverse(session.changed_ms));
-
-    Ok(listed)
+    Ok(rows.iter().filter_map(listed_session).collect())
 }
 
 /// The newest version of OpenCode the sessions `rows` were written by:
@@ -32,20 +33,18 @@ pub(crate) fn newest_version(rows: &[SessionRow]) -> Option<String> {
 }
 
 /// The session of `row` as the list shows it; `None` for the session of
-/// a helper agent and for one with no folder.
+/// a helper agent. One with no folder has none: OTTY leaves it out.
 fn listed_session(row: &SessionRow) -> Option<Session> {
     if row.parent_id.is_some() {
         return None;
     }
     let folder = row.directory.trim();
-    if folder.is_empty() {
-        return None;
-    }
+    let title = row.title.as_deref().map(str::trim);
 
     Some(Session {
         id: row.id.clone(),
-        folder: folder.to_string(),
-        title: row.title.clone().unwrap_or_default(),
+        folder: (!folder.is_empty()).then(|| folder.to_string()),
+        title: title.filter(|title| !title.is_empty()).map(str::to_string),
         changed_ms: row.updated_ms,
     })
 }
@@ -56,7 +55,7 @@ mod tests {
     use crate::testing::{DataFolder, NOW, millis};
 
     #[test]
-    fn sessions_are_listed_newest_first_without_the_ones_of_helper_agents() {
+    fn sessions_are_read_without_the_ones_of_helper_agents() {
         let data = DataFolder::new();
         let database = data.first_shape();
         database.session(
@@ -74,32 +73,54 @@ mod tests {
             (NOW, NOW),
         );
         database.session("ses_3", None, "", "1.4.0", (NOW, NOW));
-        database.session("ses_4", None, "/home/user/site", "1.4.0", (NOW, NOW));
-        let path = data.file("opencode.db");
+        let item = data.item("opencode.db");
 
-        let found = data.run(|| sessions(&path)).expect("the database is read");
+        let mut found = data
+            .run(|| read_sessions(&item))
+            .expect("the database is read");
 
-        let session = |id: &str, folder: &str, changed: u64| Session {
-            id: id.to_string(),
-            folder: folder.to_string(),
-            title: format!("Session {id}"),
-            changed_ms: millis(changed),
-        };
+        found.sort_by(|one, other| one.id.cmp(&other.id));
         assert_eq!(
             found,
             [
-                session("ses_4", "/home/user/site", NOW),
-                session("ses_1", "/home/user/otty", NOW - 30),
+                Session {
+                    id: "ses_1".to_string(),
+                    folder: Some("/home/user/otty".to_string()),
+                    title: Some("Session ses_1".to_string()),
+                    changed_ms: millis(NOW - 30),
+                },
+                Session {
+                    id: "ses_3".to_string(),
+                    folder: None,
+                    title: Some("Session ses_3".to_string()),
+                    changed_ms: millis(NOW),
+                },
             ]
         );
+    }
+
+    /// The write-ahead log is read as its database.
+    #[test]
+    fn the_log_gives_the_sessions_of_its_database() {
+        let data = DataFolder::new();
+        let database = data.first_shape();
+        database.session("ses_1", None, "/home/user/otty", "1.4.0", (NOW, NOW));
+        let item = data.item("opencode.db-wal");
+
+        let found = data
+            .run(|| read_sessions(&item))
+            .expect("the database is read");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "ses_1");
     }
 
     #[test]
     fn no_database_has_no_sessions() {
         let data = DataFolder::new();
-        let path = data.file("opencode.db");
+        let item = data.item("opencode.db");
 
-        let found = data.run(|| sessions(&path));
+        let found = data.run(|| read_sessions(&item));
 
         assert_eq!(found, Ok(Vec::new()));
     }

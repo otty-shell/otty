@@ -10,10 +10,15 @@
 //! replaced by handles. The text of a conversation is kept in other
 //! tables, which the plugin never reads.
 
+use otty_plugin_sdk::agents::{Place, PlaceItem, PlaceKind};
 use otty_plugin_sdk::sqlite::{self, Param, Value};
 use otty_plugin_sdk::{HostError, JsonWithKeys, files};
 
 use crate::glob::escaped;
+
+/// What follows the name of the database in the name of its write-ahead
+/// log.
+const LOG_SUFFIX: &str = "-wal";
 
 /// The tables of the sessions, in both shapes.
 const SESSION_TABLES: [&str; 2] = ["session", "session_v2"];
@@ -228,6 +233,35 @@ impl Database {
     }
 }
 
+/// Where the records of the database at `database` are, its sessions and
+/// its answers: the database and its write-ahead log, `opencode.db-wal`.
+/// OpenCode writes new rows to the log first and copies them into the
+/// database only now and then, so the database file alone may not change
+/// for a long time. When either file changes, OTTY asks for the whole
+/// database again.
+pub(crate) fn database_places(database: &str) -> Vec<Place> {
+    let database = escaped(database);
+
+    vec![
+        Place {
+            glob: database.clone(),
+            kind: PlaceKind::Database,
+        },
+        Place {
+            glob: format!("{database}{LOG_SUFFIX}"),
+            kind: PlaceKind::Database,
+        },
+    ]
+}
+
+/// The path of the database `item` is a file of: the database itself, or
+/// the one of a write-ahead log.
+pub(crate) fn database_path(item: &PlaceItem) -> &str {
+    let path = item.file.path.as_str();
+
+    path.strip_suffix(LOG_SUFFIX).unwrap_or(path)
+}
+
 /// The session of `row`; `None` for a row with no id or no times.
 fn session_row(row: &[Value]) -> Option<SessionRow> {
     Some(SessionRow {
@@ -304,6 +338,42 @@ mod tests {
     };
 
     const TOKENS: (u64, u64, u64, u64, u64) = (10, 2, 1, 300, 5);
+
+    fn item(path: &str) -> PlaceItem {
+        PlaceItem {
+            file: files::FileInfo {
+                path: path.to_string(),
+                size: 0,
+                changed_ms: 0,
+            },
+            kind: PlaceKind::Database,
+        }
+    }
+
+    #[test]
+    fn the_places_are_the_database_and_its_log() {
+        let places = database_places("/data/[x]/opencode.db");
+
+        let globs: Vec<&str> =
+            places.iter().map(|place| place.glob.as_str()).collect();
+        assert_eq!(
+            globs,
+            ["/data/\\[x\\]/opencode.db", "/data/\\[x\\]/opencode.db-wal"]
+        );
+        assert!(places.iter().all(|place| place.kind == PlaceKind::Database));
+    }
+
+    #[test]
+    fn the_log_is_read_as_its_database() {
+        assert_eq!(
+            database_path(&item("/data/opencode.db-wal")),
+            "/data/opencode.db"
+        );
+        assert_eq!(
+            database_path(&item("/data/opencode.db")),
+            "/data/opencode.db"
+        );
+    }
 
     fn open(data: &DataFolder) -> Database {
         let path = data.file("opencode.db");

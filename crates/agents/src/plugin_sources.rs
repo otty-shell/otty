@@ -5,35 +5,101 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use otty_plugin_host::agents::agent::{Login, LoginKind, ReadError};
-use otty_plugin_host::{CallBatch, CalledPart};
+use otty_plugin_host::agents::agent::{
+    AgentCalls, HostError, Login, LoginKind, ReadError, Session,
+};
+use otty_plugin_host::{CallBatch, CallError, CalledPart, PluginFailureKind};
 
 use crate::agent::AgentId;
 use crate::error::{SourceError, Unavailable};
+use crate::file_memory::FileMemory;
 use crate::limits::{LimitSource, Limits};
 use crate::local_time::LocalNow;
 use crate::part_need::PartNeed;
+use crate::plugin_places::place_items;
 use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
 use crate::profile::Profile;
 use crate::read_failure::read_failure;
 use crate::refused_login::RefusedLogin;
 use crate::session::{AgentSession, SessionId, SessionSource};
+use crate::session_files::{FoundSession, read_session_files};
 use crate::source_id::SourceId;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
 
-/// The sessions of a profile, as the part lists them.
+/// The name of the read of a part's sessions in reports.
+const READ_SESSIONS: &str = "read-sessions";
+
+/// The sessions of a profile, as the part reads them file by file, with
+/// what each file told kept between refreshes.
 pub(crate) struct PluginSessions {
     part: Arc<CalledPart>,
+    memory: FileMemory<Vec<FoundSession>>,
 }
 
 impl PluginSessions {
-    /// The sessions `part` lists.
+    /// The sessions `part` reads.
     pub(crate) fn new(part: Arc<CalledPart>) -> Self {
-        Self { part }
+        Self {
+            part,
+            memory: FileMemory::default(),
+        }
+    }
+
+    /// The sessions of `profile` in one read of the part: its session
+    /// places, then what each file that is new or changed tells. A call
+    /// that failed fails the read; what the part could not read fails the
+    /// list only.
+    fn read(
+        &self,
+        calls: &mut AgentCalls<'_, '_>,
+        profile: &Profile,
+    ) -> Result<Result<Vec<AgentSession>, SourceError>, CallError> {
+        let asked = part_profile(profile);
+        let places = calls.session_places(&asked)?;
+        let items = place_items(&self.part, &places);
+        let paths = items.keys().cloned().collect();
+
+        let mut failed_call = None;
+        let sessions = read_session_files(
+            &self.memory,
+            profile.config_dir(),
+            paths,
+            |path| {
+                let Some(item) = items.get(path) else {
+                    return Ok(Vec::new());
+                };
+
+                match calls.read_sessions(&asked, item) {
+                    Ok(Ok(sessions)) => {
+                        Ok(sessions.into_iter().map(found_session).collect())
+                    },
+                    Ok(Err(ReadError::Host(HostError::NotFound(_)))) => {
+                        Ok(Vec::new())
+                    },
+                    Ok(Err(error)) => Err(read_error(
+                        &self.part,
+                        READ_SESSIONS,
+                        &error,
+                        SourceError::NotAvailable(Unavailable::NoSessionFiles),
+                        Some(profile),
+                    )),
+                    Err(error) => {
+                        let kind = PluginFailureKind::of_call(&error);
+                        failed_call = Some(error);
+                        Err(self.part.failure(READ_SESSIONS, kind).into())
+                    },
+                }
+            },
+        );
+
+        match failed_call {
+            Some(error) => Err(error),
+            None => Ok(sessions),
+        }
     }
 }
 
-impl SessionSource for PluginSessions {
+impl SessionSource for Arc<PluginSessions> {
     fn id(&self) -> SourceId {
         SourceId::AgentPart
     }
@@ -42,33 +108,11 @@ impl SessionSource for PluginSessions {
         &self,
         profile: &Profile,
     ) -> Result<Vec<AgentSession>, SourceError> {
-        let asked = part_profile(profile);
+        self.part.read(READ_SESSIONS, |batch| {
+            let mut calls = batch.agent()?;
 
-        let sessions = self
-            .part
-            .read("sessions", |batch| batch.agent()?.sessions(&asked))?
-            .map_err(|error| {
-                read_error(
-                    &self.part,
-                    "sessions",
-                    &error,
-                    SourceError::NotAvailable(Unavailable::NoSessionFiles),
-                    Some(profile),
-                )
-            })?;
-
-        let sessions = sessions
-            .into_iter()
-            .map(|session| {
-                AgentSession::new(
-                    SessionId::new(session.id),
-                    PathBuf::from(session.folder),
-                    session.title,
-                    time_of(session.changed_ms),
-                )
-            })
-            .collect();
-        Ok(sessions)
+            self.read(&mut calls, profile)
+        })?
     }
 }
 
@@ -234,6 +278,14 @@ pub(crate) fn read_error(
         (Some(need), None) => SourceError::NeedsUser(Box::new(need)),
         (None, _) => part.failure(call, read_failure(error)).into(),
     }
+}
+
+/// What the part's `session` tells about one session, as the host joins
+/// it with what the other files tell.
+fn found_session(session: Session) -> FoundSession {
+    FoundSession::new(session.id, time_of(session.changed_ms))
+        .with_folder(session.folder.map(PathBuf::from))
+        .with_title(session.title)
 }
 
 /// The login whose limits the part reads: a subscription, else the first.

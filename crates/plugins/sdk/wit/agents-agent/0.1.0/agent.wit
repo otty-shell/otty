@@ -7,6 +7,7 @@ package otty:agents-agent@0.1.0;
 interface agent {
   use otty:host/types@0.1.0.{command, need};
   use otty:host/keys@0.1.0.{key-place};
+  use otty:host/files@0.1.0.{file-info};
   use types.{read-error, identity, login-kind, limits};
 
   /// A config folder of the agent found on this computer.
@@ -70,32 +71,38 @@ interface agent {
     plan: option<string>,
   }
 
-  /// One conversation the agent can continue.
+  /// What one file tells about one conversation the agent can continue.
+  /// The host joins what all the files of the session places tell about
+  /// one id: the latest `changed-ms`, and the folder and the title of the
+  /// latest record that names them. A session no record names a folder
+  /// for is not listed; one with no title shows its id.
   record session {
     id: string,
     /// The project folder the session ran in.
-    folder: string,
-    title: string,
+    folder: option<string>,
+    title: option<string>,
     changed-ms: s64,
   }
 
-  /// What holds answers: lines of files, or a SQLite database.
-  enum spend-kind {
+  /// What holds records: lines of files, or a SQLite database.
+  enum place-kind {
     files,
     database,
   }
 
-  /// Where the profile's answers are: the host walks the files of `glob`
-  /// and asks again only for the ones that changed.
-  record spend-place {
+  /// Where some of the profile's records are, such as its sessions or its
+  /// answers: the host walks the files of `glob`, keeps what each file
+  /// gave and asks again only for the files that are new or changed.
+  record place {
     glob: string,
-    kind: spend-kind,
+    kind: place-kind,
   }
 
-  /// One file or database of a spend place that the host asks to read.
-  record spend-item {
-    path: string,
-    kind: spend-kind,
+  /// One file or database of a place that the host asks to read, with
+  /// its size and change time as the host listed it.
+  record place-item {
+    file: file-info,
+    kind: place-kind,
   }
 
   /// Tokens of one answer. `input` leaves out what was read from the
@@ -174,12 +181,15 @@ interface agent {
   version: func(profile: profile) -> option<string>;
   /// The logins and keys the profile holds.
   logins: func(profile: profile) -> list<login>;
-  /// The sessions of the profile, newest first.
-  sessions: func(profile: profile) -> result<list<session>, read-error>;
+  /// Where the profile's sessions are.
+  session-places: func(profile: profile) -> list<place>;
+  /// What one file or database of a session place tells about its
+  /// sessions.
+  read-sessions: func(profile: profile, item: place-item) -> result<list<session>, read-error>;
   /// Where the profile's answers are.
-  spend-places: func(profile: profile) -> list<spend-place>;
-  /// Every answer in one file or database.
-  read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
+  spend-places: func(profile: profile) -> list<place>;
+  /// Every answer in one file or database of a spend place.
+  read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
   /// The command that starts a new session, or continues `session`.
   launch: func(profile: profile, session: option<string>) -> command;
   /// The limits the agent itself shows for `login`. The part tries its

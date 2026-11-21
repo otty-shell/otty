@@ -738,4 +738,47 @@ mod tests {
         );
         assert_eq!(unknown.sessions, SessionsRead::NoWay);
     }
+
+    /// Issue 25: how long OTTY takes to read the sessions of the real
+    /// `~/.codex` through the OpenAI plugin, and of the real OpenCode
+    /// database through the OpenCode plugin, the first time and again
+    /// with nothing changed. It only reads the folders. Run it by hand:
+    /// `cargo test -p otty-app-agents-io --release measure_the_sessions --
+    /// --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads the real ~/.codex and OpenCode data; run by hand"]
+    fn measure_the_sessions_read_of_the_real_folders() {
+        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
+        let codex = Profile::default_for(
+            AgentId::new("codex"),
+            "Codex",
+            home.join(".codex"),
+        );
+        let opencode = Profile::default_for(
+            AgentId::new("opencode"),
+            "OpenCode",
+            home.join(".local/share/opencode"),
+        );
+
+        measure(&agents_with_plugins(&home), &codex);
+        measure(&agents_with_opencode(&home), &opencode);
+    }
+
+    /// Prints how long three reads of the sessions of `profile` take.
+    fn measure(agents: &AgentList, profile: &Profile) {
+        for read in ["first", "second", "third"] {
+            let started = std::time::Instant::now();
+            let loaded = read_sessions(agents, profile.clone());
+            let took = started.elapsed();
+
+            let count = match &loaded.sessions {
+                SessionsRead::Read(sessions) => sessions.len(),
+                other => panic!("the sessions are read: {other:?}"),
+            };
+            println!(
+                "{}: {read} read: {count} sessions in {took:?}",
+                profile.name()
+            );
+        }
+    }
 }

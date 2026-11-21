@@ -6,8 +6,8 @@ use std::path::Path;
 
 use otty_plugin_sdk::agents::{
     Agent, Answers, Billing, Connection, Identity, Login, LoginKind, LoginRef,
-    Profile, ProfilePlace, ProfileStatus, ProviderRef, ReadError, Session,
-    SpendItem, SpendKind, SpendPlace,
+    Place, PlaceItem, PlaceKind, Profile, ProfilePlace, ProfileStatus,
+    ProviderRef, ReadError, Session,
 };
 use otty_plugin_sdk::{
     Command, HostError, JsonField, KeyPlace, Need, env, files, log,
@@ -135,42 +135,45 @@ impl Agent for Example {
         }]
     }
 
-    fn sessions(profile: &Profile) -> Result<Vec<Session>, ReadError> {
-        let glob = format!("{}/sessions/*.jsonl", profile.folder);
-        let found = files::list(&glob).map_err(ReadError::Host)?;
-
-        let mut sessions = Vec::new();
-        for file in found {
-            let session = SessionFile::read(&file.path)?;
-            let id = Path::new(&file.path)
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-                .unwrap_or_default();
-
-            sessions.push(Session {
-                id,
-                folder: session.project().unwrap_or_default().to_string(),
-                title: session.title().unwrap_or("Untitled").to_string(),
-                changed_ms: session.last_at_ms().unwrap_or(file.changed_ms),
-            });
-        }
-        sessions.sort_by_key(|session| std::cmp::Reverse(session.changed_ms));
-
-        Ok(sessions)
+    /// Each session file is one session; OTTY reads again only the files
+    /// that changed.
+    fn session_places(profile: &Profile) -> Vec<Place> {
+        vec![Place {
+            glob: sessions_glob(profile),
+            kind: PlaceKind::Files,
+        }]
     }
 
-    fn spend_places(profile: &Profile) -> Vec<SpendPlace> {
-        vec![SpendPlace {
-            glob: format!("{}/sessions/*.jsonl", profile.folder),
-            kind: SpendKind::Files,
+    fn read_sessions(
+        _profile: &Profile,
+        item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        let session = SessionFile::read(&item.file.path)?;
+        let id = Path::new(&item.file.path)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        Ok(vec![Session {
+            id,
+            folder: session.project().map(str::to_string),
+            title: session.title().map(str::to_string),
+            changed_ms: session.last_at_ms().unwrap_or(item.file.changed_ms),
+        }])
+    }
+
+    fn spend_places(profile: &Profile) -> Vec<Place> {
+        vec![Place {
+            glob: sessions_glob(profile),
+            kind: PlaceKind::Files,
         }]
     }
 
     fn read_answers(
         _profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
-        SessionFile::read(&item.path).map(SessionFile::into_answers)
+        SessionFile::read(&item.file.path).map(SessionFile::into_answers)
     }
 
     fn launch(profile: &Profile, session: Option<&str>) -> Command {
@@ -210,6 +213,11 @@ fn read_auth(profile: &Profile) -> Result<AuthFile, HostError> {
     serde_json::from_str(document.json()).map_err(|_| {
         HostError::Failed("auth.json is not an auth file".to_string())
     })
+}
+
+/// The session files of the profile: `sessions/*.jsonl`.
+fn sessions_glob(profile: &Profile) -> String {
+    format!("{}/sessions/*.jsonl", profile.folder)
 }
 
 fn auth_path(profile: &Profile) -> String {
@@ -436,30 +444,42 @@ mod tests {
         );
     }
 
+    /// Issue 25: each session file tells its one session, as OTTY reads
+    /// the files of the session places.
     #[test]
-    fn sessions_are_newest_first_with_their_titles() {
+    fn each_session_file_tells_its_session() {
         let host = host();
         let profile = profile(&host, ".example-agent", true);
+        let places = Example::session_places(&profile);
+        let items = host.place_items(AGENT, &places);
 
-        let sessions = host
-            .as_agent(AGENT, || Example::sessions(&profile))
-            .expect("the sessions");
+        let sessions: Vec<Session> = items
+            .iter()
+            .flat_map(|item| {
+                host.as_agent(AGENT, || Example::read_sessions(&profile, item))
+                    .expect("the sessions")
+            })
+            .collect();
 
-        let listed: Vec<(&str, &str, &str)> = sessions
+        let listed: Vec<(&str, Option<&str>, Option<&str>)> = sessions
             .iter()
             .map(|session| {
                 (
                     session.id.as_str(),
-                    session.title.as_str(),
-                    session.folder.as_str(),
+                    session.title.as_deref(),
+                    session.folder.as_deref(),
                 )
             })
             .collect();
         assert_eq!(
             listed,
             [
-                ("s2", "Write the release notes", "/home/dev/blog"),
-                ("s1", "Fix the cart total", "/home/dev/shop"),
+                ("s1", Some("Fix the cart total"), Some("/home/dev/shop")),
+                (
+                    "s2",
+                    Some("Write the release notes"),
+                    Some("/home/dev/blog")
+                ),
             ]
         );
     }
@@ -469,13 +489,14 @@ mod tests {
         let host = host();
         let profile = profile(&host, ".example-agent", true);
         let places = Example::spend_places(&profile);
-        let item = SpendItem {
-            path: format!("{}/sessions/s2.jsonl", profile.folder),
-            kind: places[0].kind,
-        };
+        let items = host.place_items(AGENT, &places);
+        let item = items
+            .iter()
+            .find(|item| item.file.path.ends_with("/s2.jsonl"))
+            .expect("the file of s2");
 
         let answers = host
-            .as_agent(AGENT, || Example::read_answers(&profile, &item))
+            .as_agent(AGENT, || Example::read_answers(&profile, item))
             .expect("the answers");
 
         assert_eq!(answers.answers.len(), 1);

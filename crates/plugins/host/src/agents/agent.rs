@@ -14,10 +14,9 @@ use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
-    Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens,
-    Profile, ProfilePlace, ProfileStatus, ProjectStats, ProviderRef,
-    RecordCounts, Session, SessionStats, SpendItem, SpendKind, SpendPlace,
-    TokenCount,
+    Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens, Place,
+    PlaceItem, PlaceKind, Profile, ProfilePlace, ProfileStatus, ProjectStats,
+    ProviderRef, RecordCounts, Session, SessionStats, TokenCount,
 };
 use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Guest, GuestIndices,
@@ -117,13 +116,25 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// The sessions of the profile, newest first.
-    pub fn sessions(
+    /// Where the profile's sessions are.
+    pub fn session_places(
         &mut self,
         profile: &Profile,
+    ) -> Result<Vec<Place>, CallError> {
+        self.call(CallKind::Quick, |guest, store| {
+            guest.call_session_places(store, profile)
+        })
+    }
+
+    /// What one file or database of a session place tells about its
+    /// sessions.
+    pub fn read_sessions(
+        &mut self,
+        profile: &Profile,
+        item: &PlaceItem,
     ) -> Result<Result<Vec<Session>, ReadError>, CallError> {
         self.call(CallKind::Reading, |guest, store| {
-            guest.call_sessions(store, profile)
+            guest.call_read_sessions(store, profile, item)
         })
     }
 
@@ -131,7 +142,7 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
     pub fn spend_places(
         &mut self,
         profile: &Profile,
-    ) -> Result<Vec<SpendPlace>, CallError> {
+    ) -> Result<Vec<Place>, CallError> {
         self.call(CallKind::Quick, |guest, store| {
             guest.call_spend_places(store, profile)
         })
@@ -141,7 +152,7 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
     pub fn read_answers(
         &mut self,
         profile: &Profile,
-        item: &SpendItem,
+        item: &PlaceItem,
     ) -> Result<Result<Answers, ReadError>, CallError> {
         self.call(CallKind::Reading, |guest, store| {
             guest.call_read_answers(store, profile, item)
@@ -388,6 +399,8 @@ mod tests {
         );
     }
 
+    /// Issue 25: the part names where its sessions are, and reads one
+    /// file into the sessions it holds.
     #[test]
     fn the_template_reads_its_sessions_through_the_host() {
         let cache = TempDir::new();
@@ -397,24 +410,39 @@ mod tests {
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
+        let profile = default_profile();
+        let item = PlaceItem {
+            file: crate::FileInfo {
+                path: format!("{}/sessions/s1.jsonl", profile.folder),
+                size: 0,
+                changed_ms: 0,
+            },
+            kind: PlaceKind::Files,
+        };
 
-        let sessions = batch
-            .agent()
-            .expect("an agent part")
-            .sessions(&default_profile())
+        let mut calls = batch.agent().expect("an agent part");
+        let places = calls.session_places(&profile).expect("the call ran");
+        let sessions = calls
+            .read_sessions(&profile, &item)
             .expect("the call ran")
             .expect("the sessions");
 
-        let found: Vec<(&str, &str)> = sessions
+        let globs: Vec<&str> =
+            places.iter().map(|place| place.glob.as_str()).collect();
+        assert_eq!(globs, [format!("{}/sessions/*.jsonl", profile.folder)]);
+        let found: Vec<(&str, Option<&str>, Option<&str>)> = sessions
             .iter()
-            .map(|session| (session.id.as_str(), session.title.as_str()))
+            .map(|session| {
+                (
+                    session.id.as_str(),
+                    session.folder.as_deref(),
+                    session.title.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             found,
-            [
-                ("s2", "Write the release notes"),
-                ("s1", "Fix the cart total")
-            ]
+            [("s1", Some("/home/dev/shop"), Some("Fix the cart total"))]
         );
     }
 

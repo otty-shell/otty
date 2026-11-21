@@ -39,13 +39,15 @@ const PLUGIN_SOURCES: [SourceId; 1] = [SourceId::AgentPart];
 
 /// One agent part of a loaded plugin as an [`Agent`]. Its sources, spend
 /// counter and statistics call the same part; the app keeps one for the
-/// whole run, since its spend counter remembers what it read.
+/// whole run, since its sessions and its spend counter remember what they
+/// read.
 pub struct PluginAgent {
     part: Arc<CalledPart>,
     entry: AgentEntry,
     tested_version: Option<String>,
     default_folder: PathBuf,
     folder_variable: String,
+    sessions: Arc<PluginSessions>,
     spend: Arc<PluginSpend>,
     writes_cost: Arc<AtomicBool>,
 }
@@ -99,6 +101,7 @@ impl PluginAgent {
         let default_folder = default_folder(&part, id);
         let writes_cost = Arc::new(AtomicBool::new(false));
         let tested_version = manifest_part.tested_version().map(String::from);
+        let sessions = Arc::new(PluginSessions::new(Arc::clone(&part)));
         let spend = Arc::new(PluginSpend::new(
             Arc::clone(&part),
             tested_version.clone(),
@@ -111,6 +114,7 @@ impl PluginAgent {
             tested_version,
             default_folder,
             folder_variable,
+            sessions,
             spend,
             writes_cost,
         })
@@ -236,14 +240,11 @@ impl Agent for PluginAgent {
             .map(|need| need.about_profile(profile.config_dir()))
     }
 
+    /// Read as the session list reads, so what it read is kept for it.
     fn has_sessions(&self, profile: &Profile) -> bool {
-        let asked = part_profile(profile);
+        let sessions = self.sessions.sessions(profile);
 
-        let sessions = self
-            .part
-            .read("sessions", |batch| batch.agent()?.sessions(&asked));
-
-        matches!(sessions, Ok(Ok(sessions)) if !sessions.is_empty())
+        matches!(sessions, Ok(sessions) if !sessions.is_empty())
     }
 
     fn version(&self, profile: &Profile) -> Option<String> {
@@ -274,7 +275,7 @@ impl Agent for PluginAgent {
     }
 
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>> {
-        vec![Box::new(PluginSessions::new(Arc::clone(&self.part)))]
+        vec![Box::new(Arc::clone(&self.sessions))]
     }
 
     fn session_source_ids(&self) -> &'static [SourceId] {
@@ -571,5 +572,42 @@ mod tests {
             sessions[0].folder(),
             std::path::Path::new("/home/dev/shop")
         );
+    }
+
+    /// Issue 25: a file whose size and change time did not change is not
+    /// read again, a changed one is, and a deleted one drops its session.
+    #[test]
+    fn the_sessions_of_unchanged_files_are_kept_and_of_deleted_ones_dropped() {
+        let home = TemplateHome::new();
+        let lines = |cwd: &str| [meta_line(cwd), answer_line("a1", NOW, 1)];
+        home.write_session(".example-agent", "s1.jsonl", &lines("/p/one"), NOW);
+        home.write_session(".example-agent", "s2.jsonl", &lines("/p/two"), NOW);
+        let agent = agent(&home);
+        let sources = agent.session_sources();
+        let folders = || {
+            let sessions =
+                sources[0].sessions(&home.profile()).expect("listed");
+            sessions
+                .iter()
+                .map(|session| session.folder().display().to_string())
+                .collect::<Vec<_>>()
+        };
+
+        let first = folders();
+        home.write_session(".example-agent", "s1.jsonl", &lines("/p/new"), NOW);
+        let same_stamp = folders();
+        home.write_session(
+            ".example-agent",
+            "s1.jsonl",
+            &lines("/p/new"),
+            NOW + 1,
+        );
+        std::fs::remove_file(home.folder().join("sessions/s2.jsonl"))
+            .expect("remove s2");
+        let changed = folders();
+
+        assert_eq!(first, ["/p/one", "/p/two"]);
+        assert_eq!(same_stamp, ["/p/one", "/p/two"]);
+        assert_eq!(changed, ["/p/new"]);
     }
 }

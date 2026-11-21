@@ -12,8 +12,8 @@
 #![allow(clippy::result_large_err)]
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
-    ProfileStatus, ReadError, Session, SpendItem, SpendPlace,
+    Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, Profile,
+    ProfilePlace, ProfileStatus, ReadError, Session,
 };
 use otty_plugin_sdk::{Command, Need, NeedAction};
 
@@ -49,17 +49,24 @@ impl Agent for Plugin {
         Vec::new()
     }
 
-    fn sessions(_profile: &Profile) -> Result<Vec<Session>, ReadError> {
-        Ok(Vec::new())
+    fn session_places(_profile: &Profile) -> Vec<Place> {
+        Vec::new()
     }
 
-    fn spend_places(_profile: &Profile) -> Vec<SpendPlace> {
+    fn read_sessions(
+        _profile: &Profile,
+        _item: &PlaceItem,
+    ) -> Result<Vec<Session>, ReadError> {
+        Err(ReadError::NotSupported)
+    }
+
+    fn spend_places(_profile: &Profile) -> Vec<Place> {
         Vec::new()
     }
 
     fn read_answers(
         _profile: &Profile,
-        _item: &SpendItem,
+        _item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
         Err(ReadError::NotSupported)
     }

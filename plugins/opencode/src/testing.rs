@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use otty_plugin_sdk::agents::Profile;
+use otty_plugin_sdk::agents::{PlaceItem, PlaceKind, Profile};
+use otty_plugin_sdk::files::FileInfo;
 use otty_plugin_sdk::test_host::TestHost;
 use rusqlite::{Connection, params};
 
@@ -101,6 +102,20 @@ impl DataFolder {
     /// The path of `name` in the data folder, as text.
     pub(crate) fn file(&self, name: &str) -> String {
         self.path().join(name).display().to_string()
+    }
+
+    /// The file `name` of the data folder, as OTTY asks the part to read
+    /// a file of a database place. The part does not use its size and
+    /// time, so they are left at zero.
+    pub(crate) fn item(&self, name: &str) -> PlaceItem {
+        PlaceItem {
+            file: FileInfo {
+                path: self.file(name),
+                size: 0,
+                changed_ms: 0,
+            },
+            kind: PlaceKind::Database,
+        }
     }
 
     /// The default profile of the data folder.
