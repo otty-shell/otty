@@ -2,7 +2,8 @@
 //! accounts and All profiles tables (spec Decision 1): each number with
 //! its word. An account shows what is used, left or spent of it ("62 %
 //! used", "3 760 left", "¥110.00 left", "$12.30 used", "$44.87 this
-//! month", or "$42.10 · estimate, list prices" for an estimate); a profile
+//! month", or only "$42.10" for an estimate, with the tooltip of its
+//! mark); a profile
 //! shows the tokens it spent today ("30.6M today", "no sessions"), or the
 //! state that needs the user.
 
@@ -24,8 +25,8 @@ const NEARLY_USED: u8 = 80;
 
 /// The short number of an account in the lists, with its color: a word
 /// such as "42 % used", or the money spent this month, which draws itself
-/// in the tight form ("$42.10 · estimate, list prices" with the tooltip of
-/// the mark for an estimate; owner, 2026-11-21).
+/// in the tight form (only "$42.10" with the tooltip of the mark for an
+/// estimate; owner, 2026-11-21, issue 27).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AccountNumber {
     value: NumberValue,
@@ -400,9 +401,9 @@ mod tests {
     }
 
     /// With no bill the money is an estimate over the tokens its profiles
-    /// sent to its provider. Owner, 2026-11-21: the short form of the one
-    /// mark, "$6.00 · estimate, list prices", with no "~", and the tooltip
-    /// of the mark of the account page.
+    /// sent to its provider. Owner, 2026-11-21: only the sum, "$6.00",
+    /// with no "~" and no words of the mark (issue 27), and the tooltip of
+    /// the mark of the account page.
     #[test]
     fn an_organization_with_no_bill_shows_an_estimate_of_the_month() {
         let mut state = with_accounts(
@@ -423,16 +424,7 @@ mod tests {
         let number = account_number(&state, &organization())
             .expect("the estimate of the month");
 
-        assert_eq!(
-            number.text(),
-            i18n::filled(
-                Key::TplAgentsEstimatedAmount,
-                &[
-                    ("amount", "$6.00"),
-                    ("mark", i18n::t(Key::AgentsEstimateMark))
-                ]
-            )
-        );
+        assert_eq!(number.text(), "$6.00");
         assert_eq!(number.tone(), SessionTone::Muted);
         let tip = number.tip().expect("the tooltip of the mark");
         assert!(tip.contains("LiteLLM"), "{tip}");

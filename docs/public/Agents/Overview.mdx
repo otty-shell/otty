@@ -89,7 +89,7 @@ All accounts → "⋯" → **Show Found by OTTY** opens it again.
 
 | Section      | Lists                                                                                     | "+" opens         |
 | ------------ | ----------------------------------------------------------------------------------------- | ----------------- |
-| **Accounts** | **All accounts**, then each account with its number now: "62 % used", "¥110 left", "$44.87 this month", or "$42.10 · estimate, list prices" for an [estimate](#the-money). | Add account |
+| **Accounts** | **All accounts**, then each account with its number now: "62 % used", "¥110 left", "$44.87 this month", or only "$42.10" for an [estimate](#the-money), which its tooltip names. | Add account |
 | **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
 | **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
@@ -214,9 +214,10 @@ the provider's plugin part first, then the agent's part.
   plugin, give a key.
 - Money that is an estimate at the [list prices](#the-money), not the provider's bill, has the mark
   **estimate, list prices** under it, on the account page and under the usage block in Money; its
-  tooltip says when the prices are from. Where there is no room under the sum (the left panel, the
-  All accounts table, Found by OTTY, the account chips, the Cost of a project) the mark follows the
-  sum: "$42.10 · estimate, list prices". Money with no mark is the bill or the cost the agent wrote.
+  tooltip says when the prices are from. The Cost of a project has the mark after the sum:
+  "$42.10 · estimate, list prices". Where the room is tight (the left panel, the All accounts
+  table, Found by OTTY, the account chips) an estimate shows only the sum, "$42.10", and its
+  tooltip says it is an estimate. Money with no mark and no tooltip is the bill or the cost the agent wrote.
 - **Read by** in Account info and Profile info names the plugin and its version. What a plugin
   failed to read last is on its card on the [Plugins](../plugins/) page.
 

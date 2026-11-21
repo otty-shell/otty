@@ -6,9 +6,8 @@
 //!
 //! A ChatGPT login is told by its account id, as in Codex, so the same
 //! login in Codex and in OpenCode is one account; its access token, a
-//! JWT, names the email and the plan, read through its handle. A key, and
-//! the token of a Kilo login, which works as a key of the Kilo gateway,
-//! is told by its fingerprint, which OTTY takes. A login of another
+//! JWT, names the email and the plan, read through its handle. A key is
+//! told by its fingerprint, which OTTY takes. A login of another
 //! provider with no id to tell it apart, such as a Claude login, is left
 //! out, and so is a login of a provider OTTY does not read.
 
@@ -27,7 +26,7 @@ use crate::glob::escaped;
 use crate::location::{database_of, start_command};
 use crate::needs;
 use crate::plan::plan_name;
-use crate::provider_ids::{KILO, OPENAI, provider_of};
+use crate::provider_ids::{OPENAI, provider_of};
 
 /// The file of the logins in the data folder.
 const AUTH_FILE: &str = "auth.json";
@@ -204,9 +203,9 @@ pub(crate) fn status(profile: &Profile) -> ProfileStatus {
         return ProfileStatus::NotLoggedIn(needs::not_logged_in(login));
     }
 
-    let pays_per_token = found.iter().any(|login| {
-        matches!(login.kind, LoginKind::ApiKey | LoginKind::GatewayToken)
-    });
+    let pays_per_token = found
+        .iter()
+        .any(|login| matches!(login.kind, LoginKind::ApiKey));
 
     ProfileStatus::Connected(Connection {
         account: None,
@@ -228,36 +227,21 @@ fn login_of(found: &Found<'_>) -> (Option<Login>, Option<String>) {
     };
 
     match (found.login.kind.as_str(), id) {
-        ("api" | "key", _) => key_login(
-            found,
-            found.login.key,
-            KEY_FIELD,
-            LoginKind::ApiKey,
-            provider,
-        ),
+        ("api" | "key", _) => key_login(found, provider),
         ("oauth", OPENAI) => (chatgpt_login(found), None),
-        ("oauth", KILO) => key_login(
-            found,
-            found.login.access,
-            ACCESS_FIELD,
-            LoginKind::GatewayToken,
-            provider,
-        ),
         _ => (None, None),
     }
 }
 
-/// The login of `kind` for `provider` whose key is the handle `marker`
-/// at `field`, told by the fingerprint of the key; none when the field
-/// holds no key.
+/// The key login of `found` for `provider`, told by the fingerprint of
+/// its key; none when the login holds no key.
 fn key_login(
     found: &Found<'_>,
-    marker: Option<usize>,
-    field: &str,
-    kind: LoginKind,
     provider: ProviderRef,
 ) -> (Option<Login>, Option<String>) {
-    let fingerprint = marker
+    let fingerprint = found
+        .login
+        .key
         .and_then(|index| found.document.key(index))
         .and_then(|key| key.fingerprint().ok());
     let Some(fingerprint) = fingerprint else {
@@ -265,9 +249,9 @@ fn key_login(
     };
 
     let login = Login {
-        kind,
+        kind: LoginKind::ApiKey,
         for_whom: provider,
-        place: (found.place)(&format!("/{field}")),
+        place: (found.place)(&format!("/{KEY_FIELD}")),
         identity: Identity::default(),
         plan: None,
     };
@@ -378,7 +362,7 @@ mod tests {
     const SHARED_ID: &str = "00000000-0000-4000-8000-0000000000c1";
     const OTHER_ID: &str = "00000000-0000-4000-8000-0000000000c2";
     const KEY: &str = "sk-made-up-deepseek-key-0000-9b1d";
-    const KILO_TOKEN: &str = "made-up-kilo-token-0000-4c2e";
+    const OPENROUTER_KEY: &str = "sk-or-made-up-key-0000-4c2e";
 
     /// The access token of a ChatGPT login of the account `id` on `plan`.
     fn access_token(id: &str, email: &str, plan: &str) -> String {
@@ -489,18 +473,13 @@ mod tests {
         );
     }
 
-    /// A key and a Kilo login are told by their keys. No official plugin
-    /// serves Kilo: OTTY shows it as "no provider plugin".
+    /// Keys are told by their fingerprints.
     #[test]
-    fn keys_and_a_kilo_login_are_key_logins() {
+    fn keys_are_key_logins() {
         let data = DataFolder::new();
         data.write(
             "auth.json",
-            &format!(
-                r#"{{"deepseek": {{"type": "api", "key": "{KEY}"}},
-                "kilo": {{"type": "oauth", "refresh": "", "access": "{KILO_TOKEN}",
-                "expires": 1, "accountId": "made-up-team"}}}}"#
-            ),
+            &format!(r#"{{"deepseek": {{"type": "api", "key": "{KEY}"}}}}"#),
         );
         let database = data.first_shape();
         let row = database.credential(
@@ -532,11 +511,6 @@ mod tests {
                     "deepseek",
                     json_field(&data, "/deepseek/key")
                 ),
-                key_of(
-                    LoginKind::GatewayToken,
-                    "kilo",
-                    json_field(&data, "/kilo/access")
-                ),
                 key_of(LoginKind::ApiKey, "openrouter", in_table),
             ],
             "the same DeepSeek key in the table is the one of auth.json"
@@ -560,8 +534,8 @@ mod tests {
         let database = data.first_shape();
         database.credential(
             "cred_1",
-            "kilo",
-            &format!(r#"{{"type": "oauth", "access": "{KILO_TOKEN}"}}"#),
+            "openrouter",
+            &format!(r#"{{"type": "key", "key": "{OPENROUTER_KEY}"}}"#),
         );
         let profile = data.profile();
 
@@ -579,7 +553,7 @@ mod tests {
         assert!(fingerprints.iter().all(Result::is_ok), "{fingerprints:?}");
         assert!(!debug.contains(KEY), "{debug}");
         assert!(!debug.contains(&token), "{debug}");
-        assert!(!debug.contains(KILO_TOKEN), "{debug}");
+        assert!(!debug.contains(OPENROUTER_KEY), "{debug}");
         assert!(!debug.contains("made-up-refresh"), "{debug}");
     }
 

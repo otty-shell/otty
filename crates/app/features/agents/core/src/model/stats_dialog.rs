@@ -352,14 +352,14 @@ fn fact(key: Key, value: String) -> FactViewModel {
     FactViewModel::new(i18n::t(key), value)
 }
 
-/// What a sum of costs reads, in the tight form of a shown sum: the
-/// dollars of the requests with a price, followed by the mark when some
-/// are at the list prices; a dash while there are no prices, and nothing
-/// when no profile pays per token.
+/// What a sum of costs reads, in one line of the facts, where there is
+/// room for the mark: the dollars of the requests with a price, followed
+/// by the mark when some are at the list prices; a dash while there are
+/// no prices, and nothing when no profile pays per token.
 fn sum_text(state: &AgentsState, cost: StatsCost) -> String {
     match cost {
         StatsCost::Priced(total) => shown_total(state, &total)
-            .map_or_else(|| String::from(UNKNOWN), |money| money.short_text()),
+            .map_or_else(|| String::from(UNKNOWN), |money| money.line_text()),
         StatsCost::NoPrices => String::from(UNKNOWN),
         StatsCost::Unpaid => String::new(),
     }
@@ -959,8 +959,8 @@ mod tests {
                 &[("date", &date), ("year", "2026"), ("time", time)],
             )
         };
-        // Owner, 2026-11-21: the cost at the list prices has the short
-        // form of the one mark of an estimate.
+        // Owner, 2026-11-21: the cost at the list prices has the one mark
+        // of an estimate after it; the facts have room for its words.
         let cost = i18n::filled(
             Key::TplAgentsEstimatedAmount,
             &[

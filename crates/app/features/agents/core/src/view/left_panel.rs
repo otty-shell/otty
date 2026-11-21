@@ -511,10 +511,10 @@ mod tests {
     }
 
     /// Owner, 2026-11-21: the row only hands over the number; money
-    /// estimated at the list prices brings the tight form of the mark by
-    /// itself, and a press still opens the account.
+    /// estimated at the list prices shows only the sum, with no words of
+    /// the mark (issue 27), and a press still opens the account.
     #[test]
-    fn an_estimated_account_shows_the_sum_with_the_mark() {
+    fn an_estimated_account_shows_only_the_sum() {
         let estimate = crate::testing::estimated_money();
         let mut vm = panel(agents());
         vm.accounts.accounts[0].number =
@@ -522,9 +522,12 @@ mod tests {
         let themes = ThemeManager::new();
         let mut ui = simulator(panel_view(vm, &themes));
 
-        ui.find(estimate.short_text().as_str())
-            .expect("the sum with its mark shows");
+        ui.find(estimate.amount()).expect("the sum shows");
         assert!(ui.find("~ $1.25").is_err(), "no \"~\"");
+        assert!(
+            ui.find(estimate.line_text().as_str()).is_err(),
+            "no words of the mark"
+        );
     }
 
     #[test]

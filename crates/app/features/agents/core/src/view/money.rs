@@ -4,8 +4,9 @@
 //! requests with no price. And the two forms every shown sum is drawn in
 //! (owner, 2026-11-21): the full form puts the mark of an estimate under
 //! the sums (`mark`); the tight form, whose text is
-//! `ShownMoney::short_text`, shows the tooltip of the mark over the place
-//! that holds it (`with_tip`, `cell_with_tip`).
+//! `ShownMoney::month_short_text`, only the sum for an estimate (issue
+//! 27), shows the tooltip of the mark over the place that holds it
+//! (`with_tip`, `cell_with_tip`).
 
 use iced::widget::{Column, Space, row};
 use iced::{Element, Length};
@@ -207,17 +208,17 @@ mod tests {
         let bill = ShownMoney::exact(String::from("$42.00"));
 
         let mut estimate_ui = block(with_tip(
-            text(estimate.short_text()),
+            text(estimate.month_short_text()),
             estimate.tip(),
             palette,
         ));
         let mut bill_ui =
-            block(with_tip(text(bill.short_text()), bill.tip(), palette));
+            block(with_tip(text(bill.month_short_text()), bill.tip(), palette));
 
-        estimate_ui
-            .find(estimate.short_text().as_str())
-            .expect("the sum with its mark shows");
-        bill_ui.find("$42.00").expect("the bill shows");
+        estimate_ui.find("$1.25").expect("only the sum shows");
+        bill_ui
+            .find(bill.month_short_text().as_str())
+            .expect("the bill shows");
     }
 
     #[test]

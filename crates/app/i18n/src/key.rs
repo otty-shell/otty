@@ -1292,7 +1292,7 @@ pub enum Key {
     TplAgentsMoneyEstimate,
     /// Short mark next to money that is an estimate at the LiteLLM list prices, not the provider's bill.
     AgentsEstimateMark,
-    /// The short form of an estimated amount where there is no room for the mark under it, such as "$42.10 · estimate, list prices" in the left panel. Placeholders: `{amount}`, `{mark}`.
+    /// An estimated amount with its mark in one line, where there is room for the mark but no place for it under the sum, such as "$42.10 · estimate, list prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
     TplAgentsEstimatedAmount,
     /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
     TplAgentsBillReadFailed,

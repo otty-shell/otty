@@ -2,7 +2,8 @@
 //! that is shown, [`ShownMoney`], which knows what it is ([`MoneyKind`]):
 //! exact, or an estimate at the LiteLLM list prices. The mark of an
 //! estimate, "estimate, list prices", and its tooltip come out of it, so
-//! no place adds a mark, a "~" or a note itself.
+//! no place adds a mark, a "~" or a note itself. Where the room is tight,
+//! an estimate shows only its sum, with the tooltip of the mark.
 
 use jiff::tz::TimeZone;
 use otty_agents::{FetchedPrices, MoneyTotal};
@@ -78,10 +79,10 @@ impl ShownMoney {
         }
     }
 
-    /// The tight form, where there is no room for the mark under the sum,
-    /// such as the Cost of a project: "$42.10", or "$42.10 · estimate,
-    /// list prices" for an estimate.
-    pub(crate) fn short_text(&self) -> String {
+    /// The sum in one line, where there is room for the mark but no place
+    /// for it under the sum, such as the Cost of a project: "$42.10", or
+    /// "$42.10 · estimate, list prices" for an estimate.
+    pub(crate) fn line_text(&self) -> String {
         match &self.kind {
             MoneyKind::Estimate(mark) => mark.after(&self.amount),
             _ => self.amount.clone(),
@@ -89,11 +90,12 @@ impl ShownMoney {
     }
 
     /// The tight form of money spent this month, such as a row of the left
-    /// panel: "$44.87 this month", or "$42.10 · estimate, list prices" for
-    /// an estimate, whose mark takes the place of "this month" for room.
+    /// panel, a chip or a table cell: "$44.87 this month", or only the sum,
+    /// "$42.10", for an estimate (owner, 2026-11-21, issue 27). The tooltip
+    /// of the mark, [`Self::tip`], still says it is an estimate.
     pub(crate) fn month_short_text(&self) -> String {
         match &self.kind {
-            MoneyKind::Estimate(mark) => mark.after(&self.amount),
+            MoneyKind::Estimate(_) => self.amount.clone(),
             _ => i18n::filled(
                 Key::TplAgentsAmountThisMonth,
                 &[("amount", &self.amount)],
@@ -214,7 +216,7 @@ mod tests {
 
         assert_eq!(bill.amount(), "$42.00");
         assert_eq!(bill.kind().mark(), None);
-        assert_eq!(bill.short_text(), "$42.00");
+        assert_eq!(bill.line_text(), "$42.00");
         assert_eq!(
             bill.month_short_text(),
             i18n::filled(
@@ -226,10 +228,12 @@ mod tests {
     }
 
     /// Owner, 2026-11-21: one mark everywhere. The full form keeps the sum
-    /// with no "~" and puts the mark under it; the tight form follows the
-    /// sum with the mark. Both tooltips tell when the prices were fetched.
+    /// with no "~" and puts the mark under it, or after it in one line; the
+    /// tight form is only the sum (issue 27), with the tooltip of the mark.
+    /// The tooltip tells when the prices were fetched.
     #[test]
-    fn an_estimate_shows_the_mark_with_the_time_of_the_prices_in_both_forms() {
+    fn an_estimate_shows_the_mark_where_there_is_room_and_only_the_sum_where_tight()
+     {
         let prices = fetched_prices(at(10));
         let total = MoneyTotal::of_models(
             &[gpt_5(None)],
@@ -243,8 +247,8 @@ mod tests {
         let mark = money.kind().mark().expect("an estimate has its mark");
         assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
         assert_eq!(mark.tip, tip());
-        assert_eq!(money.short_text(), with_mark("$1.25"));
-        assert_eq!(money.month_short_text(), with_mark("$1.25"));
+        assert_eq!(money.line_text(), with_mark("$1.25"));
+        assert_eq!(money.month_short_text(), "$1.25");
         assert_eq!(money.tip(), Some(tip().as_str()));
     }
 

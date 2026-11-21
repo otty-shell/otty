@@ -8,19 +8,13 @@ use otty_plugin_sdk::agents::ProviderRef;
 /// The id of OpenAI in OTTY: ChatGPT logins and OpenAI keys.
 pub(crate) const OPENAI: &str = "openai";
 
-/// The id of Kilo in OTTY, the gateway of Kilo Code. No official plugin
-/// serves it; its logins show as "no provider plugin".
-pub(crate) const KILO: &str = "kilo";
-
 /// The providers OpenCode names, as in the models.dev catalog it uses,
 /// with the ids of OTTY's provider parts.
-const PROVIDER_IDS: [(&str, &str); 6] = [
+const PROVIDER_IDS: [(&str, &str); 4] = [
     ("anthropic", "anthropic"),
     ("openai", OPENAI),
     ("deepseek", "deepseek"),
     ("openrouter", "openrouter"),
-    ("kilo", KILO),
-    ("kilocode", KILO),
 ];
 
 /// The provider OpenCode names `id`; `None` for one OTTY does not read,
@@ -46,8 +40,7 @@ mod tests {
     fn known_ids_are_their_providers_and_others_are_none() {
         assert_eq!(provider_of("openai"), id("openai"));
         assert_eq!(provider_of("DeepSeek"), id("deepseek"));
-        assert_eq!(provider_of("kilocode"), id("kilo"));
-        assert_eq!(provider_of("kilo/"), id("kilo"));
+        assert_eq!(provider_of("openrouter/"), id("openrouter"));
         assert_eq!(provider_of("test"), None, "a local model");
         assert_eq!(provider_of("github-copilot"), None);
     }
