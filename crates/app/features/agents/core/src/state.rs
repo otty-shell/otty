@@ -17,7 +17,7 @@ use super::profile_dialog::ProfileDialog;
 use super::profile_state::ProfileState;
 use super::profiles::Profiles;
 use super::project_search::ProjectSearch;
-use super::reads::ReadKind;
+use super::reads::StartWait;
 use super::real_failures::ToldProblems;
 use super::rename_dialog::RenameDialog;
 use super::sessions_table::{self, SessionsTable, TableSession};
@@ -28,7 +28,7 @@ use super::usage::UsageChoice;
 /// The state of Agents mode: the profiles and what was read of them, what
 /// is selected, the open profile, keyring, Rename, statistics and New
 /// session dialogs, the menus and sections of the screen, whether the hidden
-/// accounts and profiles are listed, the kind the start of OTTY reads, and
+/// accounts and profiles are listed, what the start of OTTY waits for, and
 /// the real failures already told.
 pub(crate) struct AgentsState {
     agents: AgentList,
@@ -37,7 +37,7 @@ pub(crate) struct AgentsState {
     stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
-    startup_reads: Option<ReadKind>,
+    start_wait: Option<StartWait>,
     told: ToldProblems,
     profiles: Profiles,
     selection: Option<Selection>,
@@ -151,10 +151,10 @@ impl AgentsState {
         self.is_active
     }
 
-    /// The kind of read the start of OTTY waits for while the mode is away;
-    /// `None` once the start is read through or the mode opened.
-    pub(crate) fn startup_reads(&self) -> Option<ReadKind> {
-        self.startup_reads
+    /// What the start of OTTY waits for while the mode is away; `None`
+    /// once the start is read through or the mode opened.
+    pub(crate) fn start_wait(&self) -> Option<StartWait> {
+        self.start_wait
     }
 
     /// The folder of the selected project, if one was selected.
@@ -245,7 +245,7 @@ impl AgentsState {
             stats_agents,
             env,
             is_active: false,
-            startup_reads: None,
+            start_wait: None,
             told: ToldProblems::default(),
             profiles,
             selection: None,
@@ -582,10 +582,9 @@ impl AgentsState {
         self.menu.take().is_some()
     }
 
-    /// Wait at the start of OTTY for the reads of `kind`; `None` ends the
-    /// start.
-    pub(crate) fn set_startup_reads(&mut self, kind: Option<ReadKind>) {
-        self.startup_reads = kind;
+    /// Wait at the start of OTTY for `wait`; `None` ends the start.
+    pub(crate) fn set_start_wait(&mut self, wait: Option<StartWait>) {
+        self.start_wait = wait;
     }
 
     /// The real failures already told, to tell the new ones.

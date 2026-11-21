@@ -29,7 +29,6 @@ use super::limits::ProfileLimits;
 use super::own_reads::OwnReads;
 use super::prices::ListPrices;
 use super::profile_state::ProfileState;
-use super::reads::ReadKind;
 use super::types::{
     LoadedAccountNumbers, LoadedBill, LoadedLimits, LoadedPrices,
     LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend, LoadedVersion,
@@ -103,25 +102,11 @@ impl Profiles {
         !self.reads.is_wanted(Which::Stale(now))
     }
 
-    /// Whether a read of the `kind` is on its way for any profile.
-    pub(crate) fn is_reading_any(&self, kind: ReadKind) -> bool {
-        let mut shown = self.shown.iter();
-
-        match kind {
-            ReadKind::Profiles => self.reads.is_reading(),
-            ReadKind::Sessions => shown.any(ProfileState::is_reading_sessions),
-            ReadKind::Limits => {
-                shown.any(|state| state.limits().reads().is_reading())
-            },
-            ReadKind::Spend => {
-                shown.any(|state| state.spend().reads().is_reading())
-            },
-            ReadKind::Prices => self.prices.reads().is_reading(),
-            ReadKind::Bills => {
-                shown.any(|state| state.bill().reads().is_reading())
-            },
-            ReadKind::AccountNumbers => self.own_reads.is_reading_any(),
-        }
+    /// Whether a read of the limits is on its way for any profile.
+    pub(crate) fn is_reading_limits(&self) -> bool {
+        self.shown
+            .iter()
+            .any(|state| state.limits().reads().is_reading())
     }
 
     /// The shown profile `profile`, with what was read of it. A profile

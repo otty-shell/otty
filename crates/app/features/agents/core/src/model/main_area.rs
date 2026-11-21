@@ -89,8 +89,10 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, chatgpt_login, claude, codex, connected, env, now,
-        two_agents_with_sessions, with_accounts, with_profiles,
+        agents, at, chatgpt_login, claude, codex, connected, env,
+        five_hour_limits, limits_answer, limits_loaded, now,
+        profiles_with_accounts_loaded, two_agents_with_sessions, with_accounts,
+        with_profiles,
     };
 
     fn select(state: &mut AgentsState, folder: &str) {
@@ -108,6 +110,63 @@ mod tests {
             MainAreaViewModel::from_state(&state, now()),
             MainAreaViewModel::Loading
         );
+    }
+
+    /// Issue 24: a Refresh never brings the spinner back or empties the
+    /// page. The page of the ChatGPT login shows the limits it showed until
+    /// the new answer comes, then that answer.
+    #[test]
+    fn a_refresh_keeps_the_numbers_on_screen_until_new_ones_come() {
+        let shown = [(codex(), connected(), vec![chatgpt_login()])];
+        let mut state =
+            with_accounts(&shown, otty_agents::SavedProfiles::default());
+        let _ = reduce(&mut state, limits_at(&codex(), 42.0, at(10)));
+        let _ =
+            reduce(&mut state, AgentsIntent::SelectAccount(chatgpt_login()));
+        let before = account_page(&state);
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let while_reading = account_page(&state);
+        let _ = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &shown,
+                otty_agents::SavedProfiles::default(),
+            ),
+        );
+        let profiles_read = account_page(&state);
+        let _ = reduce(&mut state, limits_at(&codex(), 80.0, at(20)));
+        let limits_read = account_page(&state);
+
+        assert!(before.is_some(), "the page of the login shows");
+        assert_eq!(while_reading, before);
+        assert_eq!(profiles_read, before);
+        assert!(limits_read.is_some());
+        assert_ne!(limits_read, before, "the new limits show");
+    }
+
+    /// The page of an account the main area shows; `None` for any other
+    /// screen, the spinner too.
+    fn account_page(state: &AgentsState) -> Option<AccountPageViewModel> {
+        match MainAreaViewModel::from_state(state, now()) {
+            MainAreaViewModel::Account(page) => Some(*page),
+            _ => None,
+        }
+    }
+
+    /// The limits of `profile` with `percent` of five hours used, read at
+    /// `read_at`.
+    fn limits_at(
+        profile: &otty_agents::Profile,
+        percent: f64,
+        read_at: SystemTime,
+    ) -> AgentsIntent {
+        let answer = limits_answer(vec![(
+            otty_agents::SourceId::ProviderPart,
+            Ok(five_hour_limits(percent)),
+        )]);
+
+        limits_loaded(profile, answer, read_at)
     }
 
     #[test]

@@ -444,6 +444,21 @@ mod tests {
         assert_eq!(vm.accounts.note, Some(i18n::t(Key::AgentsLoading)));
     }
 
+    /// Issue 24: "Loading" shows only before the first read; a Refresh
+    /// keeps the sections as they are until the new answers come.
+    #[test]
+    fn a_refresh_keeps_the_sections_and_says_nothing_loads() {
+        let read = with_profiles(&[(claude(), connected())]);
+        let mut state = with_profiles(&[(claude(), connected())]);
+
+        let _ = reduce(&mut state, AgentsIntent::Refresh);
+        let while_reading = LeftPanelViewModel::from_state(&state, now());
+
+        assert_eq!(while_reading, LeftPanelViewModel::from_state(&read, now()));
+        assert_eq!(while_reading.agents.note, None);
+        assert_eq!(while_reading.accounts.note, None);
+    }
+
     #[test]
     fn a_closed_section_says_so() {
         let mut state = with_profiles(&[(claude(), connected())]);

@@ -222,11 +222,14 @@ the provider's plugin part first, then the agent's part.
 
 ## When OTTY reads
 
-| When                     | What OTTY reads                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- |
-| OTTY starts              | Profiles, sessions, limits, tokens, prices, bills and account numbers, one after another.               |
-| Agents mode is on screen | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes.      |
-| You press **Refresh**    | Profiles, then everything else.                                                                         |
+| When                     | What OTTY reads                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| OTTY starts              | Profiles first, then sessions, limits, tokens and account numbers together; prices and bills after limits. |
+| Agents mode is on screen | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes.         |
+| You press **Refresh**    | Profiles, then everything else.                                                                            |
+
+What a read gave stays on screen until the next read answers: a Refresh or a later read never
+empties a page or brings back the spinner, which shows only before the first read of the profiles.
 
 <Aside>
 While Agents mode is away, OTTY never starts an agent's program. A plugin that starts one, such as

@@ -98,9 +98,7 @@ pub(super) fn reduce(
             state.forget_selection_that_left();
             state.select_first_profile_if_none();
 
-            let mut outcomes = state.told_mut().tell(vec![check]);
-            outcomes.extend(reads::go_on_at_start(state, SystemTime::now()));
-            outcomes
+            state.told_mut().tell(vec![check])
         },
         AgentsIntent::LimitsLoaded(loaded) => {
             if !is_still_shown(state, &loaded.profile, "limits") {
@@ -120,7 +118,7 @@ pub(super) fn reduce(
             }
 
             state.profiles_mut().apply_spend(loaded);
-            reads::go_on_at_start(state, SystemTime::now())
+            Vec::new()
         },
         AgentsIntent::BillLoaded(loaded) => {
             let profiles = state.profiles();
@@ -135,19 +133,17 @@ pub(super) fn reduce(
             }
 
             state.profiles_mut().apply_bill(loaded);
-            reads::go_on_at_start(state, SystemTime::now())
+            Vec::new()
         },
         AgentsIntent::PricesLoaded(loaded) => {
             let check = real_failures::prices(&loaded);
             state.profiles_mut().apply_prices(loaded);
 
-            let mut outcomes = state.told_mut().tell(vec![check]);
-            outcomes.extend(reads::go_on_at_start(state, SystemTime::now()));
-            outcomes
+            state.told_mut().tell(vec![check])
         },
         AgentsIntent::AccountNumbersLoaded(loaded) => {
             state.profiles_mut().apply_own_numbers(loaded);
-            reads::go_on_at_start(state, SystemTime::now())
+            Vec::new()
         },
         AgentsIntent::LimitsTick => reads::on_tick(state),
         AgentsIntent::SelectProject(folder) => {

@@ -43,11 +43,6 @@ impl ListPrices {
         self.latest.as_ref()
     }
 
-    /// Whether a read is on its way and when the latest one ended.
-    pub(crate) fn reads(&self) -> &ReadState {
-        &self.reads
-    }
-
     /// Whether the latest read ended with no prices from any source.
     pub(crate) fn has_failed(&self) -> bool {
         matches!(self.latest, Some(Err(_)))

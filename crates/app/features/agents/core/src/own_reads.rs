@@ -125,11 +125,6 @@ impl OwnReads {
             .find(|read| read.account.is_same_account(account))
     }
 
-    /// Whether a read is on its way for any account.
-    pub(crate) fn is_reading_any(&self) -> bool {
-        self.reads.iter().any(|read| read.reads.is_reading())
-    }
-
     /// Start a read of each account of `wanted`, with the place its key
     /// is read again from, that `which` picks and that has no read on its
     /// way, and return those. What was read of an account no longer
@@ -233,7 +228,8 @@ mod tests {
         assert_eq!(first, [(deepseek(), KeyPlace::Added)]);
         assert!(again.is_empty(), "a read is on its way");
         assert!(after.is_empty(), "the read is fresh");
-        assert!(!reads.is_reading_any());
+        let read = reads.of(&deepseek()).map(OwnRead::reads);
+        assert!(read.is_some_and(|read| !read.is_reading()));
     }
 
     #[test]

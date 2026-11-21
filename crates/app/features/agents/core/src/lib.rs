@@ -7,15 +7,16 @@
 //! profile the tokens it spent.
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
-//! profiles, then the sessions, the limits, the tokens, the list prices of
-//! the money estimate (while a profile pays with an API key) and the money,
-//! one kind after another, and never with the agent's program running,
-//! as is or in a hidden terminal. Until the first
-//! read of the profiles ends the main area shows a spinner; then the first
-//! profile is selected, unless the user selected something. On screen,
-//! Refresh reads everything again and the limits are read every five
-//! minutes; opening the mode reads again only what is older than that
-//! (spec Decision 10). A real failure, such as an `agents.json` that can
+//! profiles first, then the sessions, the limits, the tokens and the money
+//! together, the list prices of the money estimate (while a profile pays
+//! with an API key) and the bills once the limits are read, and never with
+//! the agent's program running, as is or in a hidden terminal. Until the
+//! first read of the profiles ends the main area shows a spinner; then the
+//! first profile is selected, unless the user selected something. On
+//! screen, Refresh reads everything again and the limits are read every
+//! five minutes; opening the mode reads again only what is older than that
+//! (spec Decision 10). What was read stays on screen until a new answer
+//! takes its place, so a later read never brings the spinner back. A real failure, such as an `agents.json` that can
 //! not be read, is reported once as [`AgentsOutcome::Failed`] until it goes
 //! away.
 //!

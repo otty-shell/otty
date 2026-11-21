@@ -29,7 +29,8 @@ pub enum AgentsIntent {
     /// it.
     ModeChanged(Mode),
     /// OTTY started: read what Agents mode shows while the mode is not on
-    /// screen, one kind after another (spec Decision 10).
+    /// screen, the profiles first, then the other kinds together (spec
+    /// Decision 10).
     LoadInBackground,
     /// Agents mode became active: read again what is older than the period
     /// of its timer, or the profiles and everything else when they are.
