@@ -105,6 +105,12 @@ pub(crate) fn agents() -> AgentList {
     Arc::from(stand_in_agents())
 }
 
+/// No agents: no plugin with an agent part is installed, or every agent
+/// part is off.
+pub(crate) fn no_agents() -> AgentList {
+    Arc::from(Vec::new())
+}
+
 /// [`agents`] as a list the registry is made from.
 fn stand_in_agents() -> Vec<Box<dyn otty_agents::Agent>> {
     vec![

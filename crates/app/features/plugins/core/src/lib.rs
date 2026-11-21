@@ -156,14 +156,14 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::testing::built_in_example;
+    use crate::testing::official_example;
 
     #[test]
     fn the_open_page_is_a_dialog_with_its_plugins() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
         let mut plugins =
-            Plugins::new(vec![built_in_example()], PathBuf::from("/home/user"));
+            Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
         let closed = plugins.overlay(theme).is_none();
 
         let _ = plugins.reduce(PluginsIntent::Open(PluginsPlace::List), ());
@@ -174,13 +174,13 @@ mod tests {
         let mut ui = simulator(page.into_content());
         assert!(ui.find(i18n::t(Key::PluginsTitle)).is_ok());
         assert!(ui.find("Example").is_ok());
-        assert!(ui.find(i18n::t(Key::PluginsOfficialBuiltIn)).is_ok());
+        assert!(ui.find(i18n::t(Key::PluginsOfficial)).is_ok());
     }
 
     #[test]
     fn the_parts_that_are_on_are_loaded_at_start() {
         let plugins =
-            Plugins::new(vec![built_in_example()], PathBuf::from("/home/user"));
+            Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
 
         let parts = plugins.parts_to_load();
 

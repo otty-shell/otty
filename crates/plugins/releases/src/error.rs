@@ -107,9 +107,6 @@ pub enum InstallError {
         /// The id the new copy has.
         found: String,
     },
-    /// A copy built into OTTY does not match its hashes.
-    #[error("The built-in copy of `{0}` is damaged")]
-    DamagedBuiltIn(String),
     /// The `.wasm` does not match the manifest or does not compile.
     #[error("{0}")]
     Compile(String),

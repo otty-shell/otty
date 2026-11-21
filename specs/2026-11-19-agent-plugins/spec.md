@@ -367,13 +367,15 @@ the part whose calls failed, and the plugin's other parts keep working.
   and its icons (2026-11-20). It goes through the same checks and the
   same install dialog, is marked "Local", is never updated on its own,
   and picks up a rebuilt copy when the user presses **Reload**. The owner
-  uses it for the hand checks of the issues.
+  uses it for the hand checks of the issues, and users install the
+  official plugins with it until they have repositories of their own
+  (issue 28).
 
 ### 10. The official set
 
 Grouped by vendor, one plugin each (changed on 2026-11-20):
 
-| Plugin | Agent parts | Provider parts | Built in |
+| Plugin | Agent parts | Provider parts | Built in `assets/plugins/` |
 | --- | --- | --- | --- |
 | Anthropic (`anthropic`) | Claude Code (`claude-code`) | Anthropic (`anthropic`) | Yes |
 | OpenAI (`openai`) | Codex (`codex`) | OpenAI (`openai`) | Yes |
@@ -390,14 +392,20 @@ Grouped by vendor, one plugin each (changed on 2026-11-20):
   declares an entry. **Not Moonshot**: the owner does not use it; its
   code of issue 09 of the old spec is removed the same way. **Not Kimi
   Code**: deferred.
-- All five official plugins are embedded in the OTTY binary and all
-  their parts are on (owner, 2026-11-20), so they work with no network on
-  first start. A plugin that finds nothing on this computer simply does
-  nothing.
-- For now the official plugins live in `plugins/<id>/` of this repository
-  and the binary carries their built copies; they change with OTTY
-  releases. The owner moves them to their own repositories later; from
-  then on they update from their releases like any other plugin.
+- OTTY ships no plugin (owner, 2026-11-21, issue 28; this replaces the
+  embedding of 2026-11-20). On first start nothing is installed and
+  Agents mode says in one line that no agent plugin is on, with a button
+  that opens the Plugins page. The user installs the official plugins the
+  same way as any other plugin; installed plugins stay in `plugins.json`
+  between starts. A plugin that finds nothing on this computer simply
+  does nothing.
+- For now the official plugins live in `plugins/<id>/` of this
+  repository, and `plugins/build.sh <folder>` builds each into
+  `assets/plugins/<id>/` (manifest, `.wasm`, icons), which the tests read
+  and users install with **Add plugin from folder…**. The owner moves them
+  to their own repositories later; from then on users add them with
+  **Add plugin…** and they update from their releases like any other
+  plugin.
 - "Official" means the repository is under `github.com/otty-shell/`. The
   organization may be renamed later, so OTTY keeps its name in one
   constant.
@@ -803,8 +811,8 @@ built on the SDK, and DeepSeek is not.** Reasons:
   10.8 GB of files, a line program (`codex app-server`) that must never
   get `thread/list`, login tokens that are JWTs. Finding this after five
   plugins are written means rewriting five plugins.
-- The OpenAI plugin is embedded in the binary, so it also proves the
-  embedded path.
+- The OpenAI plugin was embedded in the binary, so it also proved the
+  embedded path (2026-11-20; since issue 28 OTTY embeds no plugin).
 - DeepSeek would test HTTP and key handles end to end, but both are
   generic host operations with unit tests, and the OpenAI provider part
   (issue 15) tests them again with a real paged API.
@@ -1207,15 +1215,18 @@ assets now hash differently from what was recorded: the update is refused
 with "The release v1.2.0 of OpenCode changed after it was installed. OTTY
 keeps the installed copy."
 
-**Embedded plugins.** All five official plugins ship inside the binary
-(their built copies, with hashes, in `assets/plugins/<id>/`). On first
-start they are installed without a dialog, all parts on, marked
-"Official · built in". While a plugin lives in `plugins/<id>/` of this
-repository, a newer OTTY brings its newer copy, installed the same way
-as an update (on its own, or waiting for the user when it asks for new
-permissions). Once it has its own repository, a newer release replaces
-the embedded copy through the normal update. If the user removes one, it
-stays removed.
+**No plugin ships with OTTY** (issue 28, 2026-11-21; this replaces
+"Embedded plugins"). The binary carries no plugin and a start installs
+none: the first start has an empty Plugins page, and Agents mode with no
+agent part on says so in one line with a button that opens the Plugins
+page. The Found by OTTY report waits for the first read with an agent
+part on, and is not marked shown before it was shown. The official
+plugins are installed like any other plugin: with **Add plugin from
+folder…** from `assets/plugins/<id>/` of a checkout of this repository
+now (marked "Local"), with **Add plugin…** from their own repositories
+once they have them (marked "Official"). An old `plugins.json` with
+`"source": "embedded"` is not read; Agents mode was never released, so
+there is no migration.
 
 **Local plugins.** **Add plugin from folder…** takes a folder holding
 `otty-plugin.toml`, the built `.wasm` and the icons. Steps 3 to 7 run as
@@ -1387,7 +1398,7 @@ then the cleanup and the docs.
 ## UI changes
 
 - **Plugins page**, opened from Settings: a list of installed plugins
-  (icon, name, version, "Official" / "Community" / "Built in" / "Local",
+  (icon, name, version, "Official" / "Community" / "Local",
   its parts, each with its kind and an on/off switch: "Codex (agent) [on]
   · OpenAI (provider) [on]", "⋯" with Check for updates (Reload for a
   local plugin), Open repository, Show permissions, Show log, Remove);
@@ -1456,8 +1467,10 @@ New crates (each with a `README.md`, per the rules):
 - Official plugins are built in `plugins/<id>/` of this repository
   (`anthropic`, `openai`, `opencode`, `deepseek`, `openrouter`,
   and `template`), each its own cargo workspace (as the spike's
-  `crates/plugins/claude-code`), outside the OTTY build. The owner moves
-  them to their own repositories later.
+  `crates/plugins/claude-code`), outside the OTTY build.
+  `plugins/build.sh <folder>` puts the built copy in
+  `assets/plugins/<id>/`. The owner moves them to their own repositories
+  later.
 
 Dependencies:
 
@@ -1480,8 +1493,9 @@ Dependencies:
 - Other extension points: commands, panels, block actions (the SDK and
   the host are made to add contracts, but none is designed here).
 - A catalog or search of plugins, signed indexes.
-- Plugins from hosts other than GitHub (local folders are only for
-  authors, see "Local plugins").
+- Plugins from hosts other than GitHub (local folders are for authors,
+  and for the official plugins until they have repositories of their
+  own; see "Local plugins").
 - Plugins in other languages than Rust.
 - A disk cache of per-file numbers.
 - Moving the official plugins to their own repositories (the owner does
@@ -1499,4 +1513,6 @@ Dependencies:
 
 The earlier question (how official plugins reach users before they have
 their own repositories) was settled on 2026-11-20: all five are embedded,
-and authors and the owner use **Add plugin from folder…**.
+and authors and the owner use **Add plugin from folder…**. It was settled
+again on 2026-11-21 (issue 28): OTTY embeds none, and users install them
+from `assets/plugins/<id>/` with **Add plugin from folder…**.

@@ -270,7 +270,7 @@ mod tests {
 
     use super::*;
 
-    /// The template plugin as OTTY carries it built in: its manifest, its
+    /// The built template plugin of `assets/plugins/example/`: its manifest, its
     /// `.wasm` and its icons in one folder.
     fn template_folder() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))

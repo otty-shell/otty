@@ -16,7 +16,6 @@ use iced::Task;
 use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
 use otty_app_plugins::PluginsIntent;
-use otty_app_plugins_io::SharedInstaller;
 use otty_app_tabs::TabsIntent;
 
 use crate::message::AppEvent;
@@ -28,13 +27,10 @@ use crate::message::AppEvent;
 /// its name. Last, Containers mode starts looking for the engines and Agents
 /// mode reading the profiles, both with the mode away: the agents' reads
 /// find the programs through the shell session, so they come after it.
-/// Then the plugins built into OTTY are installed when they are missing or
-/// newer, and the daily update check of the plugins runs when it is due.
-pub(crate) fn run(
-    shell_path: String,
-    config_dir: PathBuf,
-    plugins: SharedInstaller,
-) -> Task<AppEvent> {
+/// Then the daily update check of the plugins runs when it is due. OTTY
+/// installs no plugin by itself: the user installs them on the Plugins
+/// page.
+pub(crate) fn run(shell_path: String, config_dir: PathBuf) -> Task<AppEvent> {
     let shell_session = otty_app_shell::integrate(shell_path, config_dir)
         .map(AppEvent::ShellIntegrated);
     let host_name =
@@ -45,8 +41,6 @@ pub(crate) fn run(
     let containers =
         Task::done(AppEvent::Containers(ContainersIntent::LoadInBackground));
     let agents = Task::done(AppEvent::Agents(AgentsIntent::LoadInBackground));
-    let built_in =
-        otty_app_plugins_io::install_built_in(&plugins).map(AppEvent::Plugins);
     let update_check = Task::done(AppEvent::Plugins(PluginsIntent::UpdateTick));
 
     shell_session
@@ -54,7 +48,6 @@ pub(crate) fn run(
         .chain(first_tab)
         .chain(containers)
         .chain(agents)
-        .chain(built_in)
         .chain(update_check)
 }
 
@@ -92,16 +85,14 @@ mod tests {
     /// shell session and the host name go to the app before the first tab
     /// is asked for. Then Containers mode and Agents mode start reading
     /// what they show, with neither mode on screen; the agents' reads need
-    /// the shell session to find the programs. Last the plugins built into
-    /// OTTY are installed and the daily update check is asked for.
+    /// the shell session to find the programs. Last the daily update check
+    /// of the plugins is asked for; OTTY installs no plugin by itself
+    /// (issue 28 of spec 2026-11-19-agent-plugins).
     #[test]
     fn the_shell_session_and_host_name_go_to_the_app_before_the_first_tab() {
-        let plugins = crate::testing::window::app().plugin_io.installer;
-
         let events = collect_outputs(run(
             String::from(TEST_SHELL_PATH),
             test_config_dir(),
-            plugins,
         ));
 
         assert!(matches!(
@@ -112,7 +103,6 @@ mod tests {
                 AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None }),
                 AppEvent::Containers(ContainersIntent::LoadInBackground),
                 AppEvent::Agents(AgentsIntent::LoadInBackground),
-                AppEvent::Plugins(PluginsIntent::Checked { .. }),
                 AppEvent::Plugins(PluginsIntent::UpdateTick),
             ] if session.name() == "otty-test-shell"
                 && *host_name == read_host_name()

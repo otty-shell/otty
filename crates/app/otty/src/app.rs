@@ -174,12 +174,8 @@ impl App {
         let _none =
             dispatch::deliver(&mut app, PluginsIntent::Running(running));
         let told = app.tell_start_problems(problems);
-        let first = startup::run(
-            shell,
-            app.config_dir.clone(),
-            app.plugin_io.installer.clone(),
-        )
-        .map(Message::Internal);
+        let first =
+            startup::run(shell, app.config_dir.clone()).map(Message::Internal);
 
         (app, Task::batch([told, first]))
     }

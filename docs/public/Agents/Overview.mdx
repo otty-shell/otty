@@ -20,8 +20,11 @@ works: allow the system keyring, give a key a plugin asks for, add a key no agen
 again in an agent.
 
 OTTY has no code for any agent or provider by name. What it knows comes from
-[plugins](../plugins/); the five [official plugins](../official-plugins/anthropic/) are built in,
-so Claude Code, Codex, OpenCode, Anthropic, OpenAI, DeepSeek and OpenRouter work with no setup.
+[plugins](../plugins/), and OTTY comes with none: on the first start Agents mode says that no agent
+plugin is on, with **Manage plugins…**. Install the plugins of the agents and providers you use; the
+five [official plugins](../official-plugins/anthropic/) cover Claude Code, Codex, OpenCode,
+Anthropic, OpenAI, DeepSeek and OpenRouter. See
+[Install the official plugins](../plugins/#install-the-official-plugins).
 
 ## Accounts and profiles
 
@@ -82,8 +85,8 @@ folder that hold a login or sessions, such as `~/.codex-work`. Logins with the s
 organization or email are one account; keys are one account when their fingerprint (a hash, kept in
 memory only) is the same. So a ChatGPT login used by Codex and OpenCode is one row, read once.
 
-On the first start, **Found by OTTY** lists the profiles and accounts it found and what needs you.
-All accounts → "⋯" → **Show Found by OTTY** opens it again.
+After the first read with an agent plugin on, **Found by OTTY** lists the profiles and accounts it
+found and what needs you. All accounts → "⋯" → **Show Found by OTTY** opens it again.
 
 ## The left panel
 

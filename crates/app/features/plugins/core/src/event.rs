@@ -88,9 +88,8 @@ pub enum PluginsIntent {
     /// A change finished: an install, a switch, a removal or an update the
     /// user agreed to.
     Changed(ChangeAnswer),
-    /// Update checks finished, the daily one, Check for updates or the
-    /// start-up install of the built-in plugins, with the plugins as they
-    /// are after them.
+    /// Update checks finished, the daily one or Check for updates, with
+    /// the plugins as they are after them.
     Checked {
         /// What each check did.
         reports: Vec<UpdateReport>,

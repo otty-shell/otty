@@ -1,7 +1,7 @@
 //! Helpers that the tests of several files share: running a task to its
 //! end, writing files, made-up programs to run, and the agents and the
-//! providers with the Anthropic and OpenAI plugins or the OpenCode plugin
-//! built into OTTY.
+//! providers with the built Anthropic and OpenAI plugins or the built
+//! OpenCode plugin of `assets/plugins/`.
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -22,18 +22,18 @@ use otty_app_agents::{AgentList, AgentsIntent};
 use otty_app_testing::temp_dir::TempDir;
 use otty_plugin_host::PartRef;
 
-/// The folder of the copy of the Anthropic plugin OTTY carries.
+/// The folder of the built Anthropic plugin.
 const ANTHROPIC_COPY: &str = "../../../../../assets/plugins/anthropic";
-/// The folder of the copy of the OpenAI plugin OTTY carries.
+/// The folder of the built OpenAI plugin.
 const OPENAI_COPY: &str = "../../../../../assets/plugins/openai";
-/// The folder of the copy of the OpenCode plugin OTTY carries.
+/// The folder of the built OpenCode plugin.
 const OPENCODE_COPY: &str = "../../../../../assets/plugins/opencode";
 /// The folder next to the test binary its compiled plugins are kept in,
 /// so the plugin is compiled once for all the tests, not in each.
 const COMPILED_FOLDER: &str = "otty-agents-io-compiled-plugins";
 
-/// The agents of Agents mode with the Anthropic and OpenAI plugins built
-/// into OTTY, loaded as the app loads them: their parts Claude Code and
+/// The agents of Agents mode with the built Anthropic and OpenAI plugins
+/// installed, loaded as the app loads them: their parts Claude Code and
 /// Codex. The plugins see `home` as the home folder and no variable;
 /// nothing they start runs, since the shell is not there.
 pub(crate) fn agents_with_plugins(home: &std::path::Path) -> AgentList {
@@ -51,15 +51,15 @@ pub(crate) fn agents_with_plugins_and_shell(
     agents_with_built_in(home, &parts, shell)
 }
 
-/// The agents of Agents mode with the OpenCode plugin built into OTTY,
+/// The agents of Agents mode with the built OpenCode plugin installed,
 /// loaded as the app loads it: its part OpenCode. The plugin sees `home`
 /// as the home folder and no variable.
 pub(crate) fn agents_with_opencode(home: &std::path::Path) -> AgentList {
     agents_with_built_in(home, &[(OPENCODE_COPY, "opencode")], "/no/such/shell")
 }
 
-/// The provider parts of the Anthropic and OpenAI plugins built into
-/// OTTY, loaded as the app loads them. The plugins see `home` as the home
+/// The provider parts of the built Anthropic and OpenAI plugins, loaded
+/// as the app loads them. The plugins see `home` as the home
 /// folder and no variable.
 pub(crate) fn providers_with_plugins(
     home: &std::path::Path,
@@ -72,7 +72,7 @@ pub(crate) fn providers_with_plugins(
     readers_of(home, &parts, "/no/such/shell").providers
 }
 
-/// The agents with the agent parts of the plugins built into OTTY: each
+/// The agents with the agent parts of the built plugins: each
 /// `(copy, part)` names the folder of a copy and the part turned on in
 /// it. The plugins start their programs through `shell`.
 fn agents_with_built_in(
@@ -88,7 +88,7 @@ fn agents_with_built_in(
     readers_of(home, &parts, shell).readers.agents
 }
 
-/// The readers of the parts of the plugins built into OTTY: each `(copy,
+/// The readers of the parts of the built plugins: each `(copy,
 /// part)` names the folder of a copy and the part turned on in it. The
 /// plugins start their programs through `shell`.
 fn readers_of(

@@ -11,7 +11,7 @@ use otty_app_plugins::{ChangeAnswer, ListedPlugin, PluginsIntent};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{
     InstallError, InstallPlan, Installer, PendingUpdate, Served, UpdateOutcome,
-    UpdateReport, embedded_plugins,
+    UpdateReport,
 };
 
 use crate::installed::{SharedInstaller, listed};
@@ -118,14 +118,6 @@ pub fn check_updates_if_due(shared: &SharedInstaller) -> Task<PluginsIntent> {
         }
 
         installer.check_updates(now)
-    })
-}
-
-/// Installs the plugins built into OTTY, as on every start; answers
-/// [`PluginsIntent::Checked`].
-pub fn install_built_in(shared: &SharedInstaller) -> Task<PluginsIntent> {
-    checks(shared, false, |installer| {
-        installer.install_embedded(&embedded_plugins())
     })
 }
 
@@ -267,9 +259,25 @@ mod tests {
             .expect("an answer")
     }
 
-    fn template_folder() -> PathBuf {
+    fn assets_folder() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../assets/plugins/example")
+            .join("../../../../../assets/plugins")
+    }
+
+    fn template_folder() -> PathBuf {
+        assets_folder().join("example")
+    }
+
+    /// The folders of `assets/plugins/`, one per built plugin, by name.
+    fn built_plugin_folders() -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = std::fs::read_dir(assets_folder())
+            .expect("assets/plugins/")
+            .map(|entry| entry.expect("a folder entry").path())
+            .filter(|path| path.is_dir())
+            .collect();
+        folders.sort();
+
+        folders
     }
 
     fn shared_in(folder: &TempDir) -> SharedInstaller {
@@ -325,33 +333,84 @@ mod tests {
         );
     }
 
-    /// Issues 13, 14 and 16: every plugin built into OTTY passes the
-    /// checks of the engine, such as the host operations its `.wasm` asks
-    /// for, and installs with its parts on.
+    /// Issue 28: OTTY carries no plugin, so a first start has none; a
+    /// plugin the user installs is there on the next start, read back
+    /// from `plugins.json`.
     #[test]
-    fn the_built_in_plugins_pass_the_engine_and_install() {
-        let folder = TempDir::new("plugins-io-built-in");
-        let shared = shared_in(&folder);
+    fn a_first_start_has_no_plugin_and_an_installed_one_stays() {
+        let folder = TempDir::new("plugins-io-next-start");
+        let first_start = shared_in(&folder);
+        let before = first_start.plugins();
 
-        let checked = run(install_built_in(&shared));
-
-        let PluginsIntent::Checked {
-            reports, plugins, ..
-        } = checked
+        let PluginsIntent::Found(Ok(plan)) =
+            run(find_local(&first_start, template_folder()))
         else {
-            panic!("checked: {checked:?}");
+            panic!("the template is found");
         };
-        let outcomes: Vec<_> = reports
+        let installed = run(install(&first_start, *plan, Vec::new()));
+        drop(first_start);
+        let next_start = shared_in(&folder).plugins();
+
+        assert!(before.is_empty());
+        assert!(matches!(installed, PluginsIntent::Changed(Ok(_))));
+        let ids: Vec<&str> = next_start
             .iter()
-            .map(|report| report.outcome().clone())
+            .map(|plugin| plugin.installed.id())
             .collect();
+        assert_eq!(ids, ["example"]);
         assert!(
-            outcomes
+            next_start[0]
+                .installed
+                .parts()
                 .iter()
-                .all(|outcome| *outcome == Ok(UpdateOutcome::Installed)),
-            "{outcomes:?}"
+                .all(|part| part.is_on())
         );
-        assert_eq!(plugins.len(), embedded_plugins().len());
+    }
+
+    /// Issues 13, 14, 16 and 28: every built plugin in `assets/plugins/`
+    /// passes the checks of the engine, such as the host operations its
+    /// `.wasm` asks for, and installs from its folder with every part on,
+    /// as Add plugin from folder… installs an official plugin.
+    #[test]
+    fn every_built_plugin_in_assets_installs_from_its_folder() {
+        let folder = TempDir::new("plugins-io-assets");
+        let shared = shared_in(&folder);
+        let built = built_plugin_folders();
+
+        for plugin_folder in &built {
+            let found = run(find_local(&shared, plugin_folder.clone()));
+            let PluginsIntent::Found(Ok(plan)) = found else {
+                panic!("{}: {found:?}", plugin_folder.display());
+            };
+            let installed = run(install(&shared, *plan, Vec::new()));
+            assert!(
+                matches!(installed, PluginsIntent::Changed(Ok(_))),
+                "{}: {installed:?}",
+                plugin_folder.display()
+            );
+        }
+
+        let plugins = shared.plugins();
+        let ids: Vec<&str> =
+            plugins.iter().map(|plugin| plugin.installed.id()).collect();
+        assert_eq!(
+            ids,
+            [
+                "anthropic",
+                "deepseek",
+                "example",
+                "openai",
+                "opencode",
+                "openrouter"
+            ]
+        );
+        for plugin in &plugins {
+            assert!(
+                plugin.installed.parts().iter().all(|part| part.is_on()),
+                "{}",
+                plugin.installed.id()
+            );
+        }
     }
 
     #[test]

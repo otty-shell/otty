@@ -331,7 +331,6 @@ mod tests {
         plugin.installed = otty_plugin_releases::fixtures::installed(
             &agent_only,
             plugin.installed.source().clone(),
-            false,
         );
         let state = PluginsState::new(vec![plugin.clone()]);
         let update = pending_update(

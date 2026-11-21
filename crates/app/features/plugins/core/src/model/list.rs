@@ -23,7 +23,7 @@ pub(crate) struct PluginRowViewModel {
     pub(crate) name: String,
     /// Its installed version.
     pub(crate) version: String,
-    /// "Official · built in", "Official", "Community" or "Local".
+    /// "Official", "Community" or "Local".
     pub(crate) trust: &'static str,
     /// The SVG of its icon, or `None` for a letter icon.
     pub(crate) icon: Option<Vec<u8>>,
@@ -126,7 +126,7 @@ fn row(
         id: id.to_string(),
         name: installed.name().to_string(),
         version: installed.version().to_string(),
-        trust: trust_text(installed.trust(), installed.is_built_in()),
+        trust: trust_text(installed.trust()),
         icon: plugin.icon.clone(),
         parts,
         news,
@@ -244,13 +244,13 @@ mod tests {
     use otty_plugin_releases::fixtures::with_part_on;
 
     use super::*;
-    use crate::testing::{agent, built_in_example, local_example, provider};
+    use crate::testing::{agent, local_example, official_example, provider};
     use crate::types::RunningPlugin;
 
     /// Issue 09: the list model of the installed plugins and their parts.
     #[test]
     fn each_plugin_lists_its_parts_with_their_kind_and_switch() {
-        let state = PluginsState::new(vec![built_in_example()]);
+        let state = PluginsState::new(vec![official_example()]);
 
         let rows = rows(&state, SystemTime::now());
 
@@ -258,7 +258,7 @@ mod tests {
         let row = &rows[0];
         assert_eq!(row.name, "Example");
         assert_eq!(row.version, "0.1.0");
-        assert_eq!(row.trust, i18n::t(Key::PluginsOfficialBuiltIn));
+        assert_eq!(row.trust, i18n::t(Key::PluginsOfficial));
         assert_eq!(
             row.parts,
             [
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_part_that_is_off_shows_its_switch_off() {
-        let mut plugin = built_in_example();
+        let mut plugin = official_example();
         plugin.installed = with_part_on(plugin.installed, &agent(), false);
         let state = PluginsState::new(vec![plugin]);
 
@@ -313,7 +313,7 @@ mod tests {
     /// again; the plugin's other part does not.
     #[test]
     fn a_paused_part_is_marked_paused() {
-        let mut state = PluginsState::new(vec![built_in_example()]);
+        let mut state = PluginsState::new(vec![official_example()]);
         state.set_running(vec![RunningPlugin {
             plugin: String::from("example"),
             log: PluginLog::new(),
@@ -348,7 +348,7 @@ mod tests {
             "read-limits",
             PluginFailureKind::CouldNotRead("host error: not allowed"),
         );
-        let mut state = PluginsState::new(vec![built_in_example()]);
+        let mut state = PluginsState::new(vec![official_example()]);
         state.set_running(vec![RunningPlugin {
             plugin: String::from("example"),
             log: PluginLog::new(),
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn an_update_and_a_release_for_a_newer_otty_show_on_the_row() {
-        let mut state = PluginsState::new(vec![built_in_example()]);
+        let mut state = PluginsState::new(vec![official_example()]);
         state.set_news("example", PluginNews::Updated(String::from("0.5.0")));
         state.set_too_new("example", Some(String::from("0.6.0")));
 

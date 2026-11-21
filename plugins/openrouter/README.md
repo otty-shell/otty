@@ -26,7 +26,9 @@ cargo test
 cargo build --release --target wasm32-wasip2
 ```
 
-To try a build in OTTY, put
-`target/wasm32-wasip2/release/otty_plugin_openrouter.wasm` as
-`openrouter.wasm` in a folder with `otty-plugin.toml` and
-`openrouter.svg`, and use **Add plugin from folder…** on the Plugins page.
+OTTY carries no plugin. `plugins/build.sh openrouter` from the repository
+root builds this one into `assets/plugins/openrouter/`: `otty-plugin.toml`,
+`openrouter.wasm` and the icons. Install it with **Add plugin from
+folder…** on the Plugins page and pick that folder. After a change, run
+the script again, commit the folder and press **Reload** on the
+plugin's row.

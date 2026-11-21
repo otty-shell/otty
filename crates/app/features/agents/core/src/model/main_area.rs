@@ -9,6 +9,10 @@ use super::project::ProjectViewModel;
 /// What fills the main area of Agents mode (spec Decision 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MainAreaViewModel<'a> {
+    /// No agent part of a plugin is on: no agent plugin is installed, or
+    /// its agent parts are off. OTTY ships no plugin, so a first start
+    /// shows this.
+    NoAgentPart,
     /// The profiles are read for the first time.
     Loading,
     /// No profile was found: no agent is installed.
@@ -36,6 +40,9 @@ impl<'a> MainAreaViewModel<'a> {
         state: &'a AgentsState,
         now: SystemTime,
     ) -> Self {
+        if state.agents().is_empty() {
+            return Self::NoAgentPart;
+        }
         if !state.profiles().is_loaded() {
             return Self::Loading;
         }
@@ -90,9 +97,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         agents, at, chatgpt_login, claude, codex, connected, env,
-        five_hour_limits, limits_answer, limits_loaded, now,
-        profiles_with_accounts_loaded, two_agents_with_sessions, with_accounts,
-        with_profiles,
+        five_hour_limits, limits_answer, limits_loaded, no_agents, now,
+        profiles_loaded, profiles_with_accounts_loaded,
+        two_agents_with_sessions, with_accounts, with_profiles,
     };
 
     fn select(state: &mut AgentsState, folder: &str) {
@@ -167,6 +174,24 @@ mod tests {
         )]);
 
         limits_loaded(profile, answer, read_at)
+    }
+
+    /// Issue 28: OTTY ships no plugin, so on first start no agent part is
+    /// on. The mode says so at once and after a read, even of saved
+    /// profiles, since nothing can read them.
+    #[test]
+    fn with_no_agent_part_the_card_says_so() {
+        let mut state =
+            AgentsState::new(no_agents(), crate::testing::registry(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let before_the_read = MainAreaViewModel::from_state(&state, now())
+            == MainAreaViewModel::NoAgentPart;
+
+        let _ = reduce(&mut state, profiles_loaded(&[(codex(), connected())]));
+        let after_the_read = MainAreaViewModel::from_state(&state, now());
+
+        assert!(before_the_read);
+        assert_eq!(after_the_read, MainAreaViewModel::NoAgentPart);
     }
 
     #[test]

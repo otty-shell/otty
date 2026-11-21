@@ -53,6 +53,9 @@ pub(super) fn reduce(
         AgentsIntent::OpenPlugin(plugin) => {
             vec![AgentsOutcome::OpenPlugins(PluginsPlace::Plugin(plugin))]
         },
+        AgentsIntent::OpenPluginsPage => {
+            vec![AgentsOutcome::OpenPlugins(PluginsPlace::List)]
+        },
         AgentsIntent::ProfilesLoaded(loaded) => {
             let check = real_failures::profiles(loaded.problem.as_deref());
             let mut outcomes = state.told_mut().tell(vec![check]);
@@ -1552,5 +1555,20 @@ mod tests {
         );
         assert!(state.search().is_open());
         assert_eq!(state.search().query(), "otty");
+    }
+
+    /// Issue 28: Manage plugins… of the card with no agent part opens the
+    /// list of the Plugins page.
+    #[test]
+    fn manage_plugins_opens_the_plugins_page() {
+        let mut state =
+            AgentsState::new(agents(), crate::testing::registry(), env());
+
+        let outcomes = reduce(&mut state, AgentsIntent::OpenPluginsPage);
+
+        assert_eq!(
+            outcomes,
+            vec![AgentsOutcome::OpenPlugins(PluginsPlace::List)]
+        );
     }
 }

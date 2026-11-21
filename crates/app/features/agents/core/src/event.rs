@@ -48,6 +48,9 @@ pub enum AgentsIntent {
     /// "Read by" of a page was pressed: open the Plugins page at this
     /// plugin.
     OpenPlugin(String),
+    /// Manage plugins… of the card with no agent part was pressed: open
+    /// the list of the Plugins page.
+    OpenPluginsPage,
     /// The profiles were read.
     ProfilesLoaded(LoadedProfiles),
     /// The read of the profiles stopped before it answered: the profiles

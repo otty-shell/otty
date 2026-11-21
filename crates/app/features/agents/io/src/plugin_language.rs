@@ -69,7 +69,7 @@ mod tests {
     use super::*;
     use crate::plugin_parts::{InstalledParts, PluginParts};
 
-    /// The template plugin as OTTY carries it built in.
+    /// The built template plugin of `assets/plugins/example/`.
     fn template_folder() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../../../assets/plugins/example")

@@ -39,8 +39,8 @@ impl InstallPlan {
         self.package.source().trust()
     }
 
-    /// The ids and hosts of its parts another plugin, or a reader built
-    /// into OTTY, already serves: the dialog asks which one serves each.
+    /// The ids and hosts of its parts another plugin already serves: the
+    /// dialog asks which one serves each.
     pub fn conflicts(&self) -> &[Conflict] {
         &self.conflicts
     }
@@ -123,9 +123,9 @@ impl PendingUpdate {
         &self.diff
     }
 
-    /// The ids and hosts of its new parts another plugin, or a reader
-    /// built into OTTY, already serves: the update dialog asks which one
-    /// serves each, as the install dialog does.
+    /// The ids and hosts of its new parts another plugin already serves:
+    /// the update dialog asks which one serves each, as the install dialog
+    /// does.
     pub fn conflicts(&self) -> &[Conflict] {
         &self.conflicts
     }
@@ -149,8 +149,7 @@ impl PendingUpdate {
     }
 }
 
-/// What an update check, a reload or the start-up install of the built-in
-/// plugins did for one plugin.
+/// What an update check or a reload did for one plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateReport {
     plugin_id: String,
@@ -193,8 +192,6 @@ impl UpdateReport {
 pub enum UpdateOutcome {
     /// Nothing newer.
     UpToDate,
-    /// A built-in plugin installed on first start.
-    Installed,
     /// Installed on its own: "Updated to 0.5.0".
     Updated {
         /// The version before.

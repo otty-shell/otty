@@ -189,9 +189,6 @@ pub(crate) fn error_text(error: &InstallError) -> String {
             Key::TplPluginsErrorOtherPlugin,
             &[("expected", expected), ("found", found)],
         ),
-        InstallError::DamagedBuiltIn(id) => {
-            i18n::filled(Key::TplPluginsErrorDamagedBuiltIn, &[("id", id)])
-        },
         InstallError::Compile(reason) => {
             i18n::filled(Key::TplPluginsErrorCompile, &[("error", reason)])
         },
@@ -254,14 +251,13 @@ pub(crate) fn part_title(name: &str, part: &PartRef) -> String {
     )
 }
 
-/// How far a plugin is trusted, as its row marks it: "Official · built
-/// in", "Official", "Community" or "Local".
-pub(crate) fn trust_text(trust: Trust, is_built_in: bool) -> &'static str {
-    match (trust, is_built_in) {
-        (Trust::Official, true) => i18n::t(Key::PluginsOfficialBuiltIn),
-        (Trust::Official, false) => i18n::t(Key::PluginsOfficial),
-        (Trust::Community, _) => i18n::t(Key::PluginsCommunity),
-        (Trust::Local, _) => i18n::t(Key::PluginsLocal),
+/// How far a plugin is trusted, as its row marks it: "Official",
+/// "Community" or "Local".
+pub(crate) fn trust_text(trust: Trust) -> &'static str {
+    match trust {
+        Trust::Official => i18n::t(Key::PluginsOfficial),
+        Trust::Community => i18n::t(Key::PluginsCommunity),
+        Trust::Local => i18n::t(Key::PluginsLocal),
     }
 }
 
@@ -407,11 +403,12 @@ mod tests {
     }
 
     #[test]
-    fn a_built_in_official_plugin_says_so() {
+    fn each_trust_has_its_mark() {
+        assert_eq!(trust_text(Trust::Official), i18n::t(Key::PluginsOfficial));
         assert_eq!(
-            trust_text(Trust::Official, true),
-            i18n::t(Key::PluginsOfficialBuiltIn)
+            trust_text(Trust::Community),
+            i18n::t(Key::PluginsCommunity)
         );
-        assert_eq!(trust_text(Trust::Local, false), i18n::t(Key::PluginsLocal));
+        assert_eq!(trust_text(Trust::Local), i18n::t(Key::PluginsLocal));
     }
 }

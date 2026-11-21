@@ -3,9 +3,9 @@
 //! flow").
 //!
 //! A plugin comes from the GitHub releases of its repository
-//! ([`Installer::find_release`]), from a local folder its author builds it
-//! in ([`Installer::find_local`]), or from the copy built into OTTY
-//! ([`Installer::install_embedded`]). An [`InstallPlan`] holds what the
+//! ([`Installer::find_release`]) or from a local folder that holds a built
+//! copy ([`Installer::find_local`]); OTTY carries no plugin of its own. An
+//! [`InstallPlan`] holds what the
 //! install dialog shows: the manifest, "Official", "Community" or "Local",
 //! and each id or host another plugin already serves, which the user
 //! settles per part. [`Installer::install`] downloads or copies the files,
@@ -23,7 +23,6 @@
 mod choose;
 mod compiler;
 mod diff;
-mod embedded;
 mod error;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
@@ -40,7 +39,6 @@ mod testing;
 pub use crate::choose::SkippedRelease;
 pub use crate::compiler::PluginCompiler;
 pub use crate::diff::{PartChange, PermissionDiff};
-pub use crate::embedded::{EmbeddedPlugin, SUMS_FILE, embedded_plugins};
 pub use crate::error::InstallError;
 pub use crate::github::{OFFICIAL_ORGANIZATION, RepositoryUrl};
 pub use crate::http::{HttpClient, HttpError, USER_AGENT, UreqClient};

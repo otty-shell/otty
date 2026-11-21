@@ -12,13 +12,12 @@ use otty_plugin_manifest::Manifest;
 use serde_json::json;
 
 use crate::compiler::MockPluginCompiler;
-use crate::embedded::{EmbeddedPlugin, SUMS_FILE};
 use crate::http::{HttpError, MockHttpClient};
 use crate::installer::{Installer, Places, parts_of};
 use crate::package::MANIFEST_FILE;
 use crate::plugins_file::InstalledPart;
 
-/// The test copy of the template plugin, as a built-in copy is kept.
+/// The built copy of the template plugin, as `plugins/build.sh` makes it.
 const EXAMPLE_FOLDER: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../assets/plugins/example"
@@ -246,54 +245,6 @@ pub(crate) fn write_folder(folder: &Path, files: &BTreeMap<String, Vec<u8>>) {
     for (name, bytes) in files {
         std::fs::write(folder.join(name), bytes).expect("a file");
     }
-}
-
-/// The test copy of the template, built in the way the official plugins
-/// are.
-pub(crate) fn embedded_example() -> EmbeddedPlugin {
-    EmbeddedPlugin::new(
-        "example",
-        include_str!("../../../../assets/plugins/example/SHA256SUMS"),
-    )
-    .with_file(
-        MANIFEST_FILE,
-        include_bytes!("../../../../assets/plugins/example/otty-plugin.toml")
-            .as_slice(),
-    )
-    .with_file(
-        "example.wasm",
-        include_bytes!("../../../../assets/plugins/example/example.wasm")
-            .as_slice(),
-    )
-    .with_file(
-        "example-agent.svg",
-        include_bytes!("../../../../assets/plugins/example/example-agent.svg")
-            .as_slice(),
-    )
-    .with_file(
-        "example-cloud.svg",
-        include_bytes!("../../../../assets/plugins/example/example-cloud.svg")
-            .as_slice(),
-    )
-}
-
-/// A built-in copy of the template made of `files`, its `SHA256SUMS`
-/// made from them.
-pub(crate) fn embedded_copy(
-    files: &BTreeMap<String, Vec<u8>>,
-) -> EmbeddedPlugin {
-    let sums: String = files
-        .iter()
-        .map(|(name, bytes)| {
-            format!("{}  {name}\n", crate::package::sha256_hex(bytes))
-        })
-        .collect();
-    assert!(!files.contains_key(SUMS_FILE));
-
-    files.iter().fold(
-        EmbeddedPlugin::new("example", sums),
-        |plugin, (name, bytes)| plugin.with_file(name, bytes.clone()),
-    )
 }
 
 /// A compiler that accepts every plugin and removes any compiled copy.

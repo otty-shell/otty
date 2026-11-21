@@ -1,7 +1,8 @@
 //! The Found by OTTY report (spec Decision 2): what OTTY found by itself,
 //! shown by itself once, after the first read of the profiles that found
-//! any. Closing it remembers in `agents.json` that it was shown, so it
-//! never opens by itself again. The button of a need closes it and does
+//! any with an agent part on. OTTY ships no plugin, so a start with none
+//! leaves it for a later start. Closing it remembers in `agents.json`
+//! that it was shown, so it never opens by itself again. The button of a need closes it and does
 //! what the need asks.
 
 use super::event::AgentsOutcome;
@@ -9,16 +10,18 @@ use super::need::{self, NeedAction};
 use super::state::AgentsState;
 
 /// Open the report after a read of the profiles when it was never shown:
-/// `agents.json` was read and does not say it was, the read found a
-/// profile, and the report did not open before in this run.
+/// an agent part of a plugin is on, `agents.json` was read and does not
+/// say it was shown, the read found a profile, and the report did not open
+/// before in this run.
 pub(crate) fn open_on_first_start(state: &mut AgentsState) {
+    let has_agent_part = !state.agents().is_empty();
     let profiles = state.profiles();
     let is_never_shown = profiles
         .saved()
         .is_some_and(|saved| !saved.is_found_report_shown());
     let has_profiles = !profiles.shown().is_empty();
 
-    if is_never_shown && has_profiles {
+    if has_agent_part && is_never_shown && has_profiles {
         state.open_found_report();
     }
 }
@@ -91,6 +94,32 @@ mod tests {
         );
 
         assert!(state.is_found_report_open());
+    }
+
+    /// Issue 28: on a start with no agent part there is nothing to read,
+    /// so the report waits for a start that has one, and `agents.json`
+    /// does not say it was shown.
+    #[test]
+    fn the_report_waits_for_an_agent_part() {
+        let mut state = AgentsState::new(
+            crate::testing::no_agents(),
+            crate::testing::registry(),
+            crate::testing::env(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let _ = reduce(
+            &mut state,
+            profiles_loaded_from(
+                &[(claude(), connected())],
+                SavedProfiles::default(),
+            ),
+        );
+        let closed = reduce(&mut state, AgentsIntent::CloseFoundReport);
+
+        assert!(!state.is_found_report_open());
+        assert!(closed.is_empty());
+        assert_eq!(state.profiles().saved(), Some(&SavedProfiles::default()));
     }
 
     #[test]

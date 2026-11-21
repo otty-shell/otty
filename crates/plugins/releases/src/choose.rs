@@ -119,9 +119,7 @@ pub(crate) fn pick_release(
         let source = Source::Release {
             url: repository.to_string(),
         };
-        let built_in = installed.is_some_and(InstalledPlugin::is_built_in);
-        let package =
-            Package::of_release(manifest, bytes, release, source, built_in);
+        let package = Package::of_release(manifest, bytes, release, source);
 
         return Ok(Picked {
             package: Some(package),

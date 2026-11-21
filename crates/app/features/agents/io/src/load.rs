@@ -250,11 +250,11 @@ mod tests {
             .collect()
     }
 
-    /// Issue 14: the OpenCode plugin built into OTTY reads OpenCode's
+    /// Issue 14: the built OpenCode plugin reads OpenCode's
     /// data folder: the profile is connected, its logins are its accounts
     /// and its version comes from its database, which is never written.
     #[test]
-    fn the_built_in_opencode_plugin_reads_its_data_folder() {
+    fn the_built_opencode_plugin_reads_its_data_folder() {
         let home = TempDir::new("agents-read-opencode");
         let data = home.path().join(".local/share/opencode");
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join(

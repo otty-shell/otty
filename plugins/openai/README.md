@@ -27,9 +27,7 @@ for a profile nobody is logged in with, `codex` in the profile's folder
 for an expired or refused ChatGPT login of Codex (Codex renews it), and
 a field for the admin key (`sk-admin-…`) when the bill of an
 organization needs one or OpenAI refused the one given.
-While it runs, the files of the `codex` part are refused to it. OTTY
-carries a built copy of this plugin in `assets/plugins/openai/`, made by
-`plugins/embed.sh openai`.
+While it runs, the files of the `codex` part are refused to it.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
@@ -40,7 +38,9 @@ cargo test
 cargo build --release --target wasm32-wasip2
 ```
 
-To try a build in OTTY, put
-`target/wasm32-wasip2/release/otty_plugin_openai.wasm` as `openai.wasm`
-in a folder with `otty-plugin.toml`, `codex.svg` and `openai.svg`, and
-use **Add plugin from folder…** on the Plugins page.
+OTTY carries no plugin. `plugins/build.sh openai` from the repository
+root builds this one into `assets/plugins/openai/`: `otty-plugin.toml`,
+`openai.wasm` and the icons. Install it with **Add plugin from
+folder…** on the Plugins page and pick that folder. After a change, run
+the script again, commit the folder and press **Reload** on the
+plugin's row.

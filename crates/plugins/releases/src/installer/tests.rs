@@ -11,8 +11,8 @@ use crate::package::{MANIFEST_FILE, sha256_hex};
 use crate::plan::{UpdateOutcome, UpdateReport};
 use crate::plugins_file::{Source, Trust};
 use crate::testing::{
-    FakeGithub, FakeRelease, TempDir, embedded_copy, embedded_example,
-    example_files, needs_agent_0_2, places_in, test_installer, write_folder,
+    FakeGithub, FakeRelease, TempDir, example_files, needs_agent_0_2,
+    places_in, test_installer, write_folder,
 };
 
 const REPO: &str = "someone/otty-plugin-example";
@@ -691,144 +691,6 @@ fn the_daily_check_runs_once_a_day_and_leaves_local_plugins_out() {
     assert!(
         installer.is_update_check_due(now + Duration::from_secs(25 * 3600))
     );
-}
-
-#[test]
-fn an_embedded_plugin_installs_on_first_start_and_stays_removed_after_remove() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    let mut installer = test_installer(folder.path(), &github);
-
-    let first = installer.install_embedded(&[embedded_example()]);
-    let second = installer.install_embedded(&[embedded_example()]);
-
-    assert_eq!(*first[0].outcome(), Ok(UpdateOutcome::Installed));
-    assert_eq!(*second[0].outcome(), Ok(UpdateOutcome::UpToDate));
-    let plugin = installer.plugin("example").expect("installed");
-    assert!(plugin.is_built_in());
-    assert_eq!(plugin.trust(), Trust::Official);
-    assert_eq!(*plugin.source(), Source::Embedded);
-    assert!(plugin.parts().iter().all(InstalledPart::is_on));
-
-    installer.remove("example").expect("removed");
-    let after_remove = installer.install_embedded(&[embedded_example()]);
-    let after_restart = test_installer(folder.path(), &github)
-        .install_embedded(&[embedded_example()]);
-
-    assert!(after_remove.is_empty());
-    assert!(after_restart.is_empty());
-    assert!(installer.plugin("example").is_none());
-}
-
-/// Issues 11, 13, 14 and 16: each official plugin built into OTTY passes
-/// every check of an install and serves its parts with no dialog.
-#[test]
-fn the_built_in_plugins_install_with_every_part_on() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    let mut installer = test_installer(folder.path(), &github);
-
-    let reports = installer.install_embedded(&crate::embedded_plugins());
-
-    assert!(
-        reports
-            .iter()
-            .all(|report| *report.outcome() == Ok(UpdateOutcome::Installed))
-    );
-    let expected = [
-        (
-            "anthropic",
-            vec![
-                PartRef::agent("claude-code"),
-                PartRef::provider("anthropic"),
-            ],
-        ),
-        (
-            "openai",
-            vec![PartRef::agent("codex"), PartRef::provider("openai")],
-        ),
-        ("opencode", vec![PartRef::agent("opencode")]),
-        ("deepseek", vec![PartRef::provider("deepseek")]),
-        ("openrouter", vec![PartRef::provider("openrouter")]),
-    ];
-    for (id, parts_on) in expected {
-        let plugin = installer.plugin(id).expect("installed");
-        assert!(plugin.is_built_in(), "{id}");
-        assert_eq!(plugin.trust(), Trust::Official, "{id}");
-        let parts: Vec<(PartRef, bool)> = plugin
-            .parts()
-            .iter()
-            .map(|part| (part.part(), part.is_on()))
-            .collect();
-        let expected: Vec<(PartRef, bool)> =
-            parts_on.into_iter().map(|part| (part, true)).collect();
-        assert_eq!(parts, expected, "{id}");
-    }
-}
-
-#[test]
-fn a_newer_embedded_copy_in_a_newer_otty_is_installed_like_an_update() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    let mut installer = test_installer(folder.path(), &github);
-    installer.install_embedded(&[embedded_example()]);
-    let newer = embedded_copy(&example_files("0.2.0"));
-    let mut asking = example_files("0.3.0");
-    let manifest =
-        String::from_utf8(asking[MANIFEST_FILE].clone()).expect("text");
-    asking.insert(
-        MANIFEST_FILE.to_string(),
-        manifest
-            .replace(
-                "http = [\"api.example.com\"]",
-                "http = [\"api.example.com\", \"x.example.com\"]",
-            )
-            .into_bytes(),
-    );
-
-    let updated = installer.install_embedded(&[newer]);
-    let waiting = installer.install_embedded(&[embedded_copy(&asking)]);
-
-    assert!(matches!(
-        updated[0].outcome(),
-        Ok(UpdateOutcome::Updated { .. })
-    ));
-    assert!(matches!(
-        waiting[0].outcome(),
-        Ok(UpdateOutcome::Waiting(_))
-    ));
-    assert_eq!(version_of(&installer, "example"), "0.2.0");
-}
-
-#[test]
-fn an_embedded_plugin_with_a_repository_updates_from_its_releases() {
-    let folder = TempDir::new();
-    let github = FakeGithub::new();
-    github.publish(
-        REPO,
-        vec![
-            FakeRelease::example("v0.1.0", "0.1.0"),
-            FakeRelease::example("v0.2.0", "0.2.0"),
-        ],
-    );
-    let mut installer = test_installer(folder.path(), &github);
-    let embedded = embedded_example()
-        .with_releases("https://github.com/someone/otty-plugin-example");
-
-    installer.install_embedded(std::slice::from_ref(&embedded));
-    let newer_copy = installer
-        .install_embedded(&[embedded_copy(&example_files("0.3.0"))
-            .with_releases("https://github.com/someone/otty-plugin-example")]);
-    let reports = installer.check_updates(SystemTime::now());
-
-    assert_eq!(*newer_copy[0].outcome(), Ok(UpdateOutcome::UpToDate));
-    assert!(matches!(
-        reports[0].outcome(),
-        Ok(UpdateOutcome::Updated { .. })
-    ));
-    let plugin = installer.plugin("example").expect("installed");
-    assert!(plugin.is_built_in());
-    assert_eq!(plugin.version().to_string(), "0.2.0");
 }
 
 #[test]

@@ -1,7 +1,6 @@
 //! The installed plugins: install one from a release or a folder, turn a
 //! part on or off, remove one (spec 2026-11-19-agent-plugins, "Install
-//! and update flow"). Updates, reloads and the built-in plugins are in
-//! `installer/updates.rs`.
+//! and update flow"). Updates and reloads are in `installer/updates.rs`.
 
 pub(crate) mod updates;
 
@@ -185,8 +184,8 @@ impl Installer {
     }
 
     /// Removes the plugin `plugin_id`: its record, its folder and its
-    /// compiled copy. A built-in plugin is not installed again. Names and
-    /// hidden items in `agents.json` are not touched.
+    /// compiled copy. Names and hidden items in `agents.json` are not
+    /// touched.
     pub fn remove(&mut self, plugin_id: &str) -> Result<(), InstallError> {
         let Some(index) = self
             .file
@@ -208,11 +207,6 @@ impl Installer {
             .collect();
         self.file.choices.retain(|choice| choice.winner != winner);
         self.turn_on_losers(&won);
-        if removed.is_built_in()
-            && !self.file.removed_built_in.iter().any(|id| id == plugin_id)
-        {
-            self.file.removed_built_in.push(plugin_id.to_string());
-        }
         self.save()?;
 
         remove_folder(&self.places.plugins_folder.join(plugin_id));
@@ -281,7 +275,6 @@ impl Installer {
             id: id.to_string(),
             name: package.manifest().plugin().name().to_string(),
             source: package.source().clone(),
-            built_in: package.is_built_in(),
             version: package.manifest().plugin().version().clone(),
             tag: package.tag().to_string(),
             wasm: package.manifest().plugin().wasm().to_string(),

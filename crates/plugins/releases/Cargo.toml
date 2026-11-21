@@ -2,7 +2,7 @@
 name = "otty-plugin-releases"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Installs, updates and removes OTTY plugins from GitHub Releases, local folders and the copies built into OTTY"
+description = "Installs, updates and removes OTTY plugins from GitHub Releases and local folders"
 readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"

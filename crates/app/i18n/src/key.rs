@@ -1100,6 +1100,10 @@ pub enum Key {
     AgentsNoAgentTitle,
     /// Text of the card shown when no agent was found.
     AgentsNoAgentText,
+    /// Title of the card shown when no agent part of a plugin is on.
+    AgentsNoAgentPartTitle,
+    /// Text of the card shown when no agent part of a plugin is on.
+    AgentsNoAgentPartText,
     /// Title of the card shown while no project is selected.
     AgentsStartTitle,
     /// Text of the card shown while no project is selected.
@@ -1757,8 +1761,6 @@ pub enum Key {
     PluginsEmptyHint,
     /// Mark of an official plugin.
     PluginsOfficial,
-    /// Mark of an official plugin built into OTTY.
-    PluginsOfficialBuiltIn,
     /// Mark of a community plugin.
     PluginsCommunity,
     /// Mark of a plugin installed from a local folder.
@@ -1924,8 +1926,6 @@ pub enum Key {
     TplPluginsErrorReleaseChanged,
     /// Error: {expected}, {found}.
     TplPluginsErrorOtherPlugin,
-    /// Error: {id}.
-    TplPluginsErrorDamagedBuiltIn,
     /// Error: {error}.
     TplPluginsErrorCompile,
     /// Error: {id}.
@@ -2479,6 +2479,8 @@ impl Key {
         Self::AgentsProjectMissing,
         Self::AgentsNoAgentTitle,
         Self::AgentsNoAgentText,
+        Self::AgentsNoAgentPartTitle,
+        Self::AgentsNoAgentPartText,
         Self::AgentsStartTitle,
         Self::AgentsStartText,
         Self::AgentsContinue,
@@ -2799,7 +2801,6 @@ impl Key {
         Self::PluginsEmpty,
         Self::PluginsEmptyHint,
         Self::PluginsOfficial,
-        Self::PluginsOfficialBuiltIn,
         Self::PluginsCommunity,
         Self::PluginsLocal,
         Self::PluginsPartAgent,
@@ -2882,7 +2883,6 @@ impl Key {
         Self::TplPluginsErrorAlreadyInstalled,
         Self::TplPluginsErrorReleaseChanged,
         Self::TplPluginsErrorOtherPlugin,
-        Self::TplPluginsErrorDamagedBuiltIn,
         Self::TplPluginsErrorCompile,
         Self::TplPluginsErrorNotInstalled,
         Self::TplPluginsErrorNoSuchPart,

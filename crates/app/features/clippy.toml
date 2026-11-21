@@ -78,7 +78,6 @@ disallowed-methods = [
     { path = "otty_plugin_releases::Installer::check_updates", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
     { path = "otty_plugin_releases::Installer::apply_update", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
     { path = "otty_plugin_releases::Installer::reload_local", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
-    { path = "otty_plugin_releases::Installer::install_embedded", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
     { path = "otty_plugin_host::PluginEngine::new", reason = "a feature runs no plugin; otty-app-agents-io loads them" },
     { path = "otty_plugin_host::PluginEngine::load", reason = "a feature runs no plugin; otty-app-agents-io loads them" },
 ]

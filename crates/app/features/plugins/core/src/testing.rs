@@ -1,11 +1,11 @@
-//! Test values of the Plugins page: the template plugin installed as a
-//! built-in copy, from a folder or from a release, and its two parts.
+//! Test values of the Plugins page: the template plugin installed from an
+//! official or another release, or from a folder, and its two parts.
 
 use std::path::PathBuf;
 
 use otty_plugin_manifest::{Manifest, PartRef};
-use otty_plugin_releases::Source;
 use otty_plugin_releases::fixtures::{example_manifest, installed};
+use otty_plugin_releases::{OFFICIAL_ORGANIZATION, Source};
 
 use crate::types::ListedPlugin;
 
@@ -22,19 +22,26 @@ pub(crate) fn provider() -> PartRef {
 /// The template plugin at `version` as installed from `source`.
 pub(crate) fn example_from(source: Source, version: &str) -> ListedPlugin {
     let text = example_manifest(version);
-    let built_in = source == Source::Embedded;
 
     ListedPlugin {
-        installed: installed(&text, source, built_in),
+        installed: installed(&text, source),
         manifest: Some(Manifest::parse(&text).expect("valid")),
         folder: PathBuf::from(format!("/plugins/example/{version}")),
         icon: None,
     }
 }
 
-/// The template plugin built into OTTY.
-pub(crate) fn built_in_example() -> ListedPlugin {
-    example_from(Source::Embedded, "0.1.0")
+/// The template plugin installed from the releases of a repository of
+/// the official organization.
+pub(crate) fn official_example() -> ListedPlugin {
+    example_from(
+        Source::Release {
+            url: format!(
+                "https://github.com/{OFFICIAL_ORGANIZATION}/otty-plugin-example"
+            ),
+        },
+        "0.1.0",
+    )
 }
 
 /// The template plugin installed from a local folder.
@@ -67,7 +74,7 @@ pub(crate) fn fork() -> ListedPlugin {
     };
 
     ListedPlugin {
-        installed: installed(&text, source, false),
+        installed: installed(&text, source),
         manifest: Some(Manifest::parse(&text).expect("valid")),
         folder: PathBuf::from("/plugins/example-fork/0.1.0"),
         icon: None,

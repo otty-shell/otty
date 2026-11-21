@@ -264,7 +264,7 @@ mod tests {
         assert!(loaded.readers.agents.is_empty());
     }
 
-    /// Issue 17: the official plugins built into OTTY declare no entry of
+    /// Issue 17: the official plugins in `assets/plugins/` declare no entry of
     /// the system keyring, so with only them installed Agents mode never
     /// asks to allow the keyring.
     #[test]

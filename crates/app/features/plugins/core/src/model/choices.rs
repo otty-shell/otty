@@ -88,7 +88,7 @@ mod tests {
     use otty_plugin_releases::fixtures::{conflict, example_manifest};
 
     use super::*;
-    use crate::testing::{agent, built_in_example, provider};
+    use crate::testing::{agent, official_example, provider};
 
     fn conflicts() -> Vec<Conflict> {
         let example = Winner::Plugin(String::from("example"));
@@ -115,7 +115,7 @@ mod tests {
     /// it now.
     #[test]
     fn each_new_part_another_plugin_serves_has_one_choice() {
-        let state = PluginsState::new(vec![built_in_example()]);
+        let state = PluginsState::new(vec![official_example()]);
         let manifest =
             Manifest::parse(&example_manifest("0.2.0")).expect("valid");
 

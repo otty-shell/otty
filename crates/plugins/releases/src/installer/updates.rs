@@ -1,13 +1,11 @@
 //! New versions of installed plugins: the daily and on-demand update
-//! check of releases, the Reload of a local plugin, and the plugins built
-//! into OTTY (spec 2026-11-19-agent-plugins, "Updates", "Embedded
-//! plugins", "Local plugins").
+//! check of releases and the Reload of a local plugin (spec
+//! 2026-11-19-agent-plugins, "Updates", "Local plugins").
 
 use std::time::{Duration, SystemTime};
 
 use crate::choose::{SkippedRelease, list_releases, pick_release};
 use crate::diff::PermissionDiff;
-use crate::embedded::EmbeddedPlugin;
 use crate::error::InstallError;
 use crate::github::RepositoryUrl;
 use crate::installer::{
@@ -34,8 +32,8 @@ impl Installer {
     }
 
     /// The daily update check: every plugin installed from releases is
-    /// checked with [`Installer::check_update`]. Local and built-in copies
-    /// are left out.
+    /// checked with [`Installer::check_update`]. Local plugins are left
+    /// out.
     pub fn check_updates(&mut self, now: SystemTime) -> Vec<UpdateReport> {
         self.file.last_update_check = Some(seconds_of(now));
         if let Err(error) = self.save() {
@@ -105,33 +103,6 @@ impl Installer {
         let pending = self.pending_update(installed, package)?;
 
         self.update_or_wait(pending)
-    }
-
-    /// Installs the plugins built into OTTY, as on every start: a missing
-    /// one installs with all parts on and no dialog; one the user removed
-    /// stays removed; a newer copy of one that has no repository yet is
-    /// installed as an update.
-    pub fn install_embedded(
-        &mut self,
-        embedded: &[EmbeddedPlugin],
-    ) -> Vec<UpdateReport> {
-        let mut reports = Vec::new();
-
-        for plugin in embedded {
-            let removed = self
-                .file
-                .removed_built_in
-                .iter()
-                .any(|id| id == plugin.id());
-            if removed {
-                continue;
-            }
-
-            let outcome = self.install_one_embedded(plugin);
-            reports.push(UpdateReport::new(plugin.id(), outcome, None));
-        }
-
-        reports
     }
 
     /// The newest release of the plugin `plugin_id` newer than the
@@ -211,40 +182,6 @@ impl Installer {
             from: pending.from().clone(),
             to: pending.to().clone(),
         })
-    }
-
-    /// Installs one built-in plugin, or its newer copy.
-    fn install_one_embedded(
-        &mut self,
-        plugin: &EmbeddedPlugin,
-    ) -> Result<UpdateOutcome, InstallError> {
-        let source = match plugin.releases() {
-            Some(url) => Source::Release {
-                url: RepositoryUrl::parse(url)?.to_string(),
-            },
-            None => Source::Embedded,
-        };
-        let package = Package::of_files(plugin.checked_files()?, source, true)?;
-        if package.id() != plugin.id() {
-            return Err(InstallError::OtherPlugin {
-                expected: plugin.id().to_string(),
-                found: package.id().to_string(),
-            });
-        }
-
-        let Some(installed) = self.file.plugin(plugin.id()) else {
-            // A plugin the user installed keeps what it serves.
-            self.install_package(&package, &[])?;
-            return Ok(UpdateOutcome::Installed);
-        };
-
-        let is_newer_copy = *installed.source() == Source::Embedded
-            && package.manifest().plugin().version() > installed.version();
-        if !is_newer_copy {
-            return Ok(UpdateOutcome::UpToDate);
-        }
-        let pending = self.pending_update(installed, package)?;
-        self.update_or_wait(pending)
     }
 
     /// Installs `package` next to the installed version of its plugin,

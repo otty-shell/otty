@@ -259,12 +259,12 @@ mod tests {
         assert!(!shrunk.asks_for_more());
     }
 
-    /// Issue 15 of spec 2026-11-19-agent-plugins: the Anthropic and OpenAI
-    /// copies built into OTTY add a provider part to the agent-only
-    /// copies before them, so an installed agent-only copy updated to them
-    /// shows the new part and waits for the user.
+    /// Issue 15 of spec 2026-11-19-agent-plugins: the built Anthropic and
+    /// OpenAI plugins in `assets/plugins/` add a provider part to the
+    /// agent-only versions before them, so an installed agent-only version
+    /// updated to them shows the new part and waits for the user.
     #[test]
-    fn the_built_in_copies_ask_for_their_new_provider_part() {
+    fn the_built_copies_ask_for_their_new_provider_part() {
         let copies = [
             (
                 include_str!(

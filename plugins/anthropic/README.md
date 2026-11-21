@@ -45,12 +45,9 @@ cargo test
 cargo build --release --target wasm32-wasip2
 ```
 
-OTTY carries a built copy of this plugin in `assets/plugins/anthropic/`.
-After a change, `plugins/embed.sh anthropic` from the repository root
-builds it again and replaces that copy with its `SHA256SUMS`.
-
-To try a build in OTTY without rebuilding OTTY, put
-`target/wasm32-wasip2/release/otty_plugin_anthropic.wasm` as
-`anthropic.wasm` in a folder with `otty-plugin.toml`, `claude-code.svg`
-and `anthropic.svg`, and use **Add plugin from folder…** on the Plugins
-page.
+OTTY carries no plugin. `plugins/build.sh anthropic` from the repository
+root builds this one into `assets/plugins/anthropic/`: `otty-plugin.toml`,
+`anthropic.wasm` and the icons. Install it with **Add plugin from
+folder…** on the Plugins page and pick that folder. After a change, run
+the script again, commit the folder and press **Reload** on the
+plugin's row.

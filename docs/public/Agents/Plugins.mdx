@@ -8,8 +8,13 @@ sidebar:
 import { Aside } from '@astrojs/starlight/components';
 
 A **plugin** teaches OTTY to read one or more coding agents or model providers. It is a small
-WebAssembly program from its author's GitHub repository that runs inside OTTY in a closed box: it
-can touch nothing on your computer or the network except what its permissions list.
+WebAssembly program from its author's GitHub repository, or from a folder on your computer, that runs
+inside OTTY in a closed box: it can touch nothing on your computer or the network except what its
+permissions list.
+
+OTTY comes with no plugins. On the first start the Plugins page is empty and Agents mode says that
+no agent plugin is on, with **Manage plugins…**. You install the plugins you want, and they stay
+installed between starts.
 
 Open the Plugins page from **Settings** (<kbd>Ctrl</kbd> <kbd>,</kbd> on Linux, <kbd>Cmd</kbd>
 <kbd>,</kbd> on macOS) → **Plugins** → **Manage plugins…**. The needs of Agents mode open it too.
@@ -27,7 +32,7 @@ own switch.
   <title id="plugin-parts-title">The OpenAI plugin holds two parts: Codex, an agent part of the Agents domain that reads ~/.codex, and OpenAI, a provider part that sends requests to chatgpt.com and api.openai.com. Each part has its own switch.</title>
   <rect x="10" y="10" width="540" height="130" rx="8" style="fill: none; stroke: var(--sl-color-hairline);" />
   <text x="26" y="34" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI 0.2.0</text>
-  <text x="130" y="34" style="fill: var(--sl-color-gray-3);">Official · built in</text>
+  <text x="130" y="34" style="fill: var(--sl-color-gray-3);">Official</text>
   <rect x="26" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
   <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex (Agents: agent)</text>
   <text x="42" y="94" style="fill: var(--sl-color-gray-3);">Reads files in ~/.codex*/**</text>
@@ -45,12 +50,11 @@ own switch.
 
 Each row of the list shows the plugin's icon, name, version and where it comes from:
 
-| Mark                    | Means                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------- |
-| **Official · built in** | One of the [official plugins](../official-plugins/anthropic/), carried inside OTTY. Installed on the first start with all parts on, with no network. Updated with OTTY. |
-| **Official**            | From a repository of the OTTY team (`github.com/otty-shell/`), reviewed by the team.         |
-| **Community**           | From anyone else's repository, reviewed by its author only.                                  |
-| **Local**               | From a folder on this computer, for plugin authors. Never updated on its own.               |
+| Mark          | Means                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| **Official**  | From a repository of the OTTY team (`github.com/otty-shell/`), reviewed by the team.                   |
+| **Community** | From anyone else's repository, reviewed by its author only.                                            |
+| **Local**     | From a folder on this computer: a plugin you built, or an official plugin from a copy of the OTTY repository. Never updated on its own. |
 
 "⋯" on a row has **Check for updates** (or **Reload** for a local plugin), **Open repository**,
 **Show permissions**, **Show log** (what the plugin wrote to its log) and **Remove**.
@@ -69,8 +73,24 @@ at most 20 MiB), the icons (SVG, at most 16 KiB, no scripts, links or embedded i
 `.wasm` uses nothing but what OTTY gives plugins. A check that fails says why, and nothing is
 installed.
 
-**Add plugin from folder…** installs a plugin its author built on this computer; see
-[Write a plugin](../write-a-plugin/#try-it-in-otty).
+**Add plugin from folder…** installs a plugin built on this computer: pick the folder that holds its
+`otty-plugin.toml`, its `.wasm` and its icons, then **Next** and **Install**. For a plugin of your own,
+see [Write a plugin](../write-a-plugin/#try-it-in-otty).
+
+## Install the official plugins
+
+The [official plugins](../official-plugins/anthropic/) do not have repositories of their own yet.
+Until they do, install them from a copy of the OTTY repository, where each one is built into
+`assets/plugins/<id>/`:
+
+1. Get the repository: `git clone https://github.com/otty-shell/otty`.
+2. **Add plugin from folder…** → pick `assets/plugins/openai/` (or `anthropic`, `opencode`,
+   `deepseek`, `openrouter`) → **Next** → **Install**.
+
+A plugin installed this way is marked **Local**: it changes only when you pull a newer copy and
+press **Reload** on its row. Once an official plugin has its own repository, add it with
+**Add plugin…** and the link of that repository instead; it is then marked **Official** and updates
+from its releases.
 
 ## Permissions
 
@@ -124,15 +144,13 @@ added from GitHub and takes the newest one it can run:
 | Needs a newer OTTY                       | Skipped. The row says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
 | Changed its files after you installed it | Refused: "The release v1.2.0 of OpenCode changed after it was installed. OTTY keeps the installed copy." |
 
-Parts keep their on or off state and your choices across updates. Built-in plugins are not checked
-online: a newer OTTY brings their newer copies, installed the same way. Local plugins are never
-checked.
+Parts keep their on or off state and your choices across updates. Local plugins are never checked;
+**Reload** reads their folder again and shows the same dialog when the new copy asks for more.
 
 ## Remove
 
 **Remove** deletes the plugin's files and its compiled copy. The names and hidden items of Agents
-mode stay, and come back if you add the plugin again. A removed built-in plugin stays removed, also
-after OTTY updates.
+mode stay, and come back if you add the plugin again.
 
 ## When a plugin or part is missing
 

@@ -30,22 +30,22 @@ pub fn example_manifest(version: &str) -> String {
 }
 
 /// The plugin of `manifest` as `plugins.json` records it, installed from
-/// `source`, all its parts on; `built_in` for a copy built into OTTY.
+/// `source`, all its parts on.
 ///
 /// ```
+/// use std::path::PathBuf;
+///
 /// use otty_plugin_releases::Source;
 /// use otty_plugin_releases::fixtures::{example_manifest, installed};
 ///
-/// let plugin = installed(&example_manifest("0.1.0"), Source::Embedded, true);
+/// let folder = PathBuf::from("/work/example");
+/// let plugin =
+///     installed(&example_manifest("0.1.0"), Source::Local { folder });
 ///
 /// assert_eq!(plugin.id(), "example");
 /// assert!(plugin.parts().iter().all(|part| part.is_on()));
 /// ```
-pub fn installed(
-    manifest: &str,
-    source: Source,
-    built_in: bool,
-) -> InstalledPlugin {
+pub fn installed(manifest: &str, source: Source) -> InstalledPlugin {
     let parsed = parse(manifest);
     let plugin = parsed.plugin();
 
@@ -53,7 +53,6 @@ pub fn installed(
         id: plugin.id().to_string(),
         name: plugin.name().to_string(),
         source,
-        built_in,
         version: plugin.version().clone(),
         tag: plugin.version().to_string(),
         wasm: plugin.wasm().to_string(),
@@ -125,9 +124,8 @@ fn package(manifest: &str, source: Source) -> Package {
         MANIFEST_FILE.to_string(),
         manifest.as_bytes().to_vec(),
     )]);
-    let built_in = source == Source::Embedded;
 
-    Package::of_files(files, source, built_in).expect("a valid manifest")
+    Package::of_files(files, source).expect("a valid manifest")
 }
 
 fn parse(manifest: &str) -> Manifest {

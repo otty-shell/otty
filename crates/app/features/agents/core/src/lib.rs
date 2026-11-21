@@ -390,6 +390,7 @@ impl MainArea for Agents {
     ) -> MainContent<'a, AgentsIntent, AgentsScreen> {
         let vm = MainAreaViewModel::from_state(&self.state, SystemTime::now());
         let id = match &vm {
+            MainAreaViewModel::NoAgentPart => Some(AgentsScreen::NoAgentPart),
             MainAreaViewModel::Loading => Some(AgentsScreen::Loading),
             MainAreaViewModel::NoAgent => Some(AgentsScreen::NoAgent),
             MainAreaViewModel::Start => Some(AgentsScreen::Start),
@@ -549,6 +550,8 @@ pub enum AgentsOverlay {
 /// Which screen fills the main area of Agents mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentsScreen {
+    /// The card that says no agent part of a plugin is on.
+    NoAgentPart,
     /// The card while the profiles are read for the first time.
     Loading,
     /// The card that says no agent was found.

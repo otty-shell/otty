@@ -26,9 +26,6 @@ pub(crate) struct PluginsFile {
     pub(crate) plugins: Vec<InstalledPlugin>,
     #[serde(default)]
     pub(crate) choices: Vec<Choice>,
-    /// The ids of built-in plugins the user removed: never installed again.
-    #[serde(default)]
-    pub(crate) removed_built_in: Vec<String>,
     /// When the last daily update check ran, in seconds since 1970.
     #[serde(default)]
     pub(crate) last_update_check: Option<u64>,
@@ -110,8 +107,6 @@ pub struct InstalledPlugin {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) source: Source,
-    #[serde(default)]
-    pub(crate) built_in: bool,
     #[serde(with = "version_text")]
     pub(crate) version: PluginVersion,
     pub(crate) tag: String,
@@ -137,18 +132,13 @@ impl InstalledPlugin {
         &self.source
     }
 
-    /// Whether the plugin came built into OTTY ("Official · built in").
-    pub fn is_built_in(&self) -> bool {
-        self.built_in
-    }
-
     /// The installed version.
     pub fn version(&self) -> &PluginVersion {
         &self.version
     }
 
     /// The release tag of the installed version, or the version itself
-    /// for a built-in or a local plugin.
+    /// for a local plugin.
     pub fn tag(&self) -> &str {
         &self.tag
     }
@@ -256,8 +246,6 @@ pub enum Source {
         /// The repository link.
         url: String,
     },
-    /// The copy built into OTTY; a newer OTTY brings its update.
-    Embedded,
     /// A local folder its author builds it in; it changes only on Reload.
     Local {
         /// The folder.
@@ -278,7 +266,6 @@ impl Source {
                     Trust::Community
                 }
             },
-            Source::Embedded => Trust::Official,
             Source::Local { .. } => Trust::Local,
         }
     }
@@ -287,7 +274,6 @@ impl Source {
     pub(crate) fn origin(&self) -> String {
         match self {
             Source::Release { url } => url.clone(),
-            Source::Embedded => "the copy built into OTTY".to_string(),
             Source::Local { folder } => folder.display().to_string(),
         }
     }
@@ -296,8 +282,8 @@ impl Source {
 /// How far a plugin is trusted, as the Plugins page marks it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trust {
-    /// Its repository is under the official organization, or it is built
-    /// into OTTY: reviewed by the OTTY team.
+    /// Its repository is under the official organization: reviewed by the
+    /// OTTY team.
     Official,
     /// Any other repository: reviewed by its author only.
     Community,
@@ -437,7 +423,6 @@ mod tests {
                 source: Source::Release {
                     url: "https://github.com/someone/example".to_string(),
                 },
-                built_in: false,
                 version: PluginVersion::parse("1.0.0").expect("version"),
                 tag: "v1.0.0".to_string(),
                 wasm: "example.wasm".to_string(),
@@ -462,7 +447,6 @@ mod tests {
                 served: Served::Host("example.com".to_string()),
                 winner: Winner::Plugin("example".to_string()),
             }],
-            removed_built_in: vec!["deepseek".to_string()],
             last_update_check: Some(1_763_600_000),
         }
     }
@@ -569,7 +553,6 @@ mod tests {
             release("https://github.com/someone/x").trust(),
             Trust::Community
         );
-        assert_eq!(Source::Embedded.trust(), Trust::Official);
         assert_eq!(
             Source::Local {
                 folder: PathBuf::from(format!(

@@ -1,7 +1,8 @@
 //! The Agents mode main area: the project screen, the page of a
 //! profile, the page of an account, the All accounts and All profiles
 //! pages, a spinner while the profiles are read for the first time, or a
-//! card while there is nothing else to show.
+//! card while there is nothing else to show, such as no agent part of a
+//! plugin.
 
 use iced::widget::{Id, column, container, svg, text};
 use iced::{Alignment, Element, Length};
@@ -26,6 +27,13 @@ pub(crate) fn view<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     match vm {
+        MainAreaViewModel::NoAgentPart => card(
+            Key::AgentsNoAgentPartTitle,
+            Key::AgentsNoAgentPartText,
+            palette,
+        )
+        .action(manage_plugins_button(palette))
+        .into(),
         MainAreaViewModel::Loading => loading(palette),
         MainAreaViewModel::NoAgent => {
             card(Key::AgentsNoAgentTitle, Key::AgentsNoAgentText, palette)
@@ -91,6 +99,14 @@ fn card<'a>(
     EmptyCard::new(i18n::t(title), i18n::t(description), icon, palette)
 }
 
+/// Manage plugins…, which opens the Plugins page, as in Settings.
+fn manage_plugins_button<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
+    Button::new(i18n::t(Key::ButtonManagePlugins), palette)
+        .kind(ButtonKind::Primary)
+        .on_press(AgentsIntent::OpenPluginsPage)
+        .into()
+}
+
 fn refresh_button<'a>(
     kind: ButtonKind,
     palette: &UiPalette,
@@ -151,6 +167,17 @@ mod tests {
             .expect("Refresh should show");
         let refresh: Vec<AgentsIntent> = no_agent.into_messages().collect();
         assert_eq!(refresh, vec![AgentsIntent::Refresh]);
+
+        let mut no_part =
+            simulator(view(MainAreaViewModel::NoAgentPart, palette));
+        no_part
+            .find(i18n::t(Key::AgentsNoAgentPartText))
+            .expect("the line should show");
+        no_part
+            .click(i18n::t(Key::ButtonManagePlugins))
+            .expect("the button should show");
+        let open: Vec<AgentsIntent> = no_part.into_messages().collect();
+        assert_eq!(open, vec![AgentsIntent::OpenPluginsPage]);
 
         let mut start = simulator(view(MainAreaViewModel::Start, palette));
         start

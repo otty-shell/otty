@@ -122,7 +122,7 @@ const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
-/// Agent logos from the official plugins built into OTTY, drawn in one
+/// Agent logos from the official plugins in `assets/plugins/`, drawn in one
 /// color that the row tints.
 const CLAUDE_LOGO: &[u8] =
     include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg");

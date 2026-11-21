@@ -8,9 +8,9 @@
 //! [`PluginsIntent`](otty_app_plugins::PluginsIntent): [`find_release`]
 //! and [`find_local`] find a plugin for the install dialog; [`install`],
 //! [`set_part_on`], [`remove`] and [`apply_update`] change the installed
-//! plugins; [`check_update`], [`check_updates_if_due`] and
-//! [`install_built_in`] check for newer versions; [`reload`] reads the
-//! folder of a local plugin again. The binary only calls them and wraps
+//! plugins; [`check_update`] and [`check_updates_if_due`] check for newer
+//! versions; [`reload`] reads the folder of a local plugin again. OTTY
+//! installs no plugin by itself. The binary only calls them and wraps
 //! the intent into its message.
 
 mod installed;
@@ -19,5 +19,5 @@ mod work;
 pub use installed::{SharedInstaller, places};
 pub use work::{
     apply_update, check_update, check_updates_if_due, find_local, find_release,
-    install, install_built_in, reload, remove, set_part_on,
+    install, reload, remove, set_part_on,
 };

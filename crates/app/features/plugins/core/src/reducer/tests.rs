@@ -11,7 +11,7 @@ use otty_plugin_releases::{InstallPlan, Served, Winner};
 use super::*;
 use crate::model::{PageViewModel, PluginRowViewModel};
 use crate::testing::{
-    agent, built_in_example, fork, provider, released_example,
+    agent, fork, official_example, provider, released_example,
 };
 use crate::types::RunningPlugin;
 
@@ -103,7 +103,7 @@ fn add_plugin_of_a_need_opens_the_empty_url_field() {
 /// "Read by" opens the page at the plugin's row.
 #[test]
 fn read_by_opens_the_page_at_its_plugin() {
-    let mut state = PluginsState::new(vec![built_in_example()]);
+    let mut state = PluginsState::new(vec![official_example()]);
 
     let _ = reduce(
         &mut state,
@@ -189,7 +189,7 @@ fn a_release_that_needs_a_newer_otty_says_so() {
 /// and Install gives the parts the user chose to the new plugin.
 #[test]
 fn install_gives_the_chosen_parts_to_the_new_plugin() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
     let _ = reduce(&mut state, PluginsIntent::AddPlugin);
     let _ = reduce(&mut state, PluginsIntent::Found(Ok(Box::new(fork_plan()))));
 
@@ -214,10 +214,10 @@ fn install_gives_the_chosen_parts_to_the_new_plugin() {
 /// parts that are on and tells Agents mode the notes.
 #[test]
 fn a_finished_install_loads_the_parts_that_are_on() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
     let _ = reduce(&mut state, PluginsIntent::Found(Ok(Box::new(fork_plan()))));
     let _ = reduce(&mut state, PluginsIntent::Install);
-    let mut example = built_in_example();
+    let mut example = official_example();
     example.installed = with_part_on(example.installed, &provider(), false);
     let mut installed_fork = fork();
     installed_fork.installed =
@@ -244,7 +244,7 @@ fn a_finished_install_loads_the_parts_that_are_on() {
 /// list after it has the other part on.
 #[test]
 fn turning_one_part_off_leaves_the_others_on() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
 
     let outcomes = reduce(
         &mut state,
@@ -254,7 +254,7 @@ fn turning_one_part_off_leaves_the_others_on() {
             on: false,
         },
     );
-    let mut example = built_in_example();
+    let mut example = official_example();
     example.installed = with_part_on(example.installed, &agent(), false);
     let _ = reduce(&mut state, PluginsIntent::Changed(Ok(vec![example])));
 
@@ -274,11 +274,11 @@ fn turning_one_part_off_leaves_the_others_on() {
 /// A change that leaves the plugins as they were loads nothing again.
 #[test]
 fn an_unchanged_list_loads_no_parts() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
 
     let outcomes = reduce(
         &mut state,
-        PluginsIntent::Changed(Ok(vec![built_in_example()])),
+        PluginsIntent::Changed(Ok(vec![official_example()])),
     );
 
     assert!(matches!(outcomes.as_slice(), [PluginsOutcome::Notes(_)]));
@@ -286,7 +286,7 @@ fn an_unchanged_list_loads_no_parts() {
 
 #[test]
 fn a_failed_switch_says_why_on_the_list() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
     let _ = reduce(
         &mut state,
         PluginsIntent::SetPartOn {
@@ -340,7 +340,7 @@ fn turn_on_of_a_need_turns_its_part_on() {
 /// again (issue 07: `PartHealth::try_again`).
 #[test]
 fn try_again_starts_a_paused_part() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
     let health = paused_health();
     let _ = reduce(
         &mut state,
@@ -373,7 +373,7 @@ fn try_again_starts_a_paused_part() {
 #[test]
 fn the_checks_note_updates_and_waiting_updates() {
     let (plugin, update) = waiting_example();
-    let mut state = open_state(vec![plugin.clone(), built_in_example()]);
+    let mut state = open_state(vec![plugin.clone(), official_example()]);
     let updated = report(
         "example",
         Ok(UpdateOutcome::Updated {
@@ -553,7 +553,7 @@ fn remove_asks_first_then_removes() {
 
 #[test]
 fn open_repository_opens_the_repository_of_the_manifest() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
 
     let outcomes = reduce(
         &mut state,
@@ -581,7 +581,7 @@ fn the_daily_timer_asks_for_the_check_when_it_is_due() {
 /// report on the clipboard.
 #[test]
 fn copy_report_of_a_part_copies_its_report() {
-    let mut state = open_state(vec![built_in_example()]);
+    let mut state = open_state(vec![official_example()]);
     let report = String::from("The plugin Example 0.1.0 could not read.");
 
     let outcomes =

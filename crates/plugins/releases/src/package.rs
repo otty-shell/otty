@@ -1,7 +1,6 @@
 //! One version of a plugin, found and with a checked manifest, and its
-//! files: downloaded from a release, read from a local folder or taken
-//! from the copy built into OTTY, each within its size limit and each icon
-//! checked.
+//! files: downloaded from a release or read from a local folder, each
+//! within its size limit and each icon checked.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -30,7 +29,6 @@ pub(crate) struct Package {
     manifest: Manifest,
     tag: String,
     source: Source,
-    built_in: bool,
     files: PackageFiles,
 }
 
@@ -40,7 +38,7 @@ impl Package {
         &self.manifest
     }
 
-    /// The release tag, or the version for a folder or a built-in copy.
+    /// The release tag, or the version for a folder.
     pub(crate) fn tag(&self) -> &str {
         &self.tag
     }
@@ -48,11 +46,6 @@ impl Package {
     /// Where it comes from.
     pub(crate) fn source(&self) -> &Source {
         &self.source
-    }
-
-    /// Whether it is, or updates, a plugin built into OTTY.
-    pub(crate) fn is_built_in(&self) -> bool {
-        self.built_in
     }
 
     /// The plugin id.
@@ -67,13 +60,11 @@ impl Package {
         manifest_bytes: Vec<u8>,
         release: &Release,
         source: Source,
-        built_in: bool,
     ) -> Self {
         Self {
             manifest,
             tag: release.tag().to_string(),
             source,
-            built_in,
             files: PackageFiles::Release {
                 manifest: manifest_bytes,
                 assets: release.assets().to_vec(),
@@ -81,11 +72,12 @@ impl Package {
         }
     }
 
-    /// The plugin made of `files`, by file name, such as a built-in copy.
+    /// The plugin made of `files`, by file name: a made-up plugin of the
+    /// tests.
+    #[cfg(any(test, feature = "fixtures"))]
     pub(crate) fn of_files(
         files: BTreeMap<String, Vec<u8>>,
         source: Source,
-        built_in: bool,
     ) -> Result<Self, InstallError> {
         let Some(text) = files.get(MANIFEST_FILE) else {
             return Err(InstallError::MissingFile(MANIFEST_FILE.to_string()));
@@ -96,7 +88,6 @@ impl Package {
             tag: manifest.plugin().version().to_string(),
             manifest,
             source,
-            built_in,
             files: PackageFiles::Ready(files),
         })
     }
@@ -125,7 +116,6 @@ impl Package {
             tag: manifest.plugin().version().to_string(),
             manifest,
             source: Source::Local { folder },
-            built_in: false,
             files: PackageFiles::Ready(files),
         })
     }
@@ -308,6 +298,13 @@ mod tests {
     use super::*;
     use crate::testing::{TempDir, example_files, write_folder};
 
+    /// A local folder the made-up plugin of a test comes from.
+    fn test_folder() -> Source {
+        Source::Local {
+            folder: std::path::PathBuf::from("/work/example"),
+        }
+    }
+
     #[test]
     fn a_folder_gives_its_manifest_wasm_and_icons() {
         let folder = TempDir::new();
@@ -354,7 +351,7 @@ mod tests {
         let mut files = example_files("0.1.0");
         files.insert("example-agent.svg".to_string(), vec![b' '; 17 * 1024]);
         let package =
-            Package::of_files(files, Source::Embedded, true).expect("a plugin");
+            Package::of_files(files, test_folder()).expect("a plugin");
 
         let error = package
             .fetch(&crate::http::MockHttpClient::new())
@@ -377,7 +374,7 @@ mod tests {
             br#"<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>"#.to_vec(),
         );
         let package =
-            Package::of_files(files, Source::Embedded, true).expect("a plugin");
+            Package::of_files(files, test_folder()).expect("a plugin");
 
         let error = package
             .fetch(&crate::http::MockHttpClient::new())
