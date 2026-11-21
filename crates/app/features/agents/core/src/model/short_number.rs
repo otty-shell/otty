@@ -141,16 +141,16 @@ pub(crate) fn hidden_word() -> String {
 
 /// The most used window or the credits left of a subscription, as the
 /// latest good read through one of its profiles, or with its own login,
-/// says, or "login expired" in the error color when the latest read could
-/// not use the login.
+/// says, or "needs you" in the error color while a plugin part asks the
+/// user to do something before it can read.
 fn limits_now(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
     let limits = state.profiles().account_limits(account)?;
-    if limits.is_login_expired() {
-        let expired = i18n::t(Key::AgentsSourceLoginExpired).to_string();
-        return Some((expired, SessionTone::Failed));
+    if !limits.needs().is_empty() {
+        let needs_you = i18n::t(Key::AgentsStateNeedsYou).to_string();
+        return Some((needs_you, SessionTone::Failed));
     }
 
     let (answer, _) = limits.last_good()?;
@@ -236,7 +236,7 @@ mod tests {
     use crate::testing::{
         api_key, at, bill_loaded, bill_of, chatgpt_login, chatgpt_login_in,
         claude, codex, codex_work, connected, five_hour_limits, limits_answer,
-        limits_loaded, organization, price_table, read, saved_with_admin_key,
+        limits_loaded, organization, price_table, read, saved_with_given_key,
         session, set_prices, spend_loaded, spend_of, with_accounts,
         with_profiles,
     };
@@ -383,7 +383,7 @@ mod tests {
     fn an_organization_with_a_bill_shows_the_month_of_the_bill() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
-            saved_with_admin_key(),
+            saved_with_given_key(),
         );
         let before = number_of(&state, &organization());
 
@@ -483,7 +483,7 @@ mod tests {
                 &codex(),
                 limits_answer(vec![(
                     otty_agents::SourceId::ProviderPart,
-                    Err(SourceError::NotLoggedIn),
+                    Err(crate::testing::login_expired()),
                 )]),
                 at(20),
             ),
@@ -492,7 +492,7 @@ mod tests {
         assert_eq!(
             chatgpt_number(&state),
             Some((
-                i18n::t(Key::AgentsSourceLoginExpired).to_string(),
+                i18n::t(Key::AgentsStateNeedsYou).to_string(),
                 SessionTone::Failed
             ))
         );
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn a_state_that_needs_the_user_wins_in_the_error_color() {
         let cases = [
-            (ProfileStatus::NotLoggedIn, Key::AgentsStateNeedsLogin),
+            (ProfileStatus::NotLoggedIn(None), Key::AgentsStateNeedsLogin),
             (
                 ProfileStatus::ProgramNotFound,
                 Key::AgentsStateProgramNotFound,
@@ -613,7 +613,7 @@ mod tests {
     #[test]
     fn a_key_shows_the_money_left_or_what_it_used() {
         let number = |provider: ProviderRef, numbers| {
-            let key = otty_agents::AdminKeyRef::EnvVar(String::from("KEY"));
+            let key = otty_agents::KeyRef::EnvVar(String::from("KEY"));
             let account = Account::added(provider.clone(), key.clone());
             let mut state = with_accounts(
                 &[(codex(), connected(), vec![chatgpt_login()])],

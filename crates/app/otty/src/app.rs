@@ -5,7 +5,7 @@ use std::sync::Arc;
 use iced::{Element, Size, Subscription, Task, Theme};
 use otty_agents::{AgentEnv, Registry};
 use otty_app_agents::{AgentList, Agents, AgentsIntent};
-use otty_app_agents_io::{InstalledParts, ProviderList};
+use otty_app_agents_io::{InstalledParts, LanguageReceivers, ProviderList};
 use otty_app_containers::{Containers, ContainersIntent};
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::Explorer;
@@ -83,6 +83,9 @@ pub(crate) struct App {
     /// The provider parts of the plugins that are on, which read the
     /// numbers of the accounts of their providers.
     pub(crate) plugin_providers: ProviderList,
+    /// The plugins that are on and export the language receiver: they are
+    /// told when the user picks another language.
+    pub(crate) language_receivers: LanguageReceivers,
     /// The Plugins page: the installed plugins and their parts, opened
     /// from Settings and from Agents mode.
     pub(crate) plugins: Plugins,
@@ -127,6 +130,11 @@ impl App {
         // 2026-11-19-agent-plugins, "How plugins talk to OTTY").
         let plugin_io =
             PluginIo::in_folders(&config_dir, &cache_dir, &data_dir, &shell);
+        // The plugins write their texts in the language of the interface,
+        // which the engine gives them at every call.
+        plugin_io
+            .engine
+            .set_language(otty_app_i18n::current_locale().tag());
         let plugins =
             Plugins::new(plugin_io.installer.plugins(), files_home.clone());
         let loaded = otty_app_agents_io::readers_now(
@@ -161,6 +169,7 @@ impl App {
         // Agents mode was made with these readers: only the provider parts
         // and the health and logs of the parts are left to give.
         app.plugin_providers = loaded.providers;
+        app.language_receivers = loaded.language_receivers;
         let running = dispatch::running_plugins(loaded.running);
         let _none =
             dispatch::deliver(&mut app, PluginsIntent::Running(running));
@@ -239,6 +248,7 @@ impl App {
             plugins: Plugins::new(Vec::new(), agent_env.home().to_path_buf()),
             agents: Agents::new(agents, registry, agent_env),
             plugin_providers: Arc::from(Vec::new()),
+            language_receivers: Arc::from(Vec::new()),
             plugin_io,
         }
     }

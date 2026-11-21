@@ -193,9 +193,7 @@ fn problem_text(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{
-        ProfileStatus, SourceError, SourceId, Unavailable, Unexpected,
-    };
+    use otty_agents::{SourceError, SourceId, Unavailable, Unexpected};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -348,7 +346,7 @@ mod tests {
     fn an_expected_state_is_never_told() {
         let mut state = with_profiles(&[
             (claude(), connected()),
-            (codex(), ProfileStatus::NotLoggedIn),
+            (codex(), crate::testing::not_logged_in(&codex())),
         ]);
 
         let logged_out = told(reduce(
@@ -356,7 +354,10 @@ mod tests {
             limits_loaded(
                 &claude(),
                 limits_answer(vec![
-                    (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+                    (
+                        SourceId::ProviderPart,
+                        Err(crate::testing::login_expired()),
+                    ),
                     (SourceId::AgentPart, Err(not_available())),
                 ]),
                 at(10),

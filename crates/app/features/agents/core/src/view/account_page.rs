@@ -176,7 +176,6 @@ mod tests {
                 is_stale: false,
                 recorded: None,
                 failure: None,
-                log_in_hint: None,
             })),
             used_by: vec![
                 UsedByViewModel {
@@ -209,14 +208,15 @@ mod tests {
     fn expired() -> NeedViewModel {
         NeedViewModel {
             place: String::from("OpenAI · you@example.com"),
+            plugin: None,
             title: String::from("The login expired"),
             line: String::from("Open Codex to log in again."),
             fix: Some(NeedFixViewModel {
                 label: String::from("Open Codex"),
-                action: Some(NeedAction::OpenAgent(codex(
-                    "Codex",
-                    "/home/user/.codex",
-                ))),
+                action: Some(NeedAction::Run {
+                    title: String::from("Codex"),
+                    command: otty_agents::AgentCommand::new("codex"),
+                }),
             }),
             extra: None,
         }
@@ -285,10 +285,10 @@ mod tests {
 
         assert_eq!(
             intents,
-            vec![AgentsIntent::FixNeed(NeedAction::OpenAgent(codex(
-                "Codex",
-                "/home/user/.codex"
-            )))]
+            vec![AgentsIntent::FixNeed(NeedAction::Run {
+                title: String::from("Codex"),
+                command: otty_agents::AgentCommand::new("codex"),
+            })]
         );
     }
 

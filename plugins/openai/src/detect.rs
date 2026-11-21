@@ -1,29 +1,37 @@
 //! Whether a Codex profile can be used: its config folder and its login.
 
-use otty_plugin_sdk::{Billing, Connection, ProfileStatus, files};
+use otty_plugin_sdk::{Billing, Command, Connection, ProfileStatus, files};
 
 use crate::auth_file::AuthFile;
 use crate::glob::escaped;
+use crate::needs;
 
-/// Whether the profile in `folder` is logged in.
+/// Whether the profile in `folder` is logged in, as [`connection`] tells.
+/// A profile nobody is logged in with needs the user to run `login`,
+/// Codex's login command.
+pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
+    if !folder_exists(folder) {
+        return ProfileStatus::ConfigFolderNotFound;
+    }
+
+    match connection(folder) {
+        Some(connection) => ProfileStatus::Connected(connection),
+        None => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    }
+}
+
+/// The login of the profile in `folder`; `None` when nobody is logged in.
 ///
 /// A profile is logged in when its `auth.json` holds an API key or the
 /// token of a ChatGPT login; a blank one counts as none. An API key login
 /// is billed by its key; for a ChatGPT login the limits tell the billing.
 /// The account and the plan are not read here.
-pub(crate) fn status(folder: &str) -> ProfileStatus {
-    if !folder_exists(folder) {
-        return ProfileStatus::ConfigFolderNotFound;
-    }
-
-    let auth = AuthFile::read(folder);
-    let Some(auth) = auth.filter(AuthFile::is_logged_in) else {
-        return ProfileStatus::NotLoggedIn;
-    };
+pub(crate) fn connection(folder: &str) -> Option<Connection> {
+    let auth = AuthFile::read(folder).filter(AuthFile::is_logged_in)?;
 
     let billing = auth.is_api_key().then_some(Billing::ApiKey);
 
-    ProfileStatus::Connected(Connection {
+    Some(Connection {
         account: None,
         plan: None,
         billing,
@@ -42,6 +50,8 @@ fn folder_exists(folder: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::Command;
+
     use super::*;
     use crate::testing::{as_part, host, path};
 
@@ -66,8 +76,18 @@ mod tests {
     fn status_of(folder: &str) -> ProfileStatus {
         let host = host();
         let folder = path(&host, folder);
+        let login = Command {
+            program: "codex".to_string(),
+            args: vec!["login".to_string()],
+            env: Vec::new(),
+        };
 
-        as_part(&host, || status(&folder))
+        as_part(&host, || status(&folder, login))
+    }
+
+    /// Whether nobody is logged in with the config folder `folder`.
+    fn is_not_logged_in(folder: &str) -> bool {
+        matches!(status_of(folder), ProfileStatus::NotLoggedIn(_))
     }
 
     #[test]
@@ -98,24 +118,20 @@ mod tests {
         for folder in
             [".codex-loggedout", ".codex-emptyauth", ".codex-notokens"]
         {
-            assert_eq!(
-                status_of(folder),
-                ProfileStatus::NotLoggedIn,
-                "{folder}"
-            );
+            assert!(is_not_logged_in(folder), "{folder}");
         }
     }
 
     /// A blank text is no text: the host finds no key in it.
     #[test]
     fn a_blank_key_or_token_is_not_logged_in() {
-        assert_eq!(status_of(".codex-blank"), ProfileStatus::NotLoggedIn);
+        assert!(is_not_logged_in(".codex-blank"));
     }
 
     #[test]
     fn a_missing_or_broken_auth_file_is_not_logged_in() {
-        assert_eq!(status_of(".codex_old"), ProfileStatus::NotLoggedIn);
-        assert_eq!(status_of(".codex-broken"), ProfileStatus::NotLoggedIn);
+        assert!(is_not_logged_in(".codex_old"));
+        assert!(is_not_logged_in(".codex-broken"));
     }
 
     #[test]

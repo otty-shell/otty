@@ -55,6 +55,7 @@ repository. It is a working plugin over a made-up agent and a made-up provider:
 | `otty-plugin.toml`               | The manifest: the plugin, its parts and their permissions.               |
 | `src/lib.rs`                     | The plugin type and the `export!` line.                                  |
 | `src/agent.rs`, `src/provider.rs` | One `impl Agent` and one `impl Provider`, with their tests.             |
+| `src/needs.rs`                   | The needs the parts give, with their texts in OTTY's ten languages.      |
 | `fixtures/`                      | Made-up files that stand for the home folder in tests.                   |
 | `*.svg`                          | One icon per part.                                                       |
 | `.github/workflows/release.yml`  | Builds and releases the plugin on a version tag.                         |
@@ -82,6 +83,7 @@ wasm = "example.wasm"           # must be "<id>.wasm"
 [api]                           # one contract version per kind of part
 agent = "0.1"
 provider = "0.1"
+language = "0.1"                # optional: the plugin's texts come in several languages
 
 [[agent]]
 id = "example-agent"            # saved by OTTY; never change it
@@ -104,7 +106,7 @@ name = "Example Cloud"
 icon = "example-cloud.svg"
 hosts = ["example.com"]         # keys found for these hosts go to this part
 usage_page = "https://example.com/usage"
-add_by_hand = "key"             # Add account offers it: "key", "admin-key" or absent
+add_by_hand = true              # Add account offers this provider for a key no agent uses
 
 [provider.permissions]
 http = ["api.example.com"]
@@ -130,7 +132,8 @@ may not call `api.example.com`.
 Paths start with `~` or with a listed variable (`{XDG_DATA_HOME}/...`) and may not contain `..`.
 Ids use lowercase letters, digits and dashes. Each part needs an icon: an SVG of at most 16 KiB with no scripts, links
 or embedded images, drawn in one color with `currentColor`. Every part needs its contract
-in `[api]`, and `[api]` may name no contract without a part. Unknown fields are refused, so a
+in `[api]`, and `[api]` may name no contract without a part, except `language`, which belongs to
+the whole plugin ([below](#the-language)). Unknown fields are refused, so a
 misspelt permission is never dropped silently.
 
 ## The code
@@ -147,33 +150,153 @@ mod provider;
 /// The plugin: one type serves every part its manifest lists.
 pub struct Example;
 
-otty_plugin_sdk::export!(Example with agent, provider);
+otty_plugin_sdk::export!(Example with agent, provider, language);
 ```
 
-A plugin with only agent parts writes `export!(Example with agent)` and has only `agent` in `[api]`.
+A plugin with only agent parts and texts only in English writes `export!(Example with agent)` and
+has only `agent` in `[api]`.
 
 | `Agent`                                   | Gives OTTY                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------- |
 | `profiles(agent)`                         | The agent's config folders on this computer, default first.         |
-| `detect(profile)`                         | Logged in, needs a login, or no folder.                             |
+| `detect(profile)`                         | Logged in; `ProfileStatus::NotLoggedIn(need)` with the [need](#needs) that says how to log in; or no folder. |
 | `version(profile)`                        | The version written in the newest files; `None` makes OTTY run `<program> --version`. |
 | `logins(profile)`                         | Each login and key: its kind, where it sits, whom it is for (a provider id or a host), the account or email when the files say. |
 | `sessions(profile)`                       | The sessions, newest first.                                         |
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
 | `read_answers(profile, item)`             | Every answer of one file with its tokens and an identity, and the records seen and understood. |
-| `launch(profile, session)`, `login_command(profile)` | The commands for New session, Continue and Log in.       |
+| `launch(profile, session)`                | The commands for New session and Continue.                          |
 | `read_limits(profile, login)`             | Optional: the limits the agent itself shows for a login. Where they come from is the plugin's business: try your own program, files or servers in your order, and return the first limits or one error. OTTY asks the provider part of the login first, and this only when that gives nothing. |
 | `read_session_stats`, `read_project_stats` | Optional: statistics of a session or a project.                   |
+| `login_refused(profile, login)`           | Optional: the [need](#a-refused-login) to show when a provider part refused a login this profile keeps. |
 
 | `Provider`                        | Gives OTTY                                                               |
 | --------------------------------- | ------------------------------------------------------------------------ |
 | `account(provider, key, found)`   | Whose account the key is: account or organization id, email, plan.      |
-| `numbers(provider, account, key)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. |
-| `read_bill(provider, account, admin_key, days)` | Optional: the bill of an organization per UTC day.         |
+| `numbers(provider, account, key, given)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. |
+| `read_bill(provider, account, key, given, days)` | Optional: the bill of an organization per UTC day.        |
 
-An optional function returns "not supported" by default. Count records with `RecordCounts`
-(`add_understood`, `add_not_understood`, `add_broken`, `saw_version`) so OTTY can tell a changed
-format from fewer tokens.
+`key` is the account's own key; `given` holds the keys the user gave for the account after one of
+your needs asked for them ([below](#keys-you-ask-for)). An optional function returns "not supported"
+by default. Count records with `RecordCounts` (`add_understood`, `add_not_understood`,
+`add_broken`, `saw_version`) so OTTY can tell a changed format from fewer tokens.
+
+### Needs
+
+Everything the user must do for your agent or provider, your part says itself, as a `Need`. OTTY
+shows it as it is, with a small label naming your plugin, and its button does the need's action.
+OTTY writes only the needs about plugins and its own permissions (an update waiting for an OK, a
+part turned off, a key for a host no plugin serves, a plugin that failed, a changed format, the
+keyring), never one about your agent.
+
+```rust
+use otty_plugin_sdk::env::in_language;
+use otty_plugin_sdk::{Command, Need, NeedAction};
+
+/// The title of `not_logged_in`, one text per language tag; the template has all ten.
+const NOT_LOGGED_IN_TITLE: &[(&str, &str)] = &[("en", "Needs login"), ("ru", "Нужен вход")];
+
+/// Nobody is logged in with the profile: the button runs `login` in a terminal tab.
+pub(crate) fn not_logged_in(login: Command) -> Need {
+    Need {
+        id: "not-logged-in".to_string(),
+        title: in_language(NOT_LOGGED_IN_TITLE).to_string(),
+        text: in_language(NOT_LOGGED_IN_TEXT).to_string(),
+        action: NeedAction::Run(login),
+    }
+}
+```
+
+| Field    | Holds                                                                                 |
+| -------- | ------------------------------------------------------------------------------------- |
+| `id`     | A name of the need, stable within the part, such as `not-logged-in`. Two reads that give the same id show one need, and it does not flicker between reads. Do not put a time or a count in it. |
+| `title`  | What is needed, in a few words.                                                       |
+| `text`   | Why, and what the button does.                                                        |
+| `action` | One of the four actions below.                                                        |
+
+| `NeedAction`        | The button                                                                  |
+| ------------------- | --------------------------------------------------------------------------- |
+| `Run(Command)`      | Runs the command in a new terminal tab, such as `codex login`, or the agent itself so it renews its login. The same rules as for `launch`. |
+| `AskKey(KeyAsk)`    | Opens a field for a key. `KeyAsk` has a `slot` (your own name for the key, such as `admin`), a `label` (the name of the field, which also names the button, "Admin key…"), a `hint` (one line under the field), an optional `prefix` the key starts with, such as `sk-admin-`, and an optional `https` `page` where the user makes the key. |
+| `OpenPage(url)`     | Opens an `https` page in the browser, such as the page of new keys.         |
+| `CopyReport(text)`  | Puts the text on the clipboard, such as a report for you.                  |
+
+A part gives a need in two places:
+
+- `ReadError::NeedsUser(need)`: the part can not read until the user does this, such as give a key
+  it asks for, or make a new key because the provider refused the old one.
+- `ProfileStatus::NotLoggedIn(need)` from `detect`: nobody is logged in with the profile. The need's
+  `Run` is also what the profile's **Log in** menu item runs.
+
+### Keys you ask for
+
+A provider part that needs a key the account does not have, such as an admin key for an
+organization's bill, answers `ReadError::NeedsUser` with an `AskKey` need. The user gives the key
+once; OTTY keeps only where the user keeps it (a file or a variable) and from then on passes it to
+`numbers` and `read_bill` in `given`, as a handle with its slot. `given_key(given, slot)` finds it:
+
+```rust
+use otty_plugin_sdk::{AccountFacts, Bill, DayRange, GivenKey, Key, ReadError, given_key};
+
+fn read_bill(_provider: &str, _account: &AccountFacts, key: &Key, given: &[GivenKey],
+             days: &DayRange) -> Result<Bill, ReadError> {
+    let bill_key = match key.has_prefix("ex-admin-").map_err(ReadError::Host)? {
+        true => key,
+        false => given_key(given, "admin")
+            .ok_or_else(|| ReadError::NeedsUser(needs::bill_key()))?,
+    };
+    // ...read the bill with `bill_key`
+}
+```
+
+When the provider refuses a key the part asked for, answer `NeedsUser` again with an `AskKey` under
+the same slot, so the user replaces it.
+
+### A refused login
+
+A provider part may read with a login an agent keeps, such as a ChatGPT or a Claude login. It does
+not know which agent keeps it, so it writes no need for it: when the provider refuses the login, or
+the part sees it expired, it answers `ReadError::LoginRefused`. OTTY then asks the agent part of
+each profile that holds that login, through `Agent::login_refused(profile, login)`, and shows its
+need on the profile with that plugin's label:
+
+```rust
+fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
+    Some(needs::login_refused(login_run(profile))) // `example-agent login` in its folder
+}
+```
+
+The login is passed too, so a part that keeps several logins can tell which one. The default gives
+`None`; OTTY then shows its own need "The login was refused", with no button. Give the agent part's
+own read of the limits the same need id for the same login, so the profile shows it once.
+
+### The language
+
+Write the texts of your needs in the language of OTTY's interface, or in English. `env::language()`
+gives it as a tag such as `en`, `ru` or `pt-BR`, at every call: it is the language OTTY shows now,
+and it may change while your plugin is loaded. `env::in_language(texts)` picks one of your
+translations, given as pairs of a tag and a text: the same tag, else the same language with another
+region (`pt` for `pt-BR`), else English. OTTY's own languages are `en`, `zh-CN`, `zh-TW`, `ja`, `ko`,
+`fr`, `de`, `es`, `pt-BR` and `ru`. The contract carries no translation tables: they live in your
+plugin.
+
+A plugin with translations also implements the optional `Language` trait, exports it
+(`export!(Example with agent, provider, language)`) and names it in the manifest as
+`[api] language = "0.1"`. It belongs to no part:
+
+```rust
+impl otty_plugin_sdk::Language for Example {
+    /// The texts of the needs come in every language of OTTY.
+    fn language_changed(_tag: &str) -> bool {
+        true
+    }
+}
+```
+
+When the user changes the language, OTTY calls `language_changed` on every plugin that exports it.
+When one answers `true`, OTTY reads Agents mode again at once, so its needs show in the new language
+without a restart. The call has no permissions: it may only answer. A plugin without it is never
+called, and its texts change at its next read.
 
 ### Host operations
 
@@ -193,6 +316,7 @@ permissions of the called part; a refused call returns `HostError::NotAllowed`.
 | `keyring::read`                                      | One keyring entry, its keys as handles.                  | `keyring`          |
 | `keys::open`                                         | A handle for a declared key place.                       | `keys`             |
 | `env::var`, `env::home`                              | A variable; the home folder.                             | `env`              |
+| `env::language`, `env::in_language`                  | The language OTTY shows now; one of your translations.   | none               |
 | `clock::now_ms`, `log::info` and the other levels    | The time; a line in the plugin's log.                    | none               |
 
 A `Key` has `fingerprint()`, `has_prefix(text)` and `jwt_claims()`; the plugin never reads the key.
@@ -235,7 +359,7 @@ fn numbers_read_the_balance_with_the_key_in_the_header() {
     let account = AccountFacts { identity: Identity::default(), plan: None };
 
     let numbers = host
-        .as_provider("example-cloud", || Example::numbers("example-cloud", &account, &key))
+        .as_provider("example-cloud", || Example::numbers("example-cloud", &account, &key, &[]))
         .expect("the numbers");
 
     assert_eq!(numbers.left.map(|money| money.amount), Some(12.5));
@@ -248,7 +372,8 @@ fn numbers_read_the_balance_with_the_key_in_the_header() {
 
 `answer_run`, `answer_talk` and `answer_terminal` give the output of a declared program,
 `with_var` sets a variable, and `with_keyring_entry` with `with_keyring_allowed` makes up a keyring
-entry. `requests()`, `removed()`, `started()` and `log()` show what the plugin did. Keep only
+entry. `with_language` starts the host in another language, and `set_language` switches it between
+two calls. `GivenKey::new(slot, host.key(...))` makes up a key the user gave. `requests()`, `removed()`, `started()` and `log()` show what the plugin did. Keep only
 made-up keys and made-up session text in `fixtures/`.
 
 ## Build
@@ -301,8 +426,11 @@ what it wrote with `log::*` and to stderr.
 The OTTY team reviews its own plugins against these rules; they are good rules for any plugin:
 
 - Never print or log keys, tokens, prompts or session text.
-- Never renew, write or delete another agent's login. A refused token is `ReadError::KeyRefused`;
-  the user logs in again in the agent.
+- Never renew, write or delete another agent's login. In a provider part a refused login is
+  `ReadError::LoginRefused`; the agent part's `login_refused` gives the need that makes the user
+  log in again in the agent.
+- Give every need a stable id and texts in OTTY's languages where you can, with English as the
+  fallback.
 - Never ask an agent's program for anything that changes its files. The OpenAI plugin never sends
   `thread/list` to `codex app-server`, because Codex then rewrites its own index of sessions.
 - Ask only for the permissions you use, and write nothing but your own leftovers.

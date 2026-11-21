@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AdminKeyRef, AgentCommand, AgentId, KeyPlace, Profile,
-    ProviderRef, SavedProfiles, SessionId,
+    Account, AgentCommand, AgentId, GivenKey, KeyPlace, Profile, SavedProfiles,
+    SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
@@ -297,17 +297,16 @@ pub enum AgentsOutcome {
     /// Count the tokens this profile spent; answer
     /// [`AgentsIntent::SpendLoaded`].
     LoadSpend(Profile),
-    /// Read the bill of the organization `profile` pays through, once for
-    /// every profile of it, with its admin key kept at `admin_key`; answer
+    /// Read the bill of `organization`, which `profile` pays through, once
+    /// for every profile of it, with the keys the user gave for it; answer
     /// [`AgentsIntent::BillLoaded`].
     LoadBill {
         /// The profile the organization was found in.
         profile: Profile,
-        /// The provider of the organization, whose provider part reads
-        /// the bill.
-        provider: ProviderRef,
-        /// Where the admin key of the organization is kept.
-        admin_key: AdminKeyRef,
+        /// The organization, whose provider part reads the bill.
+        organization: Account,
+        /// The keys the user gave for it, each under its slot.
+        given: Vec<GivenKey>,
     },
     /// Read the numbers of `account` with its own key, read again from
     /// `place` and dropped right after the request: the money of a key,
@@ -320,6 +319,8 @@ pub enum AgentsOutcome {
         account: Account,
         /// Where its key is read again from.
         place: KeyPlace,
+        /// The keys the user gave for it, each under its slot.
+        given: Vec<GivenKey>,
     },
     /// Read the list prices of the money estimate: the LiteLLM price
     /// table, fetched at most once a day, or its kept copy. With
@@ -445,8 +446,6 @@ pub enum AccountAction {
     Rename,
     /// Open the usage page of the account at its provider in the browser.
     OpenUsagePage,
-    /// Give the admin key of an organization, which reads its bill.
-    AdminKey,
     /// Change where the key of an account the user added is kept.
     EditKey,
     /// Forget an account the user added, with its name.

@@ -1,28 +1,29 @@
 //! The read of the real bill of one organization, through one profile that
-//! pays through it (spec Decision 9). It reads the admin key from its file
-//! or its environment variable, hands the provider part of the
-//! organization's provider a handle to it and drops it, so it runs on a
+//! pays through it (spec Decision 9). It reads the keys the user gave for
+//! the organization from their files or their environment variables,
+//! hands the provider part of the organization's provider a handle to
+//! each and to the login of the profile, and drops them, so it runs on a
 //! thread of its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{AdminKeyRef, PluginProvider, Profile, ProviderRef};
-use otty_app_agents::{AgentsIntent, LoadedBill};
+use otty_agents::{Account, Agent, GivenKey, PluginProvider, Profile};
+use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
 
 use crate::background::{on_own_thread, read_stopped};
 use crate::plugin_parts::ProviderList;
 use crate::shell_variable::shell_variable;
 
-/// Read the bill of the organization at `provider` that `profile` pays
-/// through in the background, with the provider part of `providers` that
-/// serves it and the organization's admin key kept at `admin_key`. The
-/// key is read from its file, or from its variable as the user's login
-/// shell at `shell` sees it, so a variable set in `~/.zshrc` is found when
-/// OTTY was started from the desktop. The key is used for this read only
-/// and never logged. The answer comes back as
-/// [`AgentsIntent::BillLoaded`].
+/// Read the bill of `organization`, which `profile` pays through, in the
+/// background, with the provider part of `providers` that serves it, the
+/// login the agent part of `agents` found it by in the profile and the
+/// keys the user gave for it (`given`). Each given key is read from its
+/// file, or from its variable as the user's login shell at `shell` sees
+/// it, so a variable set in `~/.zshrc` is found when OTTY was started from
+/// the desktop. The keys are used for this read only and never logged.
+/// The answer comes back as [`AgentsIntent::BillLoaded`].
 ///
 /// # Example
 ///
@@ -30,52 +31,67 @@ use crate::shell_variable::shell_variable;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{AdminKeyRef, AgentId, Profile, ProviderRef};
+/// use otty_agents::{
+///     Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+///     Profile, ProviderRef,
+/// };
+/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("claude-code"),
 ///     "Coder",
 ///     PathBuf::from("/home/user/.coder"),
 /// );
-/// let admin_key = AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"));
+/// let organization = Account::new(
+///     ProviderRef::of_id("anthropic"),
+///     AccountIdentity::OrganizationId("made-up-org".into()),
+///     AccountLogin::Unnamed,
+///     AccountKind::Money,
+///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
+/// );
+/// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_bill(
+///     &agents,
 ///     &providers,
 ///     profile,
-///     ProviderRef::of_id("anthropic"),
-///     admin_key,
+///     organization,
+///     Vec::new(),
 ///     "/bin/zsh",
 /// );
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_bill(
+    agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
-    provider: ProviderRef,
-    admin_key: AdminKeyRef,
+    organization: Account,
+    given: Vec<GivenKey>,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let task = format!("reading the bill through {}", profile.name());
+    let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
-    let fallback = (profile.clone(), admin_key.clone());
+    let fallback = (profile.clone(), given.clone());
     let shell = shell.to_string();
 
     on_own_thread(
         task,
         move || {
             read_bill(
+                &agents,
                 &providers,
                 profile,
-                &provider,
-                admin_key,
+                &organization,
+                given,
                 SystemTime::now(),
                 |name| shell_variable(&shell, name),
             )
         },
         move || LoadedBill {
             profile: fallback.0,
-            admin_key: fallback.1,
+            given: fallback.1,
             bill: Err(read_stopped()),
             read_at: SystemTime::now(),
         },
@@ -83,23 +99,31 @@ pub fn load_bill(
     )
 }
 
-/// The bill up to `now` of the organization at `provider` that `profile`
-/// pays through, read with its admin key kept at `admin_key`; `env_var`
-/// gives the value of an environment variable.
+/// The bill up to `now` of `organization`, which `profile` pays through,
+/// read with the keys of `given`; `env_var` gives the value of an
+/// environment variable.
 fn read_bill(
+    agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     profile: Profile,
-    provider: &ProviderRef,
-    admin_key: AdminKeyRef,
+    organization: &Account,
+    given: Vec<GivenKey>,
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedBill {
-    let bill =
-        otty_agents::read_bill(providers, provider, &admin_key, now, env_var);
+    let bill = otty_agents::read_bill(
+        agents,
+        providers,
+        organization,
+        &profile,
+        &given,
+        now,
+        env_var,
+    );
 
     LoadedBill {
         profile,
-        admin_key,
+        given,
         bill,
         read_at: SystemTime::now(),
     }
@@ -109,7 +133,10 @@ fn read_bill(
 mod tests {
     use std::path::Path;
 
-    use otty_agents::{AdminKeyRef, AgentId, SourceError, Unavailable};
+    use otty_agents::{
+        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn, KeyRef,
+        ProviderRef, SourceError, Unavailable,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -118,10 +145,6 @@ mod tests {
     /// No environment variable is set: no test reads the real environment.
     fn no_variables(_: &str) -> Option<String> {
         None
-    }
-
-    fn anthropic() -> ProviderRef {
-        ProviderRef::of_id("anthropic")
     }
 
     /// A Coder API key profile in a made-up folder.
@@ -133,118 +156,87 @@ mod tests {
         )
     }
 
-    #[test]
-    fn a_key_file_that_is_missing_is_not_available_and_nothing_is_sent() {
-        let home = TempDir::new("agents-bill-no-file");
-        let key_file = home.path().join("no-such-admin-key");
-        let key = AdminKeyRef::File(key_file);
-        let profile = claude_api(home.path());
+    /// A made-up organization at `provider`, found in `home`.
+    fn organization(home: &Path, provider: &str) -> Account {
+        Account::new(
+            ProviderRef::of_id(provider),
+            AccountIdentity::OrganizationId(String::from("made-up-org")),
+            AccountLogin::Unnamed,
+            AccountKind::Money,
+            FoundIn::ProfileFolder(home.join(".claude-api")),
+        )
+    }
 
-        let before = SystemTime::now();
-
-        let loaded = read_bill(
-            &providers_with_plugins(home.path()),
-            profile.clone(),
-            &anthropic(),
-            key.clone(),
-            SystemTime::now(),
-            no_variables,
-        );
-
-        assert_eq!(loaded.profile, profile);
-        assert_eq!(loaded.admin_key, key);
-        assert!(loaded.read_at >= before, "the read tells when it ended");
-        assert_eq!(
-            loaded.bill,
-            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(key)))
-        );
+    fn given(key: KeyRef) -> Vec<GivenKey> {
+        vec![GivenKey::new("admin", key)]
     }
 
     /// Issue 15 of spec 2026-11-19-agent-plugins: with no provider part
-    /// that reads bills for the provider, nothing is read or sent.
+    /// that serves the organization, nothing is read or sent.
     #[test]
     fn a_provider_with_no_part_has_no_bill() {
         let home = TempDir::new("agents-bill-no-part");
-        let key = AdminKeyRef::EnvVar(String::from("OTTY_TEST_ADMIN_KEY"));
+        let key = KeyRef::EnvVar(String::from("OTTY_TEST_ORG_KEY"));
+        let profile = claude_api(home.path());
+        let before = SystemTime::now();
 
         let loaded = read_bill(
+            &[],
             &providers_with_plugins(home.path()),
-            claude_api(home.path()),
-            &ProviderRef::of_id("deepseek"),
-            key,
+            profile.clone(),
+            &organization(home.path(), "example-cloud"),
+            given(key.clone()),
             SystemTime::now(),
-            |_| Some(String::from("sk-made-up-admin-key")),
+            |_| Some(String::from("sk-made-up-org-key")),
         );
 
+        assert_eq!(loaded.profile, profile);
+        assert_eq!(loaded.given, given(key));
+        assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.bill,
             Err(SourceError::NotAvailable(Unavailable::NoBill))
         );
     }
 
+    /// The login of the profile is gone, so nothing is read: no agent
+    /// finds it, and no given key is looked at.
     #[test]
-    fn an_unset_variable_is_not_available() {
-        let home = TempDir::new("agents-bill-no-variable");
-        let key = AdminKeyRef::EnvVar(String::from("OTTY_TEST_ADMIN_KEY"));
-        let profile = claude_api(home.path());
+    fn a_profile_whose_login_is_gone_reads_no_bill() {
+        let home = TempDir::new("agents-bill-no-login");
+        let key = KeyRef::EnvVar(String::from("OTTY_TEST_ORG_KEY"));
 
         let loaded = read_bill(
+            &[],
             &providers_with_plugins(home.path()),
-            profile,
-            &anthropic(),
-            key.clone(),
+            claude_api(home.path()),
+            &organization(home.path(), "anthropic"),
+            given(key),
             SystemTime::now(),
             no_variables,
         );
 
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(key)))
+            Err(SourceError::NotAvailable(Unavailable::KeyGone))
         );
-    }
-
-    #[test]
-    fn the_variable_is_read_through_the_login_shell() {
-        let home = TempDir::new("agents-bill-shell-variable");
-        let shell = fake_shell(&home);
-        let key =
-            AdminKeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_ADMIN_KEY"));
-        let profile = claude_api(home.path());
-        let providers = providers_with_plugins(home.path());
-
-        let answers = run(load_bill(
-            &providers,
-            profile,
-            anthropic(),
-            key.clone(),
-            &shell,
-        ));
-
-        let starts = std::fs::read_to_string(home.path().join("starts"))
-            .map_or(0, |text| text.lines().count());
-        assert_eq!(starts, 1, "the shell was asked for the variable");
-        assert!(matches!(
-            answers.as_slice(),
-            [AgentsIntent::BillLoaded(loaded)]
-                if loaded.bill == Err(SourceError::NotAvailable(
-                    Unavailable::AdminKeyMissing(key)
-                ))
-        ));
     }
 
     #[test]
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-bill-task");
-        let key_file = home.path().join("no-such-admin-key");
+        let shell = fake_shell(&home);
         let profile = claude_api(home.path());
+        let agents: AgentList = Arc::from(Vec::new());
         let providers = providers_with_plugins(home.path());
 
         let answers = run(load_bill(
+            &agents,
             &providers,
             profile.clone(),
-            anthropic(),
-            AdminKeyRef::File(key_file),
-            "/no/such/shell",
+            organization(home.path(), "anthropic"),
+            given(KeyRef::File(home.path().join("no-such-org-key"))),
+            &shell,
         ));
 
         assert!(matches!(

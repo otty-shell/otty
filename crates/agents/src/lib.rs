@@ -45,23 +45,31 @@
 //! profile by
 //! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
 //! app reads them once per account, with the files of one profile it was
-//! found in. With an admin key, [`read_bill`] reads the real [`Bill`] of an
-//! organization through the provider part that serves it; the key is kept
-//! only as an
-//! [`AdminKeyRef`], the file or the variable that holds it, saved for the
-//! organization in [`SavedProfiles`]. [`AccountMoney`] is the money of an
-//! account: its bill, else an estimate over the tokens of the profiles
-//! that pay through it.
+//! found in. [`read_bill`] reads the real [`Bill`] of an organization
+//! through the provider part that serves it. [`AccountMoney`] is the money
+//! of an account: its bill, else an estimate over the tokens of the
+//! profiles that pay through it.
 //!
 //! Some accounts tell their own numbers with their own key:
 //! [`read_account_numbers`] reads, through the provider part of a plugin
 //! that serves the account, the [`Balance`] of a key, the [`Limits`] of a
-//! subscription login or the [`Bill`] of an organization the user added
-//! with an admin key, with a key the user added read again from its
-//! [`KeyPlace`] and dropped right after the request. An account the user
-//! added by hand is an [`Account::added`], saved in [`SavedProfiles`] by
-//! the file or the variable of its key only; with no part that serves its
-//! provider it is listed and not read.
+//! subscription login or the [`Bill`] of an account the user added, with
+//! a key the user added read again from its [`KeyPlace`] and dropped right
+//! after the request. An account the user added by hand is an
+//! [`Account::added`], saved in [`SavedProfiles`] by the file or the
+//! variable of its key only; with no part that serves its provider it is
+//! listed and not read.
+//!
+//! What the user must do for an agent or a provider comes from its part
+//! as a [`PartNeed`], in the language the host tells the part: a profile
+//! nobody is logged in with ([`ProfileStatus::NotLoggedIn`]), or a read
+//! that waits for the user ([`SourceError::NeedsUser`]). A login a
+//! provider part refused is the need of the agent part that found it in
+//! the profile; when that part gives none, the read fails with
+//! [`SourceError::LoginRefused`]. A key a part asks
+//! for is a [`GivenKey`]: OTTY keeps only its [`KeyRef`], the file or the
+//! variable that holds it, saved for the account in [`SavedProfiles`],
+//! and gives it to the part's next reads under its slot.
 //!
 //! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
 //! the source of an agent with [`agent_of`] and read through it;
@@ -92,7 +100,6 @@
 mod account;
 mod account_money;
 mod account_numbers;
-mod admin_key;
 mod agent;
 mod balance;
 mod bill;
@@ -106,6 +113,7 @@ mod file_memory;
 mod file_stamp;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
+mod given_key;
 mod hidden_terminal;
 mod https;
 mod key_fingerprint;
@@ -114,6 +122,7 @@ mod litellm;
 mod local_time;
 mod money_estimate;
 mod part_health;
+mod part_need;
 mod percent;
 mod plugin_agent;
 mod plugin_bill;
@@ -133,6 +142,7 @@ mod project;
 mod provider;
 mod provider_limits;
 mod record_format;
+mod refused_login;
 mod registry;
 mod saved_profiles;
 mod session;
@@ -155,7 +165,6 @@ pub use crate::account_money::AccountMoney;
 pub use crate::account_numbers::{
     AccountNumbers, KeyPlace, own_reader_of, read_account_numbers,
 };
-pub use crate::admin_key::{AdminKey, AdminKeyRef};
 pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, DayCost, read_bill};
@@ -166,6 +175,7 @@ pub use crate::config_dir::{
 pub use crate::dollars::Dollars;
 pub use crate::env::AgentEnv;
 pub use crate::error::{SourceError, Unavailable, Unexpected};
+pub use crate::given_key::{GivenKey, KeyRef, KeySecret};
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
@@ -177,6 +187,7 @@ pub use crate::limits::{
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
 pub use crate::part_health::{LastFailure, PAUSE_AFTER, PartHealth};
+pub use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;
 pub use crate::plugin_failure::{PluginFailure, PluginFailureKind};
@@ -193,11 +204,10 @@ pub use crate::program::{
 };
 pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
-pub use crate::provider::{
-    AddAccountKind, ProviderEntry, ProviderId, ProviderRef,
-};
+pub use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 pub use crate::provider_limits::read_profile_limits;
 pub use crate::record_format::FormatChange;
+pub use crate::refused_login::RefusedLogin;
 pub use crate::registry::{PluginPart, Registry};
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,

@@ -2,13 +2,16 @@
 //! key, rather than through the limit sources of a profile (spec
 //! 2026-11-19, Decisions 5 and 7). The provider part of a plugin that
 //! serves the account reads them (spec 2026-11-19-agent-plugins, issue
-//! 15): the money of a key, the limits of a subscription login and, with
-//! an admin key the user added, the bill of an organization. An account
-//! whose provider no part serves is not read.
+//! 15): the money of a key, the limits of a subscription login and, for
+//! an account the user added, the bill when the part reads one. With each
+//! read the part gets the keys the user gave for the account after a
+//! need of the part asked for them (issue 20). An account whose provider
+//! no part serves is not read.
 //!
-//! OTTY keeps no key: a key the user added is read again right before the
-//! request, from where they keep it ([`KeyPlace`]), and reaches the part
-//! only as a handle; a key an agent part found stays where it is.
+//! OTTY keeps no key: a key the user added or gave is read again right
+//! before the request, from where they keep it ([`KeyPlace`]), and
+//! reaches the part only as a handle; a key an agent part found stays
+//! where it is.
 
 use std::time::SystemTime;
 
@@ -17,10 +20,12 @@ use crate::agent::{Agent, agent_of};
 use crate::balance::Balance;
 use crate::bill::Bill;
 use crate::error::{SourceError, Unavailable};
+use crate::given_key::{GivenKey, read_given_keys};
 use crate::limits::Limits;
 use crate::plugin_provider::PluginProvider;
 use crate::profile::Profile;
-use crate::provider::{AddAccountKind, ProviderEntry};
+use crate::provider::ProviderEntry;
+use crate::refused_login::to_holding_agent;
 use crate::registry::Registry;
 use crate::walk::Answer;
 
@@ -54,18 +59,14 @@ pub enum AccountNumbers {
 /// provider (spec 2026-11-19-agent-plugins, "What the UI shows": no Left
 /// or Limits rows with no provider part). The provider part that serves
 /// it reads every account found in a profile, with the key of its login,
-/// and every key the user added by hand when the part offers Add account,
-/// a key for its numbers or an admin key for the bill of its
-/// organization.
+/// and every key the user added by hand when the part offers Add account.
 ///
 /// ```
-/// use otty_agents::{
-///     Account, AdminKeyRef, ProviderRef, Registry, own_reader_of,
-/// };
+/// use otty_agents::{Account, KeyRef, ProviderRef, Registry, own_reader_of};
 ///
 /// let added = Account::added(
 ///     ProviderRef::of_id("example-cloud"),
-///     AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into()),
+///     KeyRef::EnvVar("EXAMPLE_API_KEY".into()),
 /// );
 ///
 /// assert!(own_reader_of(&added, &Registry::default()).is_none());
@@ -80,30 +81,32 @@ pub fn own_reader_of<'a>(
         .found_in()
         .iter()
         .any(|place| matches!(place, FoundIn::ProfileFolder(_)));
-    let is_added =
-        account.added_key().is_some() && entry.add_account().is_some();
+    let is_added = account.added_key().is_some() && entry.can_add_by_hand();
 
     (is_in_profile || is_added).then_some(entry)
 }
 
 /// The numbers of `account` up to `now`, read by the provider part of
-/// `providers` that serves it: with the key the user added by hand, read
-/// now from its file or its variable (`env_var`), which reads the bill of
-/// the organization when the part offers Add account with an admin key;
-/// or with the key of the login the agent part of `agents` found it by in
-/// the profile of `place`. It blocks.
+/// `providers` that serves it, with the keys the user gave for it
+/// (`given`): with the key the user added by hand, read now from its file
+/// or its variable (`env_var`), its bill when the part reads one, else
+/// its numbers; or with the key of the login the agent part of `agents`
+/// found it by in the profile of `place`. It blocks.
 ///
 /// # Errors
 ///
 /// An account no part serves, or whose key is no longer where it was
-/// found, is "not available" and nothing is sent; a refused key is
-/// [`SourceError::KeyRefused`], and a refused subscription login is "not
-/// logged in" (it is never renewed).
+/// found, is "not available" and nothing is sent; what the user must do,
+/// such as give another key, is the part's need,
+/// [`SourceError::NeedsUser`]. A login of the profile the provider
+/// refused is the need of the agent part that found it, else
+/// [`SourceError::LoginRefused`].
 pub fn read_account_numbers(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     account: &Account,
     place: &KeyPlace,
+    given: &[GivenKey],
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<AccountNumbers, SourceError> {
@@ -116,30 +119,27 @@ pub fn read_account_numbers(
     match place {
         KeyPlace::Added => {
             let reference = account.added_key().ok_or_else(no_source)?;
-            let key = reference.read(env_var)?;
+            let key = reference.read(&env_var)?;
+            let given = read_given_keys(given, &env_var)?;
 
-            if is_organization_part(provider) {
-                return provider
-                    .read_bill(account.provider(), &key, now)
-                    .map(AccountNumbers::Bill);
+            match provider.read_given_bill(account, &key, &given, now) {
+                Err(SourceError::NotAvailable(Unavailable::NoBill)) => {
+                    provider.read_given(account, &key, &given)
+                },
+                bill => bill.map(AccountNumbers::Bill),
             }
-            provider.read_given(account, &key)
         },
         KeyPlace::ProfileFiles(profile) => {
-            let login = agent_of(agents, profile.agent())
-                .and_then(|agent| agent.found_login(profile, account))
-                .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
+            let gone = || SourceError::NotAvailable(Unavailable::KeyGone);
+            let agent = agent_of(agents, profile.agent()).ok_or_else(gone)?;
+            let login = agent.found_login(profile, account).ok_or_else(gone)?;
+            let given = read_given_keys(given, &env_var)?;
 
-            provider.read(account, &login)
+            provider.read(account, &login, &given).map_err(|error| {
+                to_holding_agent(error, agent, profile, &login)
+            })
         },
     }
-}
-
-/// Whether a key added by hand for the provider `provider` is the admin
-/// key of an organization, whose bill it reads, rather than a key with
-/// numbers of its own: the part offers Add account with an admin key.
-fn is_organization_part(provider: &PluginProvider) -> bool {
-    provider.entry().add_account() == Some(AddAccountKind::AdminKey)
 }
 
 #[cfg(test)]
@@ -152,7 +152,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::admin_key::AdminKeyRef;
+    use crate::given_key::KeyRef;
     use crate::plugin_provider::MockProviderPartCalls;
     use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
     use crate::registry::PluginPart;
@@ -171,7 +171,7 @@ mod tests {
     fn added(provider: &str, variable: &str) -> Account {
         Account::added(
             ProviderRef::of_id(provider),
-            AdminKeyRef::EnvVar(variable.to_string()),
+            KeyRef::EnvVar(variable.to_string()),
         )
     }
 
@@ -185,20 +185,16 @@ mod tests {
         name.to_string()
     }
 
-    /// The registry entry of a provider a plugin part reads, offering Add
-    /// account with `add_account`.
-    fn plugin_entry(
-        id: &str,
-        host: &str,
-        add_account: Option<AddAccountKind>,
-    ) -> ProviderEntry {
+    /// The registry entry of a provider a plugin part reads, offered by
+    /// Add account when `add_by_hand`.
+    fn plugin_entry(id: &str, host: &str, add_by_hand: bool) -> ProviderEntry {
         let part = PluginPart::new(id, id, "0.1.0", "", id);
         let entry = ProviderEntry::new(ProviderId::new(id), id, part)
             .with_hosts([host]);
 
-        match add_account {
-            Some(kind) => entry.with_add_account(kind),
-            None => entry,
+        match add_by_hand {
+            true => entry.with_add_by_hand(),
+            false => entry,
         }
     }
 
@@ -229,16 +225,8 @@ mod tests {
         let registry = Registry::new(
             Vec::new(),
             vec![
-                plugin_entry(
-                    "anthropic",
-                    "anthropic.com",
-                    Some(AddAccountKind::AdminKey),
-                ),
-                plugin_entry(
-                    "openai",
-                    "openai.com",
-                    Some(AddAccountKind::AdminKey),
-                ),
+                plugin_entry("anthropic", "anthropic.com", true),
+                plugin_entry("openai", "openai.com", true),
             ],
         );
         let cases = [
@@ -269,11 +257,7 @@ mod tests {
     fn an_account_whose_provider_no_entry_serves_has_no_reader() {
         let registry = Registry::new(
             Vec::new(),
-            vec![plugin_entry(
-                "example-cloud",
-                "example.com",
-                Some(AddAccountKind::Key),
-            )],
+            vec![plugin_entry("example-cloud", "example.com", true)],
         );
         let without = registry
             .clone()
@@ -303,6 +287,7 @@ mod tests {
             &providers,
             &added("example-cloud", "EXAMPLE_API_KEY"),
             &KeyPlace::Added,
+            &[],
             at(NOW),
             |_| panic!("no key is read for an account no part serves"),
         );
@@ -335,6 +320,7 @@ mod tests {
             &providers,
             &account,
             &KeyPlace::ProfileFiles(profile),
+            &[],
             at(NOW),
             no_variables,
         );
@@ -385,7 +371,7 @@ mod tests {
         calls
             .expect_read_numbers()
             .times(1)
-            .returning(move |_, _| Ok(four_dollars_twenty()));
+            .returning(move |_, _, _| Ok(four_dollars_twenty()));
         let providers = [PluginProvider::made_up(
             "example-cloud",
             &["example.com"],
@@ -398,6 +384,7 @@ mod tests {
             &providers,
             &account,
             &KeyPlace::ProfileFiles(example),
+            &[],
             at(NOW),
             |_| None,
         );
@@ -406,6 +393,7 @@ mod tests {
             &providers,
             &account,
             &KeyPlace::Added,
+            &[],
             at(NOW),
             |_| None,
         );
@@ -426,21 +414,19 @@ mod tests {
         let added = added("example-cloud", "EXAMPLE_KEY");
 
         let part = named("example-cloud");
-        for (add_account, added_reader) in [
-            (Some(AddAccountKind::Key), Some(part.clone())),
-            (Some(AddAccountKind::AdminKey), Some(part.clone())),
-            (None, None),
-        ] {
+        for (add_by_hand, added_reader) in
+            [(true, Some(part.clone())), (false, None)]
+        {
             let registry = Registry::new(
                 Vec::new(),
-                vec![plugin_entry("example-cloud", "example.com", add_account)],
+                vec![plugin_entry("example-cloud", "example.com", add_by_hand)],
             );
 
             assert_eq!(reader(&found, &registry), Some(part.clone()));
             assert_eq!(
                 reader(&added, &registry),
                 added_reader,
-                "{add_account:?}"
+                "{add_by_hand:?}"
             );
         }
     }
@@ -457,20 +443,23 @@ mod tests {
             added("example-cloud", "EXAMPLE_API_KEY"),
             Account::added(
                 ProviderRef::of_id("example-cloud"),
-                AdminKeyRef::File(file),
+                KeyRef::File(file),
             ),
         ];
 
         for account in accounts {
             let mut calls = MockProviderPartCalls::new();
+            calls.expect_read_bill().times(1).returning(|_, _, _, _| {
+                Err(SourceError::NotAvailable(Unavailable::NoBill))
+            });
             calls
                 .expect_read_numbers()
-                .withf(|key, _| {
+                .withf(|key, _, _| {
                     matches!(key, KeySource::Given(given)
                         if given.as_str() == MADE_UP_KEY)
                 })
                 .times(1)
-                .returning(|_, _| Ok(four_dollars_twenty()));
+                .returning(|_, _, _| Ok(four_dollars_twenty()));
             let providers = [PluginProvider::made_up(
                 "example-cloud",
                 &["example.com"],
@@ -482,6 +471,7 @@ mod tests {
                 &providers,
                 &account,
                 &KeyPlace::Added,
+                &[],
                 at(NOW),
                 |name| {
                     (name == "EXAMPLE_API_KEY").then(|| MADE_UP_KEY.to_string())
@@ -510,44 +500,56 @@ mod tests {
             &providers,
             &added("example-cloud", "EXAMPLE_API_KEY"),
             &KeyPlace::Added,
+            &[],
             at(NOW),
             no_variables,
         );
 
         assert_eq!(
             numbers,
-            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(
-                AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
+            Err(SourceError::NotAvailable(Unavailable::KeyMissing(
+                KeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
             )))
         );
     }
 
-    /// Issue 15: an organization added by hand with an admin key, at a
-    /// provider whose part offers Add account with an admin key, reads its
-    /// bill through the part; the key reaches it only as a handle.
+    /// Issue 20: an account added by hand reads its bill when its part
+    /// reads one, with its key and the keys given for it, each as a
+    /// handle; its numbers are then not read.
     #[test]
-    fn an_added_admin_key_reads_the_bill_through_the_part() {
+    fn an_added_account_reads_its_bill_with_the_given_keys() {
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_numbers().never();
         calls
             .expect_read_bill()
-            .withf(|key, _| {
-                matches!(key, KeySource::Given(given)
-                    if given.as_str() == "sk-admin-made-up")
+            .withf(|key, _, given, _| {
+                matches!(key, KeySource::Given(own)
+                    if own.as_str() == "sk-made-up-own")
+                    && matches!(given, [(slot, KeySource::Given(org))]
+                        if slot == "admin" && org.as_str() == "sk-made-up-org")
             })
             .times(1)
-            .returning(|_, _| Ok(PartBill { days: Vec::new() }));
+            .returning(|_, _, _, _| Ok(PartBill { days: Vec::new() }));
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls)
-                .with_add_account(AddAccountKind::AdminKey);
+                .with_add_by_hand();
+        let given = [GivenKey::new(
+            "admin",
+            KeyRef::EnvVar(String::from("EXAMPLE_ORG_KEY")),
+        )];
 
         let numbers = read_account_numbers(
             &[],
             &[provider],
-            &added("example-cloud", "EXAMPLE_ADMIN_KEY"),
+            &added("example-cloud", "EXAMPLE_OWN_KEY"),
             &KeyPlace::Added,
+            &given,
             at(NOW),
-            |_| Some(String::from("sk-admin-made-up")),
+            |name| match name {
+                "EXAMPLE_OWN_KEY" => Some(String::from("sk-made-up-own")),
+                "EXAMPLE_ORG_KEY" => Some(String::from("sk-made-up-org")),
+                _ => None,
+            },
         );
 
         let Ok(AccountNumbers::Bill(bill)) = numbers else {

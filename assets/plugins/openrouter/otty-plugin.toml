@@ -10,9 +10,12 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "openrouter.wasm"
 
-# One contract version per kind of part the .wasm exports.
+# One contract version per kind of part the .wasm exports, and the
+# language receiver: the texts of the needs come in every language of
+# OTTY.
 [api]
 provider = "0.1"
+language = "0.1"
 
 [[provider]]
 id = "openrouter"
@@ -20,7 +23,7 @@ name = "OpenRouter"
 icon = "openrouter.svg"
 hosts = ["openrouter.ai"]
 usage_page = "https://openrouter.ai/activity"
-add_by_hand = "key"
+add_by_hand = true
 
 # Apply only while a function of this part runs.
 [provider.permissions]

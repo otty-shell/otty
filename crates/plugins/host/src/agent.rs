@@ -14,10 +14,10 @@ use wasmtime::component::InstancePre;
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agent::v0_1::exports::otty::agent::agent::{
-    Answer, Answers, Billing, Command, Connection, Login, LoginRef,
-    ModelTokens, Profile, ProfilePlace, ProfileStatus, ProjectStats,
-    ProviderRef, RecordCounts, Session, SessionStats, SpendItem, SpendKind,
-    SpendPlace, TokenCount,
+    Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens,
+    Profile, ProfilePlace, ProfileStatus, ProjectStats, ProviderRef,
+    RecordCounts, Session, SessionStats, SpendItem, SpendKind, SpendPlace,
+    TokenCount,
 };
 use crate::agent::v0_1::exports::otty::agent::agent::{Guest, GuestIndices};
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
@@ -28,7 +28,8 @@ pub use crate::operations::v0_1::otty::host::keys::{
 };
 /// The host's types the agent contract uses.
 pub use crate::operations::v0_1::otty::host::types::{
-    Credits, HostError, Identity, LimitWindow, Limits, LoginKind, ReadError,
+    Command, Credits, HostError, Identity, KeyAsk, LimitWindow, Limits,
+    LoginKind, Need, NeedAction, ReadError,
 };
 use crate::pacing::PaceKey;
 
@@ -152,16 +153,6 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// The command that logs the profile in.
-    pub fn login_command(
-        &mut self,
-        profile: &Profile,
-    ) -> Result<Command, CallError> {
-        self.call(CallKind::Quick, |guest, store| {
-            guest.call_login_command(store, profile)
-        })
-    }
-
     /// The limits the agent itself shows for `login`, from wherever the
     /// part reads them. A reading that ran a program or a hidden terminal
     /// is slow: it runs at most once in the five minutes of the limits
@@ -213,6 +204,19 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
     ) -> Result<Result<ProjectStats, ReadError>, CallError> {
         self.call(CallKind::Reading, |guest, store| {
             guest.call_read_project_stats(store, profile, folder)
+        })
+    }
+
+    /// What the user must do now that a provider refused `login` of
+    /// `profile`, or it expired, as the part that found the login says;
+    /// `None` when it says nothing.
+    pub fn login_refused(
+        &mut self,
+        profile: &Profile,
+        login: &LoginRef,
+    ) -> Result<Option<Need>, CallError> {
+        self.call(CallKind::Quick, |guest, store| {
+            guest.call_login_refused(store, profile, login)
         })
     }
 
@@ -390,6 +394,69 @@ mod tests {
                 ("s1", "Fix the cart total")
             ]
         );
+    }
+
+    /// Issue 20: the part writes its needs in the language OTTY shows at
+    /// each call: a language picked after the load reaches the next call.
+    #[test]
+    fn a_part_answers_in_the_language_of_each_call() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let env = template_env();
+        let plugin = load_template(&engine, &env);
+        let mut batch = plugin
+            .start_calls(&PartRef::agent(AGENT))
+            .expect("a listed part");
+        let nobody = Profile {
+            folder: env
+                .home()
+                .join(".example-agent-nobody")
+                .display()
+                .to_string(),
+            is_default: false,
+            ..default_profile()
+        };
+        let title_now = |batch: &mut crate::CallBatch<'_>| {
+            let status = batch.agent().expect("an agent part").detect(&nobody);
+            let Ok(ProfileStatus::NotLoggedIn(need)) = status else {
+                panic!("not logged in: {status:?}");
+            };
+            assert!(matches!(need.action, NeedAction::Run(_)), "{need:?}");
+            need.title
+        };
+
+        let before = title_now(&mut batch);
+        engine.set_language("ru");
+        let after = title_now(&mut batch);
+
+        assert_eq!(before, "Needs login");
+        assert_eq!(after, "Нужен вход");
+    }
+
+    /// Issue 20: the agent part that found a login says what the user
+    /// must do once a provider refused it.
+    #[test]
+    fn the_agent_part_tells_what_to_do_with_a_refused_login() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::agent(AGENT))
+            .expect("a listed part");
+        let login = LoginRef::EnvVar("EXAMPLE_CLOUD_KEY".to_string());
+
+        let need = batch
+            .agent()
+            .expect("an agent part")
+            .login_refused(&default_profile(), &login);
+
+        let Ok(Some(need)) = need else {
+            panic!("a need: {need:?}");
+        };
+        assert_eq!(need.id, "login-refused");
+        assert!(matches!(need.action, NeedAction::Run(_)), "{need:?}");
     }
 
     #[test]

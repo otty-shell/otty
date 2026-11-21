@@ -130,6 +130,7 @@ impl TestHost {
             manifest,
             home,
             vars: Vec::new(),
+            language: String::from("en"),
             now_ms: None,
             keyring: Vec::new(),
             keyring_allowed: false,
@@ -192,6 +193,14 @@ impl TestHost {
         self
     }
 
+    /// The same host with OTTY's interface in the language `tag`, such as
+    /// `ru`; English until then.
+    pub fn with_language(self, tag: &str) -> Self {
+        self.state.borrow_mut().language = tag.to_string();
+
+        self
+    }
+
     /// The same host with its clock stopped at `now_ms`.
     pub fn with_now_ms(self, now_ms: i64) -> Self {
         self.state.borrow_mut().now_ms = Some(now_ms);
@@ -240,6 +249,13 @@ impl TestHost {
             .borrow_mut()
             .programs
             .answer_terminal(program, args, screens);
+    }
+
+    /// OTTY's interface switches to the language `tag` now, as when the
+    /// user picks another: the next [`env::language`](crate::env::language)
+    /// of any part gives it.
+    pub fn set_language(&self, tag: &str) {
+        self.state.borrow_mut().language = tag.to_string();
     }
 
     /// A handle to the made-up key `value`, as OTTY gives a provider part.
@@ -333,6 +349,7 @@ struct HostState {
     manifest: Manifest,
     home: PathBuf,
     vars: Vec<(String, String)>,
+    language: String,
     now_ms: Option<i64>,
     keyring: Vec<(String, String, String)>,
     keyring_allowed: bool,
@@ -603,6 +620,11 @@ pub(crate) fn var(name: &str) -> Option<String> {
 pub(crate) fn home() -> String {
     with_host(|state, _| Ok(state.home.display().to_string()))
         .unwrap_or_default()
+}
+
+pub(crate) fn language() -> String {
+    with_host(|state, _| Ok(state.language.clone()))
+        .unwrap_or_else(|_| String::from("en"))
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -1452,6 +1474,21 @@ mod tests {
                 "no canned answer for made-up --version".to_string()
             ))
         );
+    }
+
+    /// Issue 20: the language is the one OTTY shows at each call, not the
+    /// one of the start.
+    #[test]
+    fn the_language_is_the_one_of_each_call() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+
+        let before = host.as_agent(AGENT, crate::env::language);
+        host.set_language("pt-BR");
+        let after = host.as_agent(AGENT, crate::env::language);
+
+        assert_eq!(before, "en");
+        assert_eq!(after, "pt-BR");
     }
 
     #[test]

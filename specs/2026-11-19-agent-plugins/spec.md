@@ -1,7 +1,8 @@
 # Agent and provider plugins
 
 Status: decisions agreed with the owner on 2026-11-19; the plugin model,
-the official set and the open questions settled on 2026-11-20
+the official set and the open questions settled on 2026-11-20; the needs
+of plugins, the language and the prices settled on 2026-11-21 (issue 20)
 
 ## Problem
 
@@ -114,6 +115,13 @@ OTTY release.
   `otty:provider@0.1.0`. There is no combined contract: a component
   exports one or both, and the plugin's manifest names the version of
   each one it exports in `[api]` (`agent = "0.1"`, `provider = "0.1"`).
+- One optional contract belongs to no part (owner, 2026-11-21, issue 20):
+  the language receiver `otty:language@0.1.0`, at the root of the SDK
+  and not under agent or provider. It has one function,
+  `language-changed(tag) -> bool`, true when the plugin's texts depend on
+  the language. The SDK trait is `Language`, exported with
+  `export!(T with agent, provider, language)`; the manifest names it as
+  `[api] language = "0.1"` and needs no part for it.
 - A plugin exports each trait once, so all its agent parts share one
   `agent` version and all its provider parts share one `provider`
   version. The parts are told apart by the id OTTY passes to each call.
@@ -122,8 +130,8 @@ OTTY release.
   ones. A plugin runs only if OTTY knows every contract version in its
   `[api]`; otherwise the whole plugin shows "Needs a newer OTTY".
 - The only macro is `export!`, which names the plugin type and the traits
-  it exports: `export!(OpenAi with agent, provider)`. It wraps the export
-  that `wit-bindgen` makes.
+  it exports: `export!(OpenAi with agent, provider, language)`. It wraps
+  the export that `wit-bindgen` makes.
 - Plugin authors depend on the SDK by a git tag of the OTTY repository
   for now. It goes to crates.io with its first stable version
   (2026-11-20). The official plugins in this repository use it by path.
@@ -139,26 +147,61 @@ OTTY release.
   the agent Codex and the provider OpenAI; a pack such as "OpenAI-
   compatible providers" may list many provider parts.
 - **Agent part**: finds the agent's profiles (config folders), reads
-  sessions, tokens, projects and the agent's version, gives the launch,
-  resume and login commands, and reports which logins and keys sit in a
+  sessions, tokens, projects and the agent's version, gives the launch
+  and resume commands, and reports which logins and keys sit in a
   profile and where (file and field, environment variable, keyring entry,
   database field), with the provider id or the host each is for. It may
   also read limits the agent itself shows (Codex `app-server` and
   session files, Claude Code `/usage`): where they come from, and in
-  which order, is the part's business (issue 19).
+  which order, is the part's business (issue 19). A profile nobody is
+  logged in with is `not-logged-in(need)`: the need's `run` is the
+  login command (issue 20).
 - **Provider part**: given a key handle, says whose account it is (account
   id or organization id, email, plan) and reads the account's numbers:
   limits (with the extra usage a subscription may buy), credits, Left, Key
-  limit, Spent this month, the bill with an admin key; and names its usage
-  pages. OTTY asks it for the limits of a subscription login before the
-  agent part (issue 15); that order is the one rule OTTY keeps, because
-  the parts may come from different plugins, such as OpenCode with
-  DeepSeek (issue 19). It never sees when a login
-  token expires or what it may read: it sends the request and a refusal
-  is `key-refused`, which OTTY shows for a subscription as "not logged
-  in" (owner question of issue 12, settled in issue 15); a part may read
+  limit, Spent this month, the bill of an organization; and names its
+  usage pages. A key the part needs and the account does not have, such
+  as the admin key of an Anthropic or OpenAI bill, the part asks the user
+  for with a need (`needs-user` with `ask-key`); OTTY then passes it to
+  `numbers` and `read-bill` among the given keys, as a handle with the
+  part's slot (issue 20). OTTY asks it for the limits of a subscription
+  login before the agent part (issue 15); that order is the one rule OTTY
+  keeps, because the parts may come from different plugins, such as
+  OpenCode with DeepSeek (issue 19). It never sees when a login token
+  expires or what it may read: it sends the request, and a refused or
+  expired login that an agent keeps is `login-refused`; a part may read
   the expiry from the token's JWT claims and send nothing, as OpenAI's
-  does. OTTY never renews a login.
+  does. The provider part does not know which agent keeps the login, so
+  it writes no need for it: OTTY asks the agent part of each profile that
+  holds the login (`login-refused(profile, login) -> option<need>` of the
+  agent contract) and shows its need, such as `run(codex)` or
+  `run(opencode auth login)` (owner, 2026-11-21, issue 20). OTTY never
+  renews a login.
+- **A part gives its own needs** (owner, 2026-11-21, issue 20). A need is
+  a stable id (so the same need from two reads shows once), a title, a
+  text and one action: `run(command)` in a terminal tab, `ask-key` (a
+  field for a key: the part's slot, a label, a hint, an optional prefix
+  and an optional `https` page), `open-page(url)` (`https` only) or
+  `copy-report(text)`. Everything the user must do for an agent or a
+  provider comes from the part: not logged in, the login expired, a key
+  missing or refused, a key of another kind to read a bill. OTTY shows it
+  as it is, with a label naming the plugin ("OpenAI plugin"). OTTY keeps
+  only the needs about plugins and its own permissions, which a plugin
+  can not tell about itself, and shows them with no plugin label: a
+  plugin update waits for the user's OK, a part is off, a key was found
+  for a host no plugin serves, a plugin failed, ran out of time or was
+  paused, the format of an agent's files changed for the plugin, allow
+  the system keyring, and "the login was refused" (no button) when the
+  agent part of a refused login gives no need, fails or runs out of
+  time. Needs of a part are the same when they have the same part,
+  profile and id.
+- **Texts in the user's language** (owner, 2026-11-21, issue 20). The
+  host tells the part the language of OTTY's interface (`env.language`),
+  the one shown at that call, not at load; the part writes its needs in
+  it or in English. The contract carries no translation tables. When the
+  user changes the language, OTTY calls the language receiver (Decision
+  3) of every plugin that exports it, and reads Agents mode again at once
+  when one answers true; a plugin without it is not called.
 - **Each part on its own.** The user turns each part on or off on the
   Plugins page. A failing part is paused alone (Decision 8). Remove
   deletes the whole plugin.
@@ -198,6 +241,11 @@ after, as today (`account_numbers/mod.rs`).
   repeated answers by an identity the plugin returns, prices and money
   estimates, joining accounts, and the "format changed" verdict from the
   counts of records the plugin saw and understood.
+- **Prices are OTTY's** (owner, 2026-11-21). The price table (LiteLLM) is
+  an OTTY feature, fetched once for all plugins. Plugins report tokens,
+  and OTTY prices them. A host operation for a plugin to ask OTTY for the
+  price of a model is added only when a plugin needs to compute money
+  itself; none does today.
 
 ### 7. Permissions: declared per part, shown, and applied by context
 
@@ -324,6 +372,13 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
   and its repository.
 - New needs: "Key for <host> found in <agent>: no provider plugin [Add
   plugin…]" and "Plugin update needs your OK".
+- A part's need shows as the part wrote it, with a small label naming the
+  plugin ("OpenAI plugin"); OTTY's own needs carry no label (Decision 4).
+  The button runs the action: "Run `<command>`" opens a terminal tab,
+  "<label>…" opens a key field named by the part's label with its hint,
+  prefix and page, "Open <host>" opens the page, "Copy report" copies the
+  text. A key given there is kept in `agents.json` as a file path or a
+  variable name under the part's slot, never the key (issue 20).
 - Agents mode keeps its look: the left panel with Accounts, Profiles and
   Projects, and the account, profile and project pages of spec
   `2026-11-19-agents-accounts`.
@@ -377,6 +432,7 @@ wasm = "openai.wasm"
 [api]                             # one version per contract the .wasm exports
 agent = "0.1"
 provider = "0.1"
+language = "0.1"                  # the language receiver; belongs to no part
 
 [[agent]]
 id = "codex"                      # saved in agents.json; never changes
@@ -411,7 +467,7 @@ icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]  # a host is this or ends with "." + this
 usage_page = "https://platform.openai.com/usage"            # of a key or an organization
 plan_usage_page = "https://chatgpt.com/codex/settings/usage" # of a subscription; usage_page when absent
-add_by_hand = "admin-key"         # Add account offers it: "key", "admin-key" or absent
+add_by_hand = true                # Add account offers it for a key no agent uses
 
 [provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
@@ -432,6 +488,7 @@ wasm = "opencode.wasm"
 
 [api]
 agent = "0.1"
+language = "0.1"
 
 [[agent]]
 id = "opencode"
@@ -469,7 +526,7 @@ and an argument pattern, hidden terminals as
 `[[agent.permissions.keyring]]` with service, user and the JSON fields
 holding keys. The manifest is checked as a whole: every part needs the
 contract of its kind in `[api]`, and `[api]` names no contract without a
-part.
+part, except `language`, which belongs to the whole plugin.
 
 ## SDK
 
@@ -492,7 +549,8 @@ pub trait Agent {
     /// extra folders such as `~/.codex-work` that hold a login or a session.
     fn profiles(agent: &AgentId, env: &Env) -> Vec<ProfilePlace>;
 
-    /// Whether the profile is installed, logged in, or needs a login.
+    /// Whether the profile is logged in. Nobody logged in is
+    /// `ProfileStatus::NotLoggedIn(need)`, the need saying how to log in.
     fn detect(profile: &Profile) -> ProfileStatus;
 
     /// The agent's version written in the profile's newest files.
@@ -518,9 +576,6 @@ pub trait Agent {
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&SessionId>) -> Command;
 
-    /// The command that logs the profile in.
-    fn login_command(profile: &Profile) -> Command;
-
     /// The limits the agent itself shows for `login`. The part tries its
     /// own programs, files or servers in its own order and gives the first
     /// limits it gets, or one error. Default: not supported.
@@ -532,6 +587,12 @@ pub trait Agent {
         -> Result<SessionStats, ReadError> { Err(ReadError::NotSupported) }
     fn project_stats(_profile: &Profile, _folder: &str)
         -> Result<ProjectStats, ReadError> { Err(ReadError::NotSupported) }
+
+    /// What the user must do now that a provider part refused `login` of
+    /// the profile (`ReadError::LoginRefused`), such as run the agent so
+    /// it renews the login. Default: none, and OTTY says the login was
+    /// refused, with no button.
+    fn login_refused(_profile: &Profile, _login: &LoginRef) -> Option<Need> { None }
 }
 
 /// One company that sells model use: whose account a key is and its
@@ -541,20 +602,57 @@ pub trait Provider {
     fn account(provider: &ProviderId, key: &Key, found: &LoginFacts)
         -> Result<AccountFacts, ReadError>;
 
-    /// The account's numbers right now. Each part is optional.
-    fn numbers(provider: &ProviderId, account: &AccountFacts, key: &Key)
-        -> Result<AccountNumbers, ReadError>;
+    /// The account's numbers right now. Each part is optional. `given`
+    /// holds the keys the user gave for the account after an `AskKey`
+    /// need of the part, each under its slot.
+    fn numbers(provider: &ProviderId, account: &AccountFacts, key: &Key,
+               given: &[GivenKey]) -> Result<AccountNumbers, ReadError>;
 
-    /// The bill of an organization over the UTC days `days`, read with an
-    /// admin key the user added (by hand, or saved for an API key profile).
+    /// The bill of an organization over the UTC days `days`, read with the
+    /// account's `key` or a key the user gave. A part that needs a key it
+    /// has not got answers `ReadError::NeedsUser` with an `AskKey` need.
     /// The part walks the pages; OTTY makes one day of each. Default: none.
-    fn read_bill(_provider: &ProviderId, _account: &AccountFacts, _admin_key: &Key,
-                 _days: &DayRange) -> Result<Bill, ReadError> { Err(ReadError::NotSupported) }
+    fn read_bill(_provider: &ProviderId, _account: &AccountFacts, _key: &Key,
+                 _given: &[GivenKey], _days: &DayRange)
+        -> Result<Bill, ReadError> { Err(ReadError::NotSupported) }
+}
+
+/// The optional language receiver of the whole plugin, not of a part.
+pub trait Language {
+    /// The user changed the language of OTTY's interface to `tag`. `true`
+    /// when the plugin's texts depend on it: OTTY reads its parts again.
+    fn language_changed(tag: &str) -> bool;
+}
+
+/// One thing only the user can do, with one button, in the language of
+/// `env::language()` or in English.
+pub struct Need {
+    pub id: String,                 // stable within the part
+    pub title: String,
+    pub text: String,
+    pub action: NeedAction,
+}
+
+pub enum NeedAction {
+    Run(Command),                   // in a terminal tab: `codex login`, or the agent itself
+    AskKey(KeyAsk),                 // slot, label, hint, prefix, page
+    OpenPage(String),               // `https` only
+    CopyReport(String),
+}
+
+/// Why a part could not give what OTTY asked for.
+pub enum ReadError {
+    NotSupported,
+    Host(HostError),
+    Unexpected(String),
+    NeedsUser(Need),                // the part can not read until the user does this
+    LoginRefused,                   // the provider refused a login an agent keeps
+    Failed(String),
 }
 
 /// A login or key found in a profile.
 pub struct Login {
-    pub kind: LoginKind,            // Subscription, ApiKey, AdminKey, GatewayToken
+    pub kind: LoginKind,            // Subscription, ApiKey, GatewayToken
     pub for_whom: ProviderRef,      // Id("openai") or Host("api.deepseek.com")
     pub place: KeyPlace,            // where the host reads the key again
     pub identity: Option<Identity>, // account id, organization id or email, when the file says
@@ -606,7 +704,9 @@ The helpers are plain functions: `files::list`, `files::read`,
 `files::lines(path, markers)` (an iterator over batches),
 `files::json_with_keys(path)`, `sqlite::query`, `http::request`,
 `programs::run`, `programs::talk`, `terminal::start`, `keyring::read`,
-`env::var`, `clock::now`, `log::warn`. A `Key` has `fingerprint()`,
+`env::var`, `env::language`, `env::in_language(texts)` (one of the
+part's translations for the language now, else English), `clock::now`,
+`log::warn`, and `given_key(given, slot)`. A `Key` has `fingerprint()`,
 `has_prefix(text)` and `jwt_claims()`, and goes into a request as
 `request.header_with_key("authorization", "Bearer ", &key)`.
 
@@ -614,12 +714,12 @@ A plugin ends with one line that names the traits it exports; they must
 match its `[api]`:
 
 ```rust
-otty_plugin_sdk::export!(OpenAi with agent, provider);
+otty_plugin_sdk::export!(OpenAi with agent, provider, language);
 ```
 
-Inside, the SDK keeps one generated binding for each set of traits it
-knows (agent, provider, both). Such a set is not a contract and has no
-version of its own.
+Inside, the SDK keeps one generated binding per contract; when the
+component is made, the worlds of the bindings a plugin uses are joined,
+so a set of traits is not a contract and has no version of its own.
 
 ## The first part: Codex
 
@@ -700,6 +800,19 @@ impl FileState {
 // otty-plugin-sdk/wit/host/0.1.0/host.wit
 package otty:host@0.1.0;
 
+interface types {
+  /* host-error, identity, login-kind (subscription, api-key, gateway-token),
+     limit-window, credits, limits, command */
+  variant read-error { not-supported, host(host-error), unexpected(string),
+                       needs-user(need), login-refused, failed(string) }
+  record key-ask { slot: string, label: string, hint: string,
+                   prefix: option<string>, page: option<string> }
+  variant need-action { run(command), ask-key(key-ask), open-page(string),
+                        copy-report(string) }
+  /// One thing only the user can do; texts in the language of `env.language`.
+  record need { id: string, title: string, text: string, action: need-action }
+}
+
 interface keys {
   /// A key or a login token the plugin may use but never read.
   resource key {
@@ -769,7 +882,8 @@ interface terminal {
 }
 
 interface keyring { read: func(service: string, user: string) -> result<option<json-with-keys>, host-error>; }
-interface env     { var: func(name: string) -> option<string>; home: func() -> string; }
+interface env     { var: func(name: string) -> option<string>; home: func() -> string;
+                    language: func() -> string; }   // the language shown now, such as `pt-BR`
 interface clock   { now-ms: func() -> s64; }
 interface log     { write: func(level: level, text: string); }
 ```
@@ -778,8 +892,9 @@ interface log     { write: func(level: level, text: string); }
 // otty-plugin-sdk/wit/agent/0.1.0/agent.wit
 package otty:agent@0.1.0;
 
-interface types { /* profile, login, session, spend-place, answer, answers,
-                     record-counts, limits, command, read-error, stats */ }
+interface types { /* profile, profile-status (connected, not-logged-in(need),
+                     config-folder-not-found), login, session, spend-place,
+                     answer, answers, record-counts, stats */ }
 
 interface agent {
   use types.{...};
@@ -791,10 +906,10 @@ interface agent {
   spend-places: func(profile: profile) -> list<spend-place>;
   read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
-  login-command: func(profile: profile) -> command;
   read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;   // the part picks its sources
   session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
   project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
+  login-refused: func(profile: profile, login: login-ref) -> option<need>;
 }
 
 /// What a component with agent parts imports and exports.
@@ -820,9 +935,12 @@ interface provider {
                            key-limit: option<key-limit>, spent-this-month: option<money>,
                            plan: option<string> }
   record day-range { first: string, last: string }       // UTC days, YYYY-MM-DD
+  record given-key { slot: string, key: key }             // a key the user gave for an ask-key need
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
-  numbers: func(provider: string, account: account-facts, key: borrow<key>) -> result<account-numbers, read-error>;
-  read-bill: func(provider: string, account: account-facts, admin-key: borrow<key>, days: day-range) -> result<bill, read-error>;
+  numbers: func(provider: string, account: account-facts, key: borrow<key>,
+                given: list<given-key>) -> result<account-numbers, read-error>;
+  read-bill: func(provider: string, account: account-facts, key: borrow<key>,
+                  given: list<given-key>, days: day-range) -> result<bill, read-error>;
 }
 
 /// What a component with provider parts imports and exports.
@@ -833,9 +951,23 @@ world provider-part {
 }
 ```
 
+```wit
+// otty-plugin-sdk/wit/language/0.1.0/language.wit
+package otty:language@0.1.0;
+
+interface language {
+  /// The user changed the language to `tag`; true when the plugin's texts
+  /// depend on it, and OTTY reads its parts again at once.
+  language-changed: func(tag: string) -> bool;
+}
+
+world language-receiver { export language; }
+```
+
 Each contract is its own package with its own version; there is no world
 that joins them. A component exports `otty:agent/agent@0.1.0`,
-`otty:provider/provider@0.1.0` or both. The host reads which contracts and
+`otty:provider/provider@0.1.0` or both, and may also export
+`otty:language/language@0.1.0`, which imports nothing. The host reads which contracts and
 versions a component exports from its export names (wasmtime resolves
 semver-compatible imports itself), checks them against the manifest's
 `[api]`, and refuses a plugin that names a version it does not have. The
@@ -867,6 +999,7 @@ each part.
 | `terminal.working-folders()` | OTTY's working folder of hidden terminals, also as the system resolves its links (issue 13) | `terminal` | |
 | `keyring.read(service, user)` | One keyring entry as JSON with key fields as handles | `keyring` + the user's Allow (spec `2026-11-19-agents-accounts`, Decision 8) | Read only |
 | `env.var(name)` | One environment variable as text | `env` | Key variables only through `keys.open` |
+| `env.language()` | The language of OTTY's interface shown now, as a tag (`en`, `ru`, `pt-BR`) | none | May change between two calls |
 | `clock.now-ms` | The time | none | |
 | `log.write(level, text)` | A line in the plugin's log, shown on the Plugins page | none | 64 KiB per plugin, oldest dropped |
 
@@ -903,7 +1036,8 @@ reads each account once per refresh, not per profile.
   `run` programs with argument patterns; `terminal` programs; `keyring`
   entries. Provider part: `http` hosts. A provider part gets key handles
   only for accounts of its own provider id or `hosts`: keys at the places
-  agent parts name, keys and admin keys added by hand for it, and keys
+  agent parts name, keys added by hand for it, keys the user gave for its
+  `ask-key` needs (issue 20), and keys
   OTTY found only in the keyring (after the user's Allow). A key OTTY
   reads itself (added by hand, or from the keyring) is read once for one
   read of the part and dropped after it (issues 16 and 15).
@@ -1074,9 +1208,8 @@ table above.
 - **Provider**: a `ProviderId` (a string such as `"deepseek"`, from the
   manifest; stable; changing it makes a new part) and a `ProviderEntry`
   in the registry: name, icon (SVG bytes from the plugin package), usage
-  page, hosts it serves, whether Add account offers it (`key` or
-  `admin-key`), and the plugin and part that serve it (plugin id,
-  version, repository).
+  page, hosts it serves, whether Add account offers it (`add_by_hand`),
+  and the plugin and part that serve it (plugin id, version, repository).
 - **Agent**: `AgentId` becomes an owned string from the manifest (today it
   wraps `&'static str`), and `AgentDescriptor` becomes an `AgentEntry`:
   name, icon, program, the plugin and part. What today's descriptor has as
@@ -1185,7 +1318,15 @@ then the cleanup and the docs.
   session text, and **Copy report** (issue 19).
 - **Found by OTTY** and **All accounts → Needs you**: the new needs
   "no provider plugin", "part is off", "plugin update needs your OK",
-  "plugin could not read".
+  "plugin could not read", "the login was refused", and the needs the
+  parts give, each with its plugin label (issue 20).
+- **The key a part asks for**: the `ask-key` button opens the dialog of
+  Add account named by the part's label, with its hint, the prefix the
+  key starts with and a button to its page; the user gives a file or a
+  variable. There is no admin key field or menu item of OTTY's own
+  (issue 20).
+- **Language**: when the user changes it, the needs of plugins with the
+  language receiver show in the new language at once (issue 20).
 - **Add account**: the providers come from the registry (`add_by_hand`);
   a provider with no part is not offered.
 - Everything else keeps the look of spec `2026-11-19-agents-accounts` and
@@ -1248,6 +1389,14 @@ Dependencies:
 
 ## Open questions for the owner
 
-None. The last one (how official plugins reach users before they have
+- `MODEL_MAKERS` in `crates/agents/src/litellm.rs` names providers in
+  OTTY's code (`anthropic`, `openai`, `deepseek` and others), against
+  Decision 1: it picks the LiteLLM entries of the makers that sell their
+  own models. An idea to check after issue 21: take the LiteLLM entry
+  with the plain model name and drop the list. Otherwise a provider
+  plugin names its LiteLLM provider, or the agent reports who served each
+  session.
+
+The earlier question (how official plugins reach users before they have
 their own repositories) was settled on 2026-11-20: all five are embedded,
 and authors and the owner use **Add plugin from folder…**.

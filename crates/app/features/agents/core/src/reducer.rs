@@ -125,11 +125,11 @@ pub(super) fn reduce(
         AgentsIntent::BillLoaded(loaded) => {
             let profiles = state.profiles();
             if !profiles
-                .is_shown_with_admin_key(&loaded.profile, &loaded.admin_key)
+                .is_shown_with_given_keys(&loaded.profile, &loaded.given)
             {
                 let name = loaded.profile.name();
                 log::debug!(
-                    "a bill read with an admin key no longer set dropped: {name}"
+                    "a bill read with keys no longer given dropped: {name}"
                 );
                 return Vec::new();
             }
@@ -441,9 +441,7 @@ mod tests {
 
     use iced::{Point, Size};
     use jiff::tz::TimeZone;
-    use otty_agents::{
-        AdminKeyRef, AgentCommand, ProfileStatus, SavedProfiles,
-    };
+    use otty_agents::{AgentCommand, KeyRef, ProfileStatus, SavedProfiles};
     use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::*;
@@ -499,7 +497,7 @@ mod tests {
             &mut state,
             profiles_loaded(&[
                 (claude(), connected()),
-                (codex(), ProfileStatus::NotLoggedIn),
+                (codex(), crate::testing::not_logged_in(&codex())),
                 (claude_work(), ProfileStatus::ConfigDirNotFound),
             ]),
         );
@@ -790,7 +788,7 @@ mod tests {
         let mut state = with_profiles(&[
             (claude(), connected()),
             (codex(), connected()),
-            (codex_work(), ProfileStatus::NotLoggedIn),
+            (codex_work(), crate::testing::not_logged_in(&codex_work())),
         ]);
 
         let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
@@ -990,8 +988,8 @@ mod tests {
     /// A new admin key reads another organization's bill: the bill of the
     /// old key is forgotten, even when its answer comes late.
     #[test]
-    fn a_new_admin_key_forgets_the_bill_of_the_old_one() {
-        let other_key = AdminKeyRef::EnvVar(String::from("OTHER_ADMIN_KEY"));
+    fn a_new_given_key_forgets_the_bill_of_the_old_one() {
+        let other_key = KeyRef::EnvVar(String::from("OTHER_ORG_KEY"));
         let mut state = with_billed_claude();
         let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
         let _ = reduce(&mut state, AgentsIntent::LimitsTick);
@@ -1001,8 +999,9 @@ mod tests {
             &mut state,
             profiles_with_accounts_loaded(
                 &[(claude(), api_key(), vec![organization()])],
-                SavedProfiles::default().with_admin_key_of(
+                SavedProfiles::default().with_given_key_of(
                     &organization(),
+                    "admin",
                     Some(other_key.clone()),
                 ),
             ),
@@ -1012,8 +1011,8 @@ mod tests {
 
         assert!(reloaded.contains(&AgentsOutcome::LoadBill {
             profile: claude(),
-            provider: otty_agents::ProviderRef::of_id("anthropic"),
-            admin_key: other_key,
+            organization: organization(),
+            given: vec![otty_agents::GivenKey::new("admin", other_key)],
         }));
         assert!(late.is_empty(), "the bill of the old key is dropped");
         assert_eq!(state.profiles().shown()[0].bill().answer(), None);
@@ -1064,8 +1063,8 @@ mod tests {
     // Reading the bill.
 
     #[test]
-    fn an_api_key_profile_whose_organization_has_an_admin_key_has_its_bill_read()
-     {
+    fn an_api_key_profile_whose_organization_has_a_given_key_has_its_bill_read()
+    {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -1078,7 +1077,7 @@ mod tests {
                     (claude_work(), api_key(), Vec::new()),
                     (codex(), api_key(), vec![organization()]),
                 ],
-                crate::testing::saved_with_admin_key(),
+                crate::testing::saved_with_given_key(),
             ),
         );
 
@@ -1095,7 +1094,7 @@ mod tests {
     }
 
     #[test]
-    fn a_subscription_with_an_admin_key_has_no_bill_read() {
+    fn a_subscription_with_a_given_key_has_no_bill_read() {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -1104,7 +1103,7 @@ mod tests {
             &mut state,
             profiles_with_accounts_loaded(
                 &[(claude(), connected(), vec![organization()])],
-                crate::testing::saved_with_admin_key(),
+                crate::testing::saved_with_given_key(),
             ),
         );
 
@@ -1236,8 +1235,10 @@ mod tests {
 
     #[test]
     fn the_more_button_opens_the_profile_menu_and_its_items_close_it() {
-        let mut state =
-            with_profiles(&[(claude_work(), ProfileStatus::NotLoggedIn)]);
+        let mut state = with_profiles(&[(
+            claude_work(),
+            crate::testing::not_logged_in(&claude_work()),
+        )]);
         state.set_pointer(place());
         let open = |state: &mut AgentsState| {
             reduce(state, AgentsIntent::OpenProfileMenu(claude_work()))

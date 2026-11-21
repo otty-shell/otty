@@ -1,7 +1,7 @@
 //! What the buttons of a profile do: log it in and remove it, and the
 //! answer of a save of `agents.json`.
 
-use otty_agents::{Profile, SavedProfiles};
+use otty_agents::{PartNeedAction, Profile, ProfileStatus, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::add_account_dialog::{self, AddAccountDialog};
@@ -10,23 +10,32 @@ use super::profile_changes;
 use super::rename_dialog::{self, RenameDialog};
 use super::state::AgentsState;
 
-/// The terminal tab that logs `profile` in, with the command of its agent.
-/// A profile that is not shown or whose program is not found gives none.
+/// The terminal tab that logs `profile` in, with the command the need of
+/// its agent part runs (spec 2026-11-19-agent-plugins, issue 20). A
+/// profile that is not shown, whose program is not found, or whose part
+/// gave no command to run gives none.
 pub(crate) fn log_in(
     state: &AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    if !state.profiles().can_start(profile) {
+    let profiles = state.profiles();
+    if !profiles.can_start(profile) || !profiles.can_log_in(profile) {
         return Vec::new();
     }
-    let Some(agent) = state.agent(profile.agent()) else {
+    let Some(shown) = profiles.get(profile) else {
+        return Vec::new();
+    };
+    let ProfileStatus::NotLoggedIn(Some(need)) = shown.status() else {
+        return Vec::new();
+    };
+    let PartNeedAction::Run(command) = need.action() else {
         return Vec::new();
     };
 
     vec![AgentsOutcome::OpenTab {
         title: profile.name().to_string(),
         folder: state.env().home().to_path_buf(),
-        command: agent.login(profile),
+        command: command.clone(),
     }]
 }
 
@@ -137,8 +146,8 @@ mod tests {
     fn log_in_runs_the_login_of_a_default_and_an_added_profile() {
         let mut state = with_saved_profiles(
             &[
-                (claude(), ProfileStatus::NotLoggedIn),
-                (codex_work(), ProfileStatus::NotLoggedIn),
+                (claude(), crate::testing::not_logged_in(&claude())),
+                (codex_work(), crate::testing::not_logged_in(&codex_work())),
             ],
             SavedProfiles::default().with_added(codex_work()),
         );

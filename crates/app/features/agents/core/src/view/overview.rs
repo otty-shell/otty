@@ -297,11 +297,14 @@ mod tests {
     fn log_in_need() -> NeedViewModel {
         NeedViewModel {
             place: String::from("Codex"),
+            plugin: None,
             title: String::from("needs login"),
             line: String::from("Nobody is logged in."),
             fix: Some(NeedFixViewModel {
                 label: String::from("Log in"),
-                action: Some(NeedAction::LogIn(codex())),
+                action: Some(NeedAction::OpenPage(String::from(
+                    "https://example.com/login",
+                ))),
             }),
             extra: None,
         }
@@ -377,7 +380,9 @@ mod tests {
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(
             intents,
-            vec![AgentsIntent::FixNeed(NeedAction::LogIn(codex()))]
+            vec![AgentsIntent::FixNeed(NeedAction::OpenPage(String::from(
+                "https://example.com/login"
+            )))]
         );
     }
 

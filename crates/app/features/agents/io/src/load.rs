@@ -450,7 +450,15 @@ mod tests {
             .map(|entry| entry.profile.name())
             .collect();
         assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
-        assert_eq!(loaded.profiles[2].status, ProfileStatus::NotLoggedIn);
+        assert!(
+            matches!(
+                &loaded.profiles[2].status,
+                ProfileStatus::NotLoggedIn(Some(need))
+                    if need.id() == "not-logged-in"
+            ),
+            "{:?}",
+            loaded.profiles[2].status
+        );
     }
 
     /// Spec 2026-11-19, Decision 7: a hidden profile comes apart from the
@@ -516,12 +524,12 @@ mod tests {
             &finds,
         );
 
-        assert_eq!(
-            statuses(&loaded)[1..],
-            [
-                ("Codex", &ProfileStatus::ConfigDirNotFound),
-                ("Codex · Work", &ProfileStatus::NotLoggedIn),
-            ]
+        let statuses = statuses(&loaded);
+        assert_eq!(statuses[1], ("Codex", &ProfileStatus::ConfigDirNotFound));
+        assert_eq!(statuses[2].0, "Codex · Work");
+        assert!(
+            matches!(statuses[2].1, ProfileStatus::NotLoggedIn(Some(_))),
+            "{statuses:?}"
         );
         assert_eq!(loaded.problem, None);
     }

@@ -2,7 +2,7 @@
 //! that start it.
 
 use otty_plugin_sdk::{
-    Agent, Answers, Command, KeyPlace, Limits, Login, LoginRef, Profile,
+    Agent, Answers, Command, KeyPlace, Limits, Login, LoginRef, Need, Profile,
     ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
     SessionStats, SpendItem, SpendKind, SpendPlace, clock, keys,
 };
@@ -13,20 +13,23 @@ use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::sessions::session_file_globs;
 use crate::token_expiry::expires_at_ms;
 use crate::{
-    OpenAi, accounts, app_server, detect, session_limits, sessions, spend_file,
-    stats, version,
+    OpenAi, accounts, app_server, detect, needs, session_limits, sessions,
+    spend_file, stats, version,
 };
 
 /// The program, looked up on `PATH`.
-const PROGRAM: &str = "codex";
+pub(crate) const PROGRAM: &str = "codex";
 
 impl Agent for OpenAi {
     fn profiles(_agent: &str) -> Vec<ProfilePlace> {
         profiles()
     }
 
+    /// A profile nobody is logged in with needs `codex login`.
     fn detect(profile: &Profile) -> ProfileStatus {
-        detect::status(&profile.folder)
+        let login = start_command(profile, vec!["login".to_string()]);
+
+        detect::status(&profile.folder, login)
     }
 
     /// The version the newest session file names in its first line.
@@ -73,11 +76,6 @@ impl Agent for OpenAi {
         start_command(profile, args)
     }
 
-    /// `codex login`.
-    fn login_command(profile: &Profile) -> Command {
-        start_command(profile, vec!["login".to_string()])
-    }
-
     /// The limits of a ChatGPT login; an API key has none to read.
     /// `codex app-server` first, which tells the limits now, then the last
     /// record of them in the session files. When neither answers, the
@@ -85,8 +83,8 @@ impl Agent for OpenAi {
     ///
     /// `codex app-server` renews an expired login token by itself, which
     /// a plugin never makes another agent do: with an expired token it is
-    /// not started, and the login counts as refused until Codex renews
-    /// it when the user runs it.
+    /// not started, and the read waits for the user to run Codex, which
+    /// renews it.
     fn read_limits(
         profile: &Profile,
         login: &LoginRef,
@@ -96,7 +94,8 @@ impl Agent for OpenAi {
         }
 
         let now = if has_expired(login) {
-            Err(ReadError::KeyRefused)
+            let codex = start_command(profile, Vec::new());
+            Err(ReadError::NeedsUser(needs::login_expired(codex)))
         } else {
             app_server::read_limits(&profile_env(profile))
         };
@@ -118,6 +117,20 @@ impl Agent for OpenAi {
         folder: &str,
     ) -> Result<ProjectStats, ReadError> {
         stats::project_stats(&profile.folder, folder)
+    }
+
+    /// A provider part refused the ChatGPT login of the profile, or saw it
+    /// expired, wherever it read it: Codex itself renews it in the
+    /// profile's config folder, or asks to log in again. The same need as
+    /// this part's own read of the limits gives, so it shows once. An API
+    /// key is no login Codex renews.
+    fn login_refused(profile: &Profile, login: &LoginRef) -> Option<Need> {
+        if !is_chatgpt_login(login) {
+            return None;
+        }
+
+        let codex = start_command(profile, Vec::new());
+        Some(needs::login_expired(codex))
     }
 }
 
@@ -159,8 +172,8 @@ fn has_expired(login: &LoginRef) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::JsonField;
     use otty_plugin_sdk::test_host::TestHost;
+    use otty_plugin_sdk::{JsonField, NeedAction};
 
     use super::*;
     use crate::app_server::APP_SERVER_ARGS;
@@ -244,9 +257,10 @@ mod tests {
 
     /// `codex app-server` would renew the expired token, writing Codex's
     /// login: it is not started, and with no session files to fall back
-    /// on the login is refused.
+    /// on the read waits for the user to run Codex in the profile's config
+    /// folder, which renews the login.
     #[test]
-    fn an_expired_login_starts_no_app_server() {
+    fn an_expired_login_starts_no_app_server_and_asks_to_run_codex() {
         let host = host();
         host.answer_talk("codex", &APP_SERVER_ARGS, &[]);
         let profile = profile(&host, ".codex-expired", false);
@@ -254,8 +268,55 @@ mod tests {
 
         let limits = as_part(&host, || OpenAi::read_limits(&profile, &login));
 
-        assert_eq!(limits, Err(ReadError::KeyRefused));
+        let Err(ReadError::NeedsUser(need)) = limits else {
+            panic!("a need: {limits:?}");
+        };
+        assert_eq!(need.id, "login-expired");
+        assert_eq!(need.title, "The login expired");
+        assert!(need.text.contains("Open Codex"), "{}", need.text);
+        assert_eq!(
+            need.action,
+            NeedAction::Run(command(
+                &[],
+                &[(CONFIG_VARIABLE, profile.folder.as_str())]
+            ))
+        );
         assert!(host.started().is_empty());
+    }
+
+    /// Issue 20: a provider part refused the ChatGPT login of a profile;
+    /// the need runs Codex in that profile's config folder, as the part's
+    /// own read gives it.
+    #[test]
+    fn a_refused_login_runs_codex_in_the_profiles_folder() {
+        let host = host();
+        let profile = profile(&host, ".codex-plus", false);
+        let login = token_of(&host, ".codex-plus");
+
+        let need = as_part(&host, || OpenAi::login_refused(&profile, &login))
+            .expect("a need");
+
+        assert_eq!(need.id, "login-expired");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(command(
+                &[],
+                &[(CONFIG_VARIABLE, profile.folder.as_str())]
+            ))
+        );
+    }
+
+    /// An API key is no login Codex renews: the part says nothing.
+    #[test]
+    fn a_refused_api_key_gives_no_need_of_codex() {
+        let host = host();
+        let profile = profile(&host, ".codex-work", false);
+        let key = as_part(&host, || OpenAi::logins(&profile)).remove(0);
+
+        let need =
+            as_part(&host, || OpenAi::login_refused(&profile, &key.place));
+
+        assert_eq!(need, None);
     }
 
     #[test]
@@ -318,16 +379,34 @@ mod tests {
         );
     }
 
+    /// The need of a profile nobody is logged in with runs `codex login`
+    /// in the profile's config folder, in the language of OTTY.
     #[test]
-    fn login_runs_codex_login_in_the_config_folder_of_the_profile() {
+    fn a_profile_nobody_is_logged_in_with_needs_codex_login() {
+        let host = host().with_language("ru");
+        let added = profile(&host, ".codex-loggedout", false);
+        let default = profile(&host, ".codex-loggedout", true);
+
+        let added_status = as_part(&host, || OpenAi::detect(&added));
+        let default_status = as_part(&host, || OpenAi::detect(&default));
+
+        let ProfileStatus::NotLoggedIn(need) = added_status else {
+            panic!("not logged in: {added_status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(need.title, "Нужен вход");
+        assert!(need.text.contains("Codex"), "{}", need.text);
         assert_eq!(
-            OpenAi::login_command(&default_profile()),
-            command(&["login"], &[])
+            need.action,
+            NeedAction::Run(command(
+                &["login"],
+                &[(CONFIG_VARIABLE, added.folder.as_str())]
+            ))
         );
-        assert_eq!(
-            OpenAi::login_command(&added_profile()),
-            command(&["login"], &[(CONFIG_VARIABLE, "/home/user/.codex-work")])
-        );
+        let ProfileStatus::NotLoggedIn(need) = default_status else {
+            panic!("not logged in: {default_status:?}");
+        };
+        assert_eq!(need.action, NeedAction::Run(command(&["login"], &[])));
     }
 
     /// The host walks the spend places: every session file, plain or

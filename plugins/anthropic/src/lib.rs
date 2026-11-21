@@ -10,7 +10,18 @@
 //! Its provider part `anthropic` reads the numbers of Anthropic accounts
 //! with the handles OTTY gives it: the limits of a Claude login, whichever
 //! agent keeps the login, and the bill of an organization with an admin
-//! key, both from `api.anthropic.com`.
+//! key, both from `api.anthropic.com`. A Claude login it sees refused it
+//! only reports as refused: OTTY asks the agent part that keeps it what
+//! the user must do.
+//!
+//! What only the user can do, the parts give as needs (`needs.rs`): log
+//! in to Claude Code, run Claude Code so it renews an expired login, and
+//! give or replace the admin key of an organization's bill. The texts
+//! come in every language of OTTY, so the plugin exports the language
+//! receiver.
+
+// A `ReadError` may hold a need, a record the contract can not box.
+#![allow(clippy::result_large_err)]
 
 mod anthropic;
 mod bill_days;
@@ -21,6 +32,7 @@ mod detect;
 mod file_ends;
 mod glob;
 mod logins;
+mod needs;
 mod oauth_usage;
 mod plan;
 mod probe_sessions;
@@ -41,7 +53,16 @@ mod usage_probe;
 mod usage_screen;
 mod version;
 
+use otty_plugin_sdk::Language;
+
 /// The plugin: one type serves every part its manifest lists.
 pub struct Anthropic;
 
-otty_plugin_sdk::export!(Anthropic with agent, provider);
+impl Language for Anthropic {
+    /// The texts of the needs come in every language of OTTY.
+    fn language_changed(_tag: &str) -> bool {
+        true
+    }
+}
+
+otty_plugin_sdk::export!(Anthropic with agent, provider, language);

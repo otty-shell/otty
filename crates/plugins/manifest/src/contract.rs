@@ -1,5 +1,6 @@
-//! The versioned contracts between OTTY and a plugin, one per part kind,
-//! and the one list of the versions this OTTY knows.
+//! The versioned contracts between OTTY and a plugin: one per part kind
+//! and the optional ones a plugin may export besides, such as the
+//! language receiver, and the one list of the versions this OTTY knows.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -13,10 +14,78 @@ use crate::part::PartKind;
 /// version is added (spec 2026-11-19-agent-plugins, Decision 3).
 /// `otty-plugin-host` maps each of them to its bindings, and its tests
 /// check that none is missing.
-const KNOWN_VERSIONS: [(PartKind, Version); 2] = [
-    (PartKind::Agent, Version::new(0, 1, 0)),
-    (PartKind::Provider, Version::new(0, 1, 0)),
+const KNOWN_VERSIONS: [(Contract, Version); 3] = [
+    (Contract::Agent, Version::new(0, 1, 0)),
+    (Contract::Provider, Version::new(0, 1, 0)),
+    (Contract::Language, Version::new(0, 1, 0)),
 ];
+
+/// One contract a plugin may export, each with its own versioned WIT
+/// package: the contract of a kind of part, or the language receiver,
+/// which belongs to no part (issue 20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Contract {
+    /// `otty:agent`, served by the `[[agent]]` parts.
+    Agent,
+    /// `otty:provider`, served by the `[[provider]]` parts.
+    Provider,
+    /// `otty:language`: the plugin hears when the language of OTTY's
+    /// interface changes.
+    Language,
+}
+
+impl Contract {
+    /// Every contract, in the order `[api]` lists them.
+    pub const ALL: [Contract; 3] =
+        [Contract::Agent, Contract::Provider, Contract::Language];
+
+    /// The key of the contract in `[api]`, such as `agent = "0.1"`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Contract::Agent => "agent",
+            Contract::Provider => "provider",
+            Contract::Language => "language",
+        }
+    }
+
+    /// The contract whose `[api]` key is `key`.
+    ///
+    /// ```
+    /// use otty_plugin_manifest::Contract;
+    ///
+    /// assert_eq!(Contract::from_key("language"), Some(Contract::Language));
+    /// assert_eq!(Contract::from_key("panel"), None);
+    /// ```
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|contract| contract.key() == key)
+    }
+
+    /// The name of the interface a component exports for this contract,
+    /// without its version, such as `otty:agent/agent`.
+    pub fn export_name(self) -> &'static str {
+        match self {
+            Contract::Agent => "otty:agent/agent",
+            Contract::Provider => "otty:provider/provider",
+            Contract::Language => "otty:language/language",
+        }
+    }
+
+    /// The kind of part that serves the contract; `None` for a contract
+    /// of the whole plugin, such as the language receiver.
+    pub fn part_kind(self) -> Option<PartKind> {
+        match self {
+            Contract::Agent => Some(PartKind::Agent),
+            Contract::Provider => Some(PartKind::Provider),
+            Contract::Language => None,
+        }
+    }
+}
+
+impl fmt::Display for Contract {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.key())
+    }
+}
 
 /// The version of one contract that `[api]` names, `MAJOR.MINOR` such as
 /// `0.1`. It accepts the export versions semver counts as compatible:
@@ -77,10 +146,10 @@ impl ContractVersion {
         self.requirement().matches(version)
     }
 
-    /// Whether this OTTY knows this version of the contract of `kind`.
-    pub fn is_known(self, kind: PartKind) -> bool {
-        KNOWN_VERSIONS.iter().any(|(known_kind, known)| {
-            *known_kind == kind && self.accepts(known)
+    /// Whether this OTTY knows this version of `contract`.
+    pub fn is_known(self, contract: Contract) -> bool {
+        KNOWN_VERSIONS.iter().any(|(known_contract, known)| {
+            *known_contract == contract && self.accepts(known)
         })
     }
 
@@ -103,26 +172,26 @@ impl fmt::Display for ContractVersion {
     }
 }
 
-/// The contracts a plugin uses, one version per part kind: the manifest's
+/// The contracts a plugin uses, one version per contract: the manifest's
 /// `[api]`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Api {
-    versions: BTreeMap<PartKind, ContractVersion>,
+    versions: BTreeMap<Contract, ContractVersion>,
 }
 
 impl Api {
-    /// The version of the contract of `kind`, if the plugin uses it.
-    pub fn version_of(&self, kind: PartKind) -> Option<ContractVersion> {
-        self.versions.get(&kind).copied()
+    /// The version of `contract`, if the plugin uses it.
+    pub fn version_of(&self, contract: Contract) -> Option<ContractVersion> {
+        self.versions.get(&contract).copied()
     }
 
-    /// Every contract with its version, in the order of [`PartKind`].
+    /// Every contract with its version, in the order of [`Contract`].
     pub fn iter(
         &self,
-    ) -> impl Iterator<Item = (PartKind, ContractVersion)> + '_ {
+    ) -> impl Iterator<Item = (Contract, ContractVersion)> + '_ {
         self.versions
             .iter()
-            .map(|(kind, version)| (*kind, *version))
+            .map(|(contract, version)| (*contract, *version))
     }
 
     /// The manifest's `[api]` table, checked: one known `MAJOR.MINOR` per
@@ -138,7 +207,7 @@ impl Api {
                 contract: key.clone(),
                 version: text.clone(),
             };
-            let Some(kind) = PartKind::from_key(key) else {
+            let Some(contract) = Contract::from_key(key) else {
                 return Err(needs_newer_otty());
             };
             let Some(version) = ContractVersion::parse(text) else {
@@ -147,11 +216,11 @@ impl Api {
                     version: text.clone(),
                 });
             };
-            if !version.is_known(kind) {
+            if !version.is_known(contract) {
                 return Err(needs_newer_otty());
             }
 
-            versions.insert(kind, version);
+            versions.insert(contract, version);
         }
 
         Ok(Self { versions })
@@ -163,18 +232,18 @@ impl fmt::Display for Api {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let listed: Vec<String> = self
             .iter()
-            .map(|(kind, version)| format!("{kind} {version}"))
+            .map(|(contract, version)| format!("{contract} {version}"))
             .collect();
 
         write_list(formatter, &listed)
     }
 }
 
-/// The versions of the contract of `kind` this OTTY knows, oldest first.
-pub fn known_versions(kind: PartKind) -> impl Iterator<Item = Version> {
+/// The versions of `contract` this OTTY knows, oldest first.
+pub fn known_versions(contract: Contract) -> impl Iterator<Item = Version> {
     KNOWN_VERSIONS
         .into_iter()
-        .filter(move |(known_kind, _)| *known_kind == kind)
+        .filter(move |(known, _)| *known == contract)
         .map(|(_, version)| version)
 }
 
@@ -207,10 +276,27 @@ mod tests {
                 .expect("known versions");
 
         assert_eq!(
-            api.version_of(PartKind::Agent),
+            api.version_of(Contract::Agent),
             ContractVersion::parse("0.1")
         );
         assert_eq!(api.to_string(), "agent 0.1, provider 0.1");
+    }
+
+    /// Issue 20: the language receiver is a contract of its own in
+    /// `[api]`, of no kind of part.
+    #[test]
+    fn the_language_receiver_is_a_contract_of_no_part() {
+        let api =
+            Api::of_manifest(&table(&[("language", "0.1"), ("agent", "0.1")]))
+                .expect("known versions");
+
+        assert_eq!(
+            api.version_of(Contract::Language),
+            ContractVersion::parse("0.1")
+        );
+        assert_eq!(api.to_string(), "agent 0.1, language 0.1");
+        assert_eq!(Contract::Language.part_kind(), None);
+        assert_eq!(Contract::Agent.part_kind(), Some(PartKind::Agent));
     }
 
     #[test]

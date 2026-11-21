@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::bindings::agent::exports::otty::agent::agent::Guest;
 use crate::{
-    Answers, Command, Limits, Login, LoginRef, Profile, ProfilePlace,
+    Answers, Command, Limits, Login, LoginRef, Need, Profile, ProfilePlace,
     ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
     SpendPlace,
 };
@@ -23,7 +23,10 @@ pub trait Agent {
     /// hold a login or a session.
     fn profiles(agent: &str) -> Vec<ProfilePlace>;
 
-    /// Whether the profile is logged in, or needs a login.
+    /// Whether the profile is logged in. A profile nobody is logged in
+    /// with is [`ProfileStatus::NotLoggedIn`] with the need that says how
+    /// to log in, such as a [`NeedAction::Run`](crate::NeedAction) of the
+    /// agent's login command.
     fn detect(profile: &Profile) -> ProfileStatus;
 
     /// The agent's version written in the profile's newest files. `None`:
@@ -51,9 +54,6 @@ pub trait Agent {
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&str>) -> Command;
 
-    /// The command that logs the profile in.
-    fn login_command(profile: &Profile) -> Command;
-
     /// The limits the agent itself shows for `login` of the profile. Where
     /// they come from is the plugin's business: it tries its own programs,
     /// files or servers in its own order and gives the first limits it
@@ -80,6 +80,17 @@ pub trait Agent {
         _folder: &str,
     ) -> Result<ProjectStats, ReadError> {
         Err(ReadError::NotSupported)
+    }
+
+    /// What the user must do now that a provider part refused `login` of
+    /// the profile, or saw it expired
+    /// ([`ReadError::LoginRefused`]): the provider part does not know
+    /// which agent keeps the login, so OTTY asks the agent part that
+    /// found it, such as a need that runs the agent in the profile's
+    /// folder so it renews its login. Default: `None`, and OTTY says the
+    /// login was refused, with no button.
+    fn login_refused(_profile: &Profile, _login: &LoginRef) -> Option<Need> {
+        None
     }
 }
 
@@ -124,10 +135,6 @@ impl<T: Agent> Guest for AgentExport<T> {
         T::launch(&profile, session.as_deref())
     }
 
-    fn login_command(profile: Profile) -> Command {
-        T::login_command(&profile)
-    }
-
     fn read_limits(
         profile: Profile,
         login: LoginRef,
@@ -147,5 +154,9 @@ impl<T: Agent> Guest for AgentExport<T> {
         folder: String,
     ) -> Result<ProjectStats, ReadError> {
         T::read_project_stats(&profile, &folder)
+    }
+
+    fn login_refused(profile: Profile, login: LoginRef) -> Option<Need> {
+        T::login_refused(&profile, &login)
     }
 }

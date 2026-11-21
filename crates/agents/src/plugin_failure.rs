@@ -56,7 +56,8 @@ impl PluginFailureKind {
             ReadError::Host(HostError::TimedOut(_)) => "host error: timed out",
             ReadError::Host(HostError::Failed(_)) => "host error: failed",
             ReadError::Unexpected(_) => "unexpected shape",
-            ReadError::KeyRefused => "the key was refused",
+            ReadError::NeedsUser(_) => "a need OTTY can not show",
+            ReadError::LoginRefused => "the login was refused",
             ReadError::Failed(_) => "failed",
         };
 

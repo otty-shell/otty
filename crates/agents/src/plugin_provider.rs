@@ -3,9 +3,10 @@
 //! own provider id or hosts, the part gets a handle to the key at the
 //! place an agent part found it, or to a key OTTY read itself (one the
 //! user added by hand, or one found in the system keyring), says whose
-//! account it is and reads its numbers, once per account per refresh; with
-//! an admin key it reads the bill of the organization. It never sees the
-//! key.
+//! account it is and reads its numbers, once per account per refresh, and
+//! the bill of an organization. With each read it gets the keys the user
+//! gave for the account after a need of the part asked for them, each
+//! under its slot (issue 20). It never sees a key.
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -15,21 +16,21 @@ use otty_plugin_host::provider::{
     AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, DayRange,
     LoginFacts, Money,
 };
-use otty_plugin_host::{AddByHand, KeySource, KeyText, LoadedPlugin, PartRef};
+use otty_plugin_host::{KeySource, KeyText, LoadedPlugin, PartRef};
 
 use crate::account::{Account, AccountKind};
 use crate::account_numbers::AccountNumbers;
-use crate::admin_key::AdminKey;
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::bill::Bill;
 use crate::called_part::CalledPart;
 use crate::error::{SourceError, Unavailable};
+use crate::given_key::{GivenSecret, KeySecret};
 use crate::limits::{Billing, ExtraUsage, Limits, UsageWindows};
 use crate::part_health::PartHealth;
 use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
-use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
+use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 use crate::source_id::SourceId;
 use crate::walk::Answer;
 
@@ -44,18 +45,22 @@ const READ_BILL: &str = "read-bill";
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ProviderPartCalls: Send + Sync {
     /// Whose account the key of `key` is, then its numbers, in one read
-    /// of the part.
+    /// of the part, with the keys of `given` under their slots.
     fn read_numbers(
         &self,
         key: &KeySource,
         found: &LoginFacts,
+        given: &[(String, KeySource)],
     ) -> Result<(AccountFacts, PartNumbers), SourceError>;
 
-    /// Whose organization the admin key of `admin_key` is, then its bill
-    /// over `days`, in one read of the part.
+    /// Whose organization the key of `key` is, then its bill over `days`,
+    /// in one read of the part, with the keys of `given` under their
+    /// slots.
     fn read_bill(
         &self,
-        admin_key: &KeySource,
+        key: &KeySource,
+        found: &LoginFacts,
+        given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<PartBill, SourceError>;
 }
@@ -113,14 +118,8 @@ impl PluginProvider {
         {
             entry = entry.with_plan_usage_page(page);
         }
-        match manifest_part.add_by_hand() {
-            Some(AddByHand::Key) => {
-                entry = entry.with_add_account(AddAccountKind::Key);
-            },
-            Some(AddByHand::AdminKey) => {
-                entry = entry.with_add_account(AddAccountKind::AdminKey);
-            },
-            None => {},
+        if manifest_part.can_add_by_hand() {
+            entry = entry.with_add_by_hand();
         }
 
         let health = part.health().clone();
@@ -150,76 +149,102 @@ impl PluginProvider {
     }
 
     /// The numbers of `account`, read once with the key of `login`, the
-    /// login an agent part found it by: the money of a key, or the limits
-    /// of a subscription. An account the part does not serve is not read,
-    /// and the part gets no key.
-    pub fn read(
+    /// login an agent part found it by, and the keys the user gave for it
+    /// (`given`): the money of a key, or the limits of a subscription. An
+    /// account the part does not serve is not read, and the part gets no
+    /// key.
+    pub(crate) fn read(
         &self,
         account: &Account,
         login: &Login,
+        given: &[GivenSecret],
     ) -> Result<AccountNumbers, SourceError> {
         let key = KeySource::Place(login.place.clone());
-        let found = LoginFacts {
-            kind: login.kind,
-            identity: login.identity.clone(),
-            plan: login.plan.clone(),
-        };
 
-        self.read_with(account, &key, &found)
+        self.read_with(account, &key, &login_facts(login), given)
     }
 
     /// The numbers of `account`, read once with `key`, a key OTTY read
     /// itself: from the file or the variable the user gave for an account
-    /// added by hand, or from the system keyring. The part gets only a
-    /// handle to it, for this read. An account the part does not serve is
-    /// not read, and the part gets no key.
+    /// added by hand, or from the system keyring, and the keys the user
+    /// gave for it (`given`). The part gets only a handle to each, for
+    /// this read. An account the part does not serve is not read, and the
+    /// part gets no key.
     pub(crate) fn read_given(
         &self,
         account: &Account,
-        key: &AdminKey,
+        key: &KeySecret,
+        given: &[GivenSecret],
     ) -> Result<AccountNumbers, SourceError> {
-        let key = given(key)?;
-        let found = LoginFacts {
-            kind: LoginKind::ApiKey,
-            identity: no_identity(),
-            plan: None,
-        };
+        let key = given_source(key)?;
 
-        self.read_with(account, &key, &found)
+        self.read_with(account, &key, &key_facts(), given)
     }
 
-    /// The bill up to `now` of an organization at `provider`, read once
-    /// with its admin key `admin_key`, which OTTY read from the file or
-    /// the variable the user gave: the part gets only a handle to it, for
-    /// this read. A provider the part does not serve is not read, and the
-    /// part gets no key.
+    /// The bill up to `now` of the organization `account`, read once with
+    /// the key of `login`, the login an agent part found it by, and the
+    /// keys the user gave for it (`given`). An account the part does not
+    /// serve is not read, and the part gets no key.
     pub(crate) fn read_bill(
         &self,
-        provider: &ProviderRef,
-        admin_key: &AdminKey,
+        account: &Account,
+        login: &Login,
+        given: &[GivenSecret],
         now: SystemTime,
     ) -> Result<Bill, SourceError> {
-        if !self.serves_provider(provider) {
+        let key = KeySource::Place(login.place.clone());
+
+        self.read_bill_with(account, &key, &login_facts(login), given, now)
+    }
+
+    /// The bill up to `now` of `account`, an account the user added, read
+    /// once with its key `key`, which OTTY read from the file or the
+    /// variable the user gave, and the keys the user gave for it (`given`).
+    pub(crate) fn read_given_bill(
+        &self,
+        account: &Account,
+        key: &KeySecret,
+        given: &[GivenSecret],
+        now: SystemTime,
+    ) -> Result<Bill, SourceError> {
+        let key = given_source(key)?;
+
+        self.read_bill_with(account, &key, &key_facts(), given, now)
+    }
+
+    /// The bill up to `now` of `account`, read once with the key of
+    /// `key`, which `found` tells of, and the keys of `given`. A part that
+    /// reads no bill answers "no bill"; one that needs a key asks the
+    /// user with its need.
+    fn read_bill_with(
+        &self,
+        account: &Account,
+        key: &KeySource,
+        found: &LoginFacts,
+        given: &[GivenSecret],
+        now: SystemTime,
+    ) -> Result<Bill, SourceError> {
+        if !self.serves(account) {
             return Err(SourceError::NotAvailable(Unavailable::NoBill));
         }
 
-        let key = given(admin_key)?;
+        let given = given_sources(given)?;
         let days = BillDays::up_to(now);
-        let read = self.calls.read_bill(&key, &days.range())?;
+        let read = self.calls.read_bill(key, found, &given, &days.range())?;
 
         Ok(days.bill_of(&read))
     }
 
     /// The numbers of `account`, read once with the key of `key`, which
-    /// `found` tells of; the part gets no key of an account it does not
-    /// serve. A subscription whose login the provider refused is not
-    /// logged in: the login expired or may not read the numbers, and OTTY
-    /// renews no login.
+    /// `found` tells of, and the keys of `given`; the part gets no key of
+    /// an account it does not serve. What the user must do, such as log
+    /// in again, comes from the part as its need.
     fn read_with(
         &self,
         account: &Account,
         key: &KeySource,
         found: &LoginFacts,
+        given: &[GivenSecret],
     ) -> Result<AccountNumbers, SourceError> {
         if !self.serves(account) {
             return Err(SourceError::NotAvailable(
@@ -227,16 +252,8 @@ impl PluginProvider {
             ));
         }
 
-        let read = self.calls.read_numbers(key, found);
-        let (facts, numbers) = match (read, account.kind()) {
-            (Err(SourceError::KeyRefused), AccountKind::Money) => {
-                return Err(SourceError::KeyRefused);
-            },
-            (Err(SourceError::KeyRefused), _) => {
-                return Err(SourceError::NotLoggedIn);
-            },
-            (read, _) => read?,
-        };
+        let given = given_sources(given)?;
+        let (facts, numbers) = self.calls.read_numbers(key, found, &given)?;
 
         let plan = numbers.plan.clone().or(facts.plan);
         Ok(match account.kind() {
@@ -288,9 +305,9 @@ impl PluginProvider {
         Self::of_calls(entry, PartHealth::default(), Box::new(calls))
     }
 
-    /// The same provider offering Add account with `kind`.
-    pub(crate) fn with_add_account(mut self, kind: AddAccountKind) -> Self {
-        self.entry = self.entry.with_add_account(kind);
+    /// The same provider offered by Add account.
+    pub(crate) fn with_add_by_hand(mut self) -> Self {
+        self.entry = self.entry.with_add_by_hand();
         self
     }
 }
@@ -305,6 +322,7 @@ impl ProviderPartCalls for PartCalls {
         &self,
         key: &KeySource,
         found: &LoginFacts,
+        given: &[(String, KeySource)],
     ) -> Result<(AccountFacts, PartNumbers), SourceError> {
         let answer = self.part.read(READ_NUMBERS, |batch| {
             let mut calls = batch.provider()?;
@@ -313,7 +331,7 @@ impl ProviderPartCalls for PartCalls {
                 Ok(facts) => facts,
                 Err(error) => return Ok(Err(error)),
             };
-            let numbers = calls.numbers(&facts, key)?;
+            let numbers = calls.numbers(&facts, key, given)?;
 
             Ok(numbers.map(|numbers| (facts, numbers)))
         })?;
@@ -322,46 +340,72 @@ impl ProviderPartCalls for PartCalls {
             let not_supported =
                 SourceError::NotAvailable(Unavailable::NoAccountSource);
 
-            read_error(&self.part, READ_NUMBERS, &error, not_supported)
+            read_error(&self.part, READ_NUMBERS, &error, not_supported, None)
         })
     }
 
     fn read_bill(
         &self,
-        admin_key: &KeySource,
+        key: &KeySource,
+        found: &LoginFacts,
+        given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<PartBill, SourceError> {
-        let found = LoginFacts {
-            kind: LoginKind::AdminKey,
-            identity: no_identity(),
-            plan: None,
-        };
-
         let answer = self.part.read(READ_BILL, |batch| {
             let mut calls = batch.provider()?;
 
-            let facts = match calls.account(admin_key, &found)? {
+            let facts = match calls.account(key, found)? {
                 Ok(facts) => facts,
                 Err(error) => return Ok(Err(error)),
             };
 
-            calls.read_bill(&facts, admin_key, days)
+            calls.read_bill(&facts, key, given, days)
         })?;
 
         answer.map_err(|error| {
             let not_supported = SourceError::NotAvailable(Unavailable::NoBill);
 
-            read_error(&self.part, READ_BILL, &error, not_supported)
+            read_error(&self.part, READ_BILL, &error, not_supported, None)
         })
     }
 }
 
 /// A handle source for `key`, a key OTTY read itself; a blank key is
 /// gone.
-fn given(key: &AdminKey) -> Result<KeySource, SourceError> {
+fn given_source(key: &KeySecret) -> Result<KeySource, SourceError> {
     KeyText::new(key.secret())
         .map(KeySource::Given)
         .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))
+}
+
+/// A handle source for each key of `given`, with its slot.
+fn given_sources(
+    given: &[GivenSecret],
+) -> Result<Vec<(String, KeySource)>, SourceError> {
+    given
+        .iter()
+        .map(|given| {
+            Ok((given.slot().to_string(), given_source(given.secret())?))
+        })
+        .collect()
+}
+
+/// What the agent part found of `login`.
+fn login_facts(login: &Login) -> LoginFacts {
+    LoginFacts {
+        kind: login.kind,
+        identity: login.identity.clone(),
+        plan: login.plan.clone(),
+    }
+}
+
+/// What OTTY knows of a key it read itself: an API key, known by the key.
+fn key_facts() -> LoginFacts {
+    LoginFacts {
+        kind: LoginKind::ApiKey,
+        identity: no_identity(),
+        plan: None,
+    }
 }
 
 /// An identity that names nothing: OTTY knows the account by the key.
@@ -430,7 +474,7 @@ mod tests {
 
     use super::*;
     use crate::account::{AccountIdentity, AccountLogin, FoundIn};
-    use crate::admin_key::AdminKeyRef;
+    use crate::given_key::{GivenSecret, KeyRef};
     use crate::key_fingerprint::KeyFingerprint;
     use crate::limits::Credits;
     use crate::testing::{NOW, at};
@@ -506,11 +550,11 @@ mod tests {
         calls
             .expect_read_numbers()
             .times(1)
-            .returning(|_, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login());
+        let numbers = provider.read(&account, &key_login(), &[]);
 
         assert_eq!(account.found_in().len(), 2);
         assert_eq!(
@@ -539,7 +583,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&other, &key_login());
+        let numbers = provider.read(&other, &key_login(), &[]);
 
         assert_eq!(
             numbers,
@@ -559,7 +603,7 @@ mod tests {
             FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
         );
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _| {
+        calls.expect_read_numbers().returning(|_, _, _| {
             let facts = AccountFacts {
                 identity: no_identity(),
                 plan: Some("Team".to_string()),
@@ -569,7 +613,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login());
+        let numbers = provider.read(&account, &key_login(), &[]);
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -588,13 +632,13 @@ mod tests {
     fn an_added_key_reaches_the_part_as_a_given_key() {
         let account = Account::added(
             ProviderRef::of_id("deepseek"),
-            AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".to_string()),
+            KeyRef::EnvVar("DEEPSEEK_API_KEY".to_string()),
         );
-        let key = AdminKey::made_up("sk-made-up-deepseek-key-0000");
+        let key = KeySecret::made_up("sk-made-up-deepseek-key-0000");
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|key, found| {
+            .withf(|key, found, _| {
                 let KeySource::Given(given) = key else {
                     return false;
                 };
@@ -602,11 +646,11 @@ mod tests {
                     && found.kind == LoginKind::ApiKey
             })
             .times(1)
-            .returning(|_, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read_given(&account, &key);
+        let numbers = provider.read_given(&account, &key, &[]);
 
         assert_eq!(
             numbers,
@@ -621,15 +665,15 @@ mod tests {
     fn a_part_gets_no_added_key_of_another_provider() {
         let account = Account::added(
             ProviderRef::of_id("openrouter"),
-            AdminKeyRef::EnvVar("OPENROUTER_API_KEY".to_string()),
+            KeyRef::EnvVar("OPENROUTER_API_KEY".to_string()),
         );
-        let key = AdminKey::made_up("sk-or-v1-made-up-key-0000");
+        let key = KeySecret::made_up("sk-or-v1-made-up-key-0000");
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_numbers().never();
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read_given(&account, &key);
+        let numbers = provider.read_given(&account, &key, &[]);
 
         assert_eq!(
             numbers,
@@ -664,7 +708,7 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(move |key, _| {
+            .withf(move |key, _, _| {
                 let KeySource::Place(KeyPlace::JsonField(field)) = key else {
                     return false;
                 };
@@ -672,11 +716,11 @@ mod tests {
                     && field.pointer == "/env/ANTHROPIC_AUTH_TOKEN"
             })
             .times(1)
-            .returning(|_, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read(&account, &login);
+        let numbers = provider.read(&account, &login, &[]);
 
         assert!(provider.serves(&account));
         assert!(
@@ -714,17 +758,23 @@ mod tests {
         }
     }
 
-    /// Issue 12 of spec 2026-11-19-agent-plugins: a part tries a login;
-    /// one the provider refused is "not logged in" for a subscription and
-    /// "key refused" for a key.
+    /// Issue 20: what the user must do comes from the part as its need,
+    /// the same for a subscription and a key; OTTY writes none of it.
     #[test]
-    fn a_refused_login_is_not_logged_in_and_a_refused_key_refused() {
-        let refused = || {
+    fn a_need_of_the_part_is_the_answer_of_the_read_as_it_is() {
+        let need = || {
+            Box::new(crate::fixtures::key_need(
+                "example",
+                "example-cloud",
+                "admin",
+            ))
+        };
+        let asking = || {
             let mut calls = MockProviderPartCalls::new();
             calls
                 .expect_read_numbers()
                 .times(1)
-                .returning(|_, _| Err(SourceError::KeyRefused));
+                .returning(move |_, _, _| Err(SourceError::NeedsUser(need())));
             PluginProvider::made_up("example-cloud", &["example.com"], calls)
         };
         let key = key_account(
@@ -733,11 +783,40 @@ mod tests {
         );
 
         let login =
-            refused().read(&subscription("example-cloud"), &key_login());
-        let api_key = refused().read(&key, &key_login());
+            asking().read(&subscription("example-cloud"), &key_login(), &[]);
+        let api_key = asking().read(&key, &key_login(), &[]);
 
-        assert_eq!(login, Err(SourceError::NotLoggedIn));
-        assert_eq!(api_key, Err(SourceError::KeyRefused));
+        assert_eq!(login, Err(SourceError::NeedsUser(need())));
+        assert_eq!(api_key, Err(SourceError::NeedsUser(need())));
+    }
+
+    /// Issue 20: the keys the user gave for the account reach the part's
+    /// read with their slots, each as a handle to the key OTTY read.
+    #[test]
+    fn the_given_keys_reach_the_read_with_their_slots() {
+        let account = key_account(
+            ProviderRef::of_id("example-cloud"),
+            &["/home/dev/.example-agent"],
+        );
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(|_, _, given| {
+                matches!(given, [(slot, KeySource::Given(key))]
+                    if slot == "admin" && key.as_str() == "sk-made-up-admin-1")
+            })
+            .times(1)
+            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["example.com"], calls);
+        let given = [GivenSecret::made_up("admin", "sk-made-up-admin-1")];
+
+        let numbers = provider.read(&account, &key_login(), &given);
+
+        assert!(
+            matches!(numbers, Ok(AccountNumbers::Balance(_))),
+            "{numbers:?}"
+        );
     }
 
     /// Issue 15: a key account shows the money spent this month and the
@@ -749,7 +828,7 @@ mod tests {
             &["/home/dev/.example-agent"],
         );
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _| {
+        calls.expect_read_numbers().returning(|_, _, _| {
             let numbers = PartNumbers {
                 spent_this_month: Some(usd(4.2)),
                 credits: Some(otty_plugin_host::agent::Credits {
@@ -766,7 +845,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login());
+        let numbers = provider.read(&account, &key_login(), &[]);
 
         let Ok(AccountNumbers::Balance(balance)) = numbers else {
             panic!("a balance: {numbers:?}");
@@ -786,7 +865,7 @@ mod tests {
     #[test]
     fn a_subscription_keeps_the_extra_usage_next_to_its_windows() {
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _| {
+        calls.expect_read_numbers().returning(|_, _, _| {
             let numbers = PartNumbers {
                 extra_usage: Some(otty_plugin_host::provider::ExtraUsage {
                     used: Some(8.3),
@@ -801,7 +880,7 @@ mod tests {
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
         let numbers =
-            provider.read(&subscription("example-cloud"), &key_login());
+            provider.read(&subscription("example-cloud"), &key_login(), &[]);
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -856,7 +935,7 @@ mod tests {
             let mut calls = MockProviderPartCalls::new();
             calls
                 .expect_read_numbers()
-                .withf(move |key, found| {
+                .withf(move |key, found, _| {
                     matches!(key, KeySource::Place(sent)
                         if crate::plugin_values::is_same_place(sent, &place))
                         && found.kind == LoginKind::Subscription
@@ -864,7 +943,7 @@ mod tests {
                             == Some("made-up-account")
                 })
                 .times(1)
-                .returning(|_, found| {
+                .returning(|_, found, _| {
                     let facts = AccountFacts {
                         identity: found.identity.clone(),
                         plan: found.plan.clone(),
@@ -877,7 +956,7 @@ mod tests {
                 calls,
             );
 
-            let numbers = provider.read(&subscription("openai"), &login);
+            let numbers = provider.read(&subscription("openai"), &login, &[]);
 
             let Ok(AccountNumbers::Limits(limits)) = numbers else {
                 panic!("the limits: {numbers:?}");
@@ -906,7 +985,7 @@ mod tests {
             FoundIn::ProfileFolder("/home/dev/.codex-gateway".into()),
         );
 
-        let numbers = provider.read(&gateway, &key_login());
+        let numbers = provider.read(&gateway, &key_login(), &[]);
 
         assert!(!provider.serves(&gateway));
         assert_eq!(
@@ -915,27 +994,31 @@ mod tests {
         );
     }
 
-    /// Issue 15: the admin key of an organization reaches the part only
-    /// as a handle, once, for the 31 UTC days up to today; the bill holds
-    /// each of them.
+    /// Issue 15 and 20: the key of an account the user added and the keys
+    /// given for it reach the part only as handles, once, for the 31 UTC
+    /// days up to today; the bill holds each of them.
     #[test]
-    fn an_admin_key_reads_the_bill_of_the_31_days_up_to_today() {
+    fn a_given_key_reads_the_bill_of_the_31_days_up_to_today() {
         let organization = Account::added(
             ProviderRef::of_id("anthropic"),
-            AdminKeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".to_string()),
+            KeyRef::EnvVar("ANTHROPIC_API_KEY".to_string()),
         );
-        let key = AdminKey::made_up("sk-ant-admin01-made-up-key");
+        let key = KeySecret::made_up("sk-made-up-key");
+        let given = [GivenSecret::made_up("admin", "sk-made-up-org-key")];
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_bill()
-            .withf(|key, days| {
-                matches!(key, KeySource::Given(given)
-                    if given.as_str() == "sk-ant-admin01-made-up-key")
+            .withf(|key, _, given, days| {
+                matches!(key, KeySource::Given(own)
+                    if own.as_str() == "sk-made-up-key")
+                    && matches!(given, [(slot, KeySource::Given(org))]
+                        if slot == "admin"
+                            && org.as_str() == "sk-made-up-org-key")
                     && days.first == "2026-10-17"
                     && days.last == "2026-11-16"
             })
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _, _| {
                 Ok(PartBill {
                     days: vec![otty_plugin_host::provider::DayCost {
                         day: "2026-11-16".to_string(),
@@ -947,7 +1030,7 @@ mod tests {
             PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
 
         let bill = provider
-            .read_bill(organization.provider(), &key, at(NOW))
+            .read_given_bill(&organization, &key, &given, at(NOW))
             .expect("the bill");
 
         assert_eq!(bill.days().len(), 31);
@@ -955,18 +1038,18 @@ mod tests {
     }
 
     #[test]
-    fn a_part_gets_no_admin_key_of_another_provider() {
+    fn a_part_gets_no_key_of_a_bill_of_another_provider() {
         let organization = Account::added(
             ProviderRef::of_id("openai"),
-            AdminKeyRef::EnvVar("OPENAI_ADMIN_KEY".to_string()),
+            KeyRef::EnvVar("OPENAI_API_KEY".to_string()),
         );
-        let key = AdminKey::made_up("sk-admin-made-up-key");
+        let key = KeySecret::made_up("sk-made-up-key");
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_bill().never();
         let provider =
             PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
 
-        let bill = provider.read_bill(organization.provider(), &key, at(NOW));
+        let bill = provider.read_given_bill(&organization, &key, &[], at(NOW));
 
         assert_eq!(bill, Err(SourceError::NotAvailable(Unavailable::NoBill)));
     }

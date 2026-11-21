@@ -1,8 +1,10 @@
 //! The Add account dialog over the window (spec 2026-11-19, Decision 7):
-//! the provider as a drop-down with what OTTY reads of each, where the key
-//! is kept (a file or an environment variable) and its path or name; Cancel
-//! and Add. Edit key… shows the same dialog with its provider fixed and
-//! Save.
+//! the provider as a drop-down, where the key is kept (a file or an
+//! environment variable) and its path or name; Cancel and Add. Edit key…
+//! shows the same dialog with its provider fixed and Save, and so does a
+//! key a plugin part asks for, named by the part's label, with its hint,
+//! the plugin that asks, what the key starts with and a button to its
+//! page.
 
 use iced::Element;
 use iced::widget::column;
@@ -18,13 +20,13 @@ use otty_ui_kit::spacing;
 
 use super::super::add_account_dialog::AddAccountIntent;
 use super::super::event::AgentsIntent;
+use super::super::key_place_field::{KeyPlaceChoice, KeyPlaceChoiceOption};
 use super::super::model::AddAccountDialogViewModel;
-use super::super::profile_dialog::{AdminKeyChoice, AdminKeyChoiceOption};
 
 /// The places of the key, in their order.
-const KEY_CHOICES: [AdminKeyChoiceOption; 2] = [
-    AdminKeyChoiceOption(AdminKeyChoice::File),
-    AdminKeyChoiceOption(AdminKeyChoice::Variable),
+const KEY_CHOICES: [KeyPlaceChoiceOption; 2] = [
+    KeyPlaceChoiceOption(KeyPlaceChoice::File),
+    KeyPlaceChoiceOption(KeyPlaceChoice::Variable),
 ];
 
 /// Props for the Add account dialog.
@@ -41,8 +43,21 @@ pub(crate) fn view(
     let vm = props.vm;
     let send = AgentsIntent::AddAccount;
 
-    let mut body = column![small_text(vm.text, palette.text_muted())]
-        .spacing(spacing::SPACE_4);
+    let mut body = column![].spacing(spacing::SPACE_4);
+    if let Some(plugin) = vm.plugin {
+        body = body.push(small_text(plugin, palette.text_muted()));
+    }
+    body = body.push(small_text(vm.text, palette.text_muted()));
+    if let Some(prefix) = vm.prefix {
+        body = body.push(small_text(prefix, palette.text_muted()));
+    }
+    if let Some(page) = vm.page {
+        body = body.push(
+            Button::new(page, palette)
+                .kind(ButtonKind::Secondary)
+                .on_press(send(AddAccountIntent::PageOpened)),
+        );
+    }
 
     let provider = if vm.providers.is_empty() {
         column![
@@ -60,10 +75,7 @@ pub(crate) fn view(
         let options = vm
             .providers
             .iter()
-            .map(|option| {
-                NoteSelectOption::new(option.name.clone())
-                    .with_note(option.note)
-            })
+            .map(|option| NoteSelectOption::new(option.name.clone()))
             .collect();
         let providers: Vec<_> = vm
             .providers
@@ -92,7 +104,7 @@ pub(crate) fn view(
             small_text(i18n::t(Key::AgentsFieldKey), palette.text_muted()),
             segmented(
                 &KEY_CHOICES,
-                &AdminKeyChoiceOption(vm.key_choice),
+                &KeyPlaceChoiceOption(vm.key_choice),
                 move |option| send(AddAccountIntent::KeyChoicePicked(option.0)),
                 palette,
             ),
@@ -101,8 +113,8 @@ pub(crate) fn view(
     );
 
     let label = match vm.key_choice {
-        AdminKeyChoice::File => Key::AgentsAdminKeyFile,
-        AdminKeyChoice::Variable => Key::AgentsAdminKeyVariable,
+        KeyPlaceChoice::File => Key::AgentsKeyPlaceFile,
+        KeyPlaceChoice::Variable => Key::AgentsKeyPlaceVariable,
     };
     let mut key = TextField::new(i18n::t(label), vm.key, palette)
         .placeholder(vm.key_placeholder)
@@ -149,20 +161,22 @@ mod tests {
         ProviderOption {
             provider: ProviderRef::of_id("deepseek"),
             name: String::from("DeepSeek"),
-            note: "Money left",
         }
     }
 
     fn vm(can_submit: bool) -> AddAccountDialogViewModel<'static> {
         AddAccountDialogViewModel {
-            title: "Add account",
-            text: "A key no agent uses.",
+            title: String::from("Add account"),
+            text: String::from("A key no agent uses."),
+            plugin: None,
+            prefix: None,
+            page: None,
             providers: vec![deepseek()],
             provider: deepseek(),
             is_provider_list_open: false,
-            key_choice: AdminKeyChoice::File,
+            key_choice: KeyPlaceChoice::File,
             key: "~/.config/deepseek-key",
-            key_placeholder: String::from("~/.config/deepseek-api-key"),
+            key_placeholder: String::from("~/.config/deepseek-api.key"),
             key_error: None,
             error: Some(String::from("Could not save")),
             submit_label: "Add",
@@ -182,7 +196,7 @@ mod tests {
         ui.find("A key no agent uses.")
             .expect("the text should show");
         ui.find("Could not save").expect("the error should show");
-        ui.click(i18n::t(Key::AgentsAdminKeyVariable))
+        ui.click(i18n::t(Key::AgentsKeyPlaceVariable))
             .expect("the variable choice should show");
         ui.click(i18n::t(Key::ButtonCancel))
             .expect("Cancel should show");
@@ -193,11 +207,43 @@ mod tests {
             intents,
             vec![
                 AgentsIntent::AddAccount(AddAccountIntent::KeyChoicePicked(
-                    AdminKeyChoice::Variable
+                    KeyPlaceChoice::Variable
                 )),
                 AgentsIntent::AddAccount(AddAccountIntent::Cancelled),
                 AgentsIntent::AddAccount(AddAccountIntent::Submitted),
             ]
+        );
+    }
+
+    /// Issue 20: the dialog of a key a part asks for names the plugin and
+    /// what the key starts with, and its page button opens the page.
+    #[test]
+    fn the_asked_key_dialog_names_the_plugin_and_opens_its_page() {
+        let themes = ThemeManager::new();
+        let asked = AddAccountDialogViewModel {
+            title: String::from("Admin key"),
+            text: String::from("Reads the real bill."),
+            plugin: Some(String::from("Example plugin")),
+            prefix: Some(String::from("The key starts with ex-admin-.")),
+            page: Some(String::from("Open example.com")),
+            providers: Vec::new(),
+            ..vm(true)
+        };
+        let mut ui = simulator(view(AddAccountDialogProps {
+            vm: asked,
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        ui.find("Admin key").expect("the label names the dialog");
+        ui.find("Example plugin").expect("the plugin should show");
+        ui.find("The key starts with ex-admin-.")
+            .expect("the prefix should show");
+        ui.click("Open example.com").expect("the page should show");
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(
+            intents,
+            vec![AgentsIntent::AddAccount(AddAccountIntent::PageOpened)]
         );
     }
 

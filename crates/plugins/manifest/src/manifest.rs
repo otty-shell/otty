@@ -29,7 +29,7 @@ impl Manifest {
         &self.plugin
     }
 
-    /// `[api]`: the contract version of each kind of part.
+    /// `[api]`: the version of each contract the plugin exports.
     pub fn api(&self) -> &Api {
         &self.api
     }
@@ -145,12 +145,16 @@ impl Manifest {
                     id: part.id().to_string(),
                 });
             }
-            if self.api.version_of(part.kind()).is_none() {
+            if self.api.version_of(part.kind().contract()).is_none() {
                 return Err(ManifestError::PartWithoutContract(part.clone()));
             }
         }
 
-        for (kind, _) in self.api.iter() {
+        let part_kinds = self
+            .api
+            .iter()
+            .filter_map(|(contract, _)| contract.part_kind());
+        for kind in part_kinds {
             if !parts.iter().any(|part| part.kind() == kind) {
                 return Err(ManifestError::ContractWithoutPart(kind));
             }
@@ -316,7 +320,7 @@ pub struct ProviderPart {
     hosts: Vec<String>,
     usage_page: Option<String>,
     plan_usage_page: Option<String>,
-    add_by_hand: Option<AddByHand>,
+    add_by_hand: bool,
     permissions: PartPermissions,
 }
 
@@ -354,8 +358,9 @@ impl ProviderPart {
         self.plan_usage_page.as_deref()
     }
 
-    /// What Add account offers for this provider, if anything.
-    pub fn add_by_hand(&self) -> Option<AddByHand> {
+    /// Whether Add account offers this provider: the user gives a key of
+    /// an account by hand, kept where they keep it.
+    pub fn can_add_by_hand(&self) -> bool {
         self.add_by_hand
     }
 
@@ -397,20 +402,6 @@ impl ProviderPart {
                 });
             }
         }
-        let add_by_hand = match raw.add_by_hand.as_deref() {
-            None => None,
-            Some("key") => Some(AddByHand::Key),
-            Some("admin-key") => Some(AddByHand::AdminKey),
-            Some(other) => {
-                return Err(ManifestError::BadPart {
-                    part,
-                    reason: format!(
-                        "has `add_by_hand = \"{other}\"`; use \"key\" or \"admin-key\""
-                    ),
-                });
-            },
-        };
-
         Ok(Self {
             id: raw.id.clone(),
             name: raw.name.clone(),
@@ -418,19 +409,10 @@ impl ProviderPart {
             hosts: raw.hosts.clone(),
             usage_page: raw.usage_page.clone(),
             plan_usage_page: raw.plan_usage_page.clone(),
-            add_by_hand,
+            add_by_hand: raw.add_by_hand,
             permissions: PartPermissions::of_provider(&raw.permissions, &part)?,
         })
     }
-}
-
-/// What Add account offers for a provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AddByHand {
-    /// An API key.
-    Key,
-    /// An admin key that reads the organization's bill.
-    AdminKey,
 }
 
 fn check_part_id(part: &PartRef) -> Result<(), ManifestError> {
@@ -482,7 +464,7 @@ fn is_plain_file_name(name: &str, extension: &str) -> bool {
 mod tests {
     use super::*;
     use crate::path_glob::GlobProblem;
-    use crate::testing::{OPENAI_MANIFEST, edited};
+    use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST, edited};
 
     fn refusal(text: &str) -> ManifestError {
         Manifest::parse(text).expect_err("refused")
@@ -498,10 +480,7 @@ mod tests {
             manifest.parts(),
             vec![PartRef::agent("codex"), PartRef::provider("openai"),]
         );
-        assert_eq!(
-            manifest.providers()[0].add_by_hand(),
-            Some(AddByHand::AdminKey)
-        );
+        assert!(manifest.providers()[0].can_add_by_hand());
         assert_eq!(manifest.agents()[0].permissions().env(), ["CODEX_HOME"]);
     }
 
@@ -640,6 +619,21 @@ mod tests {
             error.to_string(),
             "[api] names `provider`, but the plugin has no provider part"
         );
+    }
+
+    /// Issue 20: the language receiver belongs to no part, so a plugin
+    /// that exports it needs no part of its own for it.
+    #[test]
+    fn the_language_receiver_needs_no_part() {
+        let manifest = Manifest::parse(&edited(
+            OPENCODE_MANIFEST,
+            r#"agent = "0.1""#,
+            "agent = \"0.1\"\nlanguage = \"0.1\"",
+        ))
+        .expect("valid");
+
+        assert_eq!(manifest.api().to_string(), "agent 0.1, language 0.1");
+        assert_eq!(manifest.parts().len(), 1);
     }
 
     #[test]

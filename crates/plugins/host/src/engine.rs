@@ -48,6 +48,15 @@ impl PluginEngine {
         self.shared.outside.set_keyring_allowed(allowed);
     }
 
+    /// Tells the plugins that OTTY's interface shows the language `tag`,
+    /// such as `ru`, from now on: `env.language` gives it at their next
+    /// call, without loading them again. English until the app names one.
+    /// The plugins that export the language receiver are told with
+    /// [`LoadedPlugin::language_changed`].
+    pub fn set_language(&self, tag: &str) {
+        self.shared.outside.set_language(tag);
+    }
+
     /// An engine whose plugins reach the network and the keyring through
     /// `outside`, such as mocks in tests.
     pub(crate) fn with_outside(

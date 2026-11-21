@@ -6,12 +6,13 @@ use otty_plugin_sdk::http::{self, Request};
 use serde_json::Value;
 
 /// The JSON answer of `request` to `url`. A refused key (401 or 403) is
-/// [`ReadError::KeyRefused`], any other status a failure and an answer
-/// that is not JSON unexpected. The error never holds what the answer
-/// said.
+/// the error `refused` gives, such as a refused login or a need for a new
+/// key, any other status is a failure and an answer that is not JSON
+/// unexpected. The error never holds what the answer said.
 pub(crate) fn json_answer(
     request: &Request<'_>,
     url: &str,
+    refused: impl FnOnce() -> ReadError,
 ) -> Result<Value, ReadError> {
     let response = http::request(request).map_err(ReadError::Host)?;
 
@@ -19,7 +20,7 @@ pub(crate) fn json_answer(
         200 => serde_json::from_slice(&response.body).map_err(|_| {
             ReadError::Unexpected(format!("the answer of {url} is not JSON"))
         }),
-        401 | 403 => Err(ReadError::KeyRefused),
+        401 | 403 => Err(refused()),
         status => Err(ReadError::Failed(format!("{url} answered {status}"))),
     }
 }

@@ -419,7 +419,8 @@ mod tests {
                 other => panic!("a failed read: {other:?}"),
             })
             .collect();
-        let other_part = provider.read(&cloud_account(&home), &missing_key());
+        let other_part =
+            provider.read(&cloud_account(&home), &missing_key(), &[]);
 
         assert_eq!(
             failures,

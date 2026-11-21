@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use otty_agents::{AgentId, Profile, proposed_config_dir};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::admin_key_fields::AdminKeyFields;
 use super::event::{FolderChoice, ProfileDialogIntent};
 use super::state::ProfileDialog;
 use crate::event::AgentsOutcome;
@@ -22,24 +21,11 @@ pub(crate) fn open_add(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 }
 
 /// Open the dialog that edits `profile`: a default profile too.
-///
-/// An API key profile whose agent has a bill gets the admin key field of
-/// the organization it pays through, when one was found in its files.
 pub(crate) fn open_edit(
     state: &mut AgentsState,
     profile: &Profile,
 ) -> Vec<AgentsOutcome> {
-    let profiles = state.profiles();
-    let admin_key = profiles
-        .get(profile)
-        .filter(|shown| shown.is_api_key() && profiles.has_bill(shown))
-        .and_then(|shown| {
-            let organization = shown.organization()?.clone();
-            let saved = profiles.admin_key_of(shown);
-            Some(AdminKeyFields::new(organization, saved))
-        });
-
-    state.open_dialog(ProfileDialog::edit(profile, admin_key));
+    state.open_dialog(ProfileDialog::edit(profile));
     Vec::new()
 }
 
@@ -75,18 +61,6 @@ pub(crate) fn reduce(
         },
         ProfileDialogIntent::Folder(intent) => {
             dialog.change_folder(intent, &home)
-        },
-        ProfileDialogIntent::AdminKeyChoicePicked(choice) => {
-            if let Some(fields) = dialog.admin_key_fields_mut() {
-                fields.pick_key_choice(choice);
-            }
-            Vec::new()
-        },
-        ProfileDialogIntent::AdminKeyChanged(text) => {
-            if let Some(fields) = dialog.admin_key_fields_mut() {
-                fields.set_key_text(text);
-            }
-            Vec::new()
         },
         ProfileDialogIntent::Submitted => submit(state),
         ProfileDialogIntent::Cancelled => {
@@ -167,11 +141,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             if state.agent(editing.agent()).is_none() {
                 return Vec::new();
             }
-            let edit = ProfileEdit {
-                name,
-                config_dir,
-                admin_key: dialog.admin_key_edit(home),
-            };
+            let edit = ProfileEdit { name, config_dir };
             let saved = profile_changes::edited(
                 saved,
                 state.agent_name(editing.agent()),
@@ -203,20 +173,17 @@ fn proposal(
 mod tests {
     use std::path::Path;
 
-    use otty_agents::{
-        AdminKeyRef, DefaultProfileChanges, ProfileStatus, SavedProfiles,
-    };
+    use otty_agents::{DefaultProfileChanges, ProfileStatus, SavedProfiles};
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::folder_field::FolderFieldIntent;
-    use crate::profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialog};
+    use crate::profile_dialog::{FolderChoice, ProfileDialog};
     use crate::reducer::reduce as reduce_agents;
     use crate::testing::{
-        admin_key, api_key, claude, claude_id, claude_work, codex, codex_id,
-        connected, folder_looked_up, folder_query, organization,
-        saved_with_admin_key, with_accounts, with_saved_profiles,
+        claude, claude_id, claude_work, codex, codex_id, connected,
+        folder_looked_up, folder_query, with_saved_profiles,
     };
     use crate::types::{FolderAsker, FolderQuery};
 
@@ -451,7 +418,7 @@ mod tests {
                 (claude(), connected()),
                 (
                     claude_added("Semrush", "/home/user/.claude-semrush"),
-                    ProfileStatus::NotLoggedIn,
+                    ProfileStatus::NotLoggedIn(None),
                 ),
             ]),
         );
@@ -810,148 +777,5 @@ mod tests {
         );
 
         assert!(suggestions(&state).is_empty());
-    }
-
-    // The admin key of the organization an API key profile pays through.
-
-    /// Spec 2026-11-19, Decision 7: the admin key is saved for the
-    /// organization, keyed by its id, not in the profile.
-    #[test]
-    fn editing_an_api_key_profile_saves_the_admin_key_of_its_organization() {
-        let saved = SavedProfiles::default().with_added(claude_work());
-        let mut state = with_accounts(
-            &[(claude_work(), api_key(), vec![organization()])],
-            saved.clone(),
-        );
-        let _ =
-            reduce_agents(&mut state, AgentsIntent::EditProfile(claude_work()));
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChanged(String::from(
-                "~/.config/anthropic-admin-key",
-            )),
-        );
-
-        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
-
-        let key = AdminKeyRef::File(PathBuf::from(
-            "/home/user/.config/anthropic-admin-key",
-        ));
-        assert_eq!(
-            outcomes,
-            save(
-                saved
-                    .with_admin_key_of(&organization(), Some(key))
-                    .with_added_replaced(
-                        &claude_id(),
-                        "Claude Code · Work",
-                        claude_work()
-                    ),
-                None
-            )
-        );
-    }
-
-    #[test]
-    fn the_admin_key_of_a_default_profile_can_be_a_variable_or_removed() {
-        let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
-            SavedProfiles::default(),
-        );
-        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(claude()));
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChoicePicked(AdminKeyChoice::Variable),
-        );
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChanged(String::from(
-                "ANTHROPIC_ADMIN_KEY",
-            )),
-        );
-        let named = send(&mut state, ProfileDialogIntent::Submitted);
-        let mut removing = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
-            saved_with_admin_key(),
-        );
-        let _ =
-            reduce_agents(&mut removing, AgentsIntent::EditProfile(claude()));
-        let _ = send(
-            &mut removing,
-            ProfileDialogIntent::AdminKeyChanged(String::new()),
-        );
-
-        let removed = send(&mut removing, ProfileDialogIntent::Submitted);
-
-        let unchanged = SavedProfiles::default()
-            .with_default_changes(DefaultProfileChanges::new(claude_id()));
-        assert_eq!(
-            named,
-            save(
-                unchanged
-                    .clone()
-                    .with_admin_key_of(&organization(), Some(admin_key())),
-                None
-            )
-        );
-        assert_eq!(removed, save(unchanged, None));
-    }
-
-    #[test]
-    fn an_admin_key_path_that_is_not_full_blocks_save() {
-        let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
-            SavedProfiles::default(),
-        );
-        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(claude()));
-        let _ = send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChanged(String::from("admin-key")),
-        );
-
-        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
-
-        assert!(outcomes.is_empty());
-        assert!(state.dialog().is_some_and(|dialog| !dialog.is_saving()));
-    }
-
-    /// An edit of a profile with no admin key field keeps the admin key
-    /// of its organization as it was saved.
-    #[test]
-    fn a_subscription_has_no_admin_key_field_and_keeps_what_was_saved() {
-        let mut state = with_accounts(
-            &[(claude(), connected(), vec![organization()])],
-            saved_with_admin_key(),
-        );
-        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(claude()));
-        let has_field = state
-            .dialog()
-            .map(|dialog| dialog.admin_key_fields().is_some());
-
-        let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
-
-        assert_eq!(has_field, Some(false));
-        assert_eq!(
-            outcomes,
-            save(
-                saved_with_admin_key().with_default_changes(
-                    DefaultProfileChanges::new(claude_id())
-                ),
-                None
-            )
-        );
-    }
-
-    #[test]
-    fn a_codex_api_key_profile_has_no_admin_key_field() {
-        let mut state = with_saved_profiles(
-            &[(codex(), api_key())],
-            SavedProfiles::default(),
-        );
-
-        let _ = reduce_agents(&mut state, AgentsIntent::EditProfile(codex()));
-
-        let fields = state.dialog().and_then(ProfileDialog::admin_key_fields);
-        assert!(fields.is_none());
     }
 }

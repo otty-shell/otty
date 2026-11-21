@@ -24,7 +24,7 @@
 use otty_plugin_sdk::{Credits, Key};
 use serde_json::Value;
 
-use crate::chatgpt_usage::usage_request;
+use crate::chatgpt_usage::{login_refused, usage_request};
 use crate::rate_limits::{codex_number, no_numbers};
 use crate::requests::{json_answer, percent_encoded};
 
@@ -103,7 +103,7 @@ fn ask_account(ask: &WorkspaceAsk<'_>, path: &str) -> Option<Value> {
     let url = format!("{}/accounts/{account}{path}", ask.backend_api_url);
     let request = usage_request(&url, ask.key, ask.account_id);
 
-    json_answer(&request, &url).ok()
+    json_answer(&request, &url, login_refused).ok()
 }
 
 /// The credits of a monthly usage answer: the pool is the workspace limit

@@ -69,6 +69,20 @@ pub(crate) fn one_session_loaded(profile: Profile, id: &str) -> AgentsIntent {
     })
 }
 
+/// Nobody is logged in with the profile: the need of the Codex part runs
+/// `codex login`.
+pub(crate) fn not_logged_in() -> ProfileStatus {
+    let login = otty_agents::AgentCommand::new("codex").with_arg("login");
+
+    ProfileStatus::NotLoggedIn(Some(Box::new(
+        otty_agents::fixtures::login_need("openai", "codex", login),
+    )))
+}
+
+/// The line of the need of [`not_logged_in`].
+pub(crate) const NOT_LOGGED_IN_TEXT: &str =
+    "Nobody is logged in with this config folder.";
+
 /// Show Agents mode in `app` and tell it that [`codex_profile`] was read,
 /// not logged in: a session can start with it.
 pub(crate) fn show_codex(app: &mut App) {
@@ -76,8 +90,7 @@ pub(crate) fn show_codex(app: &mut App) {
         app,
         AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
     );
-    let loaded =
-        profiles_loaded(vec![(codex_profile(), ProfileStatus::NotLoggedIn)]);
+    let loaded = profiles_loaded(vec![(codex_profile(), not_logged_in())]);
 
     let _ = dispatch::dispatch(app, AppEvent::Agents(loaded));
 }

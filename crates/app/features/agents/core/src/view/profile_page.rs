@@ -188,11 +188,14 @@ mod tests {
             name: String::from("Codex · Work"),
             needs: vec![NeedViewModel {
                 place: String::from("Codex · Work"),
+                plugin: None,
                 title: String::from("needs login"),
                 line: String::from("Log in to use it."),
                 fix: Some(NeedFixViewModel {
                     label: i18n::t(Key::AgentsLogIn).to_string(),
-                    action: Some(NeedAction::LogIn(work())),
+                    action: Some(NeedAction::OpenPage(String::from(
+                        "https://example.com/login",
+                    ))),
                 }),
                 extra: None,
             }],
@@ -376,7 +379,12 @@ mod tests {
         let log_in = sent(page(), i18n::t(Key::AgentsLogIn));
 
         assert_eq!(chip, [AgentsIntent::SelectAccount(chatgpt())]);
-        assert_eq!(log_in, [AgentsIntent::FixNeed(NeedAction::LogIn(work()))]);
+        assert_eq!(
+            log_in,
+            [AgentsIntent::FixNeed(NeedAction::OpenPage(String::from(
+                "https://example.com/login"
+            )))]
+        );
     }
 
     #[test]

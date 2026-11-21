@@ -64,13 +64,27 @@ typed. It runs at most once in about 5 minutes per profile and gives up after 30
 | `GET https://api.anthropic.com/v1/organizations/cost_report` | The admin key in `x-api-key`, and `anthropic-version`.  | Every read of the bill of an organization you gave an admin key: the 31 UTC days up to today, page by page. |
 
 - It gets the logins and keys found for Anthropic (`anthropic.com`, `claude.ai`) in any agent, and the
-  admin keys you add: **Add account** → Anthropic, or **Admin key…** on the organization's account.
+  admin keys you give: **Add account** → Anthropic, or **Admin key…** on the need **The real bill
+  needs an admin key** of the organization's account.
 - An API key has no numbers Anthropic tells: nothing is sent for it.
-- It never sees when a token expires. A refused token is "login expired"; nothing is renewed.
+- It never sees when a token expires. When Anthropic refuses a Claude login, the part says only
+  that; the plugin of the agent that keeps the login gives the need, such as Claude Code's **The
+  login expired** below. Nothing is renewed.
 - While it runs, the files of the Claude Code part are refused to it.
 
 **Open usage page** opens `claude.ai/settings/usage` for a login, `console.anthropic.com/settings/usage`
 for a key or an organization.
+
+## What it asks you for
+
+Each need carries the label "Anthropic plugin". Its texts come in all ten languages of OTTY.
+
+| Need                             | Part        | When                                                                 | Button |
+| -------------------------------- | ----------- | -------------------------------------------------------------------- | ------ |
+| Needs login                      | Claude Code | Nobody is logged in with the profile's folder.                       | **Run claude**, with the profile's folder: Claude Code asks you to log in on its first start there. |
+| The login expired                | Claude Code | The Claude login of the profile expired or Anthropic refused it, wherever it was read, or `/usage` asked to log in. | **Run claude**: Claude Code renews the login or asks you to log in again. |
+| The real bill needs an admin key | Anthropic   | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
+| The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. |
 
 ## What it changes
 

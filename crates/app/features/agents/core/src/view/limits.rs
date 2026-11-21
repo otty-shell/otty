@@ -32,10 +32,7 @@ pub(super) fn view<'a>(
         block = block.push(credits_rows(credits, is_stale, palette));
     }
 
-    let muted = vm
-        .recorded
-        .into_iter()
-        .chain(vm.log_in_hint.map(String::from));
+    let muted = vm.recorded.into_iter();
     block
         .push(blocks::notes(muted, vm.failure, palette))
         .width(Length::Fill)
@@ -108,7 +105,6 @@ mod tests {
             is_stale: true,
             recorded: Some(String::from("Recorded in a session 1 h ago")),
             failure: Some(String::from("Could not read again: y")),
-            log_in_hint: Some(i18n::t(Key::AgentsLimitsLogInAgain)),
         }
     }
 
@@ -134,7 +130,6 @@ mod tests {
             "3 760 left · Resets on Thursday at 09:00",
             "Recorded in a session 1 h ago",
             "Could not read again: y",
-            i18n::t(Key::AgentsLimitsLogInAgain),
         ] {
             ui.find(shown).expect("the limit detail should show");
         }
@@ -201,7 +196,6 @@ mod tests {
             is_stale: false,
             recorded: None,
             failure: None,
-            log_in_hint: None,
             ..limits()
         };
         let themes = ThemeManager::new();

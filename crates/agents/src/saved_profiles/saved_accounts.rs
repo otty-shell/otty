@@ -1,10 +1,10 @@
 //! The user's own choices for the accounts in `agents.json` (spec
 //! 2026-11-19, Decision 7): a name, whether the account is hidden, where
-//! the admin key of an organization is kept, and the accounts the user
-//! added by hand, by where their keys are kept.
+//! the keys the user gave for it are kept, and the accounts the user added
+//! by hand, by where their keys are kept.
 
 use crate::account::{Account, AccountIdentity};
-use crate::admin_key::AdminKeyRef;
+use crate::given_key::GivenKey;
 use crate::provider::ProviderRef;
 
 /// The choices for one account, kept by its provider and an identity that
@@ -17,7 +17,7 @@ pub(super) struct SavedAccount {
     pub(super) identity: AccountIdentity,
     pub(super) name: Option<String>,
     pub(super) is_hidden: bool,
-    pub(super) admin_key: Option<AdminKeyRef>,
+    pub(super) given_keys: Vec<GivenKey>,
 }
 
 impl SavedAccount {
@@ -33,7 +33,7 @@ impl SavedAccount {
             identity: account.identity().clone(),
             name: None,
             is_hidden: false,
-            admin_key: None,
+            given_keys: Vec::new(),
         })
     }
 
@@ -60,12 +60,12 @@ impl SavedAccount {
     }
 
     /// Whether the entry keeps nothing: an account OTTY finds with no
-    /// name, not hidden and no admin key. Such an entry is not written.
+    /// name, not hidden and no given key. Such an entry is not written.
     pub(super) fn is_empty(&self) -> bool {
         !self.is_added()
             && self.name.is_none()
             && !self.is_hidden
-            && self.admin_key.is_none()
+            && self.given_keys.is_empty()
     }
 }
 
@@ -76,7 +76,7 @@ mod tests {
     use crate::account::{
         Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     };
-    use crate::admin_key::AdminKeyRef;
+    use crate::given_key::{GivenKey, KeyRef};
     use crate::provider::ProviderRef;
     use crate::saved_profiles::SavedProfiles;
     use crate::testing::{chatgpt_login, key_account, organization};
@@ -97,8 +97,8 @@ mod tests {
         )
     }
 
-    fn by_file() -> AdminKeyRef {
-        AdminKeyRef::File(PathBuf::from("/home/user/.config/admin-key"))
+    fn by_file() -> KeyRef {
+        KeyRef::File(PathBuf::from("/home/user/.config/org-key"))
     }
 
     fn named_and_hidden() -> SavedProfiles {
@@ -154,17 +154,20 @@ mod tests {
     }
 
     #[test]
-    fn a_name_and_an_admin_key_of_one_organization_share_its_entry() {
+    fn a_name_and_a_given_key_of_one_organization_share_its_entry() {
         let organization = organization("made-up-org");
         let saved = SavedProfiles::default()
-            .with_admin_key_of(&organization, Some(by_file()))
+            .with_given_key_of(&organization, "admin", Some(by_file()))
             .with_account_name(&organization, Some(String::from("Acme")));
 
         let text = saved.to_json().expect("the paths are text");
         let loaded = load(&text);
 
         assert_eq!(text.matches("made-up-org").count(), 1, "{text}");
-        assert_eq!(loaded.admin_key_of(&organization), Some(&by_file()));
+        assert_eq!(
+            loaded.given_keys_of(&organization),
+            [GivenKey::new("admin", by_file())]
+        );
         assert_eq!(loaded.account_name(&organization), Some("Acme"));
     }
 
@@ -179,12 +182,14 @@ mod tests {
 
         let saved = SavedProfiles::default()
             .with_account_name(&key, Some(String::from("Mine")))
-            .with_account_hidden(&key, true);
+            .with_account_hidden(&key, true)
+            .with_given_key_of(&key, "admin", Some(by_file()));
 
         assert!(!key.can_be_saved());
         assert_eq!(saved, SavedProfiles::default());
         assert_eq!(saved.account_name(&key), None);
         assert!(!saved.is_account_hidden(&key));
+        assert!(saved.given_keys_of(&key).is_empty());
     }
 
     #[test]
@@ -204,10 +209,10 @@ mod tests {
     }
 
     #[test]
-    fn showing_an_organization_again_keeps_its_name_and_its_admin_key() {
+    fn showing_an_organization_again_keeps_its_name_and_its_given_key() {
         let organization = organization("made-up-org");
         let saved = SavedProfiles::default()
-            .with_admin_key_of(&organization, Some(by_file()))
+            .with_given_key_of(&organization, "admin", Some(by_file()))
             .with_account_name(&organization, Some(String::from("Acme")))
             .with_account_hidden(&organization, true);
 
@@ -215,15 +220,18 @@ mod tests {
 
         assert!(!shown.is_account_hidden(&organization));
         assert_eq!(shown.account_name(&organization), Some("Acme"));
-        assert_eq!(shown.admin_key_of(&organization), Some(&by_file()));
+        assert_eq!(
+            shown.given_keys_of(&organization),
+            [GivenKey::new("admin", by_file())]
+        );
     }
 
-    fn deepseek_file() -> AdminKeyRef {
-        AdminKeyRef::File(PathBuf::from("/home/user/.config/deepseek-key"))
+    fn deepseek_file() -> KeyRef {
+        KeyRef::File(PathBuf::from("/home/user/.config/deepseek-key"))
     }
 
-    fn openai_variable() -> AdminKeyRef {
-        AdminKeyRef::EnvVar(String::from("OPENAI_ADMIN_KEY"))
+    fn openai_variable() -> KeyRef {
+        KeyRef::EnvVar(String::from("OPENAI_BILL_KEY"))
     }
 
     /// Spec 2026-11-19, Decision 7: an account added by hand is saved by
@@ -249,7 +257,7 @@ mod tests {
             ]
         );
         assert!(text.contains(r#""file": "/home/user/.config/deepseek-key""#));
-        assert!(text.contains(r#""env_var": "OPENAI_ADMIN_KEY""#));
+        assert!(text.contains(r#""env_var": "OPENAI_BILL_KEY""#));
         assert!(!text.contains("fingerprint"), "{text}");
     }
 
@@ -298,7 +306,7 @@ mod tests {
     fn edit_key_moves_the_account_to_its_new_place_with_its_name() {
         let added =
             Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
-        let variable = AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
+        let variable = KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
         let saved = SavedProfiles::default()
             .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
             .with_account_name(&added, Some(String::from("Mine")))
@@ -333,25 +341,26 @@ mod tests {
             [
                 Account::added(
                     ProviderRef::of_id("future"),
-                    AdminKeyRef::EnvVar(String::from("K"))
+                    KeyRef::EnvVar(String::from("K"))
                 ),
                 Account::added(
                     ProviderRef::of_id("example-cloud"),
-                    AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
+                    KeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
                 )
             ]
         );
     }
 
-    /// An entry that names no account or no provider, or with an admin
-    /// key on an account that is not an organization, is left out.
+    /// An entry that names no account or no provider, or whose given key
+    /// has no slot or no place, keeps nothing and is left out.
     #[test]
     fn an_entry_that_names_no_account_is_left_out() {
         let text = r#"{
             "accounts": [
                 { "provider": "anthropic", "name": "Nobody" },
                 { "provider": "", "account_id": "x", "hidden": true },
-                { "provider": "openai", "account_id": "y", "admin_key": { "file": "/k" } }
+                { "provider": "openai", "account_id": "y", "given_keys": [{ "slot": "", "file": "/k" }] },
+                { "provider": "openai", "account_id": "z", "given_keys": [{ "slot": "admin" }] }
             ]
         }"#;
 

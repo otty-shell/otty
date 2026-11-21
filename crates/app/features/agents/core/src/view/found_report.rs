@@ -144,23 +144,13 @@ fn report_column(key: Key, share: u16, min_width: u16) -> TableColumn {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use iced_test::simulator;
-    use otty_agents::{AgentId, Profile};
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
     use crate::model::{NeedFixViewModel, NeedViewModel};
     use crate::need::NeedAction;
-
-    fn codex() -> Profile {
-        Profile::default_for(
-            AgentId::new("codex"),
-            "Codex",
-            PathBuf::from("/home/user/.codex"),
-        )
-    }
 
     fn report() -> FoundReportViewModel {
         FoundReportViewModel {
@@ -185,11 +175,14 @@ mod tests {
             account_needs: Vec::new(),
             profile_needs: vec![NeedViewModel {
                 place: String::from("Codex"),
+                plugin: None,
                 title: String::from("needs login"),
                 line: String::from("Nobody is logged in."),
                 fix: Some(NeedFixViewModel {
                     label: String::from("Log in"),
-                    action: Some(NeedAction::LogIn(codex())),
+                    action: Some(NeedAction::OpenPage(String::from(
+                        "https://example.com/login",
+                    ))),
                 }),
                 extra: None,
             }],
@@ -221,7 +214,9 @@ mod tests {
         assert_eq!(
             intents,
             vec![
-                AgentsIntent::FoundReportNeed(NeedAction::LogIn(codex())),
+                AgentsIntent::FoundReportNeed(NeedAction::OpenPage(
+                    String::from("https://example.com/login")
+                )),
                 AgentsIntent::CloseFoundReport,
             ]
         );

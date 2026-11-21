@@ -75,12 +75,23 @@ interface provider {
     days: list<day-cost>,
   }
 
+  /// A key the user gave for the account, after a need of the part asked
+  /// for it with `ask-key`, under the `slot` that need named. The handle
+  /// is the part's for this call only.
+  record given-key {
+    slot: string,
+    key: key,
+  }
+
   /// Whose account `key` is.
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
-  /// The account's numbers right now.
-  numbers: func(provider: string, account: account-facts, key: borrow<key>) -> result<account-numbers, read-error>;
-  /// The bill of an organization, read with an admin key.
-  read-bill: func(provider: string, account: account-facts, admin-key: borrow<key>, days: day-range) -> result<bill, read-error>;
+  /// The account's numbers right now, read with the account's `key` and
+  /// the keys the user gave for it.
+  numbers: func(provider: string, account: account-facts, key: borrow<key>, given: list<given-key>) -> result<account-numbers, read-error>;
+  /// The bill of an organization, day by day, read with the account's
+  /// `key` and the keys the user gave for it. A part that needs a key it
+  /// has not got answers `needs-user` with `ask-key`.
+  read-bill: func(provider: string, account: account-facts, key: borrow<key>, given: list<given-key>, days: day-range) -> result<bill, read-error>;
 }
 
 /// What a component with provider parts imports and exports.

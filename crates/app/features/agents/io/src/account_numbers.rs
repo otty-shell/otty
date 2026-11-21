@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Account, Agent, KeyPlace, PluginProvider};
+use otty_agents::{Account, Agent, GivenKey, KeyPlace, PluginProvider};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedAccountNumbers};
 
 use crate::background::{on_own_thread, read_stopped};
@@ -30,12 +30,12 @@ use crate::shell_variable::shell_variable;
 /// ```
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{Account, AdminKeyRef, KeyPlace, ProviderRef};
+/// use otty_agents::{Account, KeyPlace, KeyRef, ProviderRef};
 /// use otty_app_agents::AgentList;
 ///
 /// let account = Account::added(
 ///     ProviderRef::of_id("example-cloud"),
-///     AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
+///     KeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
 /// );
 /// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
@@ -44,6 +44,7 @@ use crate::shell_variable::shell_variable;
 ///     &providers,
 ///     account,
 ///     KeyPlace::Added,
+///     Vec::new(),
 ///     "/bin/zsh",
 /// );
 ///
@@ -54,6 +55,7 @@ pub fn load_account_numbers(
     providers: &ProviderList,
     account: Account,
     place: KeyPlace,
+    given: Vec<GivenKey>,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let task = format!(
@@ -73,6 +75,7 @@ pub fn load_account_numbers(
                 &providers,
                 account,
                 &place,
+                &given,
                 SystemTime::now(),
                 |name| shell_variable(&shell, name),
             )
@@ -86,18 +89,20 @@ pub fn load_account_numbers(
     )
 }
 
-/// The numbers of `account` up to `now`, read with its key from `place`;
-/// `env_var` gives the value of an environment variable.
+/// The numbers of `account` up to `now`, read with its key from `place`
+/// and the keys the user gave for it (`given`); `env_var` gives the value
+/// of an environment variable.
 fn read_account_numbers(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     account: Account,
     place: &KeyPlace,
+    given: &[GivenKey],
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedAccountNumbers {
     let numbers = otty_agents::read_account_numbers(
-        agents, providers, &account, place, now, env_var,
+        agents, providers, &account, place, given, now, env_var,
     );
 
     LoadedAccountNumbers {
@@ -109,7 +114,7 @@ fn read_account_numbers(
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{AdminKeyRef, ProviderRef, SourceError, Unavailable};
+    use otty_agents::{KeyRef, ProviderRef, SourceError, Unavailable};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -117,8 +122,8 @@ mod tests {
 
     /// An Anthropic organization added with an admin key file that is not
     /// there: nothing is sent and no test reaches the network.
-    fn missing_key(folder: &TempDir) -> (Account, AdminKeyRef) {
-        let key = AdminKeyRef::File(folder.path().join("no-such-key"));
+    fn missing_key(folder: &TempDir) -> (Account, KeyRef) {
+        let key = KeyRef::File(folder.path().join("no-such-key"));
         let account =
             Account::added(ProviderRef::of_id("anthropic"), key.clone());
 
@@ -136,6 +141,7 @@ mod tests {
             &providers_with_plugins(folder.path()),
             account.clone(),
             &KeyPlace::Added,
+            &[],
             SystemTime::now(),
             |_| None,
         );
@@ -144,7 +150,7 @@ mod tests {
         assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.numbers,
-            Err(SourceError::NotAvailable(Unavailable::AdminKeyMissing(key)))
+            Err(SourceError::NotAvailable(Unavailable::KeyMissing(key)))
         );
     }
 
@@ -160,6 +166,7 @@ mod tests {
             &providers,
             account.clone(),
             KeyPlace::Added,
+            Vec::new(),
             "/no/such/shell",
         ));
 

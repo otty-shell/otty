@@ -7,11 +7,11 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountIdentity, AccountKind, AccountLogin, AddAccountKind,
-    AdminKeyRef, AgentCommand, AgentEnv, AgentId, AgentSession, Answer, Bill,
-    Billing, DayCost, DaySpend, Dollars, FetchedPrices, FoundIn, LimitWindow,
-    Limits, ModelPrice, ModelTokens, MoneyTotal, PluginPart, PriceTable,
-    Profile, ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
+    Account, AccountIdentity, AccountKind, AccountLogin, AgentCommand,
+    AgentEnv, AgentId, AgentSession, Answer, Bill, Billing, DayCost, DaySpend,
+    Dollars, FetchedPrices, FoundIn, GivenKey, KeyRef, LimitWindow, Limits,
+    ModelPrice, ModelTokens, MoneyTotal, PluginPart, PriceTable, Profile,
+    ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
     SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
     TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
@@ -128,7 +128,7 @@ fn test_registry() -> Registry {
         ProviderEntry::new(ProviderId::new(id), name, part)
             .with_hosts([host])
             .with_usage_page(page)
-            .with_add_account(AddAccountKind::Key)
+            .with_add_by_hand()
     };
 
     let providers = vec![
@@ -138,16 +138,14 @@ fn test_registry() -> Registry {
             "anthropic.com",
             "https://console.anthropic.com/settings/usage",
         )
-        .with_plan_usage_page("https://claude.ai/settings/usage")
-        .with_add_account(AddAccountKind::AdminKey),
+        .with_plan_usage_page("https://claude.ai/settings/usage"),
         plugin_provider(
             "openai",
             "OpenAI",
             "openai.com",
             "https://platform.openai.com/usage",
         )
-        .with_plan_usage_page("https://chatgpt.com/codex/settings/usage")
-        .with_add_account(AddAccountKind::AdminKey),
+        .with_plan_usage_page("https://chatgpt.com/codex/settings/usage"),
         plugin_provider(
             "deepseek",
             "DeepSeek",
@@ -223,6 +221,78 @@ pub(crate) fn api_key() -> ProfileStatus {
         plan: None,
         billing: Some(otty_agents::BillingKind::ApiKey),
     }
+}
+
+/// A key of OpenAI OTTY found in a profile, known only by its
+/// fingerprint: `agents.json` can keep nothing of it.
+pub(crate) fn key_account() -> Account {
+    Account::new(
+        ProviderRef::of_id("openai"),
+        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
+            "sk-made-up-0001",
+        )),
+        AccountLogin::Key(None),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+    )
+}
+
+/// The admin key the provider part of Anthropic asks for under the slot
+/// `admin`, for the bill of an organization.
+pub(crate) fn key_ask() -> otty_agents::KeyAsk {
+    let need =
+        otty_agents::fixtures::key_need("anthropic", "anthropic", "admin");
+
+    match need.action() {
+        otty_agents::PartNeedAction::AskKey(ask) => ask.clone(),
+        _ => unreachable!("the fixture asks for a key"),
+    }
+}
+
+/// The need of the Anthropic part that asks for the admin key of the
+/// [`organization`]: the bill reads with it.
+pub(crate) fn bill_key_needed() -> SourceError {
+    SourceError::NeedsUser(Box::new(otty_agents::fixtures::key_need(
+        "anthropic",
+        "anthropic",
+        "admin",
+    )))
+}
+
+/// The need of the Codex part of the OpenAI plugin whose login expired:
+/// the read waits for the user to run Codex, which renews it.
+pub(crate) fn login_expired() -> SourceError {
+    let need = otty_agents::PartNeed::new(
+        otty_agents::fixtures::plugin_part("openai", "codex"),
+        "login-expired",
+        "The login expired",
+        "Open Codex: it renews the login.",
+        otty_agents::PartNeedAction::Run(AgentCommand::new("codex")),
+    );
+
+    SourceError::NeedsUser(Box::new(need))
+}
+
+/// The need of the DeepSeek part whose key the provider refused: the
+/// button opens the page of the keys.
+pub(crate) fn refused_key_need() -> SourceError {
+    let need = otty_agents::PartNeed::new(
+        otty_agents::fixtures::plugin_part("deepseek", "deepseek"),
+        "new-key",
+        "The key was refused",
+        "Make a new key on its page.",
+        otty_agents::PartNeedAction::OpenPage(String::from(
+            "https://platform.deepseek.com/api_keys",
+        )),
+    );
+
+    SourceError::NeedsUser(Box::new(need))
+}
+
+/// `profile` nobody is logged in with, with the need its agent part gives:
+/// a run of the agent's login, such as `codex login`.
+pub(crate) fn not_logged_in(profile: &Profile) -> ProfileStatus {
+    otty_agents::fixtures::not_logged_in(profile)
 }
 
 /// A session `id` titled after it, in `folder`, changed at `seconds`.
@@ -506,17 +576,23 @@ pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
     )
 }
 
-/// Where the admin key of [`organization`] is kept: the variable
-/// `ANTHROPIC_ADMIN_KEY`.
-pub(crate) fn admin_key() -> AdminKeyRef {
-    AdminKeyRef::EnvVar(String::from("ANTHROPIC_ADMIN_KEY"))
+/// The key the user gave for [`organization`] under the slot `admin`,
+/// after a need of its provider part asked for it: the variable
+/// `ANTHROPIC_ORG_KEY`.
+pub(crate) fn given_key() -> GivenKey {
+    GivenKey::new("admin", KeyRef::EnvVar(String::from("ANTHROPIC_ORG_KEY")))
 }
 
-/// What `agents.json` holds with the [`admin_key`] of the
+/// What `agents.json` holds with the [`given_key`] of the
 /// [`organization`].
-pub(crate) fn saved_with_admin_key() -> SavedProfiles {
-    SavedProfiles::default()
-        .with_admin_key_of(&organization(), Some(admin_key()))
+pub(crate) fn saved_with_given_key() -> SavedProfiles {
+    let given = given_key();
+
+    SavedProfiles::default().with_given_key_of(
+        &organization(),
+        given.slot(),
+        Some(given.key().clone()),
+    )
 }
 
 /// Agents mode entered, with `profiles` read from `saved`, each with the
@@ -594,12 +670,12 @@ pub(crate) fn with_versions(
 }
 
 /// The default Claude Code profile paying per token through the
-/// [`organization`], with its [`admin_key`] saved, as a profiles read
+/// [`organization`], with its [`given_key`] saved, as a profiles read
 /// found it.
 pub(crate) fn billed_claude_loaded() -> AgentsIntent {
     profiles_with_accounts_loaded(
         &[(claude(), api_key(), vec![organization()])],
-        saved_with_admin_key(),
+        saved_with_given_key(),
     )
 }
 
@@ -614,12 +690,12 @@ pub(crate) fn with_billed_claude() -> AgentsState {
 }
 
 /// The read of the bill of the [`organization`] through `profile`, with
-/// its [`admin_key`].
+/// its [`given_key`].
 pub(crate) fn load_bill(profile: &Profile) -> AgentsOutcome {
     AgentsOutcome::LoadBill {
         profile: profile.clone(),
-        provider: ProviderRef::of_id("anthropic"),
-        admin_key: admin_key(),
+        organization: organization(),
+        given: vec![given_key()],
     }
 }
 
@@ -638,14 +714,14 @@ pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
 }
 
 /// The answer of a read of the bill through `profile` with the
-/// [`admin_key`], that ended at [`now`].
+/// [`given_key`], that ended at [`now`].
 pub(crate) fn bill_loaded(
     profile: &Profile,
     bill: Result<Bill, SourceError>,
 ) -> AgentsIntent {
     AgentsIntent::BillLoaded(LoadedBill {
         profile: profile.clone(),
-        admin_key: admin_key(),
+        given: vec![given_key()],
         bill,
         read_at: now(),
     })

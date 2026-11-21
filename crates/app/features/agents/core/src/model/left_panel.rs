@@ -238,7 +238,7 @@ impl ProfileRowViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles};
+    use otty_agents::SavedProfiles;
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -345,7 +345,7 @@ mod tests {
     fn each_profile_shows_its_logo_name_and_number_with_its_word() {
         let mut state = with_profiles(&[
             (claude(), connected()),
-            (codex(), ProfileStatus::NotLoggedIn),
+            (codex(), crate::testing::not_logged_in(&codex())),
         ]);
         let _ = reduce(
             &mut state,

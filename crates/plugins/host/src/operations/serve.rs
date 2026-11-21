@@ -164,6 +164,10 @@ impl env::Host for CallState {
     fn home(&mut self) -> String {
         self.env().home().display().to_string()
     }
+
+    fn language(&mut self) -> String {
+        self.outside().language()
+    }
 }
 
 impl clock::Host for CallState {

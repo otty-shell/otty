@@ -73,8 +73,10 @@ pub(crate) enum UsageScreen {
     Waiting,
     /// The panel is on the screen, but it shows no percent used or left.
     Unreadable,
+    /// Claude Code asks to log in: the login is missing or expired.
+    LoginAsked,
     /// Claude Code stopped at something OTTY must not answer for the user,
-    /// such as a login or a question.
+    /// such as a question.
     Stopped(ReadError),
     /// Claude Code asks whether to trust the folder it runs in, and
     /// nothing else. Only the probe knows whether it is its own folder.
@@ -162,6 +164,9 @@ pub(crate) fn read_usage_screen(text: &str) -> UsageScreen {
         return UsageScreen::Usage(windows);
     }
 
+    if LOGIN_TEXTS.iter().any(|login| lower.contains(login)) {
+        return UsageScreen::LoginAsked;
+    }
     if let Some(error) = stop_reason(&lower) {
         return UsageScreen::Stopped(error);
     }
@@ -353,17 +358,11 @@ fn is_reset(line: &str) -> bool {
         .any(|word| word == "reset" || word == "resets")
 }
 
-/// Why the screen ends the reading, when it shows a login, a question
-/// other than the trust of the folder, or a refusal instead of the panel.
-/// `lower` is the screen in lower case. The reason names what Claude Code
-/// asks, never what the screen shows.
+/// Why the screen ends the reading, when it shows a question other than
+/// the trust of the folder, or a refusal instead of the panel. `lower` is
+/// the screen in lower case. The reason names what Claude Code asks, never
+/// what the screen shows.
 fn stop_reason(lower: &str) -> Option<ReadError> {
-    if LOGIN_TEXTS.iter().any(|login| lower.contains(login)) {
-        return Some(ReadError::Failed(
-            "Claude Code asks to log in".to_string(),
-        ));
-    }
-
     if let Some((_, asks)) = QUESTIONS
         .iter()
         .find(|(question, _)| lower.contains(question))
@@ -687,11 +686,9 @@ mod tests {
     }
 
     #[test]
-    fn a_login_screen_is_not_logged_in() {
-        let login = failed("Claude Code asks to log in");
-
-        assert_eq!(read_usage_screen(LOGIN), login);
-        assert_eq!(read_usage_screen(FIRST_LOGIN), login);
+    fn a_login_screen_asks_to_log_in() {
+        assert_eq!(read_usage_screen(LOGIN), UsageScreen::LoginAsked);
+        assert_eq!(read_usage_screen(FIRST_LOGIN), UsageScreen::LoginAsked);
     }
 
     /// Owner, issue 29 of the earlier spec: the probe answers the trust
@@ -729,13 +726,10 @@ mod tests {
     }
 
     #[test]
-    fn a_login_next_to_the_trust_question_is_not_logged_in() {
+    fn a_login_next_to_the_trust_question_asks_to_log_in() {
         let screen = format!("{FIRST_LOGIN}\n{TRUST}");
 
-        assert_eq!(
-            read_usage_screen(&screen),
-            failed("Claude Code asks to log in")
-        );
+        assert_eq!(read_usage_screen(&screen), UsageScreen::LoginAsked);
     }
 
     #[test]

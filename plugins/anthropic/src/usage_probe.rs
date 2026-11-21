@@ -17,17 +17,19 @@
 //! the probe's folder. Claude Code may also renew its own login token
 //! while it runs; the plugin never sees the token.
 //!
-//! Any other question, and a login, ends the reading with no key typed.
+//! Any other question, and a login, ends the reading with no key typed; a
+//! login waits for the user to run Claude Code, which renews it.
 //! The session files the run left are removed in every case. OTTY runs
 //! the reading at most once in five minutes per profile and gives the last
 //! answer in between.
 
 use otty_plugin_sdk::terminal::{self, HiddenTerminal};
 use otty_plugin_sdk::{
-    HostError, LimitWindow, Limits, Profile, ReadError, clock,
+    Command, HostError, LimitWindow, Limits, Profile, ReadError, clock,
 };
 
 use crate::claude_code::start_command;
+use crate::needs;
 use crate::probe_sessions::remove_probe_sessions;
 use crate::trust_question::{TrustAnswer, answer_trust};
 use crate::usage_screen::{UsageScreen, read_usage_screen};
@@ -127,7 +129,8 @@ pub(crate) fn read_limits(profile: &Profile) -> Result<Limits, ReadError> {
             ROWS,
         )
         .map_err(ReadError::Host)?;
-        read_panel(&terminal, &folders, TIMING)
+        let renew = start_command(profile, Vec::new());
+        read_panel(&terminal, &folders, &renew, TIMING)
     };
 
     remove_probe_sessions(&profile.folder, &folders);
@@ -142,7 +145,7 @@ pub(crate) fn read_limits(profile: &Profile) -> Result<Limits, ReadError> {
 
 /// `claude` of `profile` that can run nothing: no tools, no MCP servers of
 /// the user, no hooks, no remote control and no update of itself.
-fn probe_command(profile: &Profile) -> otty_plugin_sdk::Command {
+fn probe_command(profile: &Profile) -> Command {
     let args = [
         "--allowed-tools",
         "",
@@ -161,13 +164,16 @@ fn probe_command(profile: &Profile) -> otty_plugin_sdk::Command {
 }
 
 /// The windows of the panel `terminal` shows, read in OTTY's working
-/// folder `folders`; a read panel is closed with Escape.
+/// folder `folders`; a read panel is closed with Escape. When Claude Code
+/// asks to log in, the read waits for the user to run `renew`, Claude
+/// Code in the profile's config folder.
 fn read_panel(
     terminal: &impl ProbeTerminal,
     folders: &[String],
+    renew: &Command,
     timing: Timing,
 ) -> Result<Vec<LimitWindow>, ReadError> {
-    let windows = wait_for_panel(terminal, folders, timing)?;
+    let windows = wait_for_panel(terminal, folders, renew, timing)?;
 
     // The panel is read; closing it is only polite, so a key that can not
     // be typed changes nothing.
@@ -182,10 +188,12 @@ fn read_panel(
 /// own folder, one key for each new screen of the question. `/usage` is
 /// typed once the screen has shown something else for a while and stays
 /// still. While no panel shows, Enter is typed again now and then. A login
-/// or another question ends the wait at once, before any key is typed.
+/// or another question ends the wait at once, before any key is typed; a
+/// login waits for the user to run `renew`.
 fn wait_for_panel(
     terminal: &impl ProbeTerminal,
     folders: &[String],
+    renew: &Command,
     timing: Timing,
 ) -> Result<Vec<LimitWindow>, ReadError> {
     let deadline = clock::now_ms() + timing.limit_ms;
@@ -208,6 +216,10 @@ fn wait_for_panel(
         let reading = read_usage_screen(&screen);
         match reading {
             UsageScreen::Usage(windows) => return Ok(windows),
+            UsageScreen::LoginAsked => {
+                let need = needs::login_expired(renew.clone());
+                return Err(ReadError::NeedsUser(need));
+            },
             UsageScreen::Stopped(error) => return Err(error),
             _ => {},
         }
@@ -518,6 +530,18 @@ mod tests {
         (terminal, played)
     }
 
+    /// The command that renews the login of the probed profile.
+    fn claude() -> Command {
+        Command {
+            program: "claude".to_string(),
+            args: Vec::new(),
+            env: vec![(
+                "CLAUDE_CONFIG_DIR".to_string(),
+                "/made-up".to_string(),
+            )],
+        }
+    }
+
     /// Reads the panel of a made-up terminal that plays `script`, and the
     /// keys typed.
     fn read(
@@ -525,7 +549,7 @@ mod tests {
     ) -> (Result<Vec<LimitWindow>, ReadError>, Vec<String>) {
         let (terminal, played) = terminal(script);
 
-        let answer = read_panel(&terminal, &folders(), fast());
+        let answer = read_panel(&terminal, &folders(), &claude(), fast());
 
         let sent = played.lock().expect("the play").sent.clone();
         (answer, sent)
@@ -601,7 +625,12 @@ mod tests {
             after_keys: Vec::new(),
         });
 
-        assert_eq!(answer, Err(failed("Claude Code asks to log in")));
+        let Err(ReadError::NeedsUser(need)) = answer else {
+            panic!("a need: {answer:?}");
+        };
+        assert_eq!(need.id, "login-expired");
+        assert!(need.text.contains("Open Claude Code"), "{}", need.text);
+        assert_eq!(need.action, otty_plugin_sdk::NeedAction::Run(claude()));
         assert!(sent.is_empty(), "typed {sent:?}");
     }
 
@@ -727,7 +756,7 @@ mod tests {
             .times(1)
             .returning(|_| Err(HostError::Failed("closed".to_string())));
 
-        let answer = read_panel(&terminal, &folders(), fast());
+        let answer = read_panel(&terminal, &folders(), &claude(), fast());
 
         assert_eq!(
             answer,

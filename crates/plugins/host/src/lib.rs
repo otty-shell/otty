@@ -20,7 +20,10 @@
 //! a contract with the types of its newest version, [`agent`] and
 //! [`provider`]; each version the host keeps has its own bindings, such
 //! as [`agent::v0_1`]. The host operations a plugin imports are
-//! [`operations`].
+//! [`operations`]. A plugin may also export the [`language`] receiver,
+//! which belongs to no part: [`PluginEngine::set_language`] gives the
+//! plugins the language of OTTY's interface at each call, and
+//! [`LoadedPlugin::language_changed`] tells a plugin that it changed.
 //!
 //! A plugin never holds a key, only a [`KeyHandle`]: where the key sits.
 //! The host reads the key there for each use (its fingerprint, a prefix,
@@ -46,6 +49,7 @@ mod engine;
 mod https;
 mod imports;
 mod keys;
+pub mod language;
 mod memory_cap;
 pub mod operations;
 mod outside;
@@ -60,7 +64,7 @@ mod terminal;
 mod testing;
 
 pub use otty_plugin_manifest::{
-    AddByHand, AgentPart, Api, ContractVersion, Environment, GlobProblem,
+    AgentPart, Api, Contract, ContractVersion, Environment, GlobProblem,
     JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest, ManifestError,
     PartKind, PartPermissions, PartRef, PathGlob, PermissionLine, Permissions,
     PluginInfo, PluginVersion, ProgramRule, ProviderPart,

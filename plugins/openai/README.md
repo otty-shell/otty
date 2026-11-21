@@ -14,9 +14,19 @@ of sessions, else from the last record of them in the session files.
 Its provider part `openai` reads the numbers of OpenAI accounts with the
 handles OTTY gives it: the limits and credits of a ChatGPT login from
 `chatgpt.com`, whichever agent keeps the login (Codex or OpenCode), and
-the costs of an organization with an admin key added by hand, from
-`api.openai.com`. A token whose claims say it expired is not sent; a
-login behind a gateway is for the gateway's host and is not read here.
+the costs of an organization with an admin key, from `api.openai.com`.
+A token whose claims say it expired is not sent; a login behind a
+gateway is for the gateway's host and is not read here. A ChatGPT login
+ChatGPT refused, or that expired, the provider part only reports as
+refused: it does not know which agent keeps it, so OTTY asks that
+agent's part (Codex's here, OpenCode's in its own plugin) what to do.
+
+What only the user can do, the parts ask for themselves, in OTTY's
+language, which they follow when the user picks another: `codex login`
+for a profile nobody is logged in with, `codex` in the profile's folder
+for an expired or refused ChatGPT login of Codex (Codex renews it), and
+a field for the admin key (`sk-admin-…`) when the bill of an
+organization needs one or OpenAI refused the one given.
 While it runs, the files of the `codex` part are refused to it. OTTY
 carries a built copy of this plugin in `assets/plugins/openai/`, made by
 `plugins/embed.sh openai`.

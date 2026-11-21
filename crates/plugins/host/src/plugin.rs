@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 
-use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
+use otty_plugin_manifest::{
+    Environment, Manifest, PartPermissions, PartRef, Permissions,
+};
 use wasmtime::Engine;
 use wasmtime::component::InstancePre;
 use wasmtime_wasi::cli::OutputFile;
@@ -86,6 +88,12 @@ impl LoadedPlugin {
         self.exports.provider()
     }
 
+    /// Whether the plugin exports the language receiver: its texts come in
+    /// several languages.
+    pub fn has_language_receiver(&self) -> bool {
+        self.exports.language().is_some()
+    }
+
     /// How the plugin's programs and hidden terminals are started.
     pub(crate) fn starters(&self) -> &Starters {
         &self.starters
@@ -147,6 +155,31 @@ impl LoadedPlugin {
         Ok(CallBatch::new(self, part.clone(), Arc::clone(permissions)))
     }
 
+    /// Tells the plugin that OTTY's interface shows the language `tag`
+    /// now, set before with
+    /// [`PluginEngine::set_language`](crate::PluginEngine::set_language).
+    /// True when the plugin's texts depend on the language, so its parts
+    /// are read again to show them in it; false, with no call, for a
+    /// plugin that does not export the language receiver.
+    ///
+    /// The receiver belongs to no part, so the call runs with no
+    /// permissions at all: it may read nothing, run nothing and send
+    /// nothing, only answer.
+    pub fn language_changed(&self, tag: &str) -> Result<bool, CallError> {
+        let Some(exports) = self.exports.language().cloned() else {
+            return Ok(false);
+        };
+        let Some(part) = self.manifest.parts().into_iter().next() else {
+            return Ok(false);
+        };
+
+        let nothing = Permissions::new(&PartPermissions::default(), &self.env);
+        let mut batch =
+            CallBatch::new(self, part, Arc::new(nothing)).without_programs();
+
+        exports.language_changed(&mut batch, tag)
+    }
+
     /// The files whose paths match `glob` that the part `part` may read,
     /// as `files.list` gives them to the part: OTTY walks the spend places
     /// a part names with it (spec "Host operations").
@@ -189,7 +222,7 @@ mod tests {
     use super::*;
     use crate::engine::PluginEngine;
     use crate::operations::v0_1::otty::host::keys::JsonField;
-    use crate::testing::{TempDir, load_template, template_env};
+    use crate::testing::{TempDir, load_fixture, load_template, template_env};
 
     const AGENT: &str = "example-agent";
     const PROVIDER: &str = "example-cloud";
@@ -253,5 +286,37 @@ mod tests {
         assert_eq!(key.fingerprint().len(), 64);
         assert_eq!(format!("{key:?}"), "KeyText(hidden)");
         assert!(matches!(for_provider, Err(HostError::NotAllowed(_))));
+    }
+
+    /// Issue 20: a plugin that exports the language receiver is told the
+    /// new language and answers that its texts depend on it.
+    #[test]
+    fn a_plugin_with_the_language_receiver_hears_the_new_language() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_template(&engine, &template_env());
+
+        engine.set_language("ru");
+        let changed = plugin.language_changed("ru");
+
+        assert!(plugin.has_language_receiver());
+        assert_eq!(changed, Ok(true));
+    }
+
+    /// Issue 20: a plugin without the receiver is not called; its texts
+    /// stay as it gave them.
+    #[test]
+    fn a_plugin_without_the_language_receiver_is_not_called() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_fixture(&engine, "minimal");
+
+        let changed = plugin.language_changed("ru");
+
+        assert!(!plugin.has_language_receiver());
+        assert_eq!(changed, Ok(false));
+        assert!(plugin.log().text().is_empty());
     }
 }

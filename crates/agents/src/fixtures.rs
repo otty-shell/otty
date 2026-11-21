@@ -8,8 +8,10 @@ pub(crate) mod stand_in;
 
 use std::path::{Path, PathBuf};
 
-pub use self::stand_in::{claude_code_stand_in, codex_stand_in};
+pub use self::stand_in::{claude_code_stand_in, codex_stand_in, not_logged_in};
+use crate::command::AgentCommand;
 use crate::error::SourceError;
+use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 use crate::price_source::PriceSource;
 use crate::record_format::{
     FormatChange, RecordCounts, RecordFormat, format_change as judged,
@@ -126,6 +128,75 @@ pub fn plugin_format_change(version: &str, seen: u64) -> FormatChange {
     );
 
     judged(format, [&counts]).expect("no record is understood")
+}
+
+/// The plugin part `part` of the plugin `plugin` 0.1.0, named after the
+/// plugin's id with a capital, such as "Openai" of `openai`.
+pub fn plugin_part(plugin: &str, part: &str) -> PluginPart {
+    let mut name = plugin.to_string();
+    if let Some(first) = name.get_mut(0..1) {
+        first.make_ascii_uppercase();
+    }
+
+    PluginPart::new(
+        plugin,
+        &name,
+        "0.1.0",
+        format!("https://github.com/otty-shell/otty-plugin-{plugin}"),
+        part,
+    )
+}
+
+/// The need of a profile of the agent part `part` of `plugin` nobody is
+/// logged in with: "Needs login", whose button runs `login`.
+///
+/// ```
+/// use otty_agents::fixtures::login_need;
+/// use otty_agents::{AgentCommand, PartNeedAction};
+///
+/// let need = login_need("openai", "codex", AgentCommand::new("codex"));
+///
+/// assert_eq!(need.id(), "not-logged-in");
+/// assert!(matches!(need.action(), PartNeedAction::Run(_)));
+/// ```
+pub fn login_need(plugin: &str, part: &str, login: AgentCommand) -> PartNeed {
+    PartNeed::new(
+        plugin_part(plugin, part),
+        "not-logged-in",
+        "Needs login",
+        "Nobody is logged in with this config folder.",
+        PartNeedAction::Run(login),
+    )
+}
+
+/// The need of the provider part `part` of `plugin` that asks for a key
+/// under `slot`, such as the admin key of an organization's bill.
+///
+/// ```
+/// use otty_agents::PartNeedAction;
+/// use otty_agents::fixtures::key_need;
+///
+/// let need = key_need("anthropic", "anthropic", "admin");
+///
+/// let PartNeedAction::AskKey(ask) = need.action() else {
+///     panic!("a key to ask for");
+/// };
+/// assert_eq!(ask.slot(), "admin");
+/// ```
+pub fn key_need(plugin: &str, part: &str, slot: &str) -> PartNeed {
+    let ask = KeyAsk::new(slot, "Admin key", "Reads the real bill.")
+        .with_prefix_and_page(
+            Some(String::from("sk-made-up-")),
+            Some(String::from("https://example.com/keys")),
+        );
+
+    PartNeed::new(
+        plugin_part(plugin, part),
+        "bill-key",
+        "The real bill needs a key",
+        "OTTY shows an estimate from the tokens.",
+        PartNeedAction::AskKey(ask),
+    )
 }
 
 /// The health of a plugin part paused after three failed reads in a row,

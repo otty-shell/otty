@@ -9,7 +9,7 @@ use otty_plugin_host::Manifest;
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
 use crate::plugin_provider::PluginProvider;
-use crate::provider::{AddAccountKind, ProviderEntry, ProviderId, ProviderRef};
+use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 
 /// One part of a plugin that reads an agent or a provider: the plugin's
 /// id, name, version and repository, and the id of the part.
@@ -195,18 +195,11 @@ impl Registry {
         one == other || self.resolve(one) == self.resolve(other)
     }
 
-    /// The providers Add account offers, in the order the dialog lists
-    /// them: the keys with money left first, then the organizations whose
-    /// bill an admin key reads.
+    /// The providers Add account offers, in the order of the registry.
     pub fn addable_providers(&self) -> Vec<&ProviderEntry> {
-        let of_kind = |kind: AddAccountKind| {
-            self.providers
-                .iter()
-                .filter(move |entry| entry.add_account() == Some(kind))
-        };
-
-        of_kind(AddAccountKind::Key)
-            .chain(of_kind(AddAccountKind::AdminKey))
+        self.providers
+            .iter()
+            .filter(|entry| entry.can_add_by_hand())
             .collect()
     }
 
@@ -412,34 +405,26 @@ mod tests {
         assert_eq!(ids, ["example-cloud", "other-cloud"]);
     }
 
-    /// Spec 2026-11-19, Decision 7: Add account lists the keys with money
-    /// left, then the organizations an admin key reads the bill of.
+    /// Spec 2026-11-19, Decision 7: Add account lists the providers whose
+    /// part offers it, in their order.
     #[test]
-    fn add_account_offers_the_keys_then_the_organizations() {
+    fn add_account_offers_the_providers_whose_part_offers_it() {
         let registry = Registry::new(
             Vec::new(),
             vec![
-                provider("org-cloud", &["org.example.com"])
-                    .with_add_account(AddAccountKind::AdminKey),
+                provider("org-cloud", &["org.example.com"]).with_add_by_hand(),
                 provider("plain-cloud", &["plain.example.com"]),
-                provider("key-cloud", &["key.example.com"])
-                    .with_add_account(AddAccountKind::Key),
+                provider("key-cloud", &["key.example.com"]).with_add_by_hand(),
             ],
         );
 
         let offered: Vec<_> = registry
             .addable_providers()
             .iter()
-            .map(|entry| (entry.id().as_str(), entry.add_account()))
+            .map(|entry| entry.id().as_str())
             .collect();
 
-        assert_eq!(
-            offered,
-            [
-                ("key-cloud", Some(AddAccountKind::Key)),
-                ("org-cloud", Some(AddAccountKind::AdminKey)),
-            ]
-        );
+        assert_eq!(offered, ["org-cloud", "key-cloud"]);
     }
 
     /// Spec "What the UI shows": the profiles of an agent with no entry

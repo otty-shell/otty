@@ -5,13 +5,14 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use otty_plugin_manifest::{Api, ContractVersion, PartKind};
+use otty_plugin_manifest::{Api, Contract, ContractVersion};
 use semver::Version;
 use wasmtime::component::InstancePre;
 
 use crate::agent::AgentExports;
 use crate::calls::CallState;
 use crate::engine::LoadError;
+use crate::language::LanguageExports;
 use crate::provider::ProviderExports;
 
 /// A version of the agent contract this OTTY has bindings for.
@@ -50,11 +51,30 @@ impl ProviderVersion {
     }
 }
 
+/// A version of the language receiver this OTTY has bindings for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanguageVersion {
+    /// `otty:language@0.1`, [`crate::language::v0_1`].
+    V0_1,
+}
+
+impl LanguageVersion {
+    /// The bindings of `version` of `[api]`: the one place to add a new
+    /// version of the language receiver.
+    pub(crate) fn of(version: ContractVersion) -> Option<Self> {
+        match (version.major(), version.minor()) {
+            (0, 1) => Some(LanguageVersion::V0_1),
+            _ => None,
+        }
+    }
+}
+
 /// The bindings of the contracts a plugin's `[api]` names, each in the
 /// version `[api]` names.
 pub(crate) struct ContractExports {
     agent: Option<AgentExports>,
     provider: Option<ProviderExports>,
+    language: Option<LanguageExports>,
 }
 
 impl ContractExports {
@@ -66,6 +86,10 @@ impl ContractExports {
         self.provider.as_ref()
     }
 
+    pub(crate) fn language(&self) -> Option<&LanguageExports> {
+        self.language.as_ref()
+    }
+
     /// The exports of the component of `instance_pre` for each contract
     /// of `api`. Refused for a contract version this OTTY has no bindings
     /// for, or an export that is not of its contract's shape.
@@ -75,17 +99,17 @@ impl ContractExports {
     ) -> Result<Self, LoadError> {
         let link_error =
             |error: wasmtime::Error| LoadError::Link(error.to_string());
-        let no_bindings = |kind: PartKind, version: ContractVersion| {
+        let no_bindings = |contract: Contract, version: ContractVersion| {
             LoadError::Link(format!(
-                "no bindings of the {kind} contract {version}"
+                "no bindings of the {contract} contract {version}"
             ))
         };
 
-        let agent = match api.version_of(PartKind::Agent) {
+        let agent = match api.version_of(Contract::Agent) {
             None => None,
             Some(version) => {
                 let binding = AgentVersion::of(version)
-                    .ok_or_else(|| no_bindings(PartKind::Agent, version))?;
+                    .ok_or_else(|| no_bindings(Contract::Agent, version))?;
 
                 Some(
                     AgentExports::new(binding, instance_pre)
@@ -93,11 +117,11 @@ impl ContractExports {
                 )
             },
         };
-        let provider = match api.version_of(PartKind::Provider) {
+        let provider = match api.version_of(Contract::Provider) {
             None => None,
             Some(version) => {
                 let binding = ProviderVersion::of(version)
-                    .ok_or_else(|| no_bindings(PartKind::Provider, version))?;
+                    .ok_or_else(|| no_bindings(Contract::Provider, version))?;
 
                 Some(
                     ProviderExports::new(binding, instance_pre)
@@ -105,8 +129,24 @@ impl ContractExports {
                 )
             },
         };
+        let language = match api.version_of(Contract::Language) {
+            None => None,
+            Some(version) => {
+                let binding = LanguageVersion::of(version)
+                    .ok_or_else(|| no_bindings(Contract::Language, version))?;
 
-        Ok(Self { agent, provider })
+                Some(
+                    LanguageExports::new(binding, instance_pre)
+                        .map_err(link_error)?,
+                )
+            },
+        };
+
+        Ok(Self {
+            agent,
+            provider,
+            language,
+        })
     }
 }
 
@@ -114,13 +154,13 @@ impl ContractExports {
 /// `otty:agent/agent@0.1.0`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExportedApi {
-    versions: BTreeMap<PartKind, Version>,
+    versions: BTreeMap<Contract, Version>,
 }
 
 impl ExportedApi {
-    /// The exported version of the contract of `kind`, if any.
-    pub fn version_of(&self, kind: PartKind) -> Option<&Version> {
-        self.versions.get(&kind)
+    /// The exported version of `contract`, if any.
+    pub fn version_of(&self, contract: Contract) -> Option<&Version> {
+        self.versions.get(&contract)
     }
 
     /// The contracts among the export names `names`; other exports are not
@@ -135,15 +175,15 @@ impl ExportedApi {
             let Some((interface, version)) = name.split_once('@') else {
                 continue;
             };
-            let kind = PartKind::ALL
+            let contract = Contract::ALL
                 .into_iter()
-                .find(|kind| kind.export_name() == interface);
-            let Some(kind) = kind else {
+                .find(|contract| contract.export_name() == interface);
+            let Some(contract) = contract else {
                 continue;
             };
             let version = Version::parse(version).ok()?;
 
-            if versions.insert(kind, version).is_some() {
+            if versions.insert(contract, version).is_some() {
                 return None;
             }
         }
@@ -154,15 +194,15 @@ impl ExportedApi {
     /// Whether the component exports exactly the contracts of `api`, each
     /// in a version it accepts.
     pub(crate) fn matches(&self, api: &Api) -> bool {
-        let same_kinds = api
+        let same_contracts = api
             .iter()
-            .map(|(kind, _)| kind)
+            .map(|(contract, _)| contract)
             .eq(self.versions.keys().copied());
 
-        same_kinds
-            && api.iter().all(|(kind, version)| {
+        same_contracts
+            && api.iter().all(|(contract, version)| {
                 self.versions
-                    .get(&kind)
+                    .get(&contract)
                     .is_some_and(|exported| version.accepts(exported))
             })
     }
@@ -174,7 +214,7 @@ impl fmt::Display for ExportedApi {
         let listed: Vec<String> = self
             .versions
             .iter()
-            .map(|(kind, version)| format!("{kind} {version}"))
+            .map(|(contract, version)| format!("{contract} {version}"))
             .collect();
 
         if listed.is_empty() {
@@ -204,15 +244,20 @@ mod tests {
 
     #[test]
     fn every_known_contract_version_has_bindings() {
-        for version in known_versions(PartKind::Agent) {
+        for version in known_versions(Contract::Agent) {
             let binding = AgentVersion::of(contract_version(&version));
 
             assert!(binding.is_some(), "agent {version}");
         }
-        for version in known_versions(PartKind::Provider) {
+        for version in known_versions(Contract::Provider) {
             let binding = ProviderVersion::of(contract_version(&version));
 
             assert!(binding.is_some(), "provider {version}");
+        }
+        for version in known_versions(Contract::Language) {
+            let binding = LanguageVersion::of(contract_version(&version));
+
+            assert!(binding.is_some(), "language {version}");
         }
     }
 
@@ -222,6 +267,7 @@ mod tests {
 
         assert_eq!(AgentVersion::of(version), None);
         assert_eq!(ProviderVersion::of(version), None);
+        assert_eq!(LanguageVersion::of(version), None);
     }
 
     #[test]
@@ -229,10 +275,14 @@ mod tests {
         let exported = exports(&[
             "otty:agent/agent@0.1.3",
             "otty:test/misbehave@0.1.0",
+            "otty:language/language@0.1.0",
             "otty:provider/provider@0.1.0",
         ]);
 
-        assert_eq!(exported.to_string(), "agent 0.1.3, provider 0.1.0");
+        assert_eq!(
+            exported.to_string(),
+            "agent 0.1.3, provider 0.1.0, language 0.1.0"
+        );
     }
 
     #[test]

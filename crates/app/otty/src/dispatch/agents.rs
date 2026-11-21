@@ -95,26 +95,30 @@ impl Delivery for AgentsIntent {
             },
             AgentsOutcome::LoadBill {
                 profile,
-                provider,
-                admin_key,
+                organization,
+                given,
             } => agents_io::load_bill(
+                app.agents.known_agents(),
                 &app.plugin_providers,
                 profile,
-                provider,
-                admin_key,
+                organization,
+                given,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
-            AgentsOutcome::LoadAccountNumbers { account, place } => {
-                agents_io::load_account_numbers(
-                    app.agents.known_agents(),
-                    &app.plugin_providers,
-                    account,
-                    place,
-                    app.shell_session.program(),
-                )
-                .map(AppEvent::Agents)
-            },
+            AgentsOutcome::LoadAccountNumbers {
+                account,
+                place,
+                given,
+            } => agents_io::load_account_numbers(
+                app.agents.known_agents(),
+                &app.plugin_providers,
+                account,
+                place,
+                given,
+                app.shell_session.program(),
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::LoadPrices { fetch_again } => {
                 agents_io::load_prices(&app.cache_dir, fetch_again)
                     .map(AppEvent::Agents)
@@ -403,16 +407,26 @@ mod tests {
             PathBuf::from("/no/such/.stranger"),
         );
 
-        let admin_key = otty_agents::AdminKeyRef::EnvVar(String::from(
-            "OTTY_TEST_NO_SUCH_ADMIN_KEY",
-        ));
+        let given = otty_agents::GivenKey::new(
+            "admin",
+            otty_agents::KeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_KEY")),
+        );
+        let organization = otty_agents::Account::new(
+            otty_agents::ProviderRef::of_id("anthropic"),
+            otty_agents::AccountIdentity::OrganizationId(String::from(
+                "made-up-org",
+            )),
+            otty_agents::AccountLogin::Unnamed,
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder(profile.config_dir().into()),
+        );
 
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LoadBill {
                 profile,
-                provider: otty_agents::ProviderRef::of_id("anthropic"),
-                admin_key,
+                organization,
+                given: vec![given],
             },
         );
 
@@ -426,9 +440,7 @@ mod tests {
         let mut app = app();
         let account = otty_agents::Account::added(
             otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AdminKeyRef::EnvVar(String::from(
-                "OTTY_TEST_NO_SUCH_KEY",
-            )),
+            otty_agents::KeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_KEY")),
         );
 
         let task = AgentsIntent::read(
@@ -436,6 +448,7 @@ mod tests {
             AgentsOutcome::LoadAccountNumbers {
                 account,
                 place: otty_agents::KeyPlace::Added,
+                given: Vec::new(),
             },
         );
 

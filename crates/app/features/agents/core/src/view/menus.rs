@@ -243,8 +243,7 @@ fn profile_menu(
 }
 
 /// The menu of an account: Rename…, Open usage page, then after a line
-/// Admin key… for an organization OTTY reads the bill of, then after a
-/// line Hide (or Show again for a hidden account). A key can not be renamed
+/// Hide (or Show again for a hidden account). A key can not be renamed
 /// or hidden yet: those items are off, with why under a line.
 fn account_menu(
     vm: &AccountMenuViewModel,
@@ -260,12 +259,6 @@ fn account_menu(
         MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
             .on_press(act(AccountAction::OpenUsagePage)),
     );
-    if vm.has_admin_key {
-        menu = menu.separator().item(
-            MenuItem::new(i18n::t(Key::AgentsAdminKeyItem))
-                .on_press(act(AccountAction::AdminKey)),
-        );
-    }
     if vm.is_added {
         menu = menu.separator().item(
             MenuItem::new(i18n::t(Key::AgentsEditKeyItem))
@@ -718,7 +711,6 @@ mod tests {
         MenuViewModel::Account(AccountMenuViewModel {
             place: place(),
             can_save,
-            has_admin_key: true,
             is_added: true,
             is_hidden,
         })
@@ -729,7 +721,6 @@ mod tests {
         let items = [
             (Key::AgentsRename, AccountAction::Rename),
             (Key::AgentsOpenUsagePage, AccountAction::OpenUsagePage),
-            (Key::AgentsAdminKeyItem, AccountAction::AdminKey),
             (Key::AgentsEditKeyItem, AccountAction::EditKey),
             (Key::AgentsHide, AccountAction::Hide),
             (Key::ButtonRemove, AccountAction::Remove),

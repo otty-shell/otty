@@ -1078,7 +1078,7 @@ mod tests {
                         otty_agents::ProviderRef::of_id("openrouter"),
                     )),
                     add_account(AddAccountIntent::KeyChoicePicked(
-                        otty_app_agents::AdminKeyChoice::Variable,
+                        otty_app_agents::KeyPlaceChoice::Variable,
                     )),
                     add_account(AddAccountIntent::KeyChanged(String::from(
                         "OPENROUTER_API_KEY",
@@ -1153,7 +1153,11 @@ mod tests {
                 vec![
                     AppEvent::Agents(AgentsIntent::CloseFoundReport),
                     AppEvent::Agents(AgentsIntent::FoundReportNeed(
-                        otty_app_agents::NeedAction::LogIn(work_profile()),
+                        otty_app_agents::NeedAction::Run {
+                            title: String::from("Work"),
+                            command: otty_agents::AgentCommand::new("codex")
+                                .with_arg("login"),
+                        },
                     )),
                 ],
             ),
@@ -1191,7 +1195,7 @@ mod tests {
         let _ = app.agents.reduce(
             profiles_loaded(vec![(
                 work_profile(),
-                otty_agents::ProfileStatus::NotLoggedIn,
+                crate::testing::agents::not_logged_in(),
             )]),
             AgentsCtx::default(),
         );
@@ -1268,7 +1272,7 @@ mod tests {
         let _ = app.agents.reduce(
             first_start_profiles_loaded(vec![(
                 work_profile(),
-                otty_agents::ProfileStatus::NotLoggedIn,
+                crate::testing::agents::not_logged_in(),
             )]),
             AgentsCtx::default(),
         );
@@ -2044,7 +2048,7 @@ mod tests {
         for intent in [
             profiles_loaded(vec![
                 (codex_profile(), connected),
-                (work_profile(), otty_agents::ProfileStatus::NotLoggedIn),
+                (work_profile(), crate::testing::agents::not_logged_in()),
             ]),
             one_session_loaded(codex_profile(), "c1"),
             AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),

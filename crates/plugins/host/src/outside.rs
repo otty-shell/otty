@@ -1,18 +1,22 @@
 //! What the host operations reach outside OTTY besides files: the network
-//! and the system keyring, and whether the user allowed the keyring. The
-//! engine holds the real ones; tests give mocks.
+//! and the system keyring, whether the user allowed the keyring, and the
+//! language OTTY's interface shows now. The engine holds the real ones;
+//! tests give mocks.
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::https::{HttpsSend, UreqClient};
 use crate::operations::v0_1::otty::host::types::HostError;
 use crate::system_keyring::{KeyringError, KeyringRead, SystemKeyring};
 
-/// The HTTPS client and the system keyring of every plugin call.
+/// The HTTPS client, the system keyring and the language of every plugin
+/// call.
 pub(crate) struct Outside {
     https: Box<dyn HttpsSend>,
     keyring: Box<dyn KeyringRead>,
     keyring_allowed: AtomicBool,
+    language: Mutex<String>,
 }
 
 impl Outside {
@@ -21,7 +25,16 @@ impl Outside {
         self.https.as_ref()
     }
 
-    /// `https` and `keyring`, the keyring not allowed yet.
+    /// The language OTTY's interface shows now, as a tag such as `ru`.
+    pub(crate) fn language(&self) -> String {
+        match self.language.lock() {
+            Ok(language) => language.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// `https` and `keyring`, the keyring not allowed yet, the interface
+    /// in English.
     pub(crate) fn new(
         https: Box<dyn HttpsSend>,
         keyring: Box<dyn KeyringRead>,
@@ -30,7 +43,19 @@ impl Outside {
             https,
             keyring,
             keyring_allowed: AtomicBool::new(false),
+            language: Mutex::new(String::from("en")),
         }
+    }
+
+    /// The interface shows the language `tag` from now on: the next
+    /// `env.language` of every plugin gives it.
+    pub(crate) fn set_language(&self, tag: &str) {
+        let mut language = match self.language.lock() {
+            Ok(language) => language,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        *language = tag.to_string();
     }
 
     /// The network with `ureq` and the system keyring.

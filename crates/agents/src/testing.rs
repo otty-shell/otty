@@ -22,6 +22,7 @@ use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
+use crate::part_need::PartNeed;
 use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
@@ -64,7 +65,6 @@ mock! {
             profile: &Profile,
             session: Option<&'a SessionId>,
         ) -> AgentCommand;
-        fn login(&self, profile: &Profile) -> AgentCommand;
         fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
         fn session_source_ids(&self) -> &'static [SourceId];
         fn limit_source(
@@ -79,6 +79,11 @@ mock! {
             profile: &Profile,
             account: &Account,
         ) -> Option<Login>;
+        fn login_refused(
+            &self,
+            profile: &Profile,
+            login: &Login,
+        ) -> Option<PartNeed>;
     }
 }
 
@@ -231,7 +236,7 @@ impl Agent for Coder {
             return ProfileStatus::ConfigDirNotFound;
         }
         if !config_dir.join("auth.json").is_file() {
-            return ProfileStatus::NotLoggedIn;
+            return ProfileStatus::NotLoggedIn(None);
         }
 
         ProfileStatus::Connected {
@@ -265,10 +270,6 @@ impl Agent for Coder {
             Some(id) => command.with_arg("resume").with_arg(id.as_str()),
             None => command,
         }
-    }
-
-    fn login(&self, profile: &Profile) -> AgentCommand {
-        self.command(profile).with_arg("login")
     }
 
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>> {

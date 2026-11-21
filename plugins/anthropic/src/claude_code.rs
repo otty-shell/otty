@@ -2,9 +2,9 @@
 //! and the commands that start it.
 
 use otty_plugin_sdk::{
-    Agent, Answers, Command, Limits, Login, LoginRef, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
-    SpendKind, SpendPlace,
+    Agent, Answers, Command, Limits, Login, LoginRef, Need, Profile,
+    ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
+    SessionStats, SpendItem, SpendKind, SpendPlace,
 };
 
 use crate::glob::escaped;
@@ -12,20 +12,22 @@ use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::project_folder::projects_folder;
 use crate::provider::profile_provider;
 use crate::{
-    Anthropic, detect, logins, sessions, spend_file, stats, usage_probe,
+    Anthropic, detect, logins, needs, sessions, spend_file, stats, usage_probe,
     version,
 };
 
 /// The program, looked up on `PATH`.
-const PROGRAM: &str = "claude";
+pub(crate) const PROGRAM: &str = "claude";
 
 impl Agent for Anthropic {
     fn profiles(_agent: &str) -> Vec<ProfilePlace> {
         profiles()
     }
 
+    /// A profile nobody is logged in with needs `claude`, which asks to
+    /// log in on its first start in a config folder.
     fn detect(profile: &Profile) -> ProfileStatus {
-        detect::status(&profile.folder)
+        detect::status(&profile.folder, start_command(profile, Vec::new()))
     }
 
     /// The version the records of the newest session file name.
@@ -73,12 +75,6 @@ impl Agent for Anthropic {
         start_command(profile, args)
     }
 
-    /// `claude`, which asks to log in on its first start in a config
-    /// folder.
-    fn login_command(profile: &Profile) -> Command {
-        start_command(profile, Vec::new())
-    }
-
     /// The `/usage` panel of `claude`, for any login of the profile: it
     /// shows the limits of the login Claude Code runs with.
     fn read_limits(
@@ -100,6 +96,16 @@ impl Agent for Anthropic {
         folder: &str,
     ) -> Result<ProjectStats, ReadError> {
         stats::project_stats(&profile.folder, folder)
+    }
+
+    /// A provider part refused the Claude login of the profile, wherever
+    /// it read it: Claude Code itself renews it in the profile's config
+    /// folder, or asks to log in again. The same need as this part's own
+    /// read of the limits gives, so it shows once.
+    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
+        let claude = start_command(profile, Vec::new());
+
+        Some(needs::login_expired(claude))
     }
 }
 
@@ -124,6 +130,8 @@ pub(crate) fn start_command(profile: &Profile, args: Vec<String>) -> Command {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::NeedAction;
+
     use super::*;
     use crate::testing::{AGENT, as_part, host, path, profile};
 
@@ -179,15 +187,55 @@ mod tests {
         );
     }
 
+    /// The need of a profile nobody is logged in with starts `claude`,
+    /// which asks to log in on its first start, in the profile's config
+    /// folder and in the language of OTTY.
     #[test]
-    fn login_starts_claude_in_the_config_folder_of_the_profile() {
+    fn a_profile_nobody_is_logged_in_with_needs_claude_to_log_in() {
+        let host = host().with_language("ru");
+        let added = profile(&host, ".claude-nothing", false);
+        let default = profile(&host, ".claude-nothing", true);
+
+        let added_status = as_part(&host, || Anthropic::detect(&added));
+        let default_status = as_part(&host, || Anthropic::detect(&default));
+
+        let ProfileStatus::NotLoggedIn(need) = added_status else {
+            panic!("not logged in: {added_status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(need.title, "Нужен вход");
+        assert!(need.text.contains("Claude Code"), "{}", need.text);
         assert_eq!(
-            Anthropic::login_command(&default_profile()),
-            command(&[], &[])
+            need.action,
+            NeedAction::Run(command(
+                &[],
+                &[(CONFIG_VARIABLE, added.folder.as_str())]
+            ))
         );
+        let ProfileStatus::NotLoggedIn(need) = default_status else {
+            panic!("not logged in: {default_status:?}");
+        };
+        assert_eq!(need.action, NeedAction::Run(command(&[], &[])));
+    }
+
+    /// Issue 20: a provider part refused the Claude login of a profile;
+    /// the need runs Claude Code in that profile's config folder.
+    #[test]
+    fn a_refused_login_runs_claude_in_the_profiles_folder() {
+        let host = host();
+        let added = profile(&host, ".claude-work", false);
+        let login = LoginRef::EnvVar("ANTHROPIC_API_KEY".to_string());
+
+        let need = as_part(&host, || Anthropic::login_refused(&added, &login))
+            .expect("a need");
+
+        assert_eq!(need.id, "login-expired");
         assert_eq!(
-            Anthropic::login_command(&added_profile()),
-            command(&[], &[(CONFIG_VARIABLE, "/home/dev/.claude-work")])
+            need.action,
+            NeedAction::Run(command(
+                &[],
+                &[(CONFIG_VARIABLE, added.folder.as_str())]
+            ))
         );
     }
 

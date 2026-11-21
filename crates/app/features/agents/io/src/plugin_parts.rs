@@ -13,6 +13,8 @@ use otty_plugin_host::{
     PluginLog,
 };
 
+use crate::plugin_language::LanguageReceivers;
+
 /// The file of a plugin's folder that holds its manifest.
 const MANIFEST_FILE: &str = "otty-plugin.toml";
 
@@ -33,8 +35,9 @@ pub struct InstalledParts {
 }
 
 /// The readers of Agents mode: the agents, plugin parts first, the
-/// provider parts, the registry that names them all, and the plugins that
-/// run. A plain bag of what [`PluginParts::into_readers`] gives.
+/// provider parts, the registry that names them all, the plugins that
+/// run, and those of them told when the language changes. A plain bag of
+/// what [`PluginParts::into_readers`] gives.
 pub struct Readers {
     /// The agents, each served once.
     pub agents: Vec<Box<dyn Agent>>,
@@ -44,6 +47,9 @@ pub struct Readers {
     pub registry: Registry,
     /// Each loaded plugin with its log and the health of its parts.
     pub running: Vec<RunningParts>,
+    /// The loaded plugins with a part on that export the language
+    /// receiver.
+    pub language_receivers: LanguageReceivers,
 }
 
 /// One loaded plugin: its log and the health of each of its parts that
@@ -66,6 +72,7 @@ pub struct PluginParts {
     agents: Vec<PluginAgent>,
     providers: Vec<PluginProvider>,
     running: Vec<RunningParts>,
+    language_receivers: Vec<Arc<LoadedPlugin>>,
 }
 
 impl PluginParts {
@@ -81,8 +88,9 @@ impl PluginParts {
 
     /// The parts that are on of the plugins `installed`, loaded by
     /// `engine`. The parts see the home folder `home` and the variables
-    /// they list in `env`, with the values `variable` gives. A plugin that
-    /// can not be read or loaded is left out, with a warning in the log.
+    /// they list in `env`, with the values `variable` gives, and the
+    /// language the engine gives at each call. A plugin that can not be
+    /// read or loaded is left out, with a warning in the log.
     pub fn load(
         engine: &PluginEngine,
         installed: &[InstalledParts],
@@ -132,6 +140,7 @@ impl PluginParts {
             providers: self.providers,
             registry,
             running: self.running,
+            language_receivers: Arc::from(self.language_receivers),
         }
     }
 
@@ -183,6 +192,10 @@ impl PluginParts {
             }
         }
 
+        let is_on = !running.parts.is_empty();
+        if is_on && plugin.has_language_receiver() {
+            self.language_receivers.push(Arc::clone(plugin));
+        }
         self.running.push(running);
     }
 }

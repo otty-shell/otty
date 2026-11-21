@@ -21,6 +21,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::bill_days::DaySums;
+use crate::needs;
 use crate::requests::{json_answer, percent_encoded};
 
 /// The address of the cost report.
@@ -99,7 +100,7 @@ impl CostItem {
 }
 
 /// The bill of the organization of the admin key `key` over the UTC days
-/// of `days`. A refused key is "key refused"; any other status fails and
+/// of `days`. A refused key asks for a new one; any other status fails and
 /// an answer that is not a report is unexpected. A day, or a cost of a
 /// day, that can not be read is skipped.
 pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
@@ -116,7 +117,9 @@ pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
             .header_with_key("x-api-key", "", key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("accept", "application/json");
-        let answer = json_answer(&request, COST_REPORT_URL)?;
+        let answer = json_answer(&request, COST_REPORT_URL, || {
+            ReadError::NeedsUser(needs::new_bill_key())
+        })?;
         let report: ReportPage =
             serde_json::from_value(answer).map_err(|_| {
                 ReadError::Unexpected(format!(
@@ -197,6 +200,7 @@ fn cents_to_micro_dollars(amount: &Value) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
@@ -328,13 +332,28 @@ mod tests {
         assert_eq!(host.requests().len(), MAX_PAGES);
     }
 
+    /// A refused admin key asks for a new one under the same slot.
     #[test]
-    fn a_refused_key_is_key_refused() {
+    fn a_refused_key_asks_for_a_new_one() {
         for status in [401, 403] {
             let host = host();
             host.answer("GET", FIRST_PAGE, status, b"{}");
 
-            assert_eq!(bill_of(&host), Err(ReadError::KeyRefused), "{status}");
+            let bill = bill_of(&host);
+
+            let Err(ReadError::NeedsUser(need)) = bill else {
+                panic!("a need: {bill:?}");
+            };
+            assert_eq!(need.id, "new-bill-key", "{status}");
+            assert!(
+                need.text.starts_with("Anthropic refused"),
+                "{}",
+                need.text
+            );
+            let NeedAction::AskKey(ask) = need.action else {
+                panic!("a key to ask for: {need:?}");
+            };
+            assert_eq!(ask.slot, "admin");
         }
     }
 

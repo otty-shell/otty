@@ -34,10 +34,69 @@ interface types {
     /// What was read is not in a shape the part understands. The text
     /// names fields, never values.
     unexpected(string),
-    /// The provider refused the key: it is wrong, expired or revoked.
-    key-refused,
+    /// The part can not read until the user does what `need` asks, such
+    /// as give a key the part asks for or replace one the provider
+    /// refused.
+    needs-user(need),
+    /// The provider refused the login the part read with, or the login
+    /// expired: a login an agent keeps, such as a ChatGPT or a Claude
+    /// login. The provider part does not know which agent keeps it, so
+    /// OTTY asks the agent part that found it (`login-refused` of the
+    /// agent contract) what the user must do.
+    login-refused,
     /// Anything else, in plain words.
     failed(string),
+  }
+
+  /// A program with its arguments and variables, run in a terminal tab.
+  record command {
+    program: string,
+    args: list<string>,
+    env: list<tuple<string, string>>,
+  }
+
+  /// A key OTTY asks the user for. OTTY keeps only where the user keeps
+  /// it, a file or a variable, never the key, and gives it back to the
+  /// part as a handle with its `slot`.
+  record key-ask {
+    /// The part's own name for the key, such as `admin`.
+    slot: string,
+    /// The name of the field, such as "Admin key".
+    label: string,
+    /// One line under the field, such as what the key reads.
+    hint: string,
+    /// What the key starts with, such as `sk-ant-admin`, when it is
+    /// known.
+    prefix: option<string>,
+    /// The `https` page where the user makes the key.
+    page: option<string>,
+  }
+
+  /// What the button of a need does.
+  variant need-action {
+    /// Runs the command in a terminal tab, such as `codex login`, or the
+    /// agent itself so it renews its login.
+    run(command),
+    /// Shows a field for a key.
+    ask-key(key-ask),
+    /// Opens an `https` page in the browser.
+    open-page(string),
+    /// Puts the text on the clipboard, such as a report for the plugin's
+    /// author.
+    copy-report(string),
+  }
+
+  /// One thing only the user can do, with one button. The texts are in
+  /// the language `env.language` names, or in English.
+  record need {
+    /// Stable within the part, so the same need from two reads shows
+    /// once.
+    id: string,
+    /// What is needed, in a few words.
+    title: string,
+    /// Why, and what the button does.
+    text: string,
+    action: need-action,
   }
 
   /// What a login or an account is known by. Any of the fields may be
@@ -54,8 +113,6 @@ interface types {
     subscription,
     /// An API key of an account.
     api-key,
-    /// An admin key of an organization, which reads its bill.
-    admin-key,
     /// A token of a gateway that resells models.
     gateway-token,
   }
@@ -331,6 +388,10 @@ interface env {
   var: func(name: string) -> option<string>;
   /// The user's home folder.
   home: func() -> string;
+  /// The language OTTY's interface shows now, as a tag such as `en`,
+  /// `ru` or `pt-BR`; it may change between two calls. A part writes the
+  /// texts of its needs in it, or in English.
+  language: func() -> string;
 }
 
 /// The time.

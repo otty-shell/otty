@@ -4,9 +4,9 @@
 
 use std::collections::BTreeSet;
 
-use otty_plugin_sdk::{ProfilePlace, ProfileStatus, env, files};
+use otty_plugin_sdk::{ProfilePlace, env, files};
 
-use crate::detect::status;
+use crate::detect::connection;
 use crate::glob::escaped;
 use crate::sessions::session_file_globs;
 
@@ -66,7 +66,7 @@ fn found_folders(home: &str) -> Vec<String> {
         .into_iter()
         .filter_map(|file| folder_in_home(home, &file.path))
         .filter(|folder| !with_sessions.contains(folder))
-        .filter(|folder| matches!(status(folder), ProfileStatus::Connected(_)))
+        .filter(|folder| connection(folder).is_some())
         .collect::<Vec<String>>();
 
     with_sessions.extend(logged_in);

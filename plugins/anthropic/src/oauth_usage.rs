@@ -6,8 +6,10 @@
 //!
 //! The part never sees `.credentials.json`, so it does not know when the
 //! token expires or whether it may read the usage (`user:profile`): it
-//! sends the request, and a refusal is "key refused" (issue 12 of spec
-//! 2026-11-19-agent-plugins). The token is never renewed.
+//! sends the request (issue 12 of spec 2026-11-19-agent-plugins). The
+//! token is never renewed. A refusal is only a refused login (issue 20):
+//! the part does not know which agent keeps it, so OTTY asks the agent
+//! part that found it what the user must do.
 
 use otty_plugin_sdk::http::Request;
 use otty_plugin_sdk::{Key, ReadError};
@@ -28,7 +30,7 @@ pub(crate) fn claude_usage(key: &Key) -> Result<UsageNumbers, ReadError> {
         .header("accept", "application/json")
         .header("anthropic-beta", OAUTH_BETA);
 
-    let answer = json_answer(&request, USAGE_URL)?;
+    let answer = json_answer(&request, USAGE_URL, || ReadError::LoginRefused)?;
 
     usage_numbers(&answer)
 }
@@ -74,13 +76,14 @@ mod tests {
     }
 
     /// Issue 12: an expired token, or one that may not read the usage, is
-    /// refused by the server; the part says so and renews nothing.
+    /// refused by the server; the part renews nothing. Issue 20: it only
+    /// says the login was refused and names no agent to run.
     #[test]
-    fn a_refused_request_is_key_refused() {
+    fn a_refused_request_is_only_a_refused_login() {
         for status in [401, 403] {
             let (_, usage) = usage_with(status, r#"{"error": "x"}"#);
 
-            assert_eq!(usage, Err(ReadError::KeyRefused), "{status}");
+            assert_eq!(usage, Err(ReadError::LoginRefused), "{status}");
         }
     }
 

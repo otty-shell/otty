@@ -1,14 +1,15 @@
 //! The provider part `openai`: whose account a ChatGPT login or an OpenAI
 //! key is, the limits and credits of a ChatGPT login, and the bill of an
-//! OpenAI organization read with an admin key. OTTY gives the part a
+//! OpenAI organization read with an admin key the part asks the user for. OTTY gives the part a
 //! handle to the login token or the key, never the key, and only of
 //! accounts of OpenAI: a login behind a gateway is not one.
 
 use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, Bill, DayRange, Key, LoginFacts, Provider,
-    ReadError,
+    AccountFacts, AccountNumbers, Bill, DayRange, GivenKey, Key, LoginFacts,
+    Provider, ReadError, given_key,
 };
 
+use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{OpenAi, chatgpt_usage, organization_costs};
 
 impl Provider for OpenAi {
@@ -33,6 +34,7 @@ impl Provider for OpenAi {
         _provider: &str,
         account: &AccountFacts,
         key: &Key,
+        _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
         let Some(account_id) = account.identity.account_id.as_deref() else {
             return Ok(no_numbers());
@@ -48,14 +50,25 @@ impl Provider for OpenAi {
         })
     }
 
-    /// The costs of the organization of the admin key over `days`.
+    /// The costs of the organization over `days`, read with an admin key:
+    /// the account's own key when it is one, else the one the user gave
+    /// under [`ADMIN_SLOT`], else the part asks for one and sends nothing.
     fn read_bill(
         _provider: &str,
         _account: &AccountFacts,
-        admin_key: &Key,
+        key: &Key,
+        given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
-        organization_costs::bill(admin_key, days)
+        let is_bill_key =
+            key.has_prefix(ADMIN_PREFIX).map_err(ReadError::Host)?;
+        let bill_key = match is_bill_key {
+            true => key,
+            false => given_key(given, ADMIN_SLOT)
+                .ok_or_else(|| ReadError::NeedsUser(needs::bill_key()))?,
+        };
+
+        organization_costs::bill(bill_key, days)
     }
 }
 
@@ -76,7 +89,8 @@ fn no_numbers() -> AccountNumbers {
 mod tests {
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::{
-        HostError, Identity, JsonField, KeyPlace, LoginKind, files, keys,
+        GivenKey, HostError, Identity, JsonField, KeyPlace, LoginKind,
+        NeedAction, files, keys,
     };
 
     use super::*;
@@ -87,6 +101,27 @@ mod tests {
     const TOKEN: &str =
         "e30.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6Im1hZGUtdXAtYWNjZXNzIn0.c2ln";
     const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+    /// The address of the costs of 2026-11-16, the one day of [`one_day`].
+    const COSTS_URL: &str = "https://api.openai.com/v1/organization/costs?start_time=1794787200&end_time=1794873600&bucket_width=1d&limit=31";
+    /// A made-up admin key, never a real one.
+    const MADE_UP_ADMIN: &str = "sk-admin-made-up-for-tests";
+
+    fn one_day() -> DayRange {
+        DayRange {
+            first: "2026-11-16".to_string(),
+            last: "2026-11-16".to_string(),
+        }
+    }
+
+    fn organization() -> AccountFacts {
+        AccountFacts {
+            identity: Identity {
+                organization_id: Some("org-made-up".to_string()),
+                ..Identity::default()
+            },
+            plan: None,
+        }
+    }
 
     fn chatgpt_login() -> LoginFacts {
         LoginFacts {
@@ -140,7 +175,7 @@ mod tests {
 
         let numbers = host.as_provider(PROVIDER, || {
             let facts = OpenAi::account(PROVIDER, &key, &chatgpt_login())?;
-            OpenAi::numbers(PROVIDER, &facts, &key)
+            OpenAi::numbers(PROVIDER, &facts, &key, &[])
         });
 
         let numbers = numbers.expect("the numbers");
@@ -160,11 +195,93 @@ mod tests {
 
         let numbers = host.as_provider(PROVIDER, || {
             let facts = OpenAi::account(PROVIDER, &key, &api_key())?;
-            OpenAi::numbers(PROVIDER, &facts, &key)
+            OpenAi::numbers(PROVIDER, &facts, &key, &[])
         });
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
+    }
+
+    /// The bill reads only with an admin key: an API key of the account
+    /// is not one, and with no admin key given the part asks for one under
+    /// the slot `admin` and sends nothing.
+    #[test]
+    fn a_bill_with_no_bill_key_asks_for_one() {
+        let host = host();
+        let key = host.key("sk-proj-made-up-openai-key");
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(PROVIDER, &organization(), &key, &[], &one_day())
+        });
+
+        let Err(ReadError::NeedsUser(need)) = bill else {
+            panic!("a need: {bill:?}");
+        };
+        assert_eq!(need.id, "bill-key");
+        assert_eq!(need.title, "The real bill needs an admin key");
+        let NeedAction::AskKey(ask) = need.action else {
+            panic!("a key to ask for: {need:?}");
+        };
+        assert_eq!(ask.slot, "admin");
+        assert_eq!(ask.label, "Admin key");
+        assert_eq!(ask.prefix.as_deref(), Some("sk-admin-"));
+        assert_eq!(
+            ask.page.as_deref(),
+            Some(
+                "https://platform.openai.com/settings/organization/admin-keys"
+            )
+        );
+        assert!(host.requests().is_empty());
+    }
+
+    /// The admin key the user gave under `admin` reads the bill.
+    #[test]
+    fn a_key_given_under_admin_reads_the_bill() {
+        let host = host();
+        host.answer(
+            "GET",
+            COSTS_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = host.key("sk-proj-made-up-openai-key");
+        let given = [GivenKey::new("admin", host.key(MADE_UP_ADMIN))];
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(
+                PROVIDER,
+                &organization(),
+                &key,
+                &given,
+                &one_day(),
+            )
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some(format!("Bearer {MADE_UP_ADMIN}").as_str())
+        );
+    }
+
+    /// An account whose own key is an admin key reads its bill with it.
+    #[test]
+    fn an_account_key_that_reads_bills_reads_its_own() {
+        let host = host();
+        host.answer(
+            "GET",
+            COSTS_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = host.key(MADE_UP_ADMIN);
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(PROVIDER, &organization(), &key, &[], &one_day())
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(host.requests().len(), 1);
     }
 
     /// Spec Decision 7: a key handle goes only into a request to a host

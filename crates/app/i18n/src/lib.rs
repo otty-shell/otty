@@ -397,8 +397,8 @@ pub fn with_error(key: Key, error: &str) -> String {
 /// set_locale(Locale::En);
 ///
 /// assert_eq!(
-///     filled(Key::TplAgentsOpenAgent, &[("agent", "Coder")]),
-///     "Open Coder"
+///     filled(Key::TplAgentsRemoveTitle, &[("name", "Coder")]),
+///     "Remove Coder?"
 /// );
 /// ```
 pub fn filled(key: Key, values: &[(&str, &str)]) -> String {

@@ -7,7 +7,7 @@
 //! read, is put in as it came.
 
 use otty_agents::{
-    AdminKeyRef, PluginFailureKind, SourceError, SourceFailure, SourceId,
+    KeyRef, PluginFailureKind, SourceError, SourceFailure, SourceId,
     Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
@@ -20,11 +20,9 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
             Key::TplAgentsFailureNotAvailable,
             &[("reason", &unavailable_text(reason))],
         ),
-        SourceError::NotLoggedIn => {
-            i18n::t(Key::AgentsFailureNotLoggedIn).to_string()
-        },
-        SourceError::KeyRefused => {
-            i18n::t(Key::AgentsFailureKeyRefused).to_string()
+        SourceError::NeedsUser(need) => need.title().to_string(),
+        SourceError::LoginRefused(_) => {
+            i18n::t(Key::AgentsNeedLoginRefusedTitle).to_string()
         },
         SourceError::Network(detail) => {
             i18n::filled(Key::TplAgentsFailureNetwork, &[("error", detail)])
@@ -78,23 +76,23 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             &[("agent", agent.as_str())],
         ),
         Unavailable::NoBill => i18n::t(Key::AgentsNoBill).to_string(),
-        Unavailable::NoAdminKey => i18n::t(Key::AgentsNoAdminKey).to_string(),
-        Unavailable::AdminKeyMissing(AdminKeyRef::File(path)) => i18n::filled(
-            Key::TplAgentsAdminKeyFileMissing,
+        Unavailable::NoLogin => i18n::t(Key::AgentsNoLogin).to_string(),
+        Unavailable::KeyMissing(KeyRef::File(path)) => i18n::filled(
+            Key::TplAgentsKeyFileMissing,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::AdminKeyMissing(AdminKeyRef::EnvVar(name)) => {
+        Unavailable::KeyMissing(KeyRef::EnvVar(name)) => {
             i18n::filled(Key::TplAgentsVariableNotSet, &[("name", name)])
         },
-        Unavailable::AdminKeyEmpty(AdminKeyRef::File(path)) => i18n::filled(
-            Key::TplAgentsAdminKeyFileEmpty,
+        Unavailable::KeyEmpty(KeyRef::File(path)) => i18n::filled(
+            Key::TplAgentsKeyFileEmpty,
             &[("path", &path.display().to_string())],
         ),
-        Unavailable::AdminKeyEmpty(AdminKeyRef::EnvVar(name)) => {
+        Unavailable::KeyEmpty(KeyRef::EnvVar(name)) => {
             i18n::filled(Key::TplAgentsVariableEmpty, &[("name", name)])
         },
-        Unavailable::AdminKeyVariableNotValid => {
-            i18n::t(Key::AgentsAdminKeyVariableNotValid).to_string()
+        Unavailable::KeyVariableNotValid => {
+            i18n::t(Key::AgentsKeyVariableNotValid).to_string()
         },
         Unavailable::NoAccountSource => {
             i18n::t(Key::AgentsNoAccountSource).to_string()
@@ -197,12 +195,12 @@ mod tests {
     fn every_failure() -> Vec<SourceError> {
         let path = PathBuf::from("/home/user/.coder/projects");
         let detail = String::from("Permission denied (os error 13)");
-        let key_file = AdminKeyRef::File(PathBuf::from("/home/user/admin-key"));
-        let key_variable = AdminKeyRef::EnvVar(String::from("ADMIN_KEY"));
+        let key_file = KeyRef::File(PathBuf::from("/home/user/org-key"));
+        let key_variable = KeyRef::EnvVar(String::from("ORG_KEY"));
 
         vec![
-            SourceError::NotLoggedIn,
-            SourceError::KeyRefused,
+            crate::testing::login_expired(),
+            crate::testing::refused_key_need(),
             SourceError::Network(String::from("connection refused")),
             SourceError::Unreadable {
                 path: path.clone(),
@@ -215,12 +213,12 @@ mod tests {
             ))),
             not_available(Unavailable::NoStatistics(AgentId::new("coder"))),
             not_available(Unavailable::NoBill),
-            not_available(Unavailable::NoAdminKey),
-            not_available(Unavailable::AdminKeyMissing(key_file.clone())),
-            not_available(Unavailable::AdminKeyMissing(key_variable.clone())),
-            not_available(Unavailable::AdminKeyEmpty(key_file)),
-            not_available(Unavailable::AdminKeyEmpty(key_variable)),
-            not_available(Unavailable::AdminKeyVariableNotValid),
+            not_available(Unavailable::NoLogin),
+            not_available(Unavailable::KeyMissing(key_file.clone())),
+            not_available(Unavailable::KeyMissing(key_variable.clone())),
+            not_available(Unavailable::KeyEmpty(key_file)),
+            not_available(Unavailable::KeyEmpty(key_variable)),
+            not_available(Unavailable::KeyVariableNotValid),
             not_available(Unavailable::NoKeptPriceFile),
             not_available(Unavailable::NoSessionFile(SessionId::new("a1"))),
             not_available(Unavailable::NoSessionFiles),
@@ -281,8 +279,17 @@ mod tests {
             ))),
             "ошибка сети: connection refused"
         );
-        for error in every_failure() {
+        // A need of a part is written in the language the host told the
+        // part, not by OTTY: it is shown as the part gave it.
+        let written_by_otty = every_failure()
+            .into_iter()
+            .filter(|error| !matches!(error, SourceError::NeedsUser(_)));
+        for error in written_by_otty {
             assert_ne!(source_error_text(&error), error.to_string());
         }
+        assert_eq!(
+            source_error_text(&crate::testing::login_expired()),
+            "The login expired"
+        );
     }
 }

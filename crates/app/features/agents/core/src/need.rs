@@ -1,29 +1,41 @@
 //! What the button of a need does (spec "Words"): a need is a task only
 //! the user can do, with one button. The Found by OTTY report, the All
 //! accounts and All profiles pages and the page of an account list the
-//! needs and send the same action.
+//! needs and send the same action. A need of a plugin part does the one
+//! thing its part asked (spec 2026-11-19-agent-plugins, issue 20).
 
-use otty_agents::Profile;
+use otty_agents::{Account, AgentCommand, KeyAsk};
 use otty_app_domain::plugins::{OffPart, PluginsPlace};
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
-use super::{keyring, profile_actions, profile_dialog, session_actions};
+use super::{add_account_dialog, keyring};
 
 /// What the button of a need does: the one thing the user can do about it
 /// (spec "Words").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NeedAction {
-    /// Log the profile in: its agent logs in in a terminal tab.
-    LogIn(Profile),
-    /// Give the admin key of the organization found in the profile, in the
-    /// profile dialog.
-    AddAdminKey(Profile),
-    /// Open the agent of the profile in a terminal tab, where it renews an
-    /// expired login or asks to log in again (spec 2026-11-19, Decision 3).
-    OpenAgent(Profile),
-    /// Put this report of a changed format of an agent's files on the
-    /// clipboard (spec 2026-11-19, Decision 9).
+    /// Run the command a plugin part gave in a terminal tab titled
+    /// `title`, in the home folder, such as the agent's login or the agent
+    /// itself, which renews its login.
+    Run {
+        /// The title of the tab: the account or the profile of the need.
+        title: String,
+        /// The program, arguments and variables the part gave.
+        command: AgentCommand,
+    },
+    /// Open the field of the key a plugin part asks for, given for
+    /// `account`, in the key dialog.
+    AskKey {
+        /// The account the key is given for.
+        account: Account,
+        /// The name of the plugin that asks.
+        plugin: String,
+        /// The key the part asks for: its slot, label, hint and page.
+        ask: KeyAsk,
+    },
+    /// Put this report on the clipboard, such as the report of a changed
+    /// format of an agent's files (spec 2026-11-19, Decision 9).
     CopyReport(String),
     /// Ask the user to allow OTTY to read the system keyring, in the
     /// keyring dialog (spec 2026-11-19, Decision 8).
@@ -37,7 +49,7 @@ pub enum NeedAction {
     /// waits for the user's OK.
     ReviewPluginUpdate(String),
     /// Open this page in the user's browser, such as the repository of the
-    /// plugin that saw a changed format.
+    /// plugin that saw a changed format, or the page a part's need names.
     OpenPage(String),
 }
 
@@ -47,14 +59,16 @@ pub(crate) fn act(
     action: NeedAction,
 ) -> Vec<AgentsOutcome> {
     match action {
-        NeedAction::LogIn(profile) => profile_actions::log_in(state, &profile),
-        NeedAction::AddAdminKey(profile) => {
-            profile_dialog::open_edit(state, &profile)
-        },
-        NeedAction::OpenAgent(profile) => {
-            let home = state.env().home().to_path_buf();
-            session_actions::open_tab(state, &profile, None, &home)
-        },
+        NeedAction::Run { title, command } => vec![AgentsOutcome::OpenTab {
+            title,
+            folder: state.env().home().to_path_buf(),
+            command,
+        }],
+        NeedAction::AskKey {
+            account,
+            plugin,
+            ask,
+        } => add_account_dialog::open_ask(state, account, plugin, ask),
         NeedAction::CopyReport(report) => vec![AgentsOutcome::CopyText(report)],
         NeedAction::AllowKeyring => {
             keyring::open_dialog(state);
@@ -75,13 +89,13 @@ pub(crate) fn act(
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AgentCommand, ProfileStatus, SavedProfiles};
+    use otty_agents::{AgentCommand, SavedProfiles};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, codex_work, connected, open_tab, organization,
+        api_key, claude, codex, connected, key_ask, open_tab, organization,
         with_accounts, with_saved_profiles,
     };
 
@@ -89,74 +103,69 @@ mod tests {
         SavedProfiles::default().with_found_report_shown()
     }
 
+    /// Issue 20: the command a part gave runs in a terminal tab in the
+    /// home folder, titled after the place of the need, as the part gave
+    /// it.
     #[test]
-    fn log_in_of_a_need_on_a_page_opens_the_login_tab() {
+    fn run_of_a_need_runs_the_command_of_the_part_in_a_terminal_tab() {
         let mut state = with_saved_profiles(
-            &[(codex(), ProfileStatus::NotLoggedIn)],
+            &[(codex(), crate::testing::not_logged_in(&codex()))],
             report_shown(),
         );
+        let login = AgentCommand::new("codex")
+            .with_arg("login")
+            .with_env("CODEX_HOME", "/home/user/.codex-work");
 
         let outcomes = reduce(
             &mut state,
-            AgentsIntent::FixNeed(NeedAction::LogIn(codex())),
+            AgentsIntent::FixNeed(NeedAction::Run {
+                title: String::from("Codex · Work"),
+                command: login.clone(),
+            }),
         );
 
         assert_eq!(
             outcomes,
-            vec![open_tab(
-                "Codex",
-                "/home/user",
-                AgentCommand::new("codex").with_arg("login")
-            )]
+            vec![open_tab("Codex · Work", "/home/user", login)]
         );
     }
 
+    /// Issue 20: the key a part asks for opens its dialog, for the
+    /// account; an account `agents.json` can not keep takes none.
     #[test]
-    fn add_admin_key_of_a_need_on_a_page_opens_the_profile_dialog() {
+    fn ask_key_of_a_need_opens_the_key_dialog_of_the_account() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             report_shown(),
         );
-
-        let outcomes = reduce(
-            &mut state,
-            AgentsIntent::FixNeed(NeedAction::AddAdminKey(claude())),
+        let ask = |account| NeedAction::AskKey {
+            account,
+            plugin: String::from("Anthropic"),
+            ask: key_ask(),
+        };
+        let key = otty_agents::Account::new(
+            otty_agents::ProviderRef::of_id("anthropic"),
+            otty_agents::AccountIdentity::KeyFingerprint(
+                otty_agents::KeyFingerprint::of("sk-made-up"),
+            ),
+            otty_agents::AccountLogin::Key(None),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::AddedByUser,
         );
 
+        let unsaved = reduce(&mut state, AgentsIntent::FixNeed(ask(key)));
+        let is_open_for_a_key = state.add_account().is_some();
+        let outcomes =
+            reduce(&mut state, AgentsIntent::FixNeed(ask(organization())));
+
+        assert!(unsaved.is_empty());
+        assert!(!is_open_for_a_key, "a found key keeps no given key");
         assert!(outcomes.is_empty());
-        assert!(state.dialog().is_some());
-    }
-
-    /// The agent opens in the home folder, as a new session of the
-    /// profile, so it renews its login or asks for a new one.
-    #[test]
-    fn open_agent_of_a_need_opens_the_agent_in_a_terminal_tab() {
-        let mut state = with_saved_profiles(
-            &[(codex(), connected()), (codex_work(), connected())],
-            report_shown(),
-        );
-
-        let default = reduce(
-            &mut state,
-            AgentsIntent::FixNeed(NeedAction::OpenAgent(codex())),
-        );
-        let found = reduce(
-            &mut state,
-            AgentsIntent::FixNeed(NeedAction::OpenAgent(codex_work())),
-        );
-
-        assert_eq!(
-            default,
-            vec![open_tab("Codex", "/home/user", AgentCommand::new("codex"))]
-        );
-        assert_eq!(
-            found,
-            vec![open_tab(
-                "Codex · Work",
-                "/home/user",
-                AgentCommand::new("codex")
-                    .with_env("CODEX_HOME", "/home/user/.codex-work"),
-            )]
+        assert!(
+            state
+                .add_account()
+                .and_then(|dialog| dialog.asked())
+                .is_some_and(|asked| asked.ask().slot() == "admin")
         );
     }
 
@@ -221,13 +230,16 @@ mod tests {
     #[test]
     fn a_need_on_a_page_leaves_the_found_report_as_it_is() {
         let mut state = with_saved_profiles(
-            &[(codex(), ProfileStatus::NotLoggedIn)],
+            &[(codex(), crate::testing::not_logged_in(&codex()))],
             SavedProfiles::default(),
         );
 
         let _ = reduce(
             &mut state,
-            AgentsIntent::FixNeed(NeedAction::LogIn(codex())),
+            AgentsIntent::FixNeed(NeedAction::Run {
+                title: String::from("Codex"),
+                command: AgentCommand::new("codex").with_arg("login"),
+            }),
         );
 
         assert!(state.is_found_report_open());

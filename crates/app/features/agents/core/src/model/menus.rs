@@ -1,7 +1,6 @@
 use otty_agents::{AgentId, Profile};
 use otty_ui_kit::components::context_menu::MenuPlace;
 
-use super::super::menu_actions::admin_key_profile;
 use super::super::menus::AgentsMenu;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
@@ -21,8 +20,8 @@ pub(crate) enum MenuViewModel {
     /// The menu of a profile: Rename…, Open folder, Edit, Log in, Hide or
     /// Show again, and Remove.
     Profile(ProfileMenuViewModel),
-    /// The menu of an account: Rename…, Open usage page, Admin key…, Hide
-    /// or Show again.
+    /// The menu of an account: Rename…, Open usage page, Hide or Show
+    /// again.
     Account(AccountMenuViewModel),
     /// The "⋯" of All accounts: the hidden accounts and the Found by OTTY
     /// report.
@@ -73,7 +72,6 @@ impl MenuViewModel {
                 Self::Account(AccountMenuViewModel {
                     place: open.place(),
                     can_save: account.can_be_saved(),
-                    has_admin_key: admin_key_profile(state, account).is_some(),
                     is_added: account.added_key().is_some(),
                     is_hidden: state.profiles().is_account_hidden(account),
                 })
@@ -221,9 +219,8 @@ pub(crate) struct ProfileMenuViewModel {
 }
 
 /// The menu of an account (spec 2026-11-19, Decision 7): Rename…, Open
-/// usage page, Admin key… for an organization, Edit key… for an account
-/// the user added, Hide or Show again, and Remove for an account the user
-/// added.
+/// usage page, Edit key… for an account the user added, Hide or Show
+/// again, and Remove for an account the user added.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AccountMenuViewModel {
     /// Where the menu opens.
@@ -232,8 +229,6 @@ pub(crate) struct AccountMenuViewModel {
     /// organization or an email. A key is not kept, so they are off for
     /// it, with why.
     pub(crate) can_save: bool,
-    /// Whether Admin key… shows: an organization whose bill OTTY reads.
-    pub(crate) has_admin_key: bool,
     /// Whether Edit key… and Remove show: an account the user added.
     pub(crate) is_added: bool,
     /// Whether the account is hidden: Show again in place of Hide.
@@ -501,7 +496,7 @@ mod tests {
     fn the_profile_menu_offers_log_in_only_while_not_logged_in_and_remove_only_for_an_added_profile()
      {
         let mut state = with_profiles(&[
-            (claude(), ProfileStatus::NotLoggedIn),
+            (claude(), crate::testing::not_logged_in(&claude())),
             (claude_work(), connected()),
             (codex(), ProfileStatus::ProgramNotFound),
         ]);
@@ -577,10 +572,11 @@ mod tests {
         MenuViewModel::from_state(state).expect("the menu is open")
     }
 
-    /// Spec 2026-11-19, Decision 7: a login has Rename…, Open usage page
-    /// and Hide; an organization OTTY reads the bill of has Admin key… too.
+    /// Spec 2026-11-19, Decision 7: a login and an organization have
+    /// Rename…, Open usage page and Hide; a key a part asks for is given
+    /// from its need, not from the menu (issue 20).
     #[test]
-    fn the_account_menu_has_admin_key_only_for_an_organization() {
+    fn the_account_menu_of_a_login_and_of_an_organization_is_the_same() {
         let mut state = with_accounts(
             &[
                 (claude(), api_key(), vec![organization()]),
@@ -597,7 +593,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                has_admin_key: false,
                 is_added: false,
                 is_hidden: false,
             })
@@ -607,7 +602,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                has_admin_key: true,
                 is_added: false,
                 is_hidden: false,
             })
@@ -641,7 +635,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: false,
-                has_admin_key: false,
                 is_added: false,
                 is_hidden: false,
             })
@@ -654,11 +647,11 @@ mod tests {
     fn the_menu_of_an_added_account_edits_its_key_and_removes_it() {
         let added = Account::added(
             otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         );
         let saved = SavedProfiles::default().with_account_added(
             otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         );
         let mut state = with_accounts(
             &[(codex(), connected(), vec![chatgpt_login()])],
@@ -672,7 +665,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                has_admin_key: false,
                 is_added: true,
                 is_hidden: false,
             })
@@ -704,7 +696,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                has_admin_key: false,
                 is_added: false,
                 is_hidden: true,
             })

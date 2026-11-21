@@ -6,15 +6,18 @@
 
 use otty_plugin_sdk::http::{self, Request};
 use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, Identity, Key, LoginFacts, Money, Provider,
-    ReadError,
+    AccountFacts, AccountNumbers, GivenKey, Identity, Key, LoginFacts, Money,
+    Provider, ReadError,
 };
 use serde_json::Value;
 
-use crate::DeepSeek;
+use crate::{DeepSeek, needs};
 
 /// The address of the balance.
 const BALANCE_URL: &str = "https://api.deepseek.com/user/balance";
+
+/// The page where the user makes a new key.
+const KEYS_PAGE: &str = "https://platform.deepseek.com/api_keys";
 
 impl Provider for DeepSeek {
     /// DeepSeek does not tell whose account a key is: OTTY knows the
@@ -31,11 +34,12 @@ impl Provider for DeepSeek {
     }
 
     /// The money left on the account of `key`: the total balance of the
-    /// first currency the answer lists.
+    /// first currency the answer lists. The part asks for no other key.
     fn numbers(
         _provider: &str,
         _account: &AccountFacts,
         key: &Key,
+        _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
         let answer = get_json(BALANCE_URL, key)?;
 
@@ -86,7 +90,7 @@ fn number_in(value: &Value) -> Option<f64> {
 }
 
 /// The JSON answer of a `GET` of `url` with `key` as its bearer token. A
-/// refused key (401 or 403) is [`ReadError::KeyRefused`]. The error never
+/// refused key (401 or 403) asks the user for a new one. The error never
 /// holds what the answer said.
 fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
     let request = Request::get(url)
@@ -99,15 +103,15 @@ fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
         200 => serde_json::from_slice(&response.body).map_err(|_| {
             ReadError::Unexpected(format!("the answer of {url} is not JSON"))
         }),
-        401 | 403 => Err(ReadError::KeyRefused),
+        401 | 403 => Err(ReadError::NeedsUser(needs::new_key(KEYS_PAGE))),
         status => Err(ReadError::Failed(format!("{url} answered {status}"))),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::HostError;
     use otty_plugin_sdk::test_host::TestHost;
+    use otty_plugin_sdk::{HostError, NeedAction};
 
     use super::*;
 
@@ -137,7 +141,7 @@ mod tests {
         let key = host.key(MADE_UP_KEY);
 
         host.as_provider(PROVIDER, || {
-            DeepSeek::numbers(PROVIDER, &account(), &key)
+            DeepSeek::numbers(PROVIDER, &account(), &key, &[])
         })
     }
 
@@ -228,15 +232,61 @@ mod tests {
         }
     }
 
+    /// A refused key is a need of the part: its button opens the page
+    /// where the user makes a new DeepSeek key.
     #[test]
-    fn a_refused_key_is_key_refused() {
+    fn a_refused_key_asks_for_a_new_one_on_the_keys_page() {
         for status in [401, 403] {
             let host = host();
 
             let numbers = numbers_on(&host, status, r#"{"error": "invalid"}"#);
 
-            assert_eq!(numbers, Err(ReadError::KeyRefused), "{status}");
+            let Err(ReadError::NeedsUser(need)) = numbers else {
+                panic!("{status}: a need: {numbers:?}");
+            };
+            assert_eq!(need.id, "new-key", "{status}");
+            assert_eq!(need.title, "The key was refused", "{status}");
+            assert!(
+                need.text.starts_with("DeepSeek refused the key"),
+                "{status}: {}",
+                need.text
+            );
+            assert_eq!(
+                need.action,
+                NeedAction::OpenPage(KEYS_PAGE.to_string()),
+                "{status}"
+            );
         }
+    }
+
+    /// The need is written in the language of OTTY's interface, and in
+    /// English for a language the plugin has no texts for.
+    #[test]
+    fn the_need_of_a_refused_key_is_in_the_language_of_otty() {
+        let need_in = |language: &str| {
+            let host = host().with_language(language);
+
+            match numbers_on(&host, 401, "") {
+                Err(ReadError::NeedsUser(need)) => need,
+                other => panic!("{language}: a need: {other:?}"),
+            }
+        };
+
+        let russian = need_in("ru");
+        let unknown = need_in("eo");
+
+        assert_eq!(russian.title, "Ключ отклонён");
+        assert!(
+            russian.text.starts_with("DeepSeek отклонил ключ"),
+            "{}",
+            russian.text
+        );
+        assert_eq!(unknown.title, "The key was refused");
+        assert!(
+            unknown.text.starts_with("DeepSeek refused the key"),
+            "{}",
+            unknown.text
+        );
     }
 
     #[test]

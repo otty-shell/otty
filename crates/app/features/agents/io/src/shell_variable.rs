@@ -5,7 +5,7 @@
 //! login shell, the same way a program is found (see `program_lookup`).
 //! The value may be a secret, such as an admin key: it is never logged.
 
-use otty_agents::AdminKeyRef;
+use otty_agents::KeyRef;
 use otty_app_shell::quote_word;
 
 use crate::login_shell::{SHELL_TIMEOUT, ask_login_shell};
@@ -21,7 +21,7 @@ const VALUE_MARK: &str = "otty-variable-value-follows";
 /// fails or takes too long. Only the shell and the name are ever logged,
 /// never what the shell printed.
 pub(crate) fn shell_variable(shell: &str, name: &str) -> Option<String> {
-    if !AdminKeyRef::is_variable_name(name) {
+    if !KeyRef::is_variable_name(name) {
         log::warn!("not reading a variable whose name is not valid");
         return None;
     }
@@ -55,13 +55,13 @@ mod tests {
     use crate::testing::{executable_script, fake_shell, starts};
 
     /// A made-up login shell whose start files print a greeting and set
-    /// `OTTY_TEST_ADMIN_KEY`, as a `~/.zshrc` may; it runs the script with
+    /// `OTTY_TEST_BILL_KEY`, as a `~/.zshrc` may; it runs the script with
     /// `/bin/sh`, so the user's own start files are never read.
     fn shell_with_variable(folder: &TempDir) -> String {
         let body = "[ \"$1\" = -l ] && [ \"$2\" = -i ] && [ \"$3\" = -c ] \
                     || exit 2\n\
                     printf 'Welcome back'\n\
-                    export OTTY_TEST_ADMIN_KEY=' made-up key '\n\
+                    export OTTY_TEST_BILL_KEY=' made-up key '\n\
                     exec /bin/sh -c \"$4\"";
 
         executable_script(folder.path(), "zsh", body)
@@ -74,7 +74,7 @@ mod tests {
         let folder = TempDir::new("variable-set");
         let shell = shell_with_variable(&folder);
 
-        let value = shell_variable(&shell, "OTTY_TEST_ADMIN_KEY");
+        let value = shell_variable(&shell, "OTTY_TEST_BILL_KEY");
 
         assert_eq!(value.as_deref(), Some(" made-up key "));
     }

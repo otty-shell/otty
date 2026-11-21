@@ -8,9 +8,13 @@
 //! imports `wasi:filesystem`, and `programs` reads its limits by running,
 //! talking to or starting in a hidden terminal the program `stand-in`.
 
+// A `ReadError` may hold a need, a record the contract can not box.
+#![allow(clippy::result_large_err)]
+
 use otty_plugin_sdk::{
-    Agent, Answers, Command, Limits, Login, LoginRef, Profile, ProfilePlace,
-    ProfileStatus, ReadError, Session, SpendItem, SpendPlace,
+    Agent, Answers, Command, Limits, Login, LoginRef, Need, NeedAction,
+    Profile, ProfilePlace, ProfileStatus, ReadError, Session, SpendItem,
+    SpendPlace,
 };
 
 /// The test plugin.
@@ -21,8 +25,20 @@ impl Agent for Plugin {
         Vec::new()
     }
 
+    /// Never logged in; the need runs the agent's login, in the language
+    /// the host names.
     fn detect(_profile: &Profile) -> ProfileStatus {
-        ProfileStatus::NotLoggedIn
+        let title = match otty_plugin_sdk::env::language().as_str() {
+            "ru" => "Нужен вход",
+            _ => "Needs login",
+        };
+
+        ProfileStatus::NotLoggedIn(Need {
+            id: "not-logged-in".to_string(),
+            title: title.to_string(),
+            text: "Log in to the test agent.".to_string(),
+            action: NeedAction::Run(command()),
+        })
     }
 
     fn version(_profile: &Profile) -> Option<String> {
@@ -49,10 +65,6 @@ impl Agent for Plugin {
     }
 
     fn launch(_profile: &Profile, _session: Option<&str>) -> Command {
-        command()
-    }
-
-    fn login_command(_profile: &Profile) -> Command {
         command()
     }
 

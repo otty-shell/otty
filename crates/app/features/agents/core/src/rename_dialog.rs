@@ -207,7 +207,6 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
             let edit = ProfileEdit {
                 name,
                 config_dir: profile.config_dir().to_path_buf(),
-                admin_key: None,
             };
             let agent_name = state.agent_name(profile.agent());
             profile_changes::edited(saved, agent_name, profile, edit)

@@ -98,6 +98,7 @@ pub(crate) fn loaded_plugins(
     loaded: LoadedReaders,
 ) -> Task<AppEvent> {
     app.plugin_providers = loaded.providers;
+    app.language_receivers = loaded.language_receivers;
     let running = running_plugins(loaded.running);
 
     let agents = deliver(app, AgentsIntent::ReadersChanged(loaded.readers));

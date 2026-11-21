@@ -142,7 +142,7 @@ mod tests {
         let mut ui = simulator(view(&app));
 
         ui.find("Codex").expect("the profile should show");
-        ui.find(i18n::t(Key::AgentsNotLoggedInHint))
+        ui.find(crate::testing::agents::NOT_LOGGED_IN_TEXT)
             .expect("the dashboard of the profile should show");
         assert!(ui.find(i18n::t(Key::AgentsStartTitle)).is_err());
         ui.click("otty").expect("the project should show");
@@ -278,13 +278,13 @@ mod tests {
         let mut ui = window_of(&app, width, height);
 
         [
-            i18n::t(Key::AgentsNeedsFromYou),
-            i18n::t(Key::AgentsNotLoggedInHint),
-            i18n::t(Key::AgentsLogIn),
-            i18n::t(Key::AgentsProfileInfo),
+            i18n::t(Key::AgentsNeedsFromYou).to_string(),
+            crate::testing::agents::NOT_LOGGED_IN_TEXT.to_string(),
+            i18n::filled(Key::TplAgentsNeedRun, &[("command", "codex login")]),
+            i18n::t(Key::AgentsProfileInfo).to_string(),
         ]
         .map(|label| {
-            ui.find(label)
+            ui.find(label.as_str())
                 .expect("the part of the profile page should show")
                 .bounds()
         })

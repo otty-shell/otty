@@ -15,7 +15,18 @@
 //! Its provider part `openai` reads the numbers of OpenAI accounts with
 //! the handles OTTY gives it: the limits and credits of a ChatGPT login
 //! from `chatgpt.com`, whichever agent keeps the login, and the costs of
-//! an organization with an admin key from `api.openai.com`.
+//! an organization with an admin key from `api.openai.com`. A ChatGPT
+//! login it sees refused or expired it only reports as refused: OTTY asks
+//! the agent part that keeps it, Codex's or another plugin's, what the
+//! user must do.
+//!
+//! What only the user can do, the parts give as needs (`needs.rs`): log
+//! in to Codex, run Codex so it renews an expired login, and give or
+//! replace the admin key of an organization's bill. The texts come in
+//! every language of OTTY, so the plugin exports the language receiver.
+
+// A `ReadError` may hold a need, a record the contract can not box.
+#![allow(clippy::result_large_err)]
 
 mod accounts;
 mod app_server;
@@ -27,6 +38,7 @@ mod codex;
 mod detect;
 mod glob;
 mod individual_limit;
+mod needs;
 mod openai;
 mod organization_costs;
 mod profiles;
@@ -45,7 +57,16 @@ mod token_expiry;
 mod version;
 mod workspace_credits;
 
+use otty_plugin_sdk::Language;
+
 /// The plugin: one type serves every part its manifest lists.
 pub struct OpenAi;
 
-otty_plugin_sdk::export!(OpenAi with agent, provider);
+impl Language for OpenAi {
+    /// The texts of the needs come in every language of OTTY.
+    fn language_changed(_tag: &str) -> bool {
+        true
+    }
+}
+
+otty_plugin_sdk::export!(OpenAi with agent, provider, language);

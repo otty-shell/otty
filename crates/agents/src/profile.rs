@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::agent::AgentId;
 use crate::limits::BillingKind;
+use crate::part_need::PartNeed;
 
 /// One agent together with one config folder and a name.
 ///
@@ -167,8 +168,10 @@ pub enum ProfileStatus {
         /// `None` when only the limits answer tells.
         billing: Option<BillingKind>,
     },
-    /// Installed, but nobody is logged in with this config folder.
-    NotLoggedIn,
+    /// Installed, but nobody is logged in with this config folder. The
+    /// agent part's need says how to log in; `None` when the part could not
+    /// tell (spec 2026-11-19-agent-plugins, issue 20).
+    NotLoggedIn(Option<Box<PartNeed>>),
     /// The agent's program was not found.
     ProgramNotFound,
     /// The config folder does not exist.

@@ -164,7 +164,7 @@ impl ProfileTableRowViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{ProfileStatus, SavedProfiles};
+    use otty_agents::SavedProfiles;
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
@@ -195,7 +195,11 @@ mod tests {
                     connected(),
                     vec![chatgpt_login_in("/home/user/.codex")],
                 ),
-                (codex_work(), ProfileStatus::NotLoggedIn, Vec::new()),
+                (
+                    codex_work(),
+                    crate::testing::not_logged_in(&codex_work()),
+                    Vec::new(),
+                ),
             ],
             SavedProfiles::default(),
         );
@@ -262,7 +266,16 @@ mod tests {
     /// Spec Decision 6: All accounts lists the needs of the accounts only.
     #[test]
     fn all_accounts_lists_only_the_needs_of_the_accounts() {
-        let state = found();
+        let mut state = found();
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::BillLoaded(crate::types::LoadedBill {
+                profile: claude(),
+                given: Vec::new(),
+                bill: Err(crate::testing::bill_key_needed()),
+                read_at: crate::testing::now(),
+            }),
+        );
 
         let vm = AllAccountsViewModel::from_state(&state);
 
@@ -272,7 +285,14 @@ mod tests {
             .filter_map(|need| need.fix.as_ref())
             .filter_map(|fix| fix.action.clone())
             .collect();
-        assert_eq!(actions, vec![NeedAction::AddAdminKey(claude())]);
+        assert_eq!(
+            actions,
+            vec![NeedAction::AskKey {
+                account: organization(),
+                plugin: String::from("Anthropic"),
+                ask: crate::testing::key_ask(),
+            }]
+        );
         assert_eq!(vm.needs.len(), 1);
     }
 

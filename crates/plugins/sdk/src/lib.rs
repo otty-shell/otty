@@ -3,7 +3,10 @@
 //! A plugin is one WebAssembly component, built for `wasm32-wasip2`, with
 //! one or more parts listed in its `otty-plugin.toml`. Its agent parts are
 //! served by one [`Agent`] implementation and its provider parts by one
-//! [`Provider`] implementation; OTTY names the part in each call. The
+//! [`Provider`] implementation; OTTY names the part in each call. A
+//! plugin whose texts come in several languages also implements
+//! [`Language`], which belongs to no part: OTTY calls it when the user
+//! changes the language of its interface. The
 //! plugin reads what it needs through the host operations of the modules
 //! below ([`files`], [`sqlite`], [`http`], [`programs`], [`terminal`],
 //! [`keyring`], [`env`], [`clock`], [`log`] and [`keys`]); each call is
@@ -14,7 +17,7 @@
 //! exports; they must match its `[api]`:
 //!
 //! ```ignore
-//! otty_plugin_sdk::export!(Example with agent, provider);
+//! otty_plugin_sdk::export!(Example with agent, provider, language);
 //! ```
 //!
 //! Plugin tests run natively with plain `cargo test`: the host operations
@@ -23,8 +26,12 @@
 //!
 //! Each trait maps to its own versioned WIT contract in `wit/`:
 //! `otty:agent@0.1.0` and `otty:provider@0.1.0`, which import the host
-//! operations of `otty:host@0.1.0`. The types below are the contracts'
-//! types as `wit-bindgen` makes them.
+//! operations of `otty:host@0.1.0`, and `otty:language@0.1.0`, which
+//! imports nothing. The types below are the contracts' types as
+//! `wit-bindgen` makes them.
+
+// A `ReadError` may hold a need, a record the contract can not box.
+#![allow(clippy::result_large_err)]
 
 mod agent;
 #[doc(hidden)]
@@ -35,6 +42,7 @@ pub mod files;
 pub mod http;
 pub mod keyring;
 pub mod keys;
+mod language;
 pub mod log;
 pub mod programs;
 mod provider;
@@ -51,18 +59,21 @@ pub use crate::agent::Agent;
 pub use crate::agent::AgentExport;
 /// The types of the agent contract.
 pub use crate::bindings::agent::exports::otty::agent::agent::{
-    Answer, Answers, Billing, Command, Connection, Login, LoginRef,
-    ModelTokens, Profile, ProfilePlace, ProfileStatus, ProjectStats,
-    ProviderRef, RecordCounts, Session, SessionStats, SpendItem, SpendKind,
-    SpendPlace, TokenCount,
+    Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens,
+    Profile, ProfilePlace, ProfileStatus, ProjectStats, ProviderRef,
+    RecordCounts, Session, SessionStats, SpendItem, SpendKind, SpendPlace,
+    TokenCount,
 };
 /// Where a key sits, as an agent part names it.
 pub use crate::bindings::host::otty::host::keys::{
     JsonField, KeyPlace, KeyringEntry, SqliteField,
 };
-/// The values the host operations and both contracts share.
+/// The values the host operations and both contracts share, among them
+/// the needs a part gives: one thing only the user can do, with one
+/// button, in the language of [`env::language`].
 pub use crate::bindings::host::otty::host::types::{
-    Credits, HostError, Identity, LimitWindow, Limits, LoginKind, ReadError,
+    Command, Credits, HostError, Identity, KeyAsk, LimitWindow, Limits,
+    LoginKind, Need, NeedAction, ReadError,
 };
 /// The types of the provider contract.
 pub use crate::bindings::provider::exports::otty::provider::provider::{
@@ -70,38 +81,34 @@ pub use crate::bindings::provider::exports::otty::provider::provider::{
     KeyLimit, LoginFacts, Money,
 };
 pub use crate::keys::{JsonWithKeys, Key};
-pub use crate::provider::Provider;
+pub use crate::language::Language;
+#[doc(hidden)]
+pub use crate::language::LanguageExport;
 #[doc(hidden)]
 pub use crate::provider::ProviderExport;
+pub use crate::provider::{GivenKey, Provider, given_key};
 
 /// Exports the plugin type and the traits it implements, the contracts
-/// its manifest's `[api]` names: `export!(Example with agent)`,
-/// `export!(Example with provider)` or
-/// `export!(Example with agent, provider)`.
+/// its manifest's `[api]` names, in any order: `export!(Example with
+/// agent)`, `export!(Example with provider)`,
+/// `export!(Example with agent, provider)` or, for a plugin with
+/// translations, `export!(Example with agent, provider, language)`.
 ///
 /// Inside, it uses the `wit-bindgen` binding of each trait; when the
-/// component is made, the worlds of both join. Outside `wasm32` it only
-/// checks that the type implements the traits, so plugin tests build
-/// natively.
+/// component is made, their worlds join. Outside `wasm32` it only checks
+/// that the type implements the traits, so plugin tests build natively.
 #[macro_export]
 macro_rules! export {
-    ($plugin:ident with agent) => {
-        $crate::__export_agent!($plugin);
-    };
-    ($plugin:ident with provider) => {
-        $crate::__export_provider!($plugin);
-    };
-    ($plugin:ident with agent, provider) => {
-        $crate::__export_agent!($plugin);
-        $crate::__export_provider!($plugin);
+    ($plugin:ident with $($contract:ident),+ $(,)?) => {
+        $( $crate::__export_contract!($plugin, $contract); )+
     };
 }
 
-/// The `agent` half of [`export!`].
+/// One contract of [`export!`].
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __export_agent {
-    ($plugin:ident) => {
+macro_rules! __export_contract {
+    ($plugin:ident, agent) => {
         const _: () = {
             fn implements_agent<T: $crate::Agent>() {}
 
@@ -119,13 +126,7 @@ macro_rules! __export_agent {
             );
         };
     };
-}
-
-/// The `provider` half of [`export!`].
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __export_provider {
-    ($plugin:ident) => {
+    ($plugin:ident, provider) => {
         const _: () = {
             fn implements_provider<T: $crate::Provider>() {}
 
@@ -140,6 +141,24 @@ macro_rules! __export_provider {
             #[cfg(target_arch = "wasm32")]
             $crate::bindings::provider::export_provider!(
                 OttyProviderExport with_types_in $crate::bindings::provider
+            );
+        };
+    };
+    ($plugin:ident, language) => {
+        const _: () = {
+            fn implements_language<T: $crate::Language>() {}
+
+            #[allow(dead_code)]
+            fn check() {
+                implements_language::<$plugin>();
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            type OttyLanguageExport = $crate::LanguageExport<$plugin>;
+
+            #[cfg(target_arch = "wasm32")]
+            $crate::bindings::language::export_language!(
+                OttyLanguageExport with_types_in $crate::bindings::language
             );
         };
     };

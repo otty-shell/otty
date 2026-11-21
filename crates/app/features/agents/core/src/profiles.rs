@@ -19,9 +19,9 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountKind, AddAccountKind, AdminKeyRef, AgentId, KeyPlace,
-    Profile, ProfileStatus, Project, ProviderRef, Registry, SavedProfiles,
-    merge_accounts, own_reader_of,
+    Account, AccountKind, AgentId, GivenKey, KeyPlace, PartNeedAction, Profile,
+    ProfileStatus, Project, Registry, SavedProfiles, merge_accounts,
+    own_reader_of,
 };
 
 use super::freshness::{ReadState, Which};
@@ -290,11 +290,16 @@ impl Profiles {
         self.get(profile).is_some_and(ProfileState::can_start)
     }
 
-    /// Whether `profile` can log in: it is not logged in and its program
-    /// was found.
+    /// Whether `profile` can log in: nobody is logged in with it and the
+    /// need its agent part gives runs a command, its login.
     pub(crate) fn can_log_in(&self, profile: &Profile) -> bool {
-        self.get(profile)
-            .is_some_and(|shown| *shown.status() == ProfileStatus::NotLoggedIn)
+        self.get(profile).is_some_and(|shown| {
+            matches!(
+                shown.status(),
+                ProfileStatus::NotLoggedIn(Some(need))
+                    if matches!(need.action(), PartNeedAction::Run(_))
+            )
+        })
     }
 
     /// The profiles a new session can start with, in their order.
@@ -311,31 +316,28 @@ impl Profiles {
         self.get(profile).is_some_and(ProfileState::is_api_key)
     }
 
-    /// The provider whose bill an admin key reads for `shown`, an API key
-    /// profile: the provider of one of its keys whose part offers Add
-    /// account with an admin key (spec Decision 9; issue 15 of spec
-    /// 2026-11-19-agent-plugins). `None` when no provider part reads the
-    /// bill of its keys.
-    pub(crate) fn bill_provider(
+    /// The organization whose bill is read through `shown`, an API key
+    /// profile: the one it pays through, when a provider part serves it
+    /// (spec Decision 9; issue 20 of spec 2026-11-19-agent-plugins).
+    /// Which key reads the bill is the part's business.
+    pub(crate) fn bill_organization<'a>(
         &self,
-        shown: &ProfileState,
-    ) -> Option<ProviderRef> {
-        shown
-            .accounts()
-            .iter()
-            .filter(|account| account.kind() == AccountKind::Money)
-            .find_map(|account| {
-                let entry = self.registry.provider_of(account.provider())?;
-                let reads_bill =
-                    entry.add_account() == Some(AddAccountKind::AdminKey);
-                reads_bill.then(|| ProviderRef::of_id(entry.id().as_str()))
-            })
+        shown: &'a ProfileState,
+    ) -> Option<&'a Account> {
+        let organization = shown.organization()?;
+
+        self.registry
+            .provider_of(organization.provider())
+            .map(|_| organization)
     }
 
-    /// Whether the real bill of `shown`, an API key profile, can be read
-    /// with an admin key (spec Decision 9).
-    pub(crate) fn has_bill(&self, shown: &ProfileState) -> bool {
-        self.bill_provider(shown).is_some()
+    /// The keys the user gave for `account` after needs of plugin parts
+    /// asked for them; none while `agents.json` is not read.
+    pub(crate) fn given_keys_of(&self, account: &Account) -> Vec<GivenKey> {
+        self.saved
+            .as_ref()
+            .map(|saved| saved.given_keys_of(account).to_vec())
+            .unwrap_or_default()
     }
 
     /// Whether `profile` is still shown: an answer of a read of a profile
@@ -344,26 +346,17 @@ impl Profiles {
         self.get(profile).is_some()
     }
 
-    /// Where the admin key of the organization `shown` pays through is
-    /// kept, as `agents.json` holds it; `None` with no organization or no
-    /// key.
-    pub(crate) fn admin_key_of(
-        &self,
-        shown: &ProfileState,
-    ) -> Option<&AdminKeyRef> {
-        admin_key_in(self.saved.as_ref(), shown)
-    }
-
-    /// Whether `profile` is still shown and its organization still has
-    /// the admin key `admin_key`: a bill read with a key since changed is
-    /// of another organization and is dropped.
-    pub(crate) fn is_shown_with_admin_key(
+    /// Whether `profile` is still shown and the keys given for its
+    /// organization are still `given`: a bill read with keys since changed
+    /// is dropped.
+    pub(crate) fn is_shown_with_given_keys(
         &self,
         profile: &Profile,
-        admin_key: &AdminKeyRef,
+        given: &[GivenKey],
     ) -> bool {
-        self.get(profile)
-            .is_some_and(|shown| self.admin_key_of(shown) == Some(admin_key))
+        self.get(profile).is_some_and(|shown| {
+            given_keys_in(self.saved.as_ref(), shown) == given
+        })
     }
 
     /// Nothing read yet; `registry` names the agents and the providers of
@@ -426,8 +419,8 @@ impl Profiles {
     /// to read. A profile that was shown before, the same agent with the
     /// same config folder, keeps its sessions and its limits until they
     /// are read again, so the lists do not go empty during a refresh or
-    /// after an edit of its name; it keeps its bill while the admin key of
-    /// its organization is the same. A profile whose config folder is gone
+    /// after an edit of its name; it keeps its bill while the keys given
+    /// for its organization are the same. A profile whose config folder is gone
     /// has nothing to read. A time zone that could not be read keeps the
     /// one known. The provider of each account found by the host of its
     /// key is named as the registry names it (spec
@@ -459,8 +452,8 @@ impl Profiles {
             });
             if let Some(position) = position {
                 let old = earlier.swap_remove(position);
-                let keeps_bill = admin_key_in(earlier_saved.as_ref(), &old)
-                    == admin_key_in(self.saved.as_ref(), &shown);
+                let keeps_bill = given_keys_in(earlier_saved.as_ref(), &old)
+                    == given_keys_in(self.saved.as_ref(), &shown);
                 shown.take_reads_of(old, keeps_bill);
             }
             if !shown.has_config_dir() {
@@ -706,47 +699,40 @@ impl Profiles {
         self.prices.apply(loaded.prices, loaded.read_at);
     }
 
-    /// Start a read of the bill of each shown API key profile whose
-    /// provider has a bill, whose organization has an admin key, that
-    /// `which` picks and that has no read on its way, and return those
-    /// profiles with the provider and the admin key (spec Decision 9). A profile whose organization has a
-    /// read on its way through another profile waits for that read: an
-    /// organization is read once. The bill of a hidden organization is not
-    /// read.
+    /// Start a read of the bill of each shown API key profile that pays
+    /// through an organization a provider part serves, that `which` picks
+    /// and that has no read on its way, and return those profiles with the
+    /// organization and the keys the user gave for it (spec Decision 9). A
+    /// profile whose organization has a read on its way through another
+    /// profile waits for that read: an organization is read once. The bill
+    /// of a hidden organization is not read.
     pub(crate) fn start_bill_reads(
         &mut self,
         which: Which,
-    ) -> Vec<(Profile, ProviderRef, AdminKeyRef)> {
+    ) -> Vec<(Profile, Account, Vec<GivenKey>)> {
         let mut started = Vec::new();
 
         for index in 0..self.shown.len() {
             let shown = &self.shown[index];
-            let Some(admin_key) = self.admin_key_of(shown).cloned() else {
+            let Some(organization) = self.bill_organization(shown).cloned()
+            else {
                 continue;
             };
-            let Some(provider) = self.bill_provider(shown) else {
-                continue;
-            };
-            let is_hidden = shown.organization().is_some_and(|organization| {
-                self.is_account_hidden(organization)
-            });
-            let is_wanted = !is_hidden
+            let is_wanted = !self.is_account_hidden(&organization)
                 && shown.is_api_key()
                 && shown.bill().reads().is_wanted(which);
-            let is_read_by_another =
-                shown.organization().is_some_and(|organization| {
-                    self.shown.iter().any(|other| {
-                        other.bill().reads().is_reading()
-                            && other.pays_through(organization)
-                    })
-                });
+            let is_read_by_another = self.shown.iter().any(|other| {
+                other.bill().reads().is_reading()
+                    && other.pays_through(&organization)
+            });
             if !is_wanted || is_read_by_another {
                 continue;
             }
 
+            let given = self.given_keys_of(&organization);
             let shown = &mut self.shown[index];
             if shown.start_bill_read() {
-                started.push((shown.profile().clone(), provider, admin_key));
+                started.push((shown.profile().clone(), organization, given));
             }
         }
 
@@ -785,10 +771,23 @@ impl Profiles {
     pub(crate) fn start_own_reads(
         &mut self,
         which: Which,
-    ) -> Vec<(Account, KeyPlace)> {
+    ) -> Vec<(Account, KeyPlace, Vec<GivenKey>)> {
         let wanted = self.own_read_places();
 
-        self.own_reads.start(wanted, which)
+        self.own_reads
+            .start(wanted, which)
+            .into_iter()
+            .map(|(account, place)| {
+                let given = self.given_keys_of(&account);
+                (account, place, given)
+            })
+            .collect()
+    }
+
+    /// Forget what was read of `account` with its own key, so it is read
+    /// again at once.
+    pub(crate) fn forget_own_read(&mut self, account: &Account) {
+        self.own_reads.forget(account);
     }
 
     /// Take the numbers of one account read with its own key.
@@ -870,11 +869,14 @@ fn position_of(shown: &[ProfileState], profile: &Profile) -> Option<usize> {
 
 /// Where the admin key of the organization `shown` pays through is kept in
 /// the content `saved` of `agents.json`.
-fn admin_key_in<'a>(
+fn given_keys_in<'a>(
     saved: Option<&'a SavedProfiles>,
     shown: &ProfileState,
-) -> Option<&'a AdminKeyRef> {
-    saved?.admin_key_of(shown.organization()?)
+) -> &'a [GivenKey] {
+    match (saved, shown.organization()) {
+        (Some(saved), Some(organization)) => saved.given_keys_of(organization),
+        _ => &[],
+    }
 }
 
 /// Whether `a` and `b` are the same profile: the same agent with the same

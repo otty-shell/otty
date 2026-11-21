@@ -238,7 +238,6 @@ mod tests {
             is_stale: false,
             recorded: None,
             failure: None,
-            log_in_hint: None,
         };
         let mut money_ui =
             block(view(money, i18n::t(Key::AgentsUsage), palette));

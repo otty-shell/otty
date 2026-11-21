@@ -10,10 +10,13 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "openai.wasm"
 
-# One contract version per kind of part the .wasm exports.
+# One contract version per kind of part the .wasm exports, and the
+# language receiver: the texts of the needs come in every language of
+# OTTY.
 [api]
 agent = "0.1"
 provider = "0.1"
+language = "0.1"
 
 [[agent]]
 id = "codex"
@@ -57,7 +60,7 @@ icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"
 plan_usage_page = "https://chatgpt.com/codex/settings/usage"
-add_by_hand = "admin-key"
+add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the `codex`
 # part are refused then.

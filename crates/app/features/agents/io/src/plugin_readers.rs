@@ -17,6 +17,7 @@ use crate::agent_program::LoginShellPrograms;
 use crate::background::wait_for_thread;
 use crate::hidden_terminal::LoginShellTerminals;
 use crate::limits::PROBE_FOLDER;
+use crate::plugin_language::LanguageReceivers;
 use crate::plugin_parts::{
     InstalledParts, PluginParts, ProviderList, RunningParts,
 };
@@ -40,6 +41,8 @@ pub struct LoadedReaders {
     pub providers: ProviderList,
     /// The plugins that run.
     pub running: Vec<RunningParts>,
+    /// The plugins told when the language of OTTY's interface changes.
+    pub language_receivers: LanguageReceivers,
 }
 
 impl std::fmt::Debug for LoadedReaders {
@@ -49,6 +52,7 @@ impl std::fmt::Debug for LoadedReaders {
             .field("readers", &self.readers)
             .field("providers", &self.providers.len())
             .field("running", &self.running)
+            .field("language_receivers", &self.language_receivers.len())
             .finish()
     }
 }
@@ -159,6 +163,7 @@ fn readers_of(
         },
         providers: Arc::from(readers.providers),
         running: readers.running,
+        language_receivers: readers.language_receivers,
     }
 }
 

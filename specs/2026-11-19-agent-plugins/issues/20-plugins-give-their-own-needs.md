@@ -1,6 +1,6 @@
 # 20 A plugin gives its own needs; OTTY keeps only the needs about plugins
 
-Status: ready-for-agent
+Status: done
 Blocked by: 19, and the "one estimate mark" change
 
 ## Why
@@ -91,7 +91,39 @@ plugin needs.
    - Texts in all ten OTTY languages for the official plugins (copy the
      translations OTTY has now). Rebuild the embedded copies with
      `plugins/embed.sh`.
-5. Docs: "Needs from you" in `Overview.mdx` (who asks: OTTY or a
+5. The language receiver (owner, 2026-11-21): OTTY passes the
+   language of its interface; a plugin may have translations or not.
+   - `env.language` gives the language OTTY shows now at every call,
+     not the one of the load.
+   - An optional contract of its own, `otty:language@0.1.0`, at the
+     root of the SDK and not under agent or provider: one function,
+     `language-changed(tag) -> bool`, true when the plugin's texts
+     depend on the language. The SDK trait is `Language`, exported with
+     `export!(T with agent, provider, language)`; the manifest names it
+     as `[api] language = "0.1"`.
+   - When the user changes the language, OTTY calls it on every plugin
+     that exports it. When one answers true, OTTY reads Agents mode
+     again at once, so its needs show in the new language without a
+     restart. A plugin that does not export it is not called.
+   - The template and the five official plugins export it.
+6. A refused login goes to the agent part that holds it (owner,
+   2026-11-21). A provider part does not know which agent keeps a
+   subscription login, so it does not write that need.
+   - `read-error::login-refused`: the provider refused the login or it
+     expired. `needs-user` stays for keys the provider part itself asks
+     for, such as an admin key or a DeepSeek key.
+   - The agent contract gets `login-refused(profile, login) ->
+     option<need>`: what the user must do for that login, such as
+     `run(codex)` in the profile's folder or `run(opencode auth login)`.
+   - OTTY asks the agent part of the profile whose login was read and
+     shows its need with that plugin's label. Needs are the same when
+     they have the same part, profile and id, so a profile shows one.
+   - When that part says nothing, failed or ran out of time, OTTY shows
+     its own need with no plugin label and no button: the provider
+     refused the login of the profile.
+   - The provider parts of OpenAI and Anthropic no longer give a
+     `login-expired` need; the agent parts keep theirs.
+7. Docs: "Needs from you" in `Overview.mdx` (who asks: OTTY or a
    plugin), `Write a Plugin.mdx` (how to give a need, the actions, the
    language), the official plugin pages, the SDK and template READMEs,
    `spec.md`.
@@ -103,8 +135,46 @@ plugin needs.
   an `ask-key` slot reaches the next `read-bill` as a handle with that
   slot; the same need from two reads shows once; OTTY's own needs (update,
   part off, add plugin, plugin failed, format changed, keyring) still show.
-- No `admin-key`, `AddAdminKey`, `key-refused` or `login-command`
-  left outside `specs/` and git history.
+- Tests first: a language change reaches a plugin that exports the
+  receiver and its needs are read again in the new language; a plugin
+  without it is not called; `env.language` gives the new language
+  between two calls.
+- Tests first: a ChatGPT login kept only by OpenCode and refused by the
+  `openai` provider part shows OpenCode's `run(opencode auth login)`
+  need, not `codex`; a login kept by Codex shows one need, not two;
+  with the agent part failing OTTY shows its own need.
+- No form of `admin-key`, `AddAdminKey`, `key-refused` or
+  `login-command` left outside `specs/` and git history.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+- 2026-11-21, stopped for the day (owner), work in progress on branch `wip/issue-20-plugin-needs` (one `--no-verify` wip commit on top of `agents` `889ea0fe`; not compiled or tested at the stop, the subagent was in the middle of an edit). Done: the contracts (`host.wit`: `need`, `need-action` with `run` / `ask-key(key-ask)` / `open-page` / `copy-report`, `read-error::needs-user`, `env.language`; `admin-key`, `key-refused` and `login-command` gone from the WIT), the SDK (including the test host), the manifest crate, the host and its rebuilt test plugins, most of `otty-agents`, most of the app (54 files under `crates/app/features`, i18n), and the template plugin with an example need (`plugins/template/src/needs.rs`). In progress: `crates/app/features/agents/io/src/bill.rs` and `account_numbers.rs` (given keys with their slot reaching `read-bill`). Not started: the needs of the five official plugins and their texts in ten languages, their tests, `plugins/embed.sh` for each, the docs and `spec.md`, the comments on design choices, and the full checks. Next: build the workspace, fix what the half-done edit broke, then go on from "In progress".
+- 2026-11-21, step 3 (agent): the language receiver and refused logins.
+  Choices made:
+  - A refused login that its agent part says nothing about (the part
+    gives no need, failed or ran out of time) is OTTY's own need: "The
+    login was refused", naming the provider and the profile, with no
+    button. No Run: OTTY does not know how that agent logs in again. No
+    Copy report: the plugin did nothing wrong, the provider really
+    refused the login, so a report to the plugin's author would mislead.
+  - The agent function is `login-refused(profile, login) -> option<need>`:
+    it also gets the login, so a part that keeps several (OpenCode) can
+    tell which one; `none` is the SDK's default and leads to OTTY's own
+    need.
+  - OTTY asks the agent part of the profile whose login the provider read
+    (the limits of that profile, the account's own numbers, the bill).
+    Each profile that holds the login and was read gives its own need;
+    two reads of the same profile give one, since needs are the same by
+    part, profile and id.
+  - When the language changes and at least one plugin answers true, OTTY
+    reads Agents mode again as the Refresh button does, not only the
+    parts of that plugin: the reads go by profile and account, not by
+    plugin, and a change of language is rare. The receiver runs with no
+    permissions: it may only answer.
+- 2026-11-21, step 4 (agent): the docs are done. "Needs from you" in
+  `Overview.mdx` says who asks (OTTY or a plugin, with its label), how a
+  refused login goes to the agent that keeps it, and the language;
+  `Write a Plugin.mdx` shows how to give a need, its four actions, given
+  keys, `login_refused` and the language receiver; each official plugin
+  page lists what it asks for; `spec.md` matches the code and records the
+  owner's decision on prices and the open question on `MODEL_MAKERS`.

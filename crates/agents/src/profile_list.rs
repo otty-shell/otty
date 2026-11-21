@@ -666,12 +666,12 @@ mod tests {
         let mut agent = mock();
         agent
             .expect_detect()
-            .return_const(ProfileStatus::NotLoggedIn);
+            .return_const(ProfileStatus::NotLoggedIn(None));
 
         let status = profile_status(&agent, &mock_profile(), |program| {
             program == "mock-agent"
         });
 
-        assert_eq!(status, ProfileStatus::NotLoggedIn);
+        assert_eq!(status, ProfileStatus::NotLoggedIn(None));
     }
 }

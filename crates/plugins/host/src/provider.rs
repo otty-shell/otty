@@ -20,7 +20,7 @@ pub use crate::provider::v0_1::exports::otty::provider::provider::{
     KeyLimit, LoginFacts, Money,
 };
 use crate::provider::v0_1::exports::otty::provider::provider::{
-    Guest, GuestIndices,
+    GivenKey, Guest, GuestIndices,
 };
 
 /// The provider contract of one loaded plugin, in the version its `[api]`
@@ -48,8 +48,10 @@ impl ProviderExports {
 /// The calls of the provider contract into one provider part, within one
 /// [`CallBatch`]. The key of each call is given by its source, a place or
 /// a key the user gave by hand: the part gets a handle to it for that
-/// call only, never the key. Which keys a part may get is the caller's
-/// choice (only accounts of the part's own provider id or hosts).
+/// call only, never the key. The keys the user gave for the account after
+/// a need of the part asked for them go with their slot, each also as a
+/// handle. Which keys a part may get is the caller's choice (only
+/// accounts of the part's own provider id or hosts).
 pub struct ProviderCalls<'batch, 'plugin> {
     batch: &'batch mut CallBatch<'plugin>,
     exports: ProviderExports,
@@ -71,49 +73,55 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     ) -> Result<Result<AccountFacts, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
-        self.call_with_key(key, |guest, store, key| {
+        self.call_with_keys(key, &[], |guest, store, key, _| {
             guest.call_account(store, &provider, key, found)
         })
     }
 
-    /// The numbers of `account` right now, read with the key of `key`.
+    /// The numbers of `account` right now, read with the key of `key` and
+    /// the keys of `given`, each with its slot.
     pub fn numbers(
         &mut self,
         account: &AccountFacts,
         key: &KeySource,
+        given: &[(String, KeySource)],
     ) -> Result<Result<AccountNumbers, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
-        self.call_with_key(key, |guest, store, key| {
-            guest.call_numbers(store, &provider, account, key)
+        self.call_with_keys(key, given, |guest, store, key, given| {
+            guest.call_numbers(store, &provider, account, key, &given)
         })
     }
 
-    /// The bill of `account` over `days`, read with the admin key of
-    /// `admin_key`.
+    /// The bill of `account` over `days`, read with the key of `key` and
+    /// the keys of `given`, each with its slot.
     pub fn read_bill(
         &mut self,
         account: &AccountFacts,
-        admin_key: &KeySource,
+        key: &KeySource,
+        given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<Result<Bill, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
-        self.call_with_key(admin_key, |guest, store, key| {
-            guest.call_read_bill(store, &provider, account, key, days)
+        self.call_with_keys(key, given, |guest, store, key, given| {
+            guest.call_read_bill(store, &provider, account, key, &given, days)
         })
     }
 
     /// Runs `call` with the exports of the plugin's version of the
-    /// contract and a handle to the key of `source`, lent to the plugin
-    /// for this call only.
-    fn call_with_key<T>(
+    /// contract, a handle to the key of `source`, lent to the plugin for
+    /// this call only, and a handle to each key of `given` with its slot,
+    /// given to the plugin for this call.
+    fn call_with_keys<T>(
         &mut self,
         source: &KeySource,
+        given: &[(String, KeySource)],
         call: impl FnOnce(
             &Guest,
             &mut Store<CallState>,
             Resource<KeyHandle>,
+            Vec<GivenKey>,
         ) -> wasmtime::Result<T>,
     ) -> Result<T, CallError> {
         let exports = self.exports.clone();
@@ -125,8 +133,16 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
                     let guest = indices.load(&mut *store, instance)?;
                     let owned = store.data_mut().table().push(handle)?;
                     let lent = Resource::new_borrow(owned.rep());
+                    let mut given_keys = Vec::new();
+                    for (slot, source) in given {
+                        let key = KeyHandle::of(source.clone());
+                        given_keys.push(GivenKey {
+                            slot: slot.clone(),
+                            key: store.data_mut().table().push(key)?,
+                        });
+                    }
 
-                    let result = call(&guest, store, lent);
+                    let result = call(&guest, store, lent, given_keys);
                     store.data_mut().table().delete(owned)?;
 
                     result
@@ -144,7 +160,7 @@ mod tests {
     use crate::keys::KeyText;
     use crate::operations::v0_1::otty::host::http::Response;
     use crate::operations::v0_1::otty::host::keys::KeyPlace;
-    use crate::operations::v0_1::otty::host::types::Identity;
+    use crate::operations::v0_1::otty::host::types::{Identity, NeedAction};
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{TempDir, engine_with, load_template, template_env};
 
@@ -187,10 +203,11 @@ mod tests {
             plan: None,
         };
 
-        let numbers = batch
-            .provider()
-            .expect("a provider part")
-            .numbers(&account, key);
+        let numbers = batch.provider().expect("a provider part").numbers(
+            &account,
+            key,
+            &[],
+        );
 
         let Ok(Ok(numbers)) = numbers else {
             panic!("the part's answer: {numbers:?}");
@@ -207,6 +224,105 @@ mod tests {
             KeySource::Place(KeyPlace::EnvVar("EXAMPLE_CLOUD_KEY".to_string()));
 
         assert_eq!(money_left_with(&key, &env), 12.5);
+    }
+
+    /// Issue 20: a key the user gave for a slot a need asked for reaches
+    /// the next `read-bill` as a handle with that slot, and the host fills
+    /// it into the part's request.
+    #[test]
+    fn a_given_key_reaches_the_bill_with_its_slot() {
+        let cache = TempDir::new();
+        let mut https = MockHttpsSend::new();
+        https
+            .expect_send()
+            .withf(|sent| {
+                sent.url.starts_with("https://api.example.com/v1/bill?")
+                    && sent.headers.iter().any(|(name, value)| {
+                        name == "authorization"
+                            && value == "Bearer ex-admin-made-up-0001"
+                    })
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(Response {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: br#"{"days": [{"day": "2026-11-02", "usd": 4.0}]}"#
+                        .to_vec(),
+                })
+            });
+        let engine = engine_with(&cache, https, MockKeyringRead::new());
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider("example-cloud"))
+            .expect("a listed part");
+        let account = AccountFacts {
+            identity: Identity {
+                account_id: None,
+                organization_id: None,
+                email: None,
+            },
+            plan: None,
+        };
+        let key = KeySource::Given(KeyText::new(KEY).expect("a key"));
+        let admin = KeyText::new("ex-admin-made-up-0001").expect("a key");
+        let days = DayRange {
+            first: "2026-11-01".to_string(),
+            last: "2026-11-02".to_string(),
+        };
+
+        let bill = batch.provider().expect("a provider part").read_bill(
+            &account,
+            &key,
+            &[("admin".to_string(), KeySource::Given(admin))],
+            &days,
+        );
+
+        let Ok(Ok(bill)) = bill else {
+            panic!("the bill: {bill:?}");
+        };
+        assert_eq!(bill.days[0].cost.amount, 4.0);
+    }
+
+    /// With no key under its slot, the part asks the user for one.
+    #[test]
+    fn a_bill_with_no_given_key_is_a_need_of_the_part() {
+        let cache = TempDir::new();
+        let mut https = MockHttpsSend::new();
+        https.expect_send().never();
+        let engine = engine_with(&cache, https, MockKeyringRead::new());
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider("example-cloud"))
+            .expect("a listed part");
+        let account = AccountFacts {
+            identity: Identity {
+                account_id: None,
+                organization_id: None,
+                email: None,
+            },
+            plan: None,
+        };
+        let key = KeySource::Given(KeyText::new(KEY).expect("a key"));
+        let days = DayRange {
+            first: "2026-11-01".to_string(),
+            last: "2026-11-02".to_string(),
+        };
+
+        let bill = batch.provider().expect("a provider part").read_bill(
+            &account,
+            &key,
+            &[],
+            &days,
+        );
+
+        let Ok(Err(ReadError::NeedsUser(need))) = bill else {
+            panic!("a need: {bill:?}");
+        };
+        assert!(
+            matches!(&need.action, NeedAction::AskKey(ask) if ask.slot == "admin"),
+            "{need:?}"
+        );
     }
 
     /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user added by

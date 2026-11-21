@@ -6,10 +6,9 @@ use std::fmt;
 use otty_agents::{AgentId, ProfileInputError};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::event::{AdminKeyChoice, FolderChoice};
+use super::event::FolderChoice;
 use super::folder::FolderProblem;
 use crate::folder_field::FolderSuggestions;
-use crate::key_place_field::KeyPlaceProblem;
 use crate::state::AgentsState;
 
 /// The open profile dialog.
@@ -41,15 +40,6 @@ pub(crate) struct ProfileDialogViewModel<'a> {
     pub(crate) suggestions: Vec<String>,
     /// The suggestion highlighted from the keyboard.
     pub(crate) highlighted: Option<usize>,
-    /// Where the admin key of the organization is; `Some` while an API key
-    /// profile of an agent with a bill that pays through an organization
-    /// is edited.
-    pub(crate) admin_key_choice: Option<AdminKeyChoice>,
-    /// The path of the key file or the name of its variable, whichever is
-    /// picked.
-    pub(crate) admin_key: &'a str,
-    /// What is wrong with the path or the name.
-    pub(crate) admin_key_error: Option<&'static str>,
     /// Why the last save failed.
     pub(crate) error: Option<&'a str>,
     pub(crate) submit_label: &'static str,
@@ -112,17 +102,6 @@ impl<'a> ProfileDialogViewModel<'a> {
             },
             _ => None,
         };
-        let fields = dialog.admin_key_fields();
-        let admin_key_error =
-            fields.and_then(|fields| match fields.admin_key(home) {
-                Err(KeyPlaceProblem::KeyPathNotFull) => {
-                    Some(i18n::t(Key::AgentsErrorKeyPathNotFull))
-                },
-                Err(KeyPlaceProblem::VariableName) => {
-                    Some(i18n::t(Key::AgentsErrorVariableName))
-                },
-                Ok(_) => None,
-            });
         let submit = if is_adding {
             Key::ButtonAdd
         } else {
@@ -144,9 +123,6 @@ impl<'a> ProfileDialogViewModel<'a> {
             highlighted: dialog
                 .typed_folder()
                 .and_then(FolderSuggestions::highlighted),
-            admin_key_choice: fields.map(|fields| fields.key_choice()),
-            admin_key: fields.map_or("", |fields| fields.key_text()),
-            admin_key_error,
             error: dialog.error(),
             submit_label: i18n::t(submit),
             can_submit: checks.can_submit(),
@@ -166,21 +142,6 @@ pub(crate) struct AgentOption {
 impl fmt::Display for AgentOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.name)
-    }
-}
-
-/// A place of the admin key, shown by its word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AdminKeyChoiceOption(pub(crate) AdminKeyChoice);
-
-impl fmt::Display for AdminKeyChoiceOption {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let key = match self.0 {
-            AdminKeyChoice::File => Key::AgentsAdminKeyFile,
-            AdminKeyChoice::Variable => Key::AgentsAdminKeyVariable,
-        };
-
-        f.write_str(i18n::t(key))
     }
 }
 
@@ -210,9 +171,8 @@ mod tests {
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, claude_id, claude_work, codex, connected,
-        folder_looked_up, folder_query, organization, saved_with_admin_key,
-        with_accounts, with_saved_profiles,
+        claude, claude_id, codex, connected, folder_looked_up, folder_query,
+        with_saved_profiles,
     };
     use crate::types::FolderAsker;
 
@@ -312,73 +272,6 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decisions 5 and 7: the field is the admin key of
-    /// the organization the profile pays through, and there is no budget.
-    #[test]
-    fn the_edit_dialog_of_an_api_key_profile_has_the_admin_key_of_its_organization()
-     {
-        let mut state = with_accounts(
-            &[
-                (claude(), api_key(), vec![organization()]),
-                (claude_work(), api_key(), Vec::new()),
-                (codex(), api_key(), Vec::new()),
-            ],
-            saved_with_admin_key(),
-        );
-        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude()));
-        let saved_vm = ProfileDialogViewModel::from_state(&state)
-            .map(|vm| (vm.admin_key_choice, vm.admin_key.to_string()));
-        send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChoicePicked(AdminKeyChoice::File),
-        );
-        send(
-            &mut state,
-            ProfileDialogIntent::AdminKeyChanged(String::from("admin-key")),
-        );
-        let claude_vm = ProfileDialogViewModel::from_state(&state).map(|vm| {
-            (
-                vm.admin_key_choice,
-                vm.admin_key.to_string(),
-                vm.admin_key_error,
-                vm.can_submit,
-            )
-        });
-        send(&mut state, ProfileDialogIntent::Cancelled);
-        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude_work()));
-        let key_only_vm =
-            ProfileDialogViewModel::from_state(&state).expect("open");
-        let key_only = key_only_vm.admin_key_choice;
-        send(&mut state, ProfileDialogIntent::Cancelled);
-        let _ = reduce(&mut state, AgentsIntent::EditProfile(codex()));
-
-        let codex_vm =
-            ProfileDialogViewModel::from_state(&state).expect("open");
-
-        assert_eq!(
-            saved_vm,
-            Some((
-                Some(AdminKeyChoice::Variable),
-                String::from("ANTHROPIC_ADMIN_KEY")
-            ))
-        );
-        assert_eq!(
-            claude_vm,
-            Some((
-                Some(AdminKeyChoice::File),
-                String::from("admin-key"),
-                Some(i18n::t(Key::AgentsErrorKeyPathNotFull)),
-                false,
-            ))
-        );
-        assert_eq!(key_only, None, "no organization found");
-        assert_eq!(codex_vm.admin_key_choice, None, "Codex has no bill");
-        assert_eq!(
-            AdminKeyChoiceOption(AdminKeyChoice::Variable).to_string(),
-            i18n::t(Key::AgentsAdminKeyVariable)
-        );
-    }
-
     /// Issue 38: the typed config folder shows its suggestions, and the
     /// answer that it is no folder is no error: a new profile may name a
     /// folder that is not there yet.
@@ -418,18 +311,5 @@ mod tests {
         assert_eq!(vm.suggestions, vec![String::from("~/.claude-work/")]);
         assert_eq!(vm.path_error, None);
         assert!(vm.can_submit);
-    }
-
-    #[test]
-    fn a_subscription_has_no_admin_key() {
-        let mut state = with_saved_profiles(
-            &[(claude(), connected())],
-            SavedProfiles::default(),
-        );
-        let _ = reduce(&mut state, AgentsIntent::EditProfile(claude()));
-
-        let vm = ProfileDialogViewModel::from_state(&state).expect("open");
-
-        assert_eq!(vm.admin_key_choice, None);
     }
 }

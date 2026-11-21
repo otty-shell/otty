@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agent::{
-    Billing as PartBilling, Command as PartCommand, Login, LoginKind,
-    ProfilePlace, ProfileStatus as PartStatus,
+    Billing as PartBilling, Login, LoginKind, ProfilePlace,
+    ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{LoadedPlugin, PartRef};
 
@@ -24,6 +24,7 @@ use crate::hidden_terminal::StartTerminal;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::{BillingKind, LimitSource};
 use crate::part_health::PartHealth;
+use crate::part_need::{PartNeed, agent_command};
 use crate::plugin_sources::{PluginLimits, PluginSessions, PluginStats};
 use crate::plugin_spend::PluginSpend;
 use crate::plugin_values::{part_profile, provider_of};
@@ -172,9 +173,10 @@ impl Agent for PluginAgent {
         self.default_folder.clone()
     }
 
-    /// The state the part tells. A read that failed has no state of its
-    /// own to tell, so the profile counts as not logged in until the part
-    /// answers again.
+    /// The state the part tells, with the need of a profile nobody is
+    /// logged in with. A read that failed has no state of its own to tell,
+    /// so the profile counts as not logged in, with no need, until the
+    /// part answers again.
     fn detect(&self, profile: &Profile) -> ProfileStatus {
         let asked = part_profile(profile);
 
@@ -191,7 +193,12 @@ impl Agent for PluginAgent {
             Ok(PartStatus::ConfigFolderNotFound) => {
                 ProfileStatus::ConfigDirNotFound
             },
-            _ => ProfileStatus::NotLoggedIn,
+            Ok(PartStatus::NotLoggedIn(need)) => ProfileStatus::NotLoggedIn(
+                PartNeed::of_part(self.part.named(), &need)
+                    .map(|need| need.about_profile(profile.config_dir()))
+                    .map(Box::new),
+            ),
+            Err(_) => ProfileStatus::NotLoggedIn(None),
         }
     }
 
@@ -210,6 +217,25 @@ impl Agent for PluginAgent {
         let logins = self.logins(profile);
 
         self.login_of(&logins, profile, account).cloned()
+    }
+
+    /// The need the part gives for `login` of `profile` once a provider
+    /// refused it; a read that failed gives none, and OTTY says the login
+    /// was refused itself.
+    fn login_refused(
+        &self,
+        profile: &Profile,
+        login: &Login,
+    ) -> Option<PartNeed> {
+        let asked = part_profile(profile);
+
+        let need = self.part.read("login-refused", |batch| {
+            batch.agent()?.login_refused(&asked, &login.place)
+        });
+
+        let need = need.ok().flatten()?;
+        PartNeed::of_part(self.part.named(), &need)
+            .map(|need| need.about_profile(profile.config_dir()))
     }
 
     fn has_sessions(&self, profile: &Profile) -> bool {
@@ -244,20 +270,7 @@ impl Agent for PluginAgent {
             .read("launch", |batch| batch.agent()?.launch(&asked, session));
 
         match command {
-            Ok(command) => agent_command(command),
-            Err(_) => AgentCommand::new(self.entry.program()),
-        }
-    }
-
-    fn login(&self, profile: &Profile) -> AgentCommand {
-        let asked = part_profile(profile);
-
-        let command = self.part.read("login-command", |batch| {
-            batch.agent()?.login_command(&asked)
-        });
-
-        match command {
-            Ok(command) => agent_command(command),
+            Ok(command) => agent_command(&command),
             Err(_) => AgentCommand::new(self.entry.program()),
         }
     }
@@ -393,19 +406,6 @@ fn billing_kind(billing: PartBilling) -> BillingKind {
         PartBilling::Credits => BillingKind::Credits,
         PartBilling::ApiKey => BillingKind::ApiKey,
     }
-}
-
-/// A part's command as the app runs it.
-fn agent_command(command: PartCommand) -> AgentCommand {
-    let mut agent_command = AgentCommand::new(command.program);
-    for arg in command.args {
-        agent_command = agent_command.with_arg(arg);
-    }
-    for (name, value) in command.env {
-        agent_command = agent_command.with_env(name, value);
-    }
-
-    agent_command
 }
 
 #[cfg(test)]

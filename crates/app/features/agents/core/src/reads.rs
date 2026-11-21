@@ -183,10 +183,13 @@ pub(crate) fn load_account_numbers(
         .profiles_mut()
         .start_own_reads(which)
         .into_iter()
-        .map(|(account, place)| AgentsOutcome::LoadAccountNumbers {
-            account,
-            place,
-        })
+        .map(
+            |(account, place, given)| AgentsOutcome::LoadAccountNumbers {
+                account,
+                place,
+                given,
+            },
+        )
         .collect()
 }
 
@@ -261,17 +264,17 @@ fn load_prices(
         .collect()
 }
 
-/// Ask for the bill of each organization with an admin key that an API
-/// key profile `which` picks pays through, once per organization.
+/// Ask for the bill of each organization a provider part serves that an
+/// API key profile `which` picks pays through, once per organization.
 fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
     state
         .profiles_mut()
         .start_bill_reads(which)
         .into_iter()
-        .map(|(profile, provider, admin_key)| AgentsOutcome::LoadBill {
+        .map(|(profile, organization, given)| AgentsOutcome::LoadBill {
             profile,
-            provider,
-            admin_key,
+            organization,
+            given,
         })
         .collect()
 }
@@ -288,7 +291,7 @@ mod tests {
         chatgpt_login, claude, claude_work, codex, codex_work, connected, env,
         fetched_prices, five_hour_limits, fresh_profiles_loaded, limits_answer,
         limits_loaded, load_bill, organization, prices_answer, prices_loaded,
-        profiles_loaded, profiles_with_accounts_loaded, saved_with_admin_key,
+        profiles_loaded, profiles_with_accounts_loaded, saved_with_given_key,
         sessions_loaded, spend_loaded, spend_of,
     };
 
@@ -587,7 +590,7 @@ mod tests {
                     (claude(), api_key(), vec![organization()]),
                     (claude_work(), api_key(), vec![organization()]),
                 ],
-                saved_with_admin_key(),
+                saved_with_given_key(),
             ),
         );
         let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
@@ -942,9 +945,9 @@ mod tests {
         outcomes
             .into_iter()
             .filter_map(|outcome| match outcome {
-                AgentsOutcome::LoadAccountNumbers { account, place } => {
-                    Some((account, place))
-                },
+                AgentsOutcome::LoadAccountNumbers {
+                    account, place, ..
+                } => Some((account, place)),
                 _ => None,
             })
             .collect()
@@ -955,8 +958,7 @@ mod tests {
     /// login Codex reads the limits of is not read twice.
     #[test]
     fn accounts_that_tell_their_own_numbers_are_read_with_their_own_key() {
-        let key =
-            otty_agents::AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
+        let key = otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
         let added = otty_agents::Account::added(
             otty_agents::ProviderRef::of_id("deepseek"),
             key.clone(),
@@ -998,8 +1000,7 @@ mod tests {
     /// serves is listed with the others, and its numbers are not read.
     #[test]
     fn an_added_account_no_plugin_serves_is_listed_and_not_read() {
-        let key =
-            otty_agents::AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY"));
+        let key = otty_agents::KeyRef::EnvVar(String::from("EXAMPLE_API_KEY"));
         let added = otty_agents::Account::added(
             otty_agents::ProviderRef::of_id("example-cloud"),
             key.clone(),

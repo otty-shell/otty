@@ -33,6 +33,8 @@ pub(crate) struct LimitPacing {
 impl LimitPacing {
     /// The answer of the reading of `key` that started less than the gap
     /// before `now`; `None` when a new reading may start.
+    // A `ReadError` may hold a need, a record the contract can not box.
+    #[allow(clippy::result_large_err)]
     pub(crate) fn recent(
         &self,
         key: &PaceKey,

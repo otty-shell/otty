@@ -1,7 +1,6 @@
 //! The profile dialog over the window: the agent as a drop-down with the
 //! provider of each, the name, the way to give the config folder and the
-//! folder with its hint and, while an API key profile is edited, the admin
-//! key of its organization; Cancel and Add or Save.
+//! folder with its hint; Cancel and Add or Save.
 
 use iced::Element;
 use iced::widget::{Id, column};
@@ -17,10 +16,8 @@ use otty_ui_kit::components::text_field::TextField;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
-use super::event::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
-use super::model::{
-    AdminKeyChoiceOption, FolderChoiceOption, ProfileDialogViewModel,
-};
+use super::event::{FolderChoice, ProfileDialogIntent};
+use super::model::{FolderChoiceOption, ProfileDialogViewModel};
 use crate::event::AgentsIntent;
 use crate::folder_field::{FolderFieldIntent, folder_field};
 
@@ -31,12 +28,6 @@ pub(crate) const CONFIG_FOLDER_ID: Id = Id::new("agents_profile_path");
 const FOLDER_CHOICES: [FolderChoiceOption; 2] = [
     FolderChoiceOption(FolderChoice::Typed),
     FolderChoiceOption(FolderChoice::Create),
-];
-
-/// The places of the admin key, in their order.
-const ADMIN_KEY_CHOICES: [AdminKeyChoiceOption; 2] = [
-    AdminKeyChoiceOption(AdminKeyChoice::File),
-    AdminKeyChoiceOption(AdminKeyChoice::Variable),
 ];
 
 /// Props for the profile dialog.
@@ -124,48 +115,6 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
     }
     body = body.push(path);
 
-    if let Some(choice) = vm.admin_key_choice {
-        let (label, placeholder) = match choice {
-            AdminKeyChoice::File => {
-                (Key::AgentsAdminKeyFile, Key::AgentsAdminKeyFilePlaceholder)
-            },
-            AdminKeyChoice::Variable => (
-                Key::AgentsAdminKeyVariable,
-                Key::AgentsAdminKeyVariablePlaceholder,
-            ),
-        };
-        let mut key = TextField::new(i18n::t(label), vm.admin_key, palette)
-            .id(field_id(Field::AdminKey))
-            .optional(i18n::t(Key::FieldOptional))
-            .placeholder(i18n::t(placeholder))
-            .hint(i18n::t(Key::AgentsAdminKeyHint))
-            .on_input(move |value| {
-                send(ProfileDialogIntent::AdminKeyChanged(value))
-            })
-            .on_submit(send(ProfileDialogIntent::Submitted))
-            .on_escape(send(ProfileDialogIntent::Cancelled));
-        if let Some(error) = vm.admin_key_error {
-            key = key.error(error);
-        }
-        body = body.push(
-            column![
-                caption(i18n::t(Key::AgentsFieldAdminKey), palette),
-                segmented(
-                    &ADMIN_KEY_CHOICES,
-                    &AdminKeyChoiceOption(choice),
-                    move |option| {
-                        send(ProfileDialogIntent::AdminKeyChoicePicked(
-                            option.0,
-                        ))
-                    },
-                    palette,
-                ),
-            ]
-            .spacing(spacing::SPACE_2),
-        );
-        body = body.push(key);
-    }
-
     if let Some(error) = vm.error {
         body = body.push(small_text(error, palette.status_error()));
     }
@@ -191,7 +140,6 @@ pub(crate) fn view(props: ProfileDialogProps<'_>) -> Element<'_, AgentsIntent> {
 pub(crate) enum Field {
     Name,
     Path,
-    AdminKey,
 }
 
 /// Widget id of the text field `field`.
@@ -199,7 +147,6 @@ pub(crate) fn field_id(field: Field) -> Id {
     match field {
         Field::Name => Id::new("agents_profile_name"),
         Field::Path => CONFIG_FOLDER_ID,
-        Field::AdminKey => Id::new("agents_profile_admin_key"),
     }
 }
 
@@ -250,9 +197,6 @@ mod tests {
             path_hint: Some("OTTY creates this folder."),
             suggestions: Vec::new(),
             highlighted: None,
-            admin_key_choice: None,
-            admin_key: "",
-            admin_key_error: None,
             error: Some("disk full"),
             submit_label: i18n::t(Key::ButtonAdd),
             can_submit,
@@ -465,48 +409,6 @@ mod tests {
 
         assert!(ui.find("Program").is_err(), "the dialog has no program");
         assert!(ui.find(i18n::t(Key::FieldName)).is_ok());
-    }
-
-    fn api_key_dialog() -> ProfileDialogViewModel<'static> {
-        ProfileDialogViewModel {
-            agents: Vec::new(),
-            folder_choice: None,
-            path_hint: None,
-            error: None,
-            admin_key_choice: Some(AdminKeyChoice::File),
-            admin_key: "admin-key",
-            admin_key_error: Some("Type a full path"),
-            ..add_dialog(true)
-        }
-    }
-
-    #[test]
-    fn the_admin_key_place_is_picked_and_its_path_typed() {
-        let picked = sent(api_key_dialog(), |ui| {
-            ui.find(i18n::t(Key::AgentsFieldAdminKey))
-                .expect("the admin key field should show");
-            ui.find("Type a full path").expect("its error should show");
-            ui.click(i18n::t(Key::AgentsAdminKeyVariable))
-                .expect("the variable choice should show");
-        });
-        let typed = sent(api_key_dialog(), |ui| {
-            ui.click(field_id(Field::AdminKey))
-                .expect("the key path should show");
-            let _ = ui.typewrite("~");
-        });
-
-        assert_eq!(
-            picked,
-            vec![dialog(ProfileDialogIntent::AdminKeyChoicePicked(
-                AdminKeyChoice::Variable
-            ))]
-        );
-        assert_eq!(
-            typed,
-            vec![dialog(ProfileDialogIntent::AdminKeyChanged(String::from(
-                "admin-key~"
-            )))]
-        );
     }
 
     /// In a window smaller than the dialog it keeps its width and scrolls

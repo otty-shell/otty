@@ -77,7 +77,7 @@ mod tests {
         agents, api_key, chatgpt_login, claude, codex, codex_work, connected,
         env, now, open_account_menu, open_profile_menu, organization,
         profiles_with_accounts_loaded, profiles_with_hidden_loaded, save,
-        saved_with_admin_key, session, sessions_loaded,
+        saved_with_given_key, session, sessions_loaded,
         two_agents_with_sessions, with_accounts,
     };
 
@@ -177,11 +177,11 @@ mod tests {
                 ),
             )
         };
-        let hidden = saved_with_admin_key()
+        let hidden = saved_with_given_key()
             .with_account_hidden(&organization(), true)
             .with_account_hidden(&chatgpt_login(), true);
 
-        let shown_reads = first_read(saved_with_admin_key());
+        let shown_reads = first_read(saved_with_given_key());
         let reads = first_read(hidden);
 
         assert!(shown_reads.iter().any(is_read), "{shown_reads:?}");

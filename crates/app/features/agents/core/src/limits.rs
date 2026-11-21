@@ -4,7 +4,10 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{Answer, Limits, SourceError, SourceFailure, SourceId};
+use otty_agents::{
+    Answer, Limits, PartNeed, RefusedLogin, SourceError, SourceFailure,
+    SourceId,
+};
 
 use super::freshness::{ReadState, Which};
 use super::types::LimitsRead;
@@ -49,18 +52,41 @@ impl ProfileLimits {
         &self.reads
     }
 
-    /// Whether the login of the account expired (spec 2026-11-19,
-    /// Decision 3): no part answered at the latest read, and one of them
-    /// said the login is missing or expired. OTTY never renews it; the
-    /// agent does when it runs, or asks to log in again.
-    pub(crate) fn is_login_expired(&self) -> bool {
+    /// What the parts ask the user to do when no part answered at the
+    /// latest read, such as log in again (spec 2026-11-19-agent-plugins,
+    /// issue 20). The agent part's needs come first: it knows the
+    /// profile's agent and can run it, while a provider part only knows
+    /// the login.
+    pub(crate) fn needs(&self) -> Vec<&PartNeed> {
         let Some(failures) = &self.failures else {
-            return false;
+            return Vec::new();
+        };
+
+        let of_agent = failures
+            .iter()
+            .filter(|failure| failure.source() == SourceId::AgentPart);
+        let of_others = failures
+            .iter()
+            .filter(|failure| failure.source() != SourceId::AgentPart);
+
+        of_agent.chain(of_others).filter_map(need_of).collect()
+    }
+
+    /// The logins a provider part refused at the latest read, when no
+    /// part answered and the agent part that keeps the login said nothing
+    /// about it.
+    pub(crate) fn refused_logins(&self) -> Vec<&RefusedLogin> {
+        let Some(failures) = &self.failures else {
+            return Vec::new();
         };
 
         failures
             .iter()
-            .any(|failure| matches!(failure.error(), SourceError::NotLoggedIn))
+            .filter_map(|failure| match failure.error() {
+                SourceError::LoginRefused(refused) => Some(refused.as_ref()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Whether the limits need a read for `which`: unlike
@@ -137,6 +163,15 @@ impl Default for ProfileLimits {
             may_start_programs: true,
             waits_for_programs: false,
         }
+    }
+}
+
+/// The need of the part that gave `failure`, when its read waits for the
+/// user.
+fn need_of(failure: &SourceFailure) -> Option<&PartNeed> {
+    match failure.error() {
+        SourceError::NeedsUser(need) => Some(need.as_ref()),
+        _ => None,
     }
 }
 
@@ -226,7 +261,7 @@ mod tests {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let fallback = limits_answer(vec![
-            (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+            (SourceId::ProviderPart, Err(crate::testing::login_expired())),
             (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
         ]);
 
@@ -263,7 +298,7 @@ mod tests {
         let good = from_provider(42.0);
         let failed = limits_answer(vec![(
             SourceId::ProviderPart,
-            Err(SourceError::NotLoggedIn),
+            Err(crate::testing::login_expired()),
         )]);
 
         limits.apply(good.clone(), at(10));
@@ -287,29 +322,44 @@ mod tests {
         assert!(limits.has_sources());
     }
 
-    /// Spec 2026-11-19, Decision 3: a login the provider part could not
-    /// use is "login expired"; an answer of the agent part after it, or
-    /// another failure, is not.
+    /// Issue 20: the needs of the parts show only while no part answered;
+    /// the agent part's need comes first, as it can run the agent.
     #[test]
-    fn only_a_read_that_failed_for_the_login_is_a_login_expired() {
-        let read = |parts: Vec<(SourceId, Result<Limits, SourceError>)>| {
+    fn the_needs_of_a_read_no_part_answered_come_agent_part_first() {
+        let needs = |parts: Vec<(SourceId, Result<Limits, SourceError>)>| {
             let mut limits = ProfileLimits::default();
             limits.apply(limits_answer(parts), at(10));
-            limits.is_login_expired()
+            limits
+                .needs()
+                .into_iter()
+                .map(|need| need.id().to_string())
+                .collect::<Vec<_>>()
         };
-        let not_logged_in =
-            (SourceId::ProviderPart, Err(SourceError::NotLoggedIn));
-
-        assert!(read(vec![not_logged_in.clone()]));
-        assert!(!read(vec![
-            not_logged_in,
-            (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
-        ]));
-        assert!(!read(vec![(
+        let provider = (
             SourceId::ProviderPart,
-            Err(SourceError::Network(String::from("down"))),
-        )]));
-        assert!(!ProfileLimits::default().is_login_expired());
+            Err(crate::testing::refused_key_need()),
+        );
+        let agent = (SourceId::AgentPart, Err(crate::testing::login_expired()));
+
+        assert_eq!(
+            needs(vec![provider.clone(), agent]),
+            ["login-expired", "new-key"]
+        );
+        assert!(
+            needs(vec![
+                provider,
+                (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
+            ])
+            .is_empty()
+        );
+        assert!(
+            needs(vec![(
+                SourceId::ProviderPart,
+                Err(SourceError::Network(String::from("down"))),
+            )])
+            .is_empty()
+        );
+        assert!(ProfileLimits::default().needs().is_empty());
     }
 
     #[test]

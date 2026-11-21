@@ -34,17 +34,20 @@ const USAGE_PATH: &str = "/wham/usage";
 /// ChatGPT with the login's access token `key`, with the credits of the
 /// workspace when the usage answer says they are on and tells no number
 /// of them. The token is never renewed: one whose claims say it expired
-/// is refused here, and nothing is sent.
+/// is not sent. An expired or refused login is
+/// [`ReadError::LoginRefused`]: this part does not know which agent keeps
+/// it, so OTTY asks the agent part that found it what the user must do.
 pub(crate) fn chatgpt_limits(
     key: &Key,
     account_id: &str,
 ) -> Result<Limits, ReadError> {
     if has_expired(key)? {
-        return Err(ReadError::KeyRefused);
+        return Err(ReadError::LoginRefused);
     }
 
     let url = format!("{BACKEND_API_URL}{USAGE_PATH}");
-    let answer = json_answer(&usage_request(&url, key, account_id), &url)?;
+    let request = usage_request(&url, key, account_id);
+    let answer = json_answer(&request, &url, login_refused)?;
     let limits = limits_from(&answer)?;
 
     let ask = WorkspaceAsk {
@@ -66,6 +69,12 @@ pub(crate) fn usage_request<'key>(
         .header_with_key("authorization", "Bearer ", key)
         .header("accept", "application/json")
         .header("chatgpt-account-id", account_id)
+}
+
+/// What ChatGPT refusing the login is: a refused login, whose need comes
+/// from the agent part that keeps it.
+pub(crate) fn login_refused() -> ReadError {
+    ReadError::LoginRefused
 }
 
 /// Whether the token of `key` expired, as the `exp` claim of the JWT says;
@@ -566,16 +575,18 @@ mod tests {
     }
 
     /// Issue 12 of spec 2026-11-19-agent-plugins: the provider part tries
-    /// the login and a refusal is "key refused"; a token whose claims say
-    /// it expired is not even sent, and it is never renewed.
+    /// the login, and a token whose claims say it expired is not even sent
+    /// and never renewed. Issue 20: either way the part only says the
+    /// login was refused; it does not know which agent keeps it, so it
+    /// names no agent to run.
     #[test]
-    fn a_refused_or_expired_login_is_key_refused() {
+    fn a_refused_or_expired_login_is_only_refused() {
         let refused = limits_in(401, "");
         let host = server(&[(USAGE_URL, 200, FIVE_HOUR_ANSWER)]);
         let expired = limits_with(&host, EXPIRED_TOKEN);
 
-        assert_eq!(refused, Err(ReadError::KeyRefused));
-        assert_eq!(expired, Err(ReadError::KeyRefused));
+        assert_eq!(refused, Err(ReadError::LoginRefused));
+        assert_eq!(expired, Err(ReadError::LoginRefused));
         assert!(host.requests().is_empty());
     }
 

@@ -15,6 +15,7 @@ use crate::error::{SourceError, Unavailable};
 use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
+use crate::part_need::{PartNeed, PartNeedAction};
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
 use crate::registry::PluginPart;
@@ -42,6 +43,22 @@ struct StandIn {
     login: Option<&'static str>,
 }
 
+impl StandIn {
+    /// The program, with its login argument when it has one.
+    fn login_run(&self, profile: &Profile) -> AgentCommand {
+        let command = profile_command(
+            profile,
+            self.entry.program(),
+            self.folder.variable(),
+        );
+
+        match self.login {
+            Some(login) => command.with_arg(login),
+            None => command,
+        }
+    }
+}
+
 impl Agent for StandIn {
     fn entry(&self) -> &AgentEntry {
         &self.entry
@@ -59,8 +76,17 @@ impl Agent for StandIn {
         default_config_dir(&self.folder, env)
     }
 
-    fn detect(&self, _profile: &Profile) -> ProfileStatus {
-        ProfileStatus::NotLoggedIn
+    /// Nobody is logged in: the need runs the agent's login.
+    fn detect(&self, profile: &Profile) -> ProfileStatus {
+        let need = PartNeed::new(
+            self.entry.part().clone(),
+            "not-logged-in",
+            "Needs login",
+            "Nobody is logged in with this config folder.",
+            PartNeedAction::Run(self.login_run(profile)),
+        );
+
+        ProfileStatus::NotLoggedIn(Some(Box::new(need)))
     }
 
     fn accounts(&self, _profile: &Profile) -> Vec<Account> {
@@ -90,20 +116,6 @@ impl Agent for StandIn {
 
         match session {
             Some(id) => command.with_arg(self.resume).with_arg(id.as_str()),
-            None => command,
-        }
-    }
-
-    /// The program, with its login argument when it has one.
-    fn login(&self, profile: &Profile) -> AgentCommand {
-        let command = profile_command(
-            profile,
-            self.entry.program(),
-            self.folder.variable(),
-        );
-
-        match self.login {
-            Some(login) => command.with_arg(login),
             None => command,
         }
     }
@@ -217,6 +229,36 @@ pub fn codex_stand_in() -> Box<dyn Agent> {
         resume: "resume",
         login: Some("login"),
     })
+}
+
+/// The status a stand-in agent gives for `profile` nobody is logged in
+/// with: the need of its part, whose button runs the agent's login, such
+/// as `codex login`. A profile of an agent with no stand-in has no need.
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// use otty_agents::fixtures::not_logged_in;
+/// use otty_agents::{AgentId, Profile, ProfileStatus};
+///
+/// let codex = Profile::default_for(
+///     AgentId::new("codex"),
+///     "Codex",
+///     PathBuf::from("/home/user/.codex"),
+/// );
+///
+/// assert!(matches!(
+///     not_logged_in(&codex),
+///     ProfileStatus::NotLoggedIn(Some(_))
+/// ));
+/// ```
+pub fn not_logged_in(profile: &Profile) -> ProfileStatus {
+    [claude_code_stand_in(), codex_stand_in()]
+        .into_iter()
+        .find(|agent| agent.entry().id() == profile.agent())
+        .map_or(ProfileStatus::NotLoggedIn(None), |agent| {
+            agent.detect(profile)
+        })
 }
 
 /// The program of `profile` with its config folder and no arguments.

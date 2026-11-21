@@ -23,7 +23,8 @@ use serde_json::Value;
 
 use crate::database::Database;
 use crate::glob::escaped;
-use crate::location::database_of;
+use crate::location::{database_of, start_command};
+use crate::needs;
 use crate::plan::plan_name;
 use crate::provider_ids::{KILO, OPENAI, provider_of};
 
@@ -185,7 +186,8 @@ pub(crate) fn logins(profile: &Profile) -> Vec<Login> {
 }
 
 /// Whether the profile in `profile` is logged in: connected with any
-/// login it keeps, paid per token when one of them is a key.
+/// login it keeps, paid per token when one of them is a key. With no
+/// login it needs one by `opencode auth login`.
 pub(crate) fn status(profile: &Profile) -> ProfileStatus {
     if !folder_exists(&profile.folder) {
         return ProfileStatus::ConfigFolderNotFound;
@@ -193,7 +195,12 @@ pub(crate) fn status(profile: &Profile) -> ProfileStatus {
 
     let found = logins(profile);
     if found.is_empty() {
-        return ProfileStatus::NotLoggedIn;
+        let login = start_command(
+            profile,
+            vec!["auth".to_string(), "login".to_string()],
+        );
+
+        return ProfileStatus::NotLoggedIn(needs::not_logged_in(login));
     }
 
     let pays_per_token = found.iter().any(|login| {
@@ -362,7 +369,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::keys;
+    use otty_plugin_sdk::{Command, NeedAction, keys};
 
     use super::*;
     use crate::testing::{DataFolder, made_up_jwt};
@@ -591,6 +598,39 @@ mod tests {
         assert_eq!(data.run(|| logins(&profile)), []);
     }
 
+    /// A folder with no login needs one: the button runs `opencode auth
+    /// login`, pointed at the folder when it is not the default one.
+    #[test]
+    fn a_folder_with_no_login_needs_a_login_by_opencode_auth_login() {
+        let data = DataFolder::new();
+        data.write("auth.json", "{}");
+        let moved = Profile {
+            is_default: false,
+            ..data.profile()
+        };
+
+        let statuses = data.run(|| [status(&data.profile()), status(&moved)]);
+
+        let login = |env: Vec<(String, String)>| Command {
+            program: "opencode".to_string(),
+            args: vec!["auth".to_string(), "login".to_string()],
+            env,
+        };
+        let data_home = data.path().parent().map(|parent| {
+            ("XDG_DATA_HOME".to_string(), parent.display().to_string())
+        });
+        let expected =
+            [login(Vec::new()), login(data_home.into_iter().collect())];
+        for (status, command) in statuses.into_iter().zip(expected) {
+            let ProfileStatus::NotLoggedIn(need) = status else {
+                panic!("not logged in: {status:?}");
+            };
+            assert_eq!(need.id, "not-logged-in");
+            assert_eq!(need.title, "Needs login");
+            assert_eq!(need.action, NeedAction::Run(command));
+        }
+    }
+
     #[test]
     fn a_folder_with_a_login_is_connected_and_a_key_pays_per_token() {
         let chatgpt = DataFolder::new();
@@ -626,10 +666,10 @@ mod tests {
             key.run(|| status(&key.profile())),
             connected(Some(Billing::ApiKey))
         );
-        assert_eq!(
+        assert!(matches!(
             none.run(|| status(&none.profile())),
-            ProfileStatus::NotLoggedIn
-        );
+            ProfileStatus::NotLoggedIn(_)
+        ));
         assert_eq!(
             gone.run(|| status(&gone_profile)),
             ProfileStatus::ConfigFolderNotFound

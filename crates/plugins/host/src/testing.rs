@@ -38,7 +38,8 @@ read = ["~/.test-agent/**"]
 
 /// The manifest of a test plugin whose agent part declares keys in every
 /// kind of place, and two provider parts, each with its own host. The
-/// template plugin's `.wasm` loads with it: it exports both contracts.
+/// template plugin's `.wasm` loads with it: it exports both contracts and
+/// the language receiver.
 pub(crate) const KEYS_PLUGIN_MANIFEST: &str = r#"
 [plugin]
 id = "test-plugin"
@@ -49,6 +50,7 @@ wasm = "plugin.wasm"
 [api]
 agent = "0.1"
 provider = "0.1"
+language = "0.1"
 
 [[agent]]
 id = "test-agent"

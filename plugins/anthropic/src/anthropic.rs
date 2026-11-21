@@ -1,15 +1,16 @@
 //! The provider part `anthropic`: whose account a Claude login or an
 //! Anthropic key is, the limits of a Claude login read from Anthropic's
 //! server, and the bill of an Anthropic organization read with an admin
-//! key. OTTY gives the part a handle to the login token or the key, never
+//! key the part asks the user for. OTTY gives the part a handle to the login token or the key, never
 //! the key, and only of accounts of Anthropic: a key behind another
 //! server, such as DeepSeek's, is not one.
 
 use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, Bill, DayRange, Key, LoginFacts, Provider,
-    ReadError,
+    AccountFacts, AccountNumbers, Bill, DayRange, GivenKey, Key, LoginFacts,
+    Provider, ReadError, given_key,
 };
 
+use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{Anthropic, cost_report, oauth_usage};
 
 /// How the token of a Claude login starts; an API key (`sk-ant-api`) or an
@@ -38,6 +39,7 @@ impl Provider for Anthropic {
         _provider: &str,
         _account: &AccountFacts,
         key: &Key,
+        _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
         let is_login = key
             .has_prefix(LOGIN_TOKEN_PREFIX)
@@ -55,14 +57,26 @@ impl Provider for Anthropic {
         })
     }
 
-    /// The cost report of the organization of the admin key over `days`.
+    /// The cost report of the organization over `days`, read with an
+    /// admin key: the account's own key when it is one, else the one the
+    /// user gave under [`ADMIN_SLOT`], else the part asks for one and
+    /// sends nothing.
     fn read_bill(
         _provider: &str,
         _account: &AccountFacts,
-        admin_key: &Key,
+        key: &Key,
+        given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
-        cost_report::bill(admin_key, days)
+        let is_bill_key =
+            key.has_prefix(ADMIN_PREFIX).map_err(ReadError::Host)?;
+        let bill_key = match is_bill_key {
+            true => key,
+            false => given_key(given, ADMIN_SLOT)
+                .ok_or_else(|| ReadError::NeedsUser(needs::bill_key()))?,
+        };
+
+        cost_report::bill(bill_key, days)
     }
 }
 
@@ -83,7 +97,8 @@ fn no_numbers() -> AccountNumbers {
 mod tests {
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::{
-        HostError, Identity, JsonField, KeyPlace, LoginKind, files, keys,
+        GivenKey, HostError, Identity, JsonField, KeyPlace, LoginKind,
+        NeedAction, files, keys,
     };
 
     use super::*;
@@ -93,6 +108,28 @@ mod tests {
     /// A made-up login token, never a real one.
     const TOKEN: &str = "sk-ant-oat01-made-up-login-token";
     const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+    /// The address of the cost report of 2026-11-16, the one day of
+    /// [`one_day`].
+    const REPORT_URL: &str = "https://api.anthropic.com/v1/organizations/cost_report?starting_at=2026-11-16T00:00:00Z&ending_at=2026-11-17T00:00:00Z&bucket_width=1d&limit=31";
+    /// A made-up admin key, never a real one.
+    const MADE_UP_ADMIN: &str = "sk-ant-admin01-made-up-for-tests";
+
+    fn one_day() -> DayRange {
+        DayRange {
+            first: "2026-11-16".to_string(),
+            last: "2026-11-16".to_string(),
+        }
+    }
+
+    fn organization() -> AccountFacts {
+        AccountFacts {
+            identity: Identity {
+                organization_id: Some("made-up-organization".to_string()),
+                ..Identity::default()
+            },
+            plan: None,
+        }
+    }
 
     fn claude_login() -> LoginFacts {
         LoginFacts {
@@ -122,7 +159,7 @@ mod tests {
             .as_provider(PROVIDER, || {
                 let facts =
                     Anthropic::account(PROVIDER, &key, &claude_login())?;
-                let numbers = Anthropic::numbers(PROVIDER, &facts, &key)?;
+                let numbers = Anthropic::numbers(PROVIDER, &facts, &key, &[])?;
                 Ok::<_, ReadError>((facts, numbers))
             })
             .expect("the numbers");
@@ -146,11 +183,100 @@ mod tests {
 
         let numbers = host.as_provider(PROVIDER, || {
             let facts = Anthropic::account(PROVIDER, &key, &found)?;
-            Anthropic::numbers(PROVIDER, &facts, &key)
+            Anthropic::numbers(PROVIDER, &facts, &key, &[])
         });
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
+    }
+
+    /// The bill reads only with an admin key: an API key of the account
+    /// is not one, and with no admin key given the part asks for one under
+    /// the slot `admin` and sends nothing.
+    #[test]
+    fn a_bill_with_no_bill_key_asks_for_one() {
+        let host = host();
+        let key = host.key("sk-ant-api03-made-up-key");
+
+        let bill = host.as_provider(PROVIDER, || {
+            Anthropic::read_bill(
+                PROVIDER,
+                &organization(),
+                &key,
+                &[],
+                &one_day(),
+            )
+        });
+
+        let Err(ReadError::NeedsUser(need)) = bill else {
+            panic!("a need: {bill:?}");
+        };
+        assert_eq!(need.id, "bill-key");
+        assert_eq!(need.title, "The real bill needs an admin key");
+        let NeedAction::AskKey(ask) = need.action else {
+            panic!("a key to ask for: {need:?}");
+        };
+        assert_eq!(ask.slot, "admin");
+        assert_eq!(ask.label, "Admin key");
+        assert_eq!(ask.prefix.as_deref(), Some("sk-ant-admin"));
+        assert_eq!(
+            ask.page.as_deref(),
+            Some("https://console.anthropic.com/settings/admin-keys")
+        );
+        assert!(host.requests().is_empty());
+    }
+
+    /// The admin key the user gave under `admin` reads the bill.
+    #[test]
+    fn a_key_given_under_admin_reads_the_bill() {
+        let host = host();
+        host.answer(
+            "GET",
+            REPORT_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = host.key("sk-ant-api03-made-up-key");
+        let given = [GivenKey::new("admin", host.key(MADE_UP_ADMIN))];
+
+        let bill = host.as_provider(PROVIDER, || {
+            Anthropic::read_bill(
+                PROVIDER,
+                &organization(),
+                &key,
+                &given,
+                &one_day(),
+            )
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(host.requests()[0].header("x-api-key"), Some(MADE_UP_ADMIN));
+    }
+
+    /// An account whose own key is an admin key reads its bill with it.
+    #[test]
+    fn an_account_key_that_reads_bills_reads_its_own() {
+        let host = host();
+        host.answer(
+            "GET",
+            REPORT_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = host.key(MADE_UP_ADMIN);
+
+        let bill = host.as_provider(PROVIDER, || {
+            Anthropic::read_bill(
+                PROVIDER,
+                &organization(),
+                &key,
+                &[],
+                &one_day(),
+            )
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(host.requests().len(), 1);
     }
 
     /// Spec Decision 7: a key handle goes only into a request to a host

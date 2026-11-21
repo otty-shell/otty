@@ -39,7 +39,8 @@
 //! the one engine of the plugins, and [`readers_now`] and
 //! [`load_readers`] give what Agents mode reads with once the installed
 //! plugins are loaded ([`LoadedReaders`]), at start and on a thread of its
-//! own when they change.
+//! own when they change. [`tell_language`] gives the plugins a language
+//! the user picked and tells the ones with the language receiver.
 //! The binary only calls them and wraps the intent into its message.
 
 mod account_numbers;
@@ -53,6 +54,7 @@ mod hidden_terminal;
 mod limits;
 mod load;
 mod login_shell;
+mod plugin_language;
 mod plugin_parts;
 mod plugin_programs;
 mod plugin_readers;
@@ -75,6 +77,7 @@ pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
+pub use plugin_language::{LanguageReceivers, tell_language};
 pub use plugin_parts::{
     InstalledParts, PluginParts, ProviderList, Readers, RunningParts,
 };

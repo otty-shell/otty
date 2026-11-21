@@ -2,8 +2,8 @@
 //! part of a plugin (spec 2026-11-19-agent-plugins, "What a plugin is" and
 //! "Permissions").
 //!
-//! A [`Manifest`] names the plugin, the contract version of each kind of
-//! part in `[api]`, and its parts, [`AgentPart`] and [`ProviderPart`],
+//! A [`Manifest`] names the plugin, the version of each [`Contract`] it
+//! exports in `[api]`, and its parts, [`AgentPart`] and [`ProviderPart`],
 //! each with its own [`PartPermissions`], which list themselves in plain
 //! words as [`PermissionLine`]s. A manifest that names a contract version
 //! this OTTY does not know is refused with "Needs a newer OTTY".
@@ -21,10 +21,10 @@ mod permissions;
 mod testing;
 mod version;
 
-pub use crate::contract::{Api, ContractVersion, known_versions};
+pub use crate::contract::{Api, Contract, ContractVersion, known_versions};
 pub use crate::environment::Environment;
 pub use crate::manifest::{
-    AddByHand, AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,
+    AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,
 };
 pub use crate::part::{PartKind, PartRef};
 pub use crate::path_glob::{GlobProblem, PathGlob};

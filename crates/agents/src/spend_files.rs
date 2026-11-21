@@ -476,7 +476,9 @@ mod tests {
         let failing = |path: &Path| {
             opened.borrow_mut().push(path.to_path_buf());
             if path.ends_with("b.jsonl") {
-                return Err(SourceError::NotLoggedIn);
+                return Err(SourceError::NotAvailable(
+                    crate::error::Unavailable::NoLogin,
+                ));
             }
             Ok(folder.read(path))
         };
@@ -493,7 +495,12 @@ mod tests {
         opened.borrow_mut().clear();
         let (spend, _) = folder.count(&["a.jsonl", "b.jsonl"]);
 
-        assert_eq!(failed, Err(SourceError::NotLoggedIn));
+        assert_eq!(
+            failed,
+            Err(SourceError::NotAvailable(
+                crate::error::Unavailable::NoLogin
+            ))
+        );
         assert_eq!(folder.opened.borrow().clone(), ["b.jsonl"]);
         assert_eq!(spend.today(), TokenCount::new(30, 0, 0));
     }

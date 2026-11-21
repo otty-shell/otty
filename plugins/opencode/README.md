@@ -13,6 +13,12 @@ OTTY opens the database read-only, so the plugin never writes to it, and
 the plugin never sees a key or a token: OTTY hands it handles in their
 place.
 
+What only the user can do, the part asks for itself, in OTTY's language,
+which it follows when the user picks another: `opencode auth login` for
+a profile nobody is logged in with, and again when the provider part of
+another plugin refused a login OpenCode keeps, such as a ChatGPT login
+the `openai` part read.
+
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
 made-up data folders: the files of `fixtures/`, which stand for the home

@@ -60,11 +60,11 @@ mod tests {
 
         bill.apply(Ok(bill_of(1, 2)), at(10));
         let answered = bill.answer().cloned();
-        bill.apply(Err(SourceError::KeyRefused), at(20));
+        bill.apply(Err(crate::testing::refused_key_need()), at(20));
 
         assert_eq!(answered, Some(bill_of(1, 2)));
         assert_eq!(bill.answer(), None);
-        assert_eq!(bill.failure(), Some(&SourceError::KeyRefused));
+        assert_eq!(bill.failure(), Some(&crate::testing::refused_key_need()));
         assert_eq!(bill.reads().read_at(), Some(at(20)));
     }
 

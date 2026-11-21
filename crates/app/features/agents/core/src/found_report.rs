@@ -61,7 +61,7 @@ pub(crate) fn act(
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AgentCommand, ProfileStatus, SavedProfiles};
+    use otty_agents::{AgentCommand, SavedProfiles};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -161,15 +161,18 @@ mod tests {
     }
 
     #[test]
-    fn log_in_of_a_need_closes_the_report_and_opens_the_login_tab() {
+    fn run_of_a_need_closes_the_report_and_opens_the_login_tab() {
         let mut state = with_saved_profiles(
-            &[(codex(), ProfileStatus::NotLoggedIn)],
+            &[(codex(), crate::testing::not_logged_in(&codex()))],
             SavedProfiles::default(),
         );
 
         let outcomes = reduce(
             &mut state,
-            AgentsIntent::FoundReportNeed(NeedAction::LogIn(codex())),
+            AgentsIntent::FoundReportNeed(NeedAction::Run {
+                title: String::from("Codex"),
+                command: AgentCommand::new("codex").with_arg("login"),
+            }),
         );
 
         assert_eq!(
@@ -187,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn add_admin_key_of_a_need_opens_the_profile_dialog() {
+    fn ask_key_of_a_need_closes_the_report_and_opens_the_key_dialog() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             SavedProfiles::default(),
@@ -195,11 +198,15 @@ mod tests {
 
         let outcomes = reduce(
             &mut state,
-            AgentsIntent::FoundReportNeed(NeedAction::AddAdminKey(claude())),
+            AgentsIntent::FoundReportNeed(NeedAction::AskKey {
+                account: organization(),
+                plugin: String::from("Anthropic"),
+                ask: crate::testing::key_ask(),
+            }),
         );
 
         assert_eq!(outcomes, vec![save_shown()]);
         assert!(!state.is_found_report_open());
-        assert!(state.dialog().is_some());
+        assert!(state.add_account().is_some());
     }
 }

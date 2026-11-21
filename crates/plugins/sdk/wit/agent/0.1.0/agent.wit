@@ -4,7 +4,7 @@
 package otty:agent@0.1.0;
 
 interface agent {
-  use otty:host/types@0.1.0.{read-error, identity, login-kind, limits};
+  use otty:host/types@0.1.0.{read-error, identity, login-kind, limits, command, need};
   use otty:host/keys@0.1.0.{key-place};
 
   /// A config folder of the agent found on this computer.
@@ -41,7 +41,9 @@ interface agent {
   /// program is missing.
   variant profile-status {
     connected(connection),
-    not-logged-in,
+    /// Nobody is logged in with the profile; the need says how to log in,
+    /// such as a `run` of the agent's login command.
+    not-logged-in(need),
     config-folder-not-found,
   }
 
@@ -139,13 +141,6 @@ interface agent {
     records: record-counts,
   }
 
-  /// A program with its arguments and variables, run in a terminal tab.
-  record command {
-    program: string,
-    args: list<string>,
-    env: list<tuple<string, string>>,
-  }
-
   /// The tokens of one model.
   record model-tokens {
     model: string,
@@ -185,8 +180,6 @@ interface agent {
   read-answers: func(profile: profile, item: spend-item) -> result<answers, read-error>;
   /// The command that starts a new session, or continues `session`.
   launch: func(profile: profile, session: option<string>) -> command;
-  /// The command that logs the profile in.
-  login-command: func(profile: profile) -> command;
   /// The limits the agent itself shows for `login`. The part tries its
   /// own programs, files or servers in its own order and gives the first
   /// limits it gets, or one error; `not-supported` when the agent shows
@@ -196,6 +189,10 @@ interface agent {
   read-session-stats: func(profile: profile, session: string) -> result<session-stats, read-error>;
   /// What the files of one project folder tell.
   read-project-stats: func(profile: profile, folder: string) -> result<project-stats, read-error>;
+  /// What the user must do now that a provider refused `login` of the
+  /// profile, or it expired, such as run the agent so it renews the
+  /// login. None: OTTY says the login was refused, with no button.
+  login-refused: func(profile: profile, login: login-ref) -> option<need>;
 }
 
 /// What a component with agent parts imports and exports.

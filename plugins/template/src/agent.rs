@@ -6,14 +6,14 @@ use std::path::Path;
 
 use otty_plugin_sdk::{
     Agent, Answers, Billing, Command, Connection, HostError, Identity,
-    JsonField, KeyPlace, Login, LoginKind, Profile, ProfilePlace,
-    ProfileStatus, ProviderRef, ReadError, Session, SpendItem, SpendKind,
-    SpendPlace, env, files, log,
+    JsonField, KeyPlace, Login, LoginKind, LoginRef, Need, Profile,
+    ProfilePlace, ProfileStatus, ProviderRef, ReadError, Session, SpendItem,
+    SpendKind, SpendPlace, env, files, log,
 };
 use serde::Deserialize;
 
-use crate::Example;
 use crate::session_file::SessionFile;
+use crate::{Example, needs};
 
 /// The variable that names another config folder, as the agent reads it.
 const HOME_VARIABLE: &str = "EXAMPLE_AGENT_HOME";
@@ -92,7 +92,9 @@ impl Agent for Example {
             Err(HostError::NotFound(_)) if !folder_exists(profile) => {
                 ProfileStatus::ConfigFolderNotFound
             },
-            _ => ProfileStatus::NotLoggedIn,
+            _ => ProfileStatus::NotLoggedIn(needs::not_logged_in(login_run(
+                profile,
+            ))),
         }
     }
 
@@ -182,12 +184,20 @@ impl Agent for Example {
         }
     }
 
-    fn login_command(profile: &Profile) -> Command {
-        Command {
-            program: PROGRAM.to_string(),
-            args: vec!["login".to_string()],
-            env: folder_env(profile),
-        }
+    /// The provider refused the key of the profile, or it expired: the
+    /// provider part does not know where the agent keeps it, so it asks
+    /// this part, which logs the profile in again.
+    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
+        Some(needs::login_refused(login_run(profile)))
+    }
+}
+
+/// The command that logs the profile in: `example-agent login`.
+fn login_run(profile: &Profile) -> Command {
+    Command {
+        program: PROGRAM.to_string(),
+        args: vec!["login".to_string()],
+        env: folder_env(profile),
     }
 }
 
@@ -228,6 +238,7 @@ fn folder_env(profile: &Profile) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
@@ -293,6 +304,57 @@ mod tests {
                 account: Some("dev@example.com".to_string()),
                 plan: None,
                 billing: Some(Billing::ApiKey),
+            })
+        );
+    }
+
+    /// A need of a part is in the language OTTY names, and its button
+    /// runs the agent's login with the profile's folder.
+    #[test]
+    fn a_profile_with_no_key_needs_a_login_in_the_users_language() {
+        let host = host().with_language("ru");
+        let profile = profile(&host, ".example-agent-nobody", false);
+        let folder = profile.folder.clone();
+
+        let status = host.as_agent(AGENT, || Example::detect(&profile));
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(need.title, "Нужен вход");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(Command {
+                program: PROGRAM.to_string(),
+                args: vec!["login".to_string()],
+                env: vec![(HOME_VARIABLE.to_string(), folder)],
+            })
+        );
+    }
+
+    /// Issue 20: a login the provider refused is logged in again in the
+    /// profile's own folder, in the language OTTY shows now.
+    #[test]
+    fn a_refused_login_logs_the_profile_in_again() {
+        let host = host();
+        let profile = profile(&host, ".example-agent-work", false);
+        let folder = profile.folder.clone();
+        let login = LoginRef::EnvVar("EXAMPLE_CLOUD_KEY".to_string());
+
+        host.set_language("de");
+        let need =
+            host.as_agent(AGENT, || Example::login_refused(&profile, &login));
+
+        let need = need.expect("a need");
+        assert_eq!(need.id, "login-refused");
+        assert_eq!(need.title, "Erneut anmelden");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(Command {
+                program: PROGRAM.to_string(),
+                args: vec!["login".to_string()],
+                env: vec![(HOME_VARIABLE.to_string(), folder)],
             })
         );
     }

@@ -11,6 +11,7 @@ use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::StartTerminal;
 use crate::limits::LimitSource;
+use crate::part_need::PartNeed;
 use crate::profile::{Profile, ProfileStatus};
 use crate::profile_list::found_in_home;
 use crate::program::StartProgram;
@@ -258,9 +259,6 @@ pub trait Agent: Send + Sync {
         session: Option<&SessionId>,
     ) -> AgentCommand;
 
-    /// Program, arguments and variables that log the profile in.
-    fn login(&self, profile: &Profile) -> AgentCommand;
-
     /// Ways to list sessions, best first. Empty: not supported.
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
 
@@ -306,6 +304,18 @@ pub trait Agent: Send + Sync {
         _profile: &Profile,
         _account: &Account,
     ) -> Option<Login> {
+        None
+    }
+
+    /// What the user must do now that a provider refused `login`, which
+    /// the agent found in `profile`, or saw it expired, as the plugin part
+    /// that holds the login says (spec 2026-11-19-agent-plugins, issue
+    /// 20). `None` when the part says nothing or could not answer.
+    fn login_refused(
+        &self,
+        _profile: &Profile,
+        _login: &Login,
+    ) -> Option<PartNeed> {
         None
     }
 

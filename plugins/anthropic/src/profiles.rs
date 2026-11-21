@@ -5,9 +5,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use otty_plugin_sdk::{ProfilePlace, ProfileStatus, env, files};
+use otty_plugin_sdk::{ProfilePlace, env, files};
 
-use crate::detect::status;
+use crate::detect::connection;
 use crate::glob::escaped;
 
 /// The variable that names another default config folder.
@@ -74,8 +74,7 @@ fn found_folders(home: &str) -> Vec<String> {
     candidates
         .into_iter()
         .filter(|folder| {
-            with_sessions.contains(folder)
-                || matches!(status(folder), ProfileStatus::Connected(_))
+            with_sessions.contains(folder) || connection(folder).is_some()
         })
         .collect()
 }

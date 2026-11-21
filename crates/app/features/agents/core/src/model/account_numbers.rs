@@ -115,12 +115,11 @@ fn limits(
 ) -> Option<AccountNumbersViewModel> {
     let profiles = state.profiles();
     let account_limits = profiles.account_limits(account)?;
-    let mut limits = LimitsViewModel::from_limits(
+    let limits = LimitsViewModel::from_limits(
         &account_limits,
         now,
         profiles.time_zone(),
     )?;
-    limits.log_in_hint = None;
 
     if account.kind() == AccountKind::Credits || limits.credits.is_some() {
         return Some(AccountNumbersViewModel::Credits(limits));
@@ -381,7 +380,7 @@ mod tests {
     use crate::testing::{
         api_key, at, bill_loaded, bill_of, chatgpt_login, claude, codex,
         connected, five_hour_limits, limits_answer, limits_loaded, now,
-        organization, price_table, saved_with_admin_key, set_prices,
+        organization, price_table, saved_with_given_key, set_prices,
         spend_loaded, with_accounts,
     };
     use crate::types::SpendCount;
@@ -459,7 +458,7 @@ mod tests {
                 &codex(),
                 limits_answer(vec![(
                     otty_agents::SourceId::ProviderPart,
-                    Err(SourceError::NotLoggedIn),
+                    Err(crate::testing::login_expired()),
                 )]),
                 at(20),
             ),
@@ -473,7 +472,6 @@ mod tests {
         };
         assert!(limits.is_stale);
         assert_eq!(limits.windows.len(), 1);
-        assert_eq!(limits.log_in_hint, None);
     }
 
     #[test]
@@ -510,7 +508,7 @@ mod tests {
     fn an_organization_shows_the_money_of_its_bill_this_month() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
-            saved_with_admin_key(),
+            saved_with_given_key(),
         );
         let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(40, 2))));
 
@@ -577,7 +575,7 @@ mod tests {
     fn a_bill_that_failed_says_why_under_the_estimate() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
-            saved_with_admin_key(),
+            saved_with_given_key(),
         );
         set_prices(&mut state, price_table());
         let _ = reduce(
@@ -590,7 +588,7 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            bill_loaded(&claude(), Err(SourceError::KeyRefused)),
+            bill_loaded(&claude(), Err(crate::testing::refused_key_need())),
         );
 
         let numbers =
@@ -604,7 +602,7 @@ mod tests {
             money.failure,
             Some(i18n::with_error(
                 Key::TplAgentsBillReadFailed,
-                i18n::t(Key::AgentsFailureKeyRefused)
+                "The key was refused"
             ))
         );
     }
@@ -639,7 +637,7 @@ mod tests {
     fn added(provider: ProviderRef) -> Account {
         Account::added(
             provider,
-            otty_agents::AdminKeyRef::EnvVar(String::from("MADE_UP_KEY")),
+            otty_agents::KeyRef::EnvVar(String::from("MADE_UP_KEY")),
         )
     }
 
@@ -753,7 +751,8 @@ mod tests {
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
         let openrouter = added(ProviderRef::of_id("openrouter"));
-        let state = added_with(&openrouter, Err(SourceError::KeyRefused));
+        let state =
+            added_with(&openrouter, Err(crate::testing::refused_key_need()));
 
         let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
 

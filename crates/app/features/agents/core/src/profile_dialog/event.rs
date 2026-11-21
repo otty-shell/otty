@@ -17,12 +17,6 @@ pub enum ProfileDialogIntent {
     /// Something was done in the config folder field: the typed path with
     /// its suggestions, or the path of the new folder, whichever is picked.
     Folder(FolderFieldIntent),
-    /// Another place of the admin key of the organization an API key
-    /// profile pays through was picked.
-    AdminKeyChoicePicked(AdminKeyChoice),
-    /// The path of the admin key file, or the name of its variable,
-    /// changed: whichever is picked.
-    AdminKeyChanged(String),
     /// Add or Save was pressed.
     Submitted,
     /// Cancel was pressed, or Esc.
@@ -37,13 +31,4 @@ pub enum FolderChoice {
     /// A new folder OTTY creates, at the proposed path or one the user
     /// types.
     Create,
-}
-
-/// Where the admin key of an API key profile is kept (spec Decision 9).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AdminKeyChoice {
-    /// A file that holds the key.
-    File,
-    /// An environment variable that holds the key.
-    Variable,
 }

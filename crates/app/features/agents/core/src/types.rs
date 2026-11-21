@@ -4,8 +4,8 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountNumbers, AdminKeyRef, Agent, AgentEnv, AgentId,
-    AgentSession, Answer, Bill, FetchedPrices, Limits, Profile, ProfileStatus,
+    Account, AccountNumbers, Agent, AgentEnv, AgentId, AgentSession, Answer,
+    Bill, FetchedPrices, GivenKey, Limits, Profile, ProfileStatus,
     ProjectStats, Registry, SavedProfiles, SessionId, SessionStats,
     SourceError, SourceFailure, Spend,
 };
@@ -223,7 +223,7 @@ impl LimitsRead {
 /// use otty_agents::SourceError;
 /// use otty_app_agents::SpendCount;
 ///
-/// let failed = SpendCount::Failed(SourceError::NotLoggedIn);
+/// let failed = SpendCount::Failed(SourceError::Network("down".into()));
 ///
 /// assert_ne!(failed, SpendCount::NoCounter);
 /// ```
@@ -255,9 +255,9 @@ pub struct LoadedSpend {
 pub struct LoadedBill {
     /// The profile the bill was read through.
     pub profile: Profile,
-    /// Where the admin key the bill was read with is kept: an answer read
-    /// with a key since changed is of another organization.
-    pub admin_key: AdminKeyRef,
+    /// The keys given for the organization the bill was read with: an
+    /// answer read with keys since changed is dropped.
+    pub given: Vec<GivenKey>,
     /// The bill of the organization, or why it could not be read.
     pub bill: Result<Bill, SourceError>,
     /// When the read ended.

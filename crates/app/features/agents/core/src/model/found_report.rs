@@ -158,8 +158,8 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProfileStatus,
-        ProviderRef, SavedProfiles,
+        AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProviderRef,
+        SavedProfiles,
     };
 
     use super::*;
@@ -316,12 +316,19 @@ mod tests {
     /// apart, as the All accounts and All profiles pages do.
     #[test]
     fn the_report_lists_the_needs_of_the_accounts_and_of_the_profiles_apart() {
-        let state = with_accounts(
+        let mut state = with_accounts(
             &[
                 (claude(), api_key(), vec![organization()]),
-                (codex(), ProfileStatus::NotLoggedIn, Vec::new()),
+                (codex(), crate::testing::not_logged_in(&codex()), Vec::new()),
             ],
-            SavedProfiles::default(),
+            crate::testing::saved_with_given_key(),
+        );
+        let _ = reduce(
+            &mut state,
+            crate::testing::bill_loaded(
+                &claude(),
+                Err(crate::testing::bill_key_needed()),
+            ),
         );
 
         let vm = report(&state);

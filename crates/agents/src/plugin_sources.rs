@@ -13,9 +13,11 @@ use crate::called_part::CalledPart;
 use crate::error::{SourceError, Unavailable};
 use crate::limits::{LimitSource, Limits};
 use crate::local_time::LocalNow;
+use crate::part_need::PartNeed;
 use crate::plugin_failure::PluginFailureKind;
 use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
 use crate::profile::Profile;
+use crate::refused_login::RefusedLogin;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::stats::{ProjectStats, SessionStats, StatsSource};
@@ -52,6 +54,7 @@ impl SessionSource for PluginSessions {
                     "sessions",
                     &error,
                     SourceError::NotAvailable(Unavailable::NoSessionFiles),
+                    Some(profile),
                 )
             })?;
 
@@ -99,7 +102,9 @@ impl LimitSource for PluginLimits {
             let mut calls = batch.agent()?;
             let logins = calls.logins(&asked)?;
             let Some(login) = limits_login(&logins) else {
-                return Ok(Err(SourceError::NotLoggedIn));
+                return Ok(Err(SourceError::NotAvailable(
+                    Unavailable::NoLogin,
+                )));
             };
 
             let limits = match calls.read_limits(&asked, &login.place)? {
@@ -110,6 +115,7 @@ impl LimitSource for PluginLimits {
                     "read-limits",
                     &error,
                     no_limits(),
+                    Some(profile),
                 )),
             };
             Ok(limits)
@@ -159,7 +165,8 @@ impl StatsSource for PluginStats {
                 batch.agent()?.read_session_stats(&asked, session.as_str())
             })?
             .map_err(|error| {
-                read_error(&self.part, call, &error, self.no_statistics())
+                let none = self.no_statistics();
+                read_error(&self.part, call, &error, none, Some(profile))
             })?;
 
         Ok(SessionStats::new(
@@ -185,7 +192,8 @@ impl StatsSource for PluginStats {
                 batch.agent()?.read_project_stats(&asked, &folder)
             })?
             .map_err(|error| {
-                read_error(&self.part, call, &error, self.no_statistics())
+                let none = self.no_statistics();
+                read_error(&self.part, call, &error, none, Some(profile))
             })?;
 
         Ok(ProjectStats::new(
@@ -197,18 +205,37 @@ impl StatsSource for PluginStats {
 }
 
 /// The error of `call` of `part` that answered `error`: `not_supported`
-/// when the part does not read this, a refused key as such, anything else
-/// as the plugin could not read.
+/// when the part does not read this, a need of the part as the need the
+/// user is asked, about `profile` for a call of an agent part, a refused
+/// login as such, for the caller to ask the agent part that holds it, and
+/// anything else, and a need OTTY can not show, as the plugin could not
+/// read.
 pub(crate) fn read_error(
     part: &CalledPart,
     call: &'static str,
     error: &ReadError,
     not_supported: SourceError,
+    profile: Option<&Profile>,
 ) -> SourceError {
-    match error {
-        ReadError::NotSupported => not_supported,
-        ReadError::KeyRefused => SourceError::KeyRefused,
-        _ => part.failure(call, PluginFailureKind::of_read(error)).into(),
+    let need = match error {
+        ReadError::NotSupported => return not_supported,
+        ReadError::LoginRefused => {
+            let refused = RefusedLogin::new(part.named().clone());
+            return SourceError::LoginRefused(Box::new(refused));
+        },
+        ReadError::NeedsUser(need) => PartNeed::of_part(part.named(), need),
+        _ => None,
+    };
+
+    match (need, profile) {
+        (Some(need), Some(profile)) => {
+            let need = need.about_profile(profile.config_dir());
+            SourceError::NeedsUser(Box::new(need))
+        },
+        (Some(need), None) => SourceError::NeedsUser(Box::new(need)),
+        (None, _) => {
+            part.failure(call, PluginFailureKind::of_read(error)).into()
+        },
     }
 }
 

@@ -74,7 +74,7 @@
 //!     AgentsIntent::ProfilesLoaded(LoadedProfiles {
 //!         profiles: vec![LoadedProfile {
 //!             profile: coder.clone(),
-//!             status: ProfileStatus::NotLoggedIn,
+//!             status: ProfileStatus::NotLoggedIn(None),
 //!             accounts: Vec::new(),
 //!             version: Some(String::from("1.4.2")),
 //!         }],
@@ -150,6 +150,7 @@ pub use event::{
 pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
+pub use key_place_field::KeyPlaceChoice;
 use model::{
     AddAccountDialogViewModel, FoundReportViewModel, KeyringDialogViewModel,
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
@@ -167,7 +168,7 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::status_bar::StatusItem;
 use profile_dialog::ProfileDialogViewModel;
-pub use profile_dialog::{AdminKeyChoice, FolderChoice, ProfileDialogIntent};
+pub use profile_dialog::{FolderChoice, ProfileDialogIntent};
 pub use project_filter::ProjectFilterChange;
 pub use rename_dialog::RenameIntent;
 use state::AgentsState;

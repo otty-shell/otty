@@ -10,10 +10,13 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "example.wasm"
 
-# One contract version per kind of part the .wasm exports.
+# One contract version per kind of part the .wasm exports, and the
+# language receiver, which belongs to no part: the texts of this plugin
+# come in every language of OTTY.
 [api]
 agent = "0.1"
 provider = "0.1"
+language = "0.1"
 
 [[agent]]
 id = "example-agent"
@@ -38,7 +41,7 @@ name = "Example Cloud"
 icon = "example-cloud.svg"
 hosts = ["example.com"]
 usage_page = "https://example.com/usage"
-add_by_hand = "key"
+add_by_hand = true
 
 [provider.permissions]
 http = ["api.example.com"]

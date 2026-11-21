@@ -1,10 +1,7 @@
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{
-    Billing, Credits, ExtraUsage, LimitWindow, Percent, SourceError,
-    SourceFailure,
-};
+use otty_agents::{Billing, Credits, ExtraUsage, LimitWindow, Percent};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::failure_text::failure_reasons;
@@ -37,8 +34,6 @@ pub(crate) struct LimitsViewModel {
     /// Why the latest read failed: the limits are not available, or could
     /// not be read again.
     pub(crate) failure: Option<String>,
-    /// What to do when the login is the reason.
-    pub(crate) log_in_hint: Option<&'static str>,
 }
 
 impl LimitsViewModel {
@@ -56,8 +51,6 @@ impl LimitsViewModel {
         }
 
         let failures = limits.failures();
-        let log_in_hint = is_login_reason(failures)
-            .then(|| i18n::t(Key::AgentsLimitsLogInAgain));
 
         let (value, read_at, failures) =
             match KeptAnswer::new(limits.last_good(), failures) {
@@ -73,7 +66,6 @@ impl LimitsViewModel {
                             Key::TplAgentsLimitsNotAvailable,
                             &failure_reasons(failures),
                         )),
-                        log_in_hint,
                     });
                 },
                 KeptAnswer::Answer {
@@ -116,7 +108,6 @@ impl LimitsViewModel {
                     &failure_reasons(failures),
                 )
             }),
-            log_in_hint,
         })
     }
 }
@@ -280,21 +271,13 @@ fn share_of(part: Option<f64>, whole: Option<f64>) -> Option<u8> {
     Some(Percent::new(part / whole * 100.0).rounded())
 }
 
-/// Whether any of `failures` is a login the user has to renew. A login
-/// the agent renews by itself ([`SourceError::LoginExpired`]) is not.
-fn is_login_reason(failures: Option<&[SourceFailure]>) -> bool {
-    failures.is_some_and(|failures| {
-        failures
-            .iter()
-            .any(|failure| *failure.error() == SourceError::NotLoggedIn)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::{Limits, SourceId, Unavailable, UsageWindows, WindowId};
+    use otty_agents::{
+        Limits, SourceError, SourceId, Unavailable, UsageWindows, WindowId,
+    };
 
     use super::*;
     use crate::model::reset_time::{DAY, HOUR, MINUTE};
@@ -406,7 +389,6 @@ mod tests {
                 is_stale: false,
                 recorded: None,
                 failure: None,
-                log_in_hint: None,
             }
         );
     }
@@ -531,18 +513,17 @@ mod tests {
                 )
             ))
         );
-        assert_eq!(vm.log_in_hint, None);
     }
 
     #[test]
-    fn with_no_answer_ever_the_reasons_and_the_login_hint_show() {
+    fn with_no_answer_ever_the_reasons_show() {
         let mut state = with_profiles(&[(claude(), connected())]);
         read_limits(
             &mut state,
             vec![
                 (
                     otty_agents::SourceId::ProviderPart,
-                    Err(SourceError::NotLoggedIn),
+                    Err(crate::testing::login_expired()),
                 ),
                 (
                     otty_agents::SourceId::AgentPart,
@@ -564,13 +545,12 @@ mod tests {
             Some(i18n::with_error(
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
-                    "{}: not logged in; {}: not available: claude is not found",
+                    "{}: The login expired; {}: not available: claude is not found",
                     i18n::t(Key::AgentsSourcePlugin),
                     i18n::t(Key::AgentsSourcePlugin)
                 )
             ))
         );
-        assert_eq!(vm.log_in_hint, Some(i18n::t(Key::AgentsLimitsLogInAgain)));
     }
 
     #[test]

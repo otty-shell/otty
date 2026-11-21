@@ -209,7 +209,12 @@ mod tests {
     #[test]
     fn the_second_attempt_answers_when_the_first_fails() {
         let attempts = [
-            (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
+            (
+                SourceId::ProviderPart,
+                Err(SourceError::NotAvailable(
+                    crate::error::Unavailable::NoLogin,
+                )),
+            ),
             (SourceId::AgentPart, Ok(42)),
         ];
 
@@ -224,7 +229,7 @@ mod tests {
         );
         assert_eq!(
             answer.earlier_failures()[0].error(),
-            &SourceError::NotLoggedIn
+            &SourceError::NotAvailable(crate::error::Unavailable::NoLogin)
         );
     }
 

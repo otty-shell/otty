@@ -1169,8 +1169,6 @@ pub enum Key {
     AgentsFieldConfigDir,
     /// Button of a profile that is not logged in: opens a tab where the agent logs in.
     AgentsLogIn,
-    /// Note of a profile that is not logged in.
-    AgentsNotLoggedInHint,
     /// Note of a profile whose program was not found.
     AgentsProgramNotFoundHint,
     /// Note of a profile whose config folder was not found.
@@ -1217,8 +1215,6 @@ pub enum Key {
     TplAgentsLimitsNotAvailable,
     /// The last read of the limits failed and older ones show. Placeholder: `{error}`.
     TplAgentsLimitsReadFailed,
-    /// The limits could not be read because the login is missing or expired.
-    AgentsLimitsLogInAgain,
     /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
     TplAgentsTokensFailed,
     /// What goes between two failures listed in one line, such as "; ".
@@ -1276,6 +1272,8 @@ pub enum Key {
     TplAgentsAmountToday,
     /// State word of a profile row whose agent needs the user to log in.
     AgentsStateNeedsLogin,
+    /// The number of an account in the left panel while a plugin part asks the user to do something before it can read.
+    AgentsStateNeedsYou,
     /// How much of a usage window is used, such as "42 % used". Placeholder: `{count}`.
     TplAgentsPercentUsed,
     /// Name of the extra usage a subscription bought this month, shown like a usage window.
@@ -1319,24 +1317,12 @@ pub enum Key {
     AgentsColumnModel,
     /// Column of the top models table: the requests of the model.
     AgentsColumnRequests,
-    /// The number of an account in the left panel when its login is missing or expired.
-    AgentsSourceLoginExpired,
     /// Line under the typed path of a new profile: the folder must already exist.
     AgentsTypedFolderHint,
-    /// Why the cost report is not available: the profile has no admin key.
-    AgentsNoAdminKey,
-    /// Label of the admin key of an API key profile in the profile dialog: where the key is kept.
-    AgentsFieldAdminKey,
-    /// Choice of the admin key field: a file that holds the key.
-    AgentsAdminKeyFile,
-    /// Choice of the admin key field: an environment variable that holds the key.
-    AgentsAdminKeyVariable,
-    /// Placeholder of the path of the file that holds the admin key.
-    AgentsAdminKeyFilePlaceholder,
-    /// Placeholder of the name of the variable that holds the admin key.
-    AgentsAdminKeyVariablePlaceholder,
-    /// Line under the admin key field: what the key is for and that OTTY never saves it.
-    AgentsAdminKeyHint,
+    /// Choice of a key field: a file that holds the key.
+    AgentsKeyPlaceFile,
+    /// Choice of a key field: an environment variable that holds the key.
+    AgentsKeyPlaceVariable,
     /// Error under the path of the admin key file: it is not a full path.
     AgentsErrorKeyPathNotFull,
     /// Error under the name of the admin key variable: it is not a variable name.
@@ -1469,12 +1455,6 @@ pub enum Key {
     AgentsAccountsNeedYou,
     /// Title of the needs of the profiles.
     AgentsProfilesNeedYou,
-    /// Need of an organization with no admin key.
-    AgentsNeedAdminKeyTitle,
-    /// What the need of an organization with no admin key means.
-    AgentsNeedAdminKeyText,
-    /// Button of the need of an organization with no admin key.
-    AgentsAddAdminKey,
     /// Need of an account whose provider no plugin serves.
     AgentsNeedNoProviderTitle,
     /// What the need of an account with no provider plugin means, such as "Key for api.example.com found in Coder: no provider plugin". Placeholders: `{host}`, `{agent}`.
@@ -1511,12 +1491,6 @@ pub enum Key {
     TplAgentsUsesAccounts,
     /// A profile that has spent no tokens through an account yet.
     AgentsNoTokensYet,
-    /// Title of the need of an account whose login expired.
-    AgentsNeedLoginExpiredTitle,
-    /// Line of the need of an account whose login expired. Placeholder: `{agent}`.
-    TplAgentsNeedLoginExpiredText,
-    /// Button that opens an agent in a terminal tab, such as "Open Coder". Placeholder: `{agent}`.
-    TplAgentsOpenAgent,
     /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
     AgentsSourceFormatChanged,
     /// Why the tokens could not be counted: the format of the session files changed. Placeholders: `{understood}`, `{seen}`.
@@ -1545,6 +1519,16 @@ pub enum Key {
     TplAgentsNeedFormatChangedPluginNoNumbers,
     /// Button of the need of a changed format: copies a plain text report for the makers of OTTY.
     AgentsCopyReport,
+    /// The label of a need a plugin part gives, naming the plugin that asks: {plugin} is its name.
+    TplAgentsNeedPluginLabel,
+    /// The button of a need that runs a command of a plugin part in a terminal tab: {command} as typed, such as `codex login`.
+    TplAgentsNeedRun,
+    /// The button of a need that asks for a key: {label} is the name of the key the part gives, such as "Admin key".
+    TplAgentsNeedAskKey,
+    /// The button that opens a page a plugin part names: {host} is its host, such as console.example.com.
+    TplAgentsNeedOpenPage,
+    /// A line of the dialog of a key a plugin part asks for: what the key starts with, {prefix}.
+    TplAgentsKeyStartsWith,
     /// A period of the usage block: the last 7 days.
     AgentsSevenDays,
     /// A period of the usage block: the last 30 days.
@@ -1617,10 +1601,6 @@ pub enum Key {
     AgentsNoProfileToStart,
     /// Why a source failed: it can not be used here. Placeholder: `{reason}`.
     TplAgentsFailureNotAvailable,
-    /// Why a source failed: the login is missing or expired.
-    AgentsFailureNotLoggedIn,
-    /// Why a source failed: the server refused the key.
-    AgentsFailureKeyRefused,
     /// Why a source failed: the server could not be reached. Placeholder: `{error}`, the network library's own reason.
     TplAgentsFailureNetwork,
     /// Why a source failed: the answer is not what OTTY expects. Placeholder: `{reason}`.
@@ -1631,12 +1611,14 @@ pub enum Key {
     TplAgentsNoStatistics,
     /// Why the bill is not available: the agent has none.
     AgentsNoBill,
+    /// Why the limits are not available: the profile holds no login a plugin part could read with.
+    AgentsNoLogin,
     /// Why the bill is not available: the admin key file is missing. Placeholder: `{path}`.
-    TplAgentsAdminKeyFileMissing,
+    TplAgentsKeyFileMissing,
     /// Why the bill is not available: the admin key file is empty. Placeholder: `{path}`.
-    TplAgentsAdminKeyFileEmpty,
+    TplAgentsKeyFileEmpty,
     /// Why the bill is not available: the name of the admin key variable is not a variable name.
-    AgentsAdminKeyVariableNotValid,
+    AgentsKeyVariableNotValid,
     /// Why the bill is not available: the variable of the admin key is not set. Placeholder: `{name}`.
     TplAgentsVariableNotSet,
     /// Why the bill is not available: the variable of the admin key is empty. Placeholder: `{name}`.
@@ -1681,8 +1663,6 @@ pub enum Key {
     AgentsRename,
     /// Item of the account menu that opens the provider's usage page in the browser.
     AgentsOpenUsagePage,
-    /// Item of the menu of an organization that gives its admin key.
-    AgentsAdminKeyItem,
     /// Item of the menu of an account the user added that changes where its key is kept.
     AgentsEditKeyItem,
     /// Title of the dialog that adds an account by hand, and the tooltip of the plus of the Accounts section.
@@ -1691,10 +1671,6 @@ pub enum Key {
     AgentsEditKeyTitle,
     /// Text of the Add account dialog: what it is for and what OTTY saves.
     AgentsAddAccountText,
-    /// Note of a provider in the Add account dialog: OTTY reads the money left on the account.
-    AgentsAddedLeft,
-    /// Note of a provider whose part reads the bill of an organization, in the Add account dialog: OTTY reads it with an admin key.
-    AgentsAddedBill,
     /// Error of the Add account dialog: an account with this key place is already added.
     AgentsErrorAccountAdded,
     /// Row of the Money block of an account page: the money left on the account.
@@ -1971,6 +1947,11 @@ pub enum Key {
     AgentsNeedPartOffTitle,
     /// Line of the need of a part that is off: {part}, {plugin}.
     TplAgentsNeedPartOffText,
+    /// Title of OTTY's own need of a login a provider refused, when the
+    /// agent part that keeps it said nothing.
+    AgentsNeedLoginRefusedTitle,
+    /// Line of the need of a refused login: {provider}, {profile}.
+    TplAgentsNeedLoginRefusedText,
     /// Button of the need of a part that is off.
     AgentsTurnOn,
     /// Place of the need of a plugin update.
@@ -2000,7 +1981,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 937] = [
+    pub(super) const ALL: [Self; 927] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2529,7 +2510,6 @@ impl Key {
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
         Self::AgentsLogIn,
-        Self::AgentsNotLoggedInHint,
         Self::AgentsProgramNotFoundHint,
         Self::AgentsConfigDirNotFoundHint,
         Self::AgentsEditProfileTitle,
@@ -2553,7 +2533,6 @@ impl Key {
         Self::TplAgentsLimitsRecorded,
         Self::TplAgentsLimitsNotAvailable,
         Self::TplAgentsLimitsReadFailed,
-        Self::AgentsLimitsLogInAgain,
         Self::TplAgentsTokensFailed,
         Self::AgentsFailureSeparator,
         Self::TplAgentsNamedFailure,
@@ -2581,6 +2560,7 @@ impl Key {
         Self::TplAgentsCreditsLeft,
         Self::TplAgentsAmountToday,
         Self::AgentsStateNeedsLogin,
+        Self::AgentsStateNeedsYou,
         Self::TplAgentsPercentUsed,
         Self::AgentsExtraUsage,
         Self::TplAgentsAmountOf,
@@ -2601,15 +2581,9 @@ impl Key {
         Self::AgentsTokens,
         Self::AgentsColumnModel,
         Self::AgentsColumnRequests,
-        Self::AgentsSourceLoginExpired,
         Self::AgentsTypedFolderHint,
-        Self::AgentsNoAdminKey,
-        Self::AgentsFieldAdminKey,
-        Self::AgentsAdminKeyFile,
-        Self::AgentsAdminKeyVariable,
-        Self::AgentsAdminKeyFilePlaceholder,
-        Self::AgentsAdminKeyVariablePlaceholder,
-        Self::AgentsAdminKeyHint,
+        Self::AgentsKeyPlaceFile,
+        Self::AgentsKeyPlaceVariable,
         Self::AgentsErrorKeyPathNotFull,
         Self::AgentsErrorVariableName,
         Self::AgentsUsage,
@@ -2676,9 +2650,6 @@ impl Key {
         Self::AgentsFoundInUser,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,
-        Self::AgentsNeedAdminKeyTitle,
-        Self::AgentsNeedAdminKeyText,
-        Self::AgentsAddAdminKey,
         Self::AgentsNeedNoProviderTitle,
         Self::TplAgentsNeedNoProviderText,
         Self::AgentsAddPlugin,
@@ -2697,9 +2668,6 @@ impl Key {
         Self::AgentsSpentThisMonth,
         Self::TplAgentsUsesAccounts,
         Self::AgentsNoTokensYet,
-        Self::AgentsNeedLoginExpiredTitle,
-        Self::TplAgentsNeedLoginExpiredText,
-        Self::TplAgentsOpenAgent,
         Self::AgentsSourceFormatChanged,
         Self::TplAgentsFailureFormatChanged,
         Self::TplAgentsFailurePlugin,
@@ -2714,6 +2682,11 @@ impl Key {
         Self::TplAgentsNeedFormatChangedPluginText,
         Self::TplAgentsNeedFormatChangedPluginNoNumbers,
         Self::AgentsCopyReport,
+        Self::TplAgentsNeedPluginLabel,
+        Self::TplAgentsNeedRun,
+        Self::TplAgentsNeedAskKey,
+        Self::TplAgentsNeedOpenPage,
+        Self::TplAgentsKeyStartsWith,
         Self::AgentsSevenDays,
         Self::AgentsThirtyDays,
         Self::AgentsByAccount,
@@ -2750,16 +2723,15 @@ impl Key {
         Self::AgentsErrorFolderNotFullPath,
         Self::AgentsNoProfileToStart,
         Self::TplAgentsFailureNotAvailable,
-        Self::AgentsFailureNotLoggedIn,
-        Self::AgentsFailureKeyRefused,
         Self::TplAgentsFailureNetwork,
         Self::TplAgentsFailureUnexpected,
         Self::TplAgentsFailureUnreadable,
         Self::TplAgentsNoStatistics,
         Self::AgentsNoBill,
-        Self::TplAgentsAdminKeyFileMissing,
-        Self::TplAgentsAdminKeyFileEmpty,
-        Self::AgentsAdminKeyVariableNotValid,
+        Self::AgentsNoLogin,
+        Self::TplAgentsKeyFileMissing,
+        Self::TplAgentsKeyFileEmpty,
+        Self::AgentsKeyVariableNotValid,
         Self::TplAgentsVariableNotSet,
         Self::TplAgentsVariableEmpty,
         Self::AgentsNoKeptPriceFile,
@@ -2782,13 +2754,10 @@ impl Key {
         Self::TplAgentsWindowForModel,
         Self::AgentsRename,
         Self::AgentsOpenUsagePage,
-        Self::AgentsAdminKeyItem,
         Self::AgentsEditKeyItem,
         Self::AgentsAddAccountTitle,
         Self::AgentsEditKeyTitle,
         Self::AgentsAddAccountText,
-        Self::AgentsAddedLeft,
-        Self::AgentsAddedBill,
         Self::AgentsErrorAccountAdded,
         Self::AgentsLeft,
         Self::AgentsKeyLimit,
@@ -2926,6 +2895,8 @@ impl Key {
         Self::TplAgentsReadByOff,
         Self::AgentsNeedPartOffTitle,
         Self::TplAgentsNeedPartOffText,
+        Self::AgentsNeedLoginRefusedTitle,
+        Self::TplAgentsNeedLoginRefusedText,
         Self::AgentsTurnOn,
         Self::AgentsPluginsPlace,
         Self::AgentsNeedPluginUpdateTitle,

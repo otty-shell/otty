@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::contract::Contract;
+
 /// The kind of a plugin part. Each kind is one extension point with its
 /// own versioned contract (spec 2026-11-19-agent-plugins, Decision 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,12 +33,11 @@ impl PartKind {
         Self::ALL.into_iter().find(|kind| kind.key() == key)
     }
 
-    /// The name of the interface a component exports for this kind,
-    /// without its version, such as `otty:agent/agent`.
-    pub fn export_name(self) -> &'static str {
+    /// The contract the parts of this kind serve.
+    pub fn contract(self) -> Contract {
         match self {
-            PartKind::Agent => "otty:agent/agent",
-            PartKind::Provider => "otty:provider/provider",
+            PartKind::Agent => Contract::Agent,
+            PartKind::Provider => Contract::Provider,
         }
     }
 }

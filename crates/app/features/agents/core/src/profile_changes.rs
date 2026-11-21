@@ -4,24 +4,14 @@
 
 use std::path::PathBuf;
 
-use otty_agents::{Account, AdminKeyRef, AgentId, Profile, SavedProfiles};
+use otty_agents::{AgentId, Profile, SavedProfiles};
 
-/// What the profile dialog gives for an edited profile: its name, its
-/// config folder, and the admin key of its organization when the dialog
-/// had that field.
+/// What the profile dialog gives for an edited profile: its name and its
+/// config folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProfileEdit {
     pub(crate) name: String,
     pub(crate) config_dir: PathBuf,
-    pub(crate) admin_key: Option<AdminKeyEdit>,
-}
-
-/// The admin key of an organization as the profile dialog left it: where
-/// it is kept, or none.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AdminKeyEdit {
-    pub(crate) organization: Account,
-    pub(crate) admin_key: Option<AdminKeyRef>,
 }
 
 /// `saved` with one more profile of `agent` the user added, named `name`,
@@ -40,8 +30,7 @@ pub(crate) fn added(
 /// `saved` with `editing`, a profile of the agent whose own name is
 /// `agent_name`, changed as `edit` says. A default profile keeps only what
 /// differs from the agent's own ([`SavedProfiles::with_default_edited`]);
-/// an added profile is replaced whole, in its place. The admin key is
-/// saved for the organization, so every profile of it shares it.
+/// an added profile is replaced whole, in its place.
 pub(crate) fn edited(
     saved: &SavedProfiles,
     agent_name: &str,
@@ -49,11 +38,7 @@ pub(crate) fn edited(
     edit: ProfileEdit,
 ) -> SavedProfiles {
     let agent = editing.agent();
-    let mut saved = saved.clone();
-
-    if let Some(key) = edit.admin_key {
-        saved = saved.with_admin_key_of(&key.organization, key.admin_key);
-    }
+    let saved = saved.clone();
 
     if editing.is_default() {
         let profile =

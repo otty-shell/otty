@@ -1,14 +1,29 @@
 //! Whether a Claude Code profile is logged in, and how it pays.
 
-use otty_plugin_sdk::{Billing, Connection, ProfileStatus, files};
+use otty_plugin_sdk::{Billing, Command, Connection, ProfileStatus, files};
 
 use crate::config_files::{
     OauthAccount, OauthLogin, read_credentials, read_global_configs,
     read_settings,
 };
 use crate::glob::escaped;
+use crate::needs;
 
-/// Whether the profile in `folder` is logged in.
+/// Whether the profile in `folder` is logged in, as [`connection`] tells.
+/// A profile nobody is logged in with needs the user to run `login`,
+/// Claude Code's login.
+pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
+    if !folder_exists(folder) {
+        return ProfileStatus::ConfigFolderNotFound;
+    }
+
+    match connection(folder) {
+        Some(connection) => ProfileStatus::Connected(connection),
+        None => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    }
+}
+
+/// The login of the profile in `folder`; `None` when nobody is logged in.
 ///
 /// A profile with an API key in its settings (`env.ANTHROPIC_API_KEY`,
 /// `env.ANTHROPIC_AUTH_TOKEN` or `apiKeyHelper`) or a `primaryApiKey` in its global config file is an
@@ -19,11 +34,7 @@ use crate::glob::escaped;
 /// global config file names an account: the login file can be an empty
 /// object while the token is kept elsewhere. A blank key or token counts
 /// as none.
-pub(crate) fn status(folder: &str) -> ProfileStatus {
-    if !folder_exists(folder) {
-        return ProfileStatus::ConfigFolderNotFound;
-    }
-
+pub(crate) fn connection(folder: &str) -> Option<Connection> {
     let credentials = read_credentials(folder);
     let configs = read_global_configs(folder);
     let settings = read_settings(folder);
@@ -47,30 +58,30 @@ pub(crate) fn status(folder: &str) -> ProfileStatus {
     let is_console = account.is_some_and(OauthAccount::is_console);
 
     if has_settings_key || has_console_key || (is_console && plan.is_none()) {
-        return connected(email, None, Billing::ApiKey);
+        return Some(connected(email, None, Billing::ApiKey));
     }
 
     let has_token = credentials.as_ref().is_some_and(|credentials| {
         credentials.holds_key(login.and_then(OauthLogin::token))
     });
     if !has_token && account.is_none() {
-        return ProfileStatus::NotLoggedIn;
+        return None;
     }
 
-    connected(email, plan, Billing::UsageWindows)
+    Some(connected(email, plan, Billing::UsageWindows))
 }
 
-/// A profile logged in as `account` with `plan`, paid as `billing`.
+/// A login as `account` with `plan`, paid as `billing`.
 fn connected(
     account: Option<String>,
     plan: Option<String>,
     billing: Billing,
-) -> ProfileStatus {
-    ProfileStatus::Connected(Connection {
+) -> Connection {
+    Connection {
         account,
         plan,
         billing: Some(billing),
-    })
+    }
 }
 
 /// Whether the config folder `folder` holds any file. A folder is never
@@ -85,6 +96,8 @@ fn folder_exists(folder: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::Command;
+
     use super::*;
     use crate::testing::{as_part, host, path};
 
@@ -93,23 +106,37 @@ mod tests {
         account: Option<&str>,
         plan: Option<&str>,
     ) -> ProfileStatus {
-        connected(
+        ProfileStatus::Connected(connected(
             account.map(String::from),
             plan.map(String::from),
             Billing::UsageWindows,
-        )
+        ))
     }
 
     /// A connected profile paid for by an API key.
     fn api_key(account: Option<&str>) -> ProfileStatus {
-        connected(account.map(String::from), None, Billing::ApiKey)
+        ProfileStatus::Connected(connected(
+            account.map(String::from),
+            None,
+            Billing::ApiKey,
+        ))
     }
 
     fn status_of(folder: &str) -> ProfileStatus {
         let host = host();
         let folder = path(&host, folder);
+        let login = Command {
+            program: "claude".to_string(),
+            args: Vec::new(),
+            env: Vec::new(),
+        };
 
-        as_part(&host, || status(&folder))
+        as_part(&host, || status(&folder, login))
+    }
+
+    /// Whether nobody is logged in with the config folder `folder`.
+    fn is_not_logged_in(folder: &str) -> bool {
+        matches!(status_of(folder), ProfileStatus::NotLoggedIn(_))
     }
 
     #[test]
@@ -151,12 +178,12 @@ mod tests {
     /// `~/.claude.json` names an account, but it belongs to `~/.claude`.
     #[test]
     fn another_folder_with_no_login_is_not_logged_in() {
-        assert_eq!(status_of(".claude-nothing"), ProfileStatus::NotLoggedIn);
+        assert!(is_not_logged_in(".claude-nothing"));
     }
 
     #[test]
     fn broken_files_are_not_logged_in() {
-        assert_eq!(status_of(".claude-broken"), ProfileStatus::NotLoggedIn);
+        assert!(is_not_logged_in(".claude-broken"));
     }
 
     #[test]
@@ -189,7 +216,7 @@ mod tests {
     /// A blank text is no text: the host finds no key in it.
     #[test]
     fn a_blank_token_or_api_key_is_none() {
-        assert_eq!(status_of(".claude-blank"), ProfileStatus::NotLoggedIn);
+        assert!(is_not_logged_in(".claude-blank"));
     }
 
     #[test]

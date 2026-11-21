@@ -1,6 +1,7 @@
 //! What the accounts or the profiles need from the user as a plain to-do
-//! list (spec 2026-11-19, Decision 6): each need its place and title, its
-//! line under them and its button at the right (two for a format a
+//! list (spec 2026-11-19, Decision 6): each need its place and title, a
+//! small label naming the plugin that asks when a plugin part gives it,
+//! its line under them and its button at the right (two for a format a
 //! plugin saw change: Open plugin repository too), the rows split by
 //! rules and no boxes. The Found by OTTY report, the All accounts and
 //! All profiles pages and the page of an account show it.
@@ -32,12 +33,15 @@ pub(super) fn view<'a>(
         }
 
         let place = format!("{} · {}", need.place, need.title);
-        let text = column![
-            small_text(place, palette.text_strong()),
-            small_text(need.line, palette.text_muted()),
-        ]
-        .spacing(spacing::SPACE_1)
-        .width(Length::Fill);
+        let mut heading = row![small_text(place, palette.text_strong())]
+            .spacing(spacing::SPACE_2);
+        if let Some(plugin) = need.plugin {
+            heading = heading.push(small_text(plugin, palette.text_muted()));
+        }
+        let text =
+            column![heading, small_text(need.line, palette.text_muted())]
+                .spacing(spacing::SPACE_1)
+                .width(Length::Fill);
 
         let mut line = row![text].spacing(spacing::SPACE_4);
         for fix in need.extra.into_iter().chain(need.fix) {

@@ -2,12 +2,10 @@ use std::path::{Path, PathBuf};
 
 use otty_agents::{AgentId, Profile, ProfileInputError, check_profile_name};
 
-use super::admin_key_fields::AdminKeyFields;
 use super::event::FolderChoice;
 use super::folder::{FolderProblem, check_folder};
 use crate::event::AgentsOutcome;
 use crate::folder_field::{FolderFieldIntent, FolderSuggestions, full_folder};
-use crate::profile_changes::AdminKeyEdit;
 use crate::types::FolderAsker;
 
 /// The open profile dialog: what is typed and picked in it, and how its
@@ -22,7 +20,6 @@ pub(crate) struct ProfileDialog {
     typed: FolderSuggestions,
     new_path: String,
     is_new_path_typed: bool,
-    admin_key: Option<AdminKeyFields>,
     error: Option<String>,
     is_saving: bool,
 }
@@ -75,12 +72,6 @@ impl ProfileDialog {
             .unwrap_or_default()
     }
 
-    /// The admin key of the organization, while an API key profile that
-    /// pays through one is edited.
-    pub(crate) fn admin_key_fields(&self) -> Option<&AdminKeyFields> {
-        self.admin_key.as_ref()
-    }
-
     /// Why the last save failed, ready to show.
     pub(crate) fn error(&self) -> Option<&str> {
         self.error.as_deref()
@@ -106,19 +97,14 @@ impl ProfileDialog {
             ),
             new_path: String::new(),
             is_new_path_typed: false,
-            admin_key: None,
             error: None,
             is_saving: false,
         }
     }
 
-    /// The dialog that edits `profile`: its name, its config folder as a
-    /// typed path, and the `admin_key` field of the organization an API
-    /// key profile pays through.
-    pub(crate) fn edit(
-        profile: &Profile,
-        admin_key: Option<AdminKeyFields>,
-    ) -> Self {
+    /// The dialog that edits `profile`: its name and its config folder as
+    /// a typed path.
+    pub(crate) fn edit(profile: &Profile) -> Self {
         Self {
             name: profile.name().to_string(),
             folder_choice: FolderChoice::Typed,
@@ -126,7 +112,6 @@ impl ProfileDialog {
                 FolderAsker::ProfileDialog,
                 profile.config_dir().display().to_string(),
             ),
-            admin_key,
             ..Self::add(profile.agent().clone())
         }
         .editing_profile(profile.clone())
@@ -193,14 +178,6 @@ impl ProfileDialog {
         &mut self.typed
     }
 
-    /// The admin key field, to change it; `None` while the profile has
-    /// none.
-    pub(crate) fn admin_key_fields_mut(
-        &mut self,
-    ) -> Option<&mut AdminKeyFields> {
-        self.admin_key.as_mut()
-    }
-
     /// What the checks of the name and the config folder find against
     /// every other profile, `profiles`, with `~` standing for `home`, and
     /// whether Add or Save can be pressed.
@@ -213,31 +190,14 @@ impl ProfileDialog {
             check_profile_name(&self.name, self.editing.as_ref(), profiles)
                 .err();
         let folder = self.folder(home, profiles);
-        let can_submit = !self.is_saving
-            && name_problem.is_none()
-            && folder.is_ok()
-            && self
-                .admin_key
-                .as_ref()
-                .is_none_or(|fields| fields.is_valid(home));
+        let can_submit =
+            !self.is_saving && name_problem.is_none() && folder.is_ok();
 
         DialogChecks {
             name_problem,
             folder,
             can_submit,
         }
-    }
-
-    /// The admin key of the organization to save, with `~` standing for
-    /// `home`; `None` while the dialog has no admin key field, so the
-    /// saved key stays as it is.
-    pub(crate) fn admin_key_edit(&self, home: &Path) -> Option<AdminKeyEdit> {
-        let fields = self.admin_key.as_ref()?;
-
-        Some(AdminKeyEdit {
-            organization: fields.organization().clone(),
-            admin_key: fields.admin_key(home).ok().flatten(),
-        })
     }
 
     /// Mark the save as started.
@@ -304,8 +264,8 @@ impl DialogChecks {
         self.folder.as_deref().map_err(|problem| *problem)
     }
 
-    /// Whether Add or Save can be pressed: the name, the folder and the
-    /// admin key field pass their checks and no save is on its way.
+    /// Whether Add or Save can be pressed: the name and the folder pass
+    /// their checks and no save is on its way.
     pub(crate) fn can_submit(&self) -> bool {
         self.can_submit
     }

@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::bill_days::DaySums;
+use crate::needs;
 use crate::requests::{json_answer, percent_encoded};
 
 /// The address of the costs.
@@ -100,7 +101,7 @@ impl CostResult {
 }
 
 /// The bill of the organization of the admin key `key` over the UTC days
-/// of `days`. A refused key is "key refused"; an answer that is not a
+/// of `days`. A refused key asks for a new one; an answer that is not a
 /// page of costs is unexpected. A day, or a cost, that can not be read is
 /// skipped.
 pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
@@ -114,7 +115,9 @@ pub(crate) fn bill(key: &Key, days: &DayRange) -> Result<Bill, ReadError> {
         let request = Request::get(&url)
             .header_with_key("authorization", "Bearer ", key)
             .header("accept", "application/json");
-        let answer = json_answer(&request, COSTS_URL)?;
+        let answer = json_answer(&request, COSTS_URL, || {
+            ReadError::NeedsUser(needs::new_bill_key())
+        })?;
         let costs: CostsPage =
             serde_json::from_value(answer).map_err(|_| {
                 ReadError::Unexpected(format!(
@@ -169,6 +172,7 @@ fn next_day(day: Date) -> Result<Date, ReadError> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
@@ -284,14 +288,26 @@ mod tests {
         assert_eq!(days_of(&bill), [("2026-11-16", 2.0)]);
     }
 
+    /// A refused admin key asks for a new one under the same slot; an
+    /// answer that is not a page of costs is unexpected.
     #[test]
-    fn a_refused_key_is_key_refused_and_another_answer_unexpected() {
+    fn a_refused_key_asks_for_a_new_one_and_another_answer_is_unexpected() {
         let refused = host();
         refused.answer("GET", FIRST_PAGE, 401, b"{}");
         let other = host();
         other.answer("GET", FIRST_PAGE, 200, br#"{"error": "nope"}"#);
 
-        assert_eq!(bill_of(&refused), Err(ReadError::KeyRefused));
+        let refused_bill = bill_of(&refused);
+
+        let Err(ReadError::NeedsUser(need)) = refused_bill else {
+            panic!("a need: {refused_bill:?}");
+        };
+        assert_eq!(need.id, "new-bill-key");
+        assert!(need.text.starts_with("OpenAI refused"), "{}", need.text);
+        let NeedAction::AskKey(ask) = need.action else {
+            panic!("a key to ask for: {need:?}");
+        };
+        assert_eq!(ask.slot, "admin");
         assert!(matches!(bill_of(&other), Err(ReadError::Unexpected(_))));
     }
 

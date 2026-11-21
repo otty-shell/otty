@@ -13,6 +13,7 @@ use crate::error::{SourceError, Unavailable};
 use crate::limits::{LimitSource, Limits};
 use crate::plugin_provider::PluginProvider;
 use crate::profile::Profile;
+use crate::refused_login::to_holding_agent;
 use crate::source_id::SourceId;
 use crate::walk::{Answer, SourceFailure, walk};
 
@@ -65,7 +66,8 @@ fn subscription_of<'a>(
 }
 
 /// The limits of `account` read by `provider` with the login `agent`
-/// finds for it in `profile`.
+/// finds for it in `profile`. A login the provider refused is the need of
+/// `agent`, which holds it.
 fn provider_limits(
     agent: &dyn Agent,
     provider: &PluginProvider,
@@ -76,7 +78,11 @@ fn provider_limits(
         .found_login(profile, account)
         .ok_or(SourceError::NotAvailable(Unavailable::KeyGone))?;
 
-    match provider.read(account, &login)? {
+    let numbers = provider
+        .read(account, &login, &[])
+        .map_err(|error| to_holding_agent(error, agent, profile, &login))?;
+
+    match numbers {
         AccountNumbers::Limits(answer) => Ok(answer.into_value()),
         _ => Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
     }
@@ -94,10 +100,14 @@ mod tests {
 
     use super::*;
     use crate::account::{AccountIdentity, AccountLogin, FoundIn};
+    use crate::command::AgentCommand;
+    use crate::fixtures::login_need;
     use crate::limits::{Billing, MockLimitSource, UsageWindows};
+    use crate::part_need::PartNeedAction;
     use crate::plugin_provider::MockProviderPartCalls;
     use crate::provider::ProviderRef;
-    use crate::testing::{MockAgent, mock_entry, profile};
+    use crate::refused_login::RefusedLogin;
+    use crate::testing::{MockAgent, made_up_part, mock_entry, profile};
 
     fn claude_login() -> Account {
         Account::new(
@@ -142,10 +152,8 @@ mod tests {
         times: usize,
     ) -> PluginProvider {
         let mut calls = MockProviderPartCalls::new();
-        calls
-            .expect_read_numbers()
-            .times(times)
-            .returning(move |_, found| {
+        calls.expect_read_numbers().times(times).returning(
+            move |_, found, _| {
                 answer.clone()?;
                 let facts = AccountFacts {
                     identity: found.identity.clone(),
@@ -161,9 +169,25 @@ mod tests {
                     plan: None,
                 };
                 Ok((facts, numbers))
-            });
+            },
+        );
 
         PluginProvider::made_up("anthropic", &["anthropic.com"], calls)
+    }
+
+    /// The need of the provider part whose login expired.
+    fn login_expired() -> SourceError {
+        let need = crate::part_need::PartNeed::new(
+            crate::testing::made_up_part("anthropic"),
+            "login-expired",
+            "The login expired",
+            "Open the agent to log in again.",
+            crate::part_need::PartNeedAction::OpenPage(
+                "https://example.com/login".to_string(),
+            ),
+        );
+
+        SourceError::NeedsUser(Box::new(need))
     }
 
     /// The agent part's read of the limits, asked `times` times, which
@@ -204,7 +228,7 @@ mod tests {
     #[test]
     fn when_the_provider_part_fails_the_agent_part_is_asked() {
         let agent = agent_with(vec![claude_login()]);
-        let providers = [anthropic(Err(SourceError::KeyRefused), 1)];
+        let providers = [anthropic(Err(login_expired()), 1)];
         let screen = usage_screen(1);
 
         let limits = read_profile_limits(
@@ -222,10 +246,7 @@ mod tests {
             answer.earlier_failures()[0].source(),
             SourceId::ProviderPart
         );
-        assert_eq!(
-            answer.earlier_failures()[0].error(),
-            &SourceError::NotLoggedIn
-        );
+        assert_eq!(answer.earlier_failures()[0].error(), &login_expired());
     }
 
     #[test]
@@ -274,7 +295,7 @@ mod tests {
     #[test]
     fn a_failed_provider_part_and_no_agent_read_give_its_failure() {
         let agent = agent_with(vec![claude_login()]);
-        let providers = [anthropic(Err(SourceError::KeyRefused), 1)];
+        let providers = [anthropic(Err(login_expired()), 1)];
 
         let limits =
             read_profile_limits(&agent, &providers, None, &profile("Example"));
@@ -282,6 +303,98 @@ mod tests {
         let failures = limits.expect_err("no part answers");
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].source(), SourceId::ProviderPart);
-        assert_eq!(failures[0].error(), &SourceError::NotLoggedIn);
+        assert_eq!(failures[0].error(), &login_expired());
+    }
+
+    /// A ChatGPT login only OpenCode keeps, in its own profile.
+    fn chatgpt_in_opencode() -> Account {
+        Account::new(
+            ProviderRef::of_id("openai"),
+            AccountIdentity::AccountId("made-up-account".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Limits,
+            FoundIn::ProfileFolder("/home/user/.config-OpenCode".into()),
+        )
+    }
+
+    /// The `openai` provider part, which refuses every login it reads
+    /// with.
+    fn refusing_openai() -> PluginProvider {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().times(1).returning(|_, _, _| {
+            let refused = RefusedLogin::new(made_up_part("openai"));
+            Err(SourceError::LoginRefused(Box::new(refused)))
+        });
+
+        PluginProvider::made_up("openai", &["openai.com"], calls)
+    }
+
+    /// OpenCode, which keeps the ChatGPT login, and logs in again with
+    /// `opencode auth login` when `logs_in`.
+    fn opencode(logs_in: bool) -> MockAgent {
+        let mut agent = MockAgent::new();
+        agent
+            .expect_entry()
+            .return_const(mock_entry("opencode", "opencode"));
+        agent
+            .expect_accounts()
+            .returning(|_| vec![chatgpt_in_opencode()]);
+        agent.expect_found_login().returning(|_, _| Some(login()));
+        agent
+            .expect_login_refused()
+            .times(1)
+            .returning(move |_, _| {
+                let run = AgentCommand::new("opencode")
+                    .with_arg("auth")
+                    .with_arg("login");
+                logs_in.then(|| login_need("opencode", "opencode", run))
+            });
+        agent
+    }
+
+    /// Issue 20: the `openai` provider part refuses a ChatGPT login only
+    /// OpenCode keeps; the need comes from OpenCode's part, about its
+    /// profile, and runs OpenCode's login, not Codex.
+    #[test]
+    fn a_login_refused_for_opencode_shows_the_need_of_opencode() {
+        let agent = opencode(true);
+        let providers = [refusing_openai()];
+        let holder = profile("OpenCode");
+
+        let limits = read_profile_limits(&agent, &providers, None, &holder);
+
+        let failures = limits.expect_err("no part answers");
+        let SourceError::NeedsUser(need) = failures[0].error() else {
+            panic!("the need of OpenCode: {failures:?}");
+        };
+        assert_eq!(need.part().part(), "opencode");
+        assert_eq!(need.profile(), Some(holder.config_dir()));
+        assert_eq!(
+            need.action(),
+            &PartNeedAction::Run(
+                AgentCommand::new("opencode")
+                    .with_arg("auth")
+                    .with_arg("login")
+            )
+        );
+    }
+
+    /// Issue 20: when the agent part that keeps the login says nothing,
+    /// OTTY says itself that the provider refused the login of the
+    /// profile.
+    #[test]
+    fn a_refused_login_with_no_need_of_its_agent_part_names_the_profile() {
+        let agent = opencode(false);
+        let providers = [refusing_openai()];
+        let holder = profile("OpenCode");
+
+        let limits = read_profile_limits(&agent, &providers, None, &holder);
+
+        let failures = limits.expect_err("no part answers");
+        let SourceError::LoginRefused(refused) = failures[0].error() else {
+            panic!("OTTY's own refusal: {failures:?}");
+        };
+        assert_eq!(refused.profile(), Some(&holder));
+        assert_eq!(refused.provider().part(), "openai");
     }
 }

@@ -148,18 +148,9 @@ impl ProviderRef {
     }
 }
 
-/// What Add account offers for a provider (spec 2026-11-19, Decision 7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AddAccountKind {
-    /// A key with money left on it.
-    Key,
-    /// The admin key of an organization, which reads its bill.
-    AdminKey,
-}
-
 /// What the app shows and needs to know of a provider (spec "Links in the
 /// interface"): its id, name and icon, the pages of its usage, the hosts
-/// of its servers, what Add account offers for it, and the plugin part
+/// of its servers, whether Add account offers it, and the plugin part
 /// that reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderEntry {
@@ -169,7 +160,7 @@ pub struct ProviderEntry {
     usage_page: Option<String>,
     plan_usage_page: Option<String>,
     hosts: Vec<String>,
-    add_account: Option<AddAccountKind>,
+    can_add_by_hand: bool,
     part: PluginPart,
     keyring_services: Vec<String>,
 }
@@ -197,10 +188,10 @@ impl ProviderEntry {
         &self.hosts
     }
 
-    /// What Add account offers for the provider; `None` when it is not
-    /// offered.
-    pub fn add_account(&self) -> Option<AddAccountKind> {
-        self.add_account
+    /// Whether Add account offers the provider: the user gives the key of
+    /// an account by hand (spec 2026-11-19, Decision 7).
+    pub fn can_add_by_hand(&self) -> bool {
+        self.can_add_by_hand
     }
 
     /// The plugin part that reads the provider's accounts.
@@ -258,7 +249,7 @@ impl ProviderEntry {
             usage_page: None,
             plan_usage_page: None,
             hosts: Vec::new(),
-            add_account: None,
+            can_add_by_hand: false,
             part,
             keyring_services: Vec::new(),
         }
@@ -297,9 +288,9 @@ impl ProviderEntry {
         self
     }
 
-    /// The same entry offered by Add account as `kind`.
-    pub fn with_add_account(mut self, kind: AddAccountKind) -> Self {
-        self.add_account = Some(kind);
+    /// The same entry offered by Add account.
+    pub fn with_add_by_hand(mut self) -> Self {
+        self.can_add_by_hand = true;
         self
     }
 

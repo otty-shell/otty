@@ -2,15 +2,15 @@
 //! the commands that start it.
 
 use otty_plugin_sdk::{
-    Agent, Answers, Command, HostError, Login, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
-    SpendPlace,
+    Agent, Answers, Command, HostError, Login, LoginRef, Need, Profile,
+    ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
+    SessionStats, SpendItem, SpendPlace,
 };
 
 use crate::database::Database;
 use crate::location::{database_of, profiles, start_command};
 use crate::sessions::newest_version;
-use crate::{OpenCode, answers, logins, sessions, stats};
+use crate::{OpenCode, answers, logins, needs, sessions, stats};
 
 impl Agent for OpenCode {
     /// The default data folder; OpenCode has no other.
@@ -70,11 +70,6 @@ impl Agent for OpenCode {
         start_command(profile, args)
     }
 
-    /// `opencode auth login`.
-    fn login_command(profile: &Profile) -> Command {
-        start_command(profile, vec!["auth".to_string(), "login".to_string()])
-    }
-
     fn read_session_stats(
         profile: &Profile,
         session: &str,
@@ -100,6 +95,19 @@ impl Agent for OpenCode {
                 models: Vec::new(),
             }),
         }
+    }
+
+    /// A provider refused a login OpenCode keeps, such as a ChatGPT login
+    /// the `openai` provider part read: OpenCode logs in again with
+    /// `opencode auth login`, in the profile's data folder. Never Codex:
+    /// the login is OpenCode's.
+    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
+        let login = start_command(
+            profile,
+            vec!["auth".to_string(), "login".to_string()],
+        );
+
+        Some(needs::login_refused(login))
     }
 }
 
@@ -132,8 +140,26 @@ mod tests {
         }
     }
 
+    /// Issue 20: a ChatGPT login OpenCode keeps, refused by the `openai`
+    /// provider part, is logged in again with OpenCode, not Codex.
     #[test]
-    fn a_session_is_continued_with_its_id_and_a_login_runs_auth_login() {
+    fn a_refused_login_logs_in_again_with_opencode() {
+        let host = host();
+        let profile = default_profile(&host);
+        let login = LoginRef::EnvVar("OPENAI_API_KEY".to_string());
+
+        let need = as_part(&host, || OpenCode::login_refused(&profile, &login))
+            .expect("a need");
+
+        assert_eq!(need.id, "login-refused");
+        assert_eq!(
+            need.action,
+            otty_plugin_sdk::NeedAction::Run(command(&["auth", "login"]))
+        );
+    }
+
+    #[test]
+    fn a_session_is_continued_with_its_id() {
         let host = host();
         let profile = default_profile(&host);
 
@@ -141,10 +167,6 @@ mod tests {
         assert_eq!(
             OpenCode::launch(&profile, Some(SHOP_SESSION)),
             command(&["-s", SHOP_SESSION])
-        );
-        assert_eq!(
-            OpenCode::login_command(&profile),
-            command(&["auth", "login"])
         );
     }
 

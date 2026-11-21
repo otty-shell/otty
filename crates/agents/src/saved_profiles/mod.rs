@@ -1,7 +1,8 @@
 //! The content of `agents.json`: the profiles the user added, what they
 //! changed in the default profiles, the user's names and hidden accounts,
-//! the hidden profiles, and where the admin keys of the organizations are
-//! kept (spec Decisions 1 and 7).
+//! the hidden profiles, and where the keys the user gave for the accounts
+//! are kept (spec Decisions 1 and 7; spec 2026-11-19-agent-plugins, issue
+//! 20).
 //!
 //! The file holds names and paths only, never a secret. Reading and writing
 //! the file itself is the app's job; this module turns its content to and
@@ -31,7 +32,9 @@
 //!       "provider": "example-cloud",
 //!       "organization_id": "00000000-0000-4000-8000-00000000000b",
 //!       "name": "Acme",
-//!       "admin_key": { "file": "/home/user/.config/admin-key" }
+//!       "given_keys": [
+//!         { "slot": "admin", "file": "/home/user/.config/acme-key" }
+//!       ]
 //!     },
 //!     { "provider": "other-cloud", "account_id": "made-up-account", "hidden": true }
 //!   ],
@@ -51,8 +54,9 @@
 //! can still be hidden: a hidden profile is kept by its folder, not by an
 //! entry.
 //!
-//! An organization paid per token may keep where its admin key is, a file
-//! or an environment variable; the key itself is never written. An account
+//! An account may keep where the keys the user gave for it are, each under
+//! the slot of the plugin part that asked for it: a file or an
+//! environment variable; the key itself is never written. An account
 //! the user added is written by its provider and the place of its key,
 //! `"key": { "file": … }` or `"key": { "env_var": … }`. A found account is
 //! written by its account id, organization id or email only, never by
@@ -78,16 +82,16 @@ use self::file_content::FileContent;
 use self::hidden_profiles::HiddenProfile;
 use self::saved_accounts::SavedAccount;
 use crate::account::Account;
-use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
+use crate::given_key::{GivenKey, KeyRef};
 use crate::profile::Profile;
 use crate::provider::ProviderRef;
 use crate::registry::Registry;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
-/// the hidden profiles, and where the admin keys of the organizations are
-/// kept.
+/// the hidden profiles, and where the keys the user gave for the accounts
+/// are kept.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -132,10 +136,11 @@ impl SavedProfiles {
         &self.added
     }
 
-    /// Where the admin key of `account` is kept, when the user gave one;
-    /// only an organization has one (spec Decision 7).
-    pub fn admin_key_of(&self, account: &Account) -> Option<&AdminKeyRef> {
-        self.saved_account(account)?.admin_key.as_ref()
+    /// The keys the user gave for `account` after needs of plugin parts
+    /// asked for them, each with its slot; empty when none.
+    pub fn given_keys_of(&self, account: &Account) -> &[GivenKey] {
+        self.saved_account(account)
+            .map_or(&[], |saved| saved.given_keys.as_slice())
     }
 
     /// The accounts the user added by hand, in the order they were added
@@ -336,17 +341,18 @@ impl SavedProfiles {
         self
     }
 
-    /// The same content with `admin_key` as the place of the admin key of
-    /// `account`, or with no admin key for it. Only an organization takes
-    /// one ([`Account::organization_id`]): for another account the
+    /// The same content with `key` as the place of the key the user gave
+    /// for `account` under `slot`, in place of the one given before, or
+    /// with no key under `slot`. Only an account that can be saved
+    /// ([`Account::can_be_saved`]) keeps one: for a key OTTY found the
     /// content stays as it is, so nothing taken from a key is ever saved.
     ///
     /// ```
     /// use std::path::PathBuf;
     ///
     /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, AdminKeyRef,
-    ///     FoundIn, ProviderRef, SavedProfiles,
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, GivenKey,
+    ///     KeyRef, ProviderRef, SavedProfiles,
     /// };
     ///
     /// let organization = Account::new(
@@ -356,23 +362,31 @@ impl SavedProfiles {
     ///     AccountKind::Money,
     ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.writer")),
     /// );
-    /// let key = AdminKeyRef::EnvVar("EXAMPLE_ADMIN_KEY".into());
+    /// let key = KeyRef::EnvVar("EXAMPLE_ORG_KEY".into());
     ///
-    /// let saved = SavedProfiles::default()
-    ///     .with_admin_key_of(&organization, Some(key.clone()));
+    /// let saved = SavedProfiles::default().with_given_key_of(
+    ///     &organization,
+    ///     "admin",
+    ///     Some(key.clone()),
+    /// );
     ///
-    /// assert_eq!(saved.admin_key_of(&organization), Some(&key));
+    /// assert_eq!(
+    ///     saved.given_keys_of(&organization),
+    ///     [GivenKey::new("admin", key)]
+    /// );
     /// ```
-    pub fn with_admin_key_of(
+    pub fn with_given_key_of(
         self,
         account: &Account,
-        admin_key: Option<AdminKeyRef>,
+        slot: &str,
+        key: Option<KeyRef>,
     ) -> Self {
-        if account.organization_id().is_none() {
-            return self;
-        }
-
-        self.with_account_changed(account, |saved| saved.admin_key = admin_key)
+        self.with_account_changed(account, |saved| {
+            saved.given_keys.retain(|given| given.slot() != slot);
+            if let Some(key) = key {
+                saved.given_keys.push(GivenKey::new(slot, key));
+            }
+        })
     }
 
     /// The same content with `name` as the user's name of `account`, or
@@ -426,9 +440,9 @@ impl SavedProfiles {
     /// place stays as it is.
     ///
     /// ```
-    /// use otty_agents::{Account, AdminKeyRef, ProviderRef, SavedProfiles};
+    /// use otty_agents::{Account, KeyRef, ProviderRef, SavedProfiles};
     ///
-    /// let key = AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into());
+    /// let key = KeyRef::EnvVar("EXAMPLE_API_KEY".into());
     ///
     /// let saved = SavedProfiles::default()
     ///     .with_account_added(ProviderRef::of_id("example-cloud"), key.clone());
@@ -441,7 +455,7 @@ impl SavedProfiles {
     pub fn with_account_added(
         mut self,
         provider: ProviderRef,
-        key: AdminKeyRef,
+        key: KeyRef,
     ) -> Self {
         let account = Account::added(provider, key);
         if self.saved_account(&account).is_some() {
@@ -457,11 +471,7 @@ impl SavedProfiles {
     /// The same content with the key of the account the user added,
     /// `account`, kept at `key` from now on; its name and whether it is
     /// hidden stay. An account OTTY found changes nothing.
-    pub fn with_added_key(
-        mut self,
-        account: &Account,
-        key: AdminKeyRef,
-    ) -> Self {
+    pub fn with_added_key(mut self, account: &Account, key: KeyRef) -> Self {
         if account.added_key().is_none_or(|old| *old == key) {
             return self;
         }
@@ -632,8 +642,8 @@ mod tests {
         AgentId::new("codex")
     }
 
-    /// A made-up admin key, never a real one.
-    const MADE_UP_KEY: &str = "sk-ant-admin01-made-up-for-tests";
+    /// A made-up key, never a real one.
+    const MADE_UP_KEY: &str = "sk-made-up-for-tests-0001";
 
     fn content() -> SavedProfiles {
         SavedProfiles::default()
@@ -656,10 +666,11 @@ mod tests {
                 "Codex · Work",
                 PathBuf::from("/home/user/.codex-work"),
             ))
-            .with_admin_key_of(
+            .with_given_key_of(
                 &organization("00000000-0000-4000-8000-00000000000b"),
-                Some(AdminKeyRef::File(PathBuf::from(
-                    "/home/user/.config/anthropic-admin-key",
+                "admin",
+                Some(KeyRef::File(PathBuf::from(
+                    "/home/user/.config/anthropic-org-key",
                 ))),
             )
     }
@@ -779,7 +790,9 @@ mod tests {
                 {
                     "provider": "anthropic",
                     "organization_id": "00000000-0000-4000-8000-00000000000b",
-                    "admin_key": { "file": "/home/user/.config/anthropic-admin-key" }
+                    "given_keys": [
+                        { "slot": "admin", "file": "/home/user/.config/anthropic-org-key" }
+                    ]
                 }
             ]
         }"#;
@@ -788,20 +801,50 @@ mod tests {
     }
 
     #[test]
-    fn only_the_place_of_the_admin_key_is_written_never_the_key() {
+    fn only_the_place_of_a_given_key_is_written_never_the_key() {
         let dir = crate::testing::TempDir::new();
-        let key_file = dir.path().join("admin-key");
+        let key_file = dir.path().join("org-key");
         std::fs::write(&key_file, MADE_UP_KEY).expect("the key file");
-        let saved = SavedProfiles::default().with_admin_key_of(
+        let saved = SavedProfiles::default().with_given_key_of(
             &organization("made-up-org"),
-            Some(AdminKeyRef::File(key_file.clone())),
+            "admin",
+            Some(KeyRef::File(key_file.clone())),
         );
 
         let text = saved.to_json().expect("the paths are text");
 
         assert!(text.contains(&format!("{}", key_file.display())));
         assert!(!text.contains(MADE_UP_KEY));
-        assert!(!text.contains("sk-ant"));
+        assert!(!text.contains("sk-made-up"));
+    }
+
+    /// Issue 20: a key given again under the same slot replaces the one
+    /// before; other slots stay, and none removes the slot.
+    #[test]
+    fn a_key_given_again_under_its_slot_replaces_the_one_before() {
+        let organization = organization("made-up-org");
+        let place = |name: &str| KeyRef::EnvVar(name.to_string());
+
+        let saved = SavedProfiles::default()
+            .with_given_key_of(&organization, "admin", Some(place("FIRST")))
+            .with_given_key_of(&organization, "other", Some(place("OTHER")))
+            .with_given_key_of(&organization, "admin", Some(place("SECOND")));
+        let removed =
+            saved
+                .clone()
+                .with_given_key_of(&organization, "admin", None);
+
+        assert_eq!(
+            saved.given_keys_of(&organization),
+            [
+                GivenKey::new("other", place("OTHER")),
+                GivenKey::new("admin", place("SECOND")),
+            ]
+        );
+        assert_eq!(
+            removed.given_keys_of(&organization),
+            [GivenKey::new("other", place("OTHER"))]
+        );
     }
 
     /// Spec Decision 2: the Found by OTTY report opens on the first start
@@ -890,7 +933,7 @@ mod tests {
         );
         let example = Account::added(
             ProviderRef::of_id("example-cloud"),
-            AdminKeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
+            KeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
         );
         let future_login = crate::testing::chatgpt_login("made-up");
         let future_login = Account::new(

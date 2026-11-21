@@ -168,6 +168,13 @@ impl OwnReads {
         started
     }
 
+    /// Forget what was read of `account`, so it is read again at once,
+    /// such as after the user gave a key a part asked for.
+    pub(crate) fn forget(&mut self, account: &Account) {
+        self.reads
+            .retain(|read| !read.account.is_same_account(account));
+    }
+
     /// Take the answer of the read of one account; an answer of an account
     /// no longer read is dropped.
     pub(crate) fn apply(&mut self, loaded: LoadedAccountNumbers) {
@@ -185,7 +192,7 @@ impl OwnReads {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AdminKeyRef, Amount, ProviderRef};
+    use otty_agents::{Amount, KeyRef, ProviderRef};
 
     use super::*;
     use crate::testing::{at, chatgpt_login, five_hour_limits};
@@ -193,7 +200,7 @@ mod tests {
     fn deepseek() -> Account {
         Account::added(
             ProviderRef::of_id("deepseek"),
-            AdminKeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+            KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
         )
     }
 
@@ -235,7 +242,11 @@ mod tests {
         let _ = reads.start(vec![(deepseek(), KeyPlace::Added)], Which::Every);
         reads.apply(loaded(deepseek(), Ok(left(110.0)), at(10)));
         let _ = reads.start(vec![(deepseek(), KeyPlace::Added)], Which::Every);
-        reads.apply(loaded(deepseek(), Err(SourceError::KeyRefused), at(20)));
+        reads.apply(loaded(
+            deepseek(),
+            Err(crate::testing::refused_key_need()),
+            at(20),
+        ));
 
         let read = reads.of(&deepseek()).expect("the account was read");
 
@@ -243,7 +254,7 @@ mod tests {
             read.balance().map(|(balance, at)| (balance.clone(), at)),
             Some((Balance::new(Amount::new(110.0, "CNY"), None), at(10)))
         );
-        assert_eq!(read.failure(), Some(&SourceError::KeyRefused));
+        assert_eq!(read.failure(), Some(&crate::testing::refused_key_need()));
         assert_eq!(read.reads().read_at(), Some(at(20)));
     }
 
@@ -280,7 +291,7 @@ mod tests {
         let answered = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
         reads.apply(loaded(
             chatgpt_login(),
-            Err(SourceError::NotLoggedIn),
+            Err(crate::testing::login_expired()),
             at(20),
         ));
         let expired = reads.of(&chatgpt_login()).and_then(OwnRead::limits);
@@ -291,7 +302,7 @@ mod tests {
                 .is_some_and(|limits| limits.last_good().is_some())
         );
         let expired = expired.expect("the limits were read");
-        assert!(expired.is_login_expired());
+        assert_eq!(expired.needs().len(), 1);
         assert!(expired.last_good().is_some(), "the last good limits stay");
     }
 }

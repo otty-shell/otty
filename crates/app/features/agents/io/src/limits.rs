@@ -301,7 +301,9 @@ mod tests {
             loaded.limits,
             LimitsRead::Failed(vec![SourceFailure::new(
                 SourceId::AgentPart,
-                otty_agents::SourceError::NotLoggedIn
+                otty_agents::SourceError::NotAvailable(
+                    otty_agents::Unavailable::NoLogin
+                )
             )])
         );
         assert!(loaded.read_at >= before);

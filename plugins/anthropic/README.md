@@ -18,12 +18,21 @@ afterwards deletes the session files that run left in
 `projects/<probe folder>/`; its manifest allows it to delete nothing else.
 OTTY runs this at most once in five minutes per profile.
 
+What only the user can do, the parts ask for themselves, in OTTY's
+language, which they follow when the user picks another: `claude` for a
+profile nobody is logged in with or whose login expired or a provider
+refused (Claude Code logs in or renews the login), and a field for the
+admin key (`sk-ant-admin…`) when the bill of an organization needs one or
+Anthropic refused the one given.
+
 Its provider part `anthropic` reads the numbers of Anthropic accounts
 with the handles OTTY gives it: the limits of a Claude login (and its
 extra usage) from Anthropic's usage request, whichever agent keeps the
 login, and the cost report of an organization with an admin key added by
-hand, both from `api.anthropic.com`. It never sees when a token expires:
-a refused token is reported as refused, and nothing is renewed. While it
+hand, both from `api.anthropic.com`. It never sees when a token expires
+and renews nothing: a refused token it only reports as refused, and OTTY
+asks the agent part that keeps the login, such as `claude-code`, what to
+do. While it
 runs, the files of the `claude-code` part are refused to it. OTTY asks
 it for a profile's limits before the `/usage` panel.
 

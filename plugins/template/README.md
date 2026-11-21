@@ -18,16 +18,33 @@ the folder into a new repository and replace what the parts read.
   one `impl Provider`; the part's id comes with each call.
 - `[api]` names the version of each contract the plugin exports, one per
   kind of part it has: `agent = "0.1"` for the `Agent` trait,
-  `provider = "0.1"` for the `Provider` trait. The last line of
-  `src/lib.rs`, `otty_plugin_sdk::export!(Example with agent, provider);`,
-  must name the same traits. A plugin with only agent parts writes
-  `export!(Example with agent)` and only `agent` in `[api]`.
+  `provider = "0.1"` for the `Provider` trait, and `language = "0.1"` for
+  the optional `Language` trait, which belongs to no part. The last line
+  of `src/lib.rs`,
+  `otty_plugin_sdk::export!(Example with agent, provider, language);`,
+  must name the same traits. A plugin with only agent parts and texts in
+  English only writes `export!(Example with agent)` and only `agent` in
+  `[api]`.
 - An agent part that reads the limits its agent shows implements
   `read_limits(profile, login)`. Where a number comes from is the
   plugin's business: try your sources in your own order and return the
   first limits you get, or one error that says why. OTTY asks the
   provider part of the login first, and the agent part only when that
   gives nothing. The template keeps the default, "not supported".
+- What the user must do for the agent or the provider, the part says
+  itself as a need: an id, a title, a text and one button
+  (`src/needs.rs`). The agent part gives one when nobody is logged in
+  (its button runs `example-agent login`), and one from `login_refused`
+  when a provider part refused a login it found: a provider part only
+  answers `ReadError::LoginRefused` for a login an agent keeps, since it
+  does not know which agent that is. The provider part asks for an
+  admin key under its slot `admin` when the bill needs one, and for a new
+  key when the provider refused it. The texts are in the language of
+  OTTY's interface (`env::language()`, the one OTTY shows at that call),
+  or in English. The template has every text in OTTY's ten languages, so
+  it implements `Language`: OTTY calls it when the user picks another
+  language, and reads the parts again when it answers `true`. A key the user
+  gave comes back to `read_bill` and `numbers` as a handle with its slot.
 - Field names, file names, JSON shapes and URLs live in the plugin, never
   in OTTY. Keys are never read: files, variables and database columns
   that hold keys are listed in `keys`, and the plugin gets a handle,

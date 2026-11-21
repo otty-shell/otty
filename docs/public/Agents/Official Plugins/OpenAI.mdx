@@ -45,7 +45,7 @@ When the usage request gives no answer, and only while Agents mode is on screen,
 `codex -s read-only -a never app-server` with the profile's folder and talks to it line by line. It
 sends only `initialize`, `initialized` and `account/rateLimits/read`; never the request for the list
 of sessions, which makes Codex rewrite its own index of sessions. With an expired login token it is
-not started, since Codex would renew the token. It runs at most once in about 5 minutes per profile
+not started, since Codex would renew the token, and the need **The login expired** shows instead. It runs at most once in about 5 minutes per profile
 and gives up after 10 seconds.
 
 ## OpenAI (provider)
@@ -60,14 +60,29 @@ and gives up after 10 seconds.
 - It gets the logins and keys found for OpenAI (`openai.com`, `chatgpt.com`) in any agent: a ChatGPT
   login found **only in OpenCode** is read the same way, with OpenCode's token. A login found in both
   Codex and OpenCode is one account and gets one request.
-- It reads the expiry from the token's claims: an expired token is not sent and shows "login
-  expired". Nothing is renewed.
+- It reads the expiry from the token's claims: an expired token is not sent. For an expired or
+  refused ChatGPT login the part says only that; the plugin of the agent that keeps the login gives
+  the need: Codex's **The login expired** below, or OpenCode's
+  [**Log in again**](../opencode/#what-it-asks-you-for) for a login only OpenCode keeps. Nothing is
+  renewed.
 - An API key has no numbers OpenAI tells: nothing is sent for it.
-- Admin keys come from **Add account** → OpenAI, or **Admin key…** on the organization's account.
+- Admin keys come from **Add account** → OpenAI, or **Admin key…** on the need **The real bill
+  needs an admin key** of the organization's account.
 - While it runs, the files of the Codex part are refused to it.
 
 **Open usage page** opens `chatgpt.com/codex/settings/usage` for a login,
 `platform.openai.com/usage` for a key or an organization.
+
+## What it asks you for
+
+Each need carries the label "OpenAI plugin". Its texts come in all ten languages of OTTY.
+
+| Need                             | Part   | When                                                                 | Button |
+| -------------------------------- | ------ | -------------------------------------------------------------------- | ------ |
+| Needs login                      | Codex  | Nobody is logged in with the profile's folder.                       | **Run codex login**, with the profile's folder. |
+| The login expired                | Codex  | The ChatGPT login of the profile expired or OpenAI refused it, wherever it was read. | **Run codex**: Codex renews the login or asks you to log in again. |
+| The real bill needs an admin key | OpenAI | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
+| The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. |
 
 ## What it changes
 

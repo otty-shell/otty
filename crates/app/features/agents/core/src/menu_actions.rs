@@ -4,13 +4,12 @@
 //! item closes its menu first. A menu opened by a right press on a row
 //! leaves what is shown as it is.
 
-use otty_agents::{Account, Profile};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::{AccountAction, AgentsOutcome, ProfileAction};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::{add_account_dialog, hiding, profile_dialog, rename_dialog};
+use super::{add_account_dialog, hiding, rename_dialog};
 
 /// Open `menu` at the pointer; it takes the keyboard.
 pub(crate) fn open(
@@ -44,10 +43,6 @@ pub(crate) fn act_on_account(
             .usage_page(&account)
             .map(|page| vec![AgentsOutcome::OpenPage(page.to_string())])
             .unwrap_or_default(),
-        AccountAction::AdminKey => match admin_key_profile(state, &account) {
-            Some(profile) => profile_dialog::open_edit(state, &profile),
-            None => Vec::new(),
-        },
         AccountAction::EditKey => {
             add_account_dialog::open_edit_key(state, account)
         },
@@ -121,22 +116,6 @@ pub(crate) fn page_opened(result: Result<(), String>) -> Vec<AgentsOutcome> {
     }
 }
 
-/// The profile whose dialog gives the admin key of `account`: the first
-/// profile the organization was found in, while it pays per token and its
-/// agent reads a bill (spec Decision 9). `None` for an account that is not
-/// such an organization.
-pub(crate) fn admin_key_profile(
-    state: &AgentsState,
-    account: &Account,
-) -> Option<Profile> {
-    account.organization_id()?;
-    let profiles = state.profiles();
-    let shown = profiles.first_with(account)?;
-
-    let can_read_bill = shown.is_api_key() && profiles.has_bill(shown);
-    can_read_bill.then(|| shown.profile().clone())
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -148,8 +127,8 @@ mod tests {
     };
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, chatgpt_login, claude, codex, connected, open_account_menu,
-        open_profile_menu, organization, with_accounts,
+        chatgpt_login, codex, connected, open_account_menu, open_profile_menu,
+        with_accounts,
     };
 
     fn report_shown() -> SavedProfiles {
@@ -175,26 +154,6 @@ mod tests {
                 "https://chatgpt.com/codex/settings/usage"
             ))]
         );
-        assert!(state.menu().is_none());
-    }
-
-    /// Admin key… gives the admin key of the organization in the profile
-    /// dialog of the profile it was found in, as its need does.
-    #[test]
-    fn admin_key_opens_the_dialog_of_the_profile_of_the_organization() {
-        let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
-            report_shown(),
-        );
-        open_account_menu(&mut state, organization());
-
-        let outcomes = reduce(
-            &mut state,
-            AgentsIntent::AccountMenu(AccountAction::AdminKey),
-        );
-
-        assert!(outcomes.is_empty());
-        assert!(state.dialog().is_some());
         assert!(state.menu().is_none());
     }
 

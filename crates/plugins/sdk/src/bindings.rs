@@ -1,7 +1,8 @@
 //! The bindings `wit-bindgen` makes from `wit/`: the host operations once,
-//! and one binding per trait a plugin exports. A plugin that exports both
-//! traits uses both bindings; `wit-component` joins their worlds when the
-//! component is made, so the set of both needs no binding of its own.
+//! and one binding per trait a plugin exports. A plugin that exports
+//! several traits uses several bindings; `wit-component` joins their
+//! worlds when the component is made, so a set of them needs no binding
+//! of its own.
 
 /// The host operations of `otty:host@0.1.0` and the values the contracts
 /// share.
@@ -57,8 +58,21 @@ pub mod provider {
             "otty:host/log@0.1.0": crate::bindings::host::otty::host::log,
         },
         additional_derives: [PartialEq],
+        // A given key holds a handle, which can not be compared.
+        additional_derives_ignore: ["given-key"],
         pub_export_macro: true,
         export_macro_name: "export_provider",
         default_bindings_module: "otty_plugin_sdk::bindings::provider",
+    });
+}
+
+/// The language receiver `otty:language@0.1.0`, which imports nothing.
+pub mod language {
+    wit_bindgen::generate!({
+        path: "wit/language/0.1.0",
+        world: "otty:language/language-receiver@0.1.0",
+        pub_export_macro: true,
+        export_macro_name: "export_language",
+        default_bindings_module: "otty_plugin_sdk::bindings::language",
     });
 }

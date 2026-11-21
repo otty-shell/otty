@@ -12,6 +12,14 @@
 //! OTTY opens the database read-only and never migrates it, while
 //! OpenCode may be writing to it at the same time. The plugin never sees
 //! a key: the key columns and fields come back as handles.
+//!
+//! What only the user can do, the part gives as needs (`needs.rs`): log
+//! in, and log in again when a provider part refused a login OpenCode
+//! keeps. The texts come in every language of OTTY, so the plugin exports
+//! the language receiver.
+
+// A `ReadError` may hold a need, a record the contract can not box.
+#![allow(clippy::result_large_err)]
 
 mod answers;
 mod database;
@@ -19,6 +27,7 @@ mod glob;
 mod location;
 mod logins;
 mod message;
+mod needs;
 mod opencode;
 mod plan;
 mod provider_ids;
@@ -27,7 +36,16 @@ mod stats;
 #[cfg(test)]
 mod testing;
 
+use otty_plugin_sdk::Language;
+
 /// The plugin: one type serves the agent part its manifest lists.
 pub struct OpenCode;
 
-otty_plugin_sdk::export!(OpenCode with agent);
+impl Language for OpenCode {
+    /// The texts of the needs come in every language of OTTY.
+    fn language_changed(_tag: &str) -> bool {
+        true
+    }
+}
+
+otty_plugin_sdk::export!(OpenCode with agent, language);

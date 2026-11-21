@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use crate::admin_key::AdminKeyRef;
+use crate::given_key::KeyRef;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::provider::ProviderRef;
 use crate::registry::Registry;
@@ -28,7 +28,7 @@ pub enum AccountIdentity {
     /// An account the user added by hand, known by where its key is kept:
     /// the file or the environment variable, never the key (spec
     /// 2026-11-19, Decision 7).
-    AddedKey(AdminKeyRef),
+    AddedKey(KeyRef),
 }
 
 /// How an account is shown, so the user recognizes it.
@@ -41,7 +41,7 @@ pub enum AccountLogin {
     Key(Option<String>),
     /// A key the user added, shown by the file or the variable it is kept
     /// in.
-    KeyPlace(AdminKeyRef),
+    KeyPlace(KeyRef),
     /// A login whose files name no email.
     Unnamed,
 }
@@ -125,7 +125,7 @@ impl Account {
 
     /// Where the key of an account the user added is kept; `None` for an
     /// account OTTY found.
-    pub fn added_key(&self) -> Option<&AdminKeyRef> {
+    pub fn added_key(&self) -> Option<&KeyRef> {
         match &self.identity {
             AccountIdentity::AddedKey(key) => Some(key),
             _ => None,
@@ -186,9 +186,9 @@ impl Account {
     /// key it is an organization whose bill the key reads.
     ///
     /// ```
-    /// use otty_agents::{Account, AdminKeyRef, FoundIn, ProviderRef};
+    /// use otty_agents::{Account, FoundIn, KeyRef, ProviderRef};
     ///
-    /// let key = AdminKeyRef::EnvVar("EXAMPLE_API_KEY".into());
+    /// let key = KeyRef::EnvVar("EXAMPLE_API_KEY".into());
     /// let account =
     ///     Account::added(ProviderRef::of_id("example-cloud"), key.clone());
     ///
@@ -196,7 +196,7 @@ impl Account {
     /// assert_eq!(account.found_in(), [FoundIn::AddedByUser]);
     /// assert!(account.can_be_saved());
     /// ```
-    pub fn added(provider: ProviderRef, key: AdminKeyRef) -> Self {
+    pub fn added(provider: ProviderRef, key: KeyRef) -> Self {
         Self::new(
             provider,
             AccountIdentity::AddedKey(key.clone()),
@@ -588,7 +588,7 @@ mod tests {
 
         let added = Account::added(
             ProviderRef::of_id("deepseek"),
-            AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
+            KeyRef::File("/home/user/.config/deepseek-key".into()),
         );
 
         assert!(chatgpt("made-up-account", "/home/user/.codex").can_be_saved());
@@ -613,12 +613,12 @@ mod tests {
         let in_file = || {
             Account::added(
                 ProviderRef::of_id("deepseek"),
-                AdminKeyRef::File("/home/user/.config/deepseek-key".into()),
+                KeyRef::File("/home/user/.config/deepseek-key".into()),
             )
         };
         let in_variable = Account::added(
             ProviderRef::of_id("deepseek"),
-            AdminKeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
+            KeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
         );
         let found = key(
             ProviderRef::of_id("deepseek"),
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(accounts[0].found_in(), [FoundIn::AddedByUser]);
         assert_eq!(
             accounts[0].login(),
-            &AccountLogin::KeyPlace(AdminKeyRef::File(
+            &AccountLogin::KeyPlace(KeyRef::File(
                 "/home/user/.config/deepseek-key".into()
             ))
         );

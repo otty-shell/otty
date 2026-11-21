@@ -237,7 +237,7 @@ fn info(agent: &str, shown: &ProfileState) -> Option<String> {
     }
 
     let is_unused = shown.accounts().is_empty()
-        && *shown.status() == ProfileStatus::NotLoggedIn;
+        && matches!(shown.status(), ProfileStatus::NotLoggedIn(_));
     let key = if is_unused {
         Key::TplAgentsInstalledNotUsed
     } else {
@@ -539,7 +539,7 @@ mod tests {
         read(&mut used, &codex(), Vec::new());
         let _ = reduce(&mut used, AgentsIntent::SelectProfile(codex()));
         let mut unused = with_accounts(
-            &[(codex(), ProfileStatus::NotLoggedIn, Vec::new())],
+            &[(codex(), crate::testing::not_logged_in(&codex()), Vec::new())],
             SavedProfiles::default(),
         );
         read(&mut unused, &codex(), Vec::new());
@@ -566,8 +566,15 @@ mod tests {
         assert_eq!(
             unused.needs[0].fix,
             Some(NeedFixViewModel {
-                label: i18n::t(Key::AgentsLogIn).to_string(),
-                action: Some(NeedAction::LogIn(codex())),
+                label: i18n::filled(
+                    Key::TplAgentsNeedRun,
+                    &[("command", "codex login")]
+                ),
+                action: Some(NeedAction::Run {
+                    title: String::from("Codex"),
+                    command: otty_agents::AgentCommand::new("codex")
+                        .with_arg("login"),
+                }),
             })
         );
         assert!(unused.pays_through.is_empty());

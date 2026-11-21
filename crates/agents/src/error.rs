@@ -7,10 +7,12 @@
 
 use std::path::PathBuf;
 
-use crate::admin_key::AdminKeyRef;
 use crate::agent::AgentId;
+use crate::given_key::KeyRef;
+use crate::part_need::PartNeed;
 use crate::plugin_failure::PluginFailure;
 use crate::record_format::FormatChange;
+use crate::refused_login::RefusedLogin;
 use crate::session::SessionId;
 
 /// Why a source gave no answer. Any of these moves on to the next source
@@ -21,14 +23,15 @@ pub enum SourceError {
     /// missing.
     #[error("not available: {0}")]
     NotAvailable(Unavailable),
-    /// The login is missing, or it expired and nothing renews it: the user
-    /// has to log in.
-    #[error("not logged in")]
-    NotLoggedIn,
-    /// The server refused the key the source was given, such as an admin
-    /// key that was revoked or is not an admin key.
-    #[error("the key was refused")]
-    KeyRefused,
+    /// The plugin part can not read until the user does what its need
+    /// asks, such as log in again or give a key the provider refused
+    /// (spec 2026-11-19-agent-plugins, issue 20).
+    #[error("{}", .0.title())]
+    NeedsUser(Box<PartNeed>),
+    /// A provider part refused the login it read with, or saw it expired,
+    /// and no agent part said what the user must do about it (issue 20).
+    #[error("{} refused the login", .0.provider().name())]
+    LoginRefused(Box<RefusedLogin>),
     /// The server could not be reached. The text is the network library's
     /// own reason.
     #[error("network error: {0}")]
@@ -79,20 +82,20 @@ pub enum Unavailable {
     /// The agent reads no statistics, or OTTY does not know it.
     #[error("{} reads no statistics", .0.as_str())]
     NoStatistics(AgentId),
-    /// The agent of the profile has no bill to read.
+    /// No plugin part reads a bill of the account.
     #[error("the agent has no bill")]
     NoBill,
-    /// The profile names no admin key.
-    #[error("no admin key")]
-    NoAdminKey,
-    /// A key the user gave, an admin key or the key of an added account, is
-    /// not where the user said: its file is missing
-    /// or its variable is not set.
-    #[error("{}", admin_key_missing_text(.0))]
-    AdminKeyMissing(AdminKeyRef),
+    /// The profile holds no login the part could read with.
+    #[error("no login")]
+    NoLogin,
+    /// A key the user gave, the key of an added account or one a part
+    /// asked for, is not where the user said: its file is missing or its
+    /// variable is not set.
+    #[error("{}", key_missing_text(.0))]
+    KeyMissing(KeyRef),
     /// The file or the variable of a key the user gave is empty.
-    #[error("{}", admin_key_empty_text(.0))]
-    AdminKeyEmpty(AdminKeyRef),
+    #[error("{}", key_empty_text(.0))]
+    KeyEmpty(KeyRef),
     /// OTTY reads nothing of the account by itself: its numbers come from
     /// the profiles that use it.
     #[error("the account has no source of its own")]
@@ -105,7 +108,7 @@ pub enum Unavailable {
     /// name.
     /// The name is not kept: it may be the key typed in the wrong field.
     #[error("the name of the key variable is not valid")]
-    AdminKeyVariableNotValid,
+    KeyVariableNotValid,
     /// No copy of the price table was kept yet.
     #[error("no kept price file")]
     NoKeptPriceFile,
@@ -145,23 +148,23 @@ pub enum Unexpected {
 
 /// The English text of a key that is not where `reference` says, such as
 /// "the key file ~/.config/key is missing" or
-/// "EXAMPLE_ADMIN_KEY is not set".
-fn admin_key_missing_text(reference: &AdminKeyRef) -> String {
+/// "EXAMPLE_BILL_KEY is not set".
+fn key_missing_text(reference: &KeyRef) -> String {
     match reference {
-        AdminKeyRef::File(path) => {
+        KeyRef::File(path) => {
             format!("the key file {} is missing", path.display())
         },
-        AdminKeyRef::EnvVar(name) => format!("{name} is not set"),
+        KeyRef::EnvVar(name) => format!("{name} is not set"),
     }
 }
 
 /// The English text of a key whose file or variable `reference` is
-/// empty, such as "EXAMPLE_ADMIN_KEY is empty".
-fn admin_key_empty_text(reference: &AdminKeyRef) -> String {
+/// empty, such as "EXAMPLE_BILL_KEY is empty".
+fn key_empty_text(reference: &KeyRef) -> String {
     match reference {
-        AdminKeyRef::File(path) => {
+        KeyRef::File(path) => {
             format!("the key file {} is empty", path.display())
         },
-        AdminKeyRef::EnvVar(name) => format!("{name} is empty"),
+        KeyRef::EnvVar(name) => format!("{name} is empty"),
     }
 }

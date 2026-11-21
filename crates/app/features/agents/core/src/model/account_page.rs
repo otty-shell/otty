@@ -146,7 +146,7 @@ fn plan(state: &AgentsState, account: &Account) -> Option<String> {
 mod tests {
     use otty_agents::{
         AccountIdentity, AccountKind, AccountLogin, FoundIn, KeyFingerprint,
-        ProviderRef, SavedProfiles, SourceError, SourceId,
+        ProviderRef, SavedProfiles, SourceId,
     };
 
     use super::*;
@@ -285,20 +285,25 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decision 3, and issue 19 of spec
-    /// 2026-11-19-agent-plugins: with no table of sources, a read that
-    /// fails with an expired login still asks to open the agent, and the
-    /// last numbers stay, greyed, with why and what to do under them.
+    /// Issue 19 and 20 of spec 2026-11-19-agent-plugins: a read no part
+    /// answered shows what the parts ask, the agent part's need first,
+    /// and the last numbers stay, greyed, with why under them.
     #[test]
-    fn an_expired_login_asks_to_open_the_agent() {
+    fn a_read_no_part_answered_shows_the_needs_of_the_parts() {
         let mut state = shared_chatgpt();
         let _ = reduce(
             &mut state,
             limits_loaded(
                 &codex(),
                 limits_answer(vec![
-                    (SourceId::ProviderPart, Err(SourceError::NotLoggedIn)),
-                    (SourceId::AgentPart, Err(SourceError::KeyRefused)),
+                    (
+                        SourceId::ProviderPart,
+                        Err(crate::testing::login_expired()),
+                    ),
+                    (
+                        SourceId::AgentPart,
+                        Err(crate::testing::refused_key_need()),
+                    ),
                 ]),
                 at(20),
             ),
@@ -312,28 +317,51 @@ mod tests {
             .filter_map(|need| need.fix.as_ref())
             .filter_map(|fix| fix.action.clone())
             .collect();
-        assert_eq!(actions, vec![NeedAction::OpenAgent(codex())]);
+        assert_eq!(
+            actions,
+            vec![
+                NeedAction::OpenPage(String::from(
+                    "https://platform.deepseek.com/api_keys"
+                )),
+                NeedAction::Run {
+                    title: String::from("OpenAI · you@example.com"),
+                    command: otty_agents::AgentCommand::new("codex"),
+                },
+            ]
+        );
         let Some(AccountNumbersViewModel::Limits(limits)) = page.numbers else {
             panic!("the limits block stays");
         };
         assert!(limits.is_stale);
         assert_eq!(limits.windows.len(), 1, "the last numbers stay");
         assert!(limits.failure.is_some());
-        assert_eq!(limits.log_in_hint, None, "the need says what to do");
     }
 
-    /// The bill of an organization needs an admin key: the page asks for
-    /// it as a need, where the table of sources used to say "not
-    /// available".
+    /// Issue 20: the provider part asks for the key of the bill of an
+    /// organization; the page shows it as a need of the account.
     #[test]
-    fn an_organization_with_no_admin_key_asks_for_one() {
-        let state = with_accounts(
+    fn an_organization_whose_part_asks_for_a_key_shows_the_need() {
+        let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
-            SavedProfiles::default(),
+            crate::testing::saved_with_given_key(),
+        );
+        let _ = reduce(
+            &mut state,
+            crate::testing::bill_loaded(
+                &claude(),
+                Err(crate::testing::bill_key_needed()),
+            ),
         );
 
         let page = page_of(&state, organization());
 
-        assert_eq!(page.needs.len(), 1, "the admin key is needed");
+        assert_eq!(page.needs.len(), 1, "the key is asked for");
+        assert!(matches!(
+            page.needs[0]
+                .fix
+                .as_ref()
+                .and_then(|fix| fix.action.as_ref()),
+            Some(NeedAction::AskKey { .. })
+        ));
     }
 }

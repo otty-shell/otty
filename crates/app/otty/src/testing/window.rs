@@ -421,7 +421,7 @@ fn test_registry() -> otty_agents::Registry {
         part,
     )
     .with_hosts(["example.com"])
-    .with_add_account(otty_agents::AddAccountKind::Key);
+    .with_add_by_hand();
 
     otty_agents::Registry::new(agents, vec![cloud])
 }
