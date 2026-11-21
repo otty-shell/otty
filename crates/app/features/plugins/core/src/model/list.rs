@@ -5,8 +5,8 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{LastFailure, PluginFailureKind};
 use otty_app_i18n::{self as i18n, Key};
+use otty_plugin_host::{LastFailure, PluginFailureKind};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::Trust;
 
@@ -239,9 +239,8 @@ fn kind_text(kind: PluginFailureKind) -> &'static str {
 mod tests {
     use std::time::Duration;
 
-    use otty_agents::fixtures::{failed_health, paused_health};
-    use otty_agents::{PartHealth, PluginFailure, PluginPart};
-    use otty_plugin_host::PluginLog;
+    use otty_plugin_host::fixtures::{failed_health, paused_health};
+    use otty_plugin_host::{PartHealth, PluginFailure, PluginLog, PluginPart};
     use otty_plugin_releases::fixtures::with_part_on;
 
     use super::*;

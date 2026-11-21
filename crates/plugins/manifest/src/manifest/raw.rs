@@ -12,7 +12,26 @@ use serde::Deserialize;
 pub(crate) struct RawManifest {
     pub(crate) plugin: RawPlugin,
     #[serde(default)]
-    pub(crate) api: BTreeMap<String, String>,
+    pub(crate) api: BTreeMap<String, RawApiEntry>,
+    #[serde(default)]
+    pub(crate) agents: RawAgentsDomain,
+}
+
+/// One entry of `[api]`: the version of a contract of no domain, such as
+/// `language = "0.1"`, or the versions of the points of one domain, such
+/// as `agents.agent = "0.1"`, which TOML reads as the table `agents`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum RawApiEntry {
+    Version(String),
+    Domain(BTreeMap<String, String>),
+}
+
+/// The parts of the `agents` domain: `[[agents.agent]]` and
+/// `[[agents.provider]]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawAgentsDomain {
     #[serde(default)]
     pub(crate) agent: Vec<RawAgent>,
     #[serde(default)]
@@ -34,7 +53,7 @@ pub(crate) struct RawPlugin {
     pub(crate) wasm: String,
 }
 
-/// One `[[agent]]`.
+/// One `[[agents.agent]]`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawAgent {
@@ -47,7 +66,7 @@ pub(crate) struct RawAgent {
     pub(crate) permissions: RawAgentPermissions,
 }
 
-/// `[agent.permissions]`.
+/// `[agents.agent.permissions]`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawAgentPermissions {
@@ -69,7 +88,8 @@ pub(crate) struct RawAgentPermissions {
     pub(crate) keys: Vec<RawKeyPlace>,
 }
 
-/// One `[[agent.permissions.run]]` or `[[agent.permissions.terminal]]`.
+/// One `[[agents.agent.permissions.run]]` or
+/// `[[agents.agent.permissions.terminal]]`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawProgram {
@@ -78,7 +98,7 @@ pub(crate) struct RawProgram {
     pub(crate) args: Vec<String>,
 }
 
-/// One `[[agent.permissions.keyring]]`.
+/// One `[[agents.agent.permissions.keyring]]`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawKeyring {
@@ -88,7 +108,7 @@ pub(crate) struct RawKeyring {
     pub(crate) fields: Vec<String>,
 }
 
-/// One `[[agent.permissions.keys]]`: JSON fields of files (`files`), a
+/// One `[[agents.agent.permissions.keys]]`: JSON fields of files (`files`), a
 /// column of a SQLite table (`sqlite`, `table`, `column`) or environment
 /// variables (`env`).
 #[derive(Debug, Deserialize)]
@@ -102,7 +122,7 @@ pub(crate) struct RawKeyPlace {
     pub(crate) env: Option<Vec<String>>,
 }
 
-/// One `[[provider]]`.
+/// One `[[agents.provider]]`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawProvider {
@@ -119,7 +139,7 @@ pub(crate) struct RawProvider {
     pub(crate) permissions: RawProviderPermissions,
 }
 
-/// `[provider.permissions]`.
+/// `[agents.provider.permissions]`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawProviderPermissions {

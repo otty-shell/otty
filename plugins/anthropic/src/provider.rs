@@ -4,7 +4,7 @@
 //! Anthropic's, so a DeepSeek key behind
 //! `https://api.deepseek.com/anthropic` is a key for `api.deepseek.com`.
 
-use otty_plugin_sdk::ProviderRef;
+use otty_plugin_sdk::agents::ProviderRef;
 
 use crate::config_files::{Settings, read_settings};
 

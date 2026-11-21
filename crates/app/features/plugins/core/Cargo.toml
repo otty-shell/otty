@@ -17,12 +17,13 @@ rust-version = { workspace = true }
 # types (the installed plugins, the install plan, the waiting update and
 # its permission diff) the page shows. `otty-plugin-manifest` names the
 # parts and their permissions; `otty-plugin-host` gives the log of a
-# running plugin and `otty-agents` the health of a running part, which the
-# page reads and Try again starts again. iced's `tokio` feature gives the
+# running plugin and the health of a running part, which the page reads
+# and Try again starts again. It must not depend on `otty-agents`: the
+# page lists the parts of any domain (a crate dependency limit in
+# deny.toml, issue 21). iced's `tokio` feature gives the
 # timer of the daily update check, `iced::time::every`; it adds no crate.
 [dependencies]
 iced = { workspace = true, features = ["svg", "tokio"] }
-otty-agents = { path = "../../../../agents", version = "0.1.0" }
 otty-app-domain = { path = "../../../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
 otty-app-slots = { path = "../../../slots", version = "0.1.0" }
@@ -36,4 +37,4 @@ otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 iced_test = "0.14"
 otty-app-testing = { path = "../../../testing", version = "0.1.0" }
 otty-plugin-releases = { path = "../../../../plugins/releases", version = "0.1.0", features = ["fixtures"] }
-otty-agents = { path = "../../../../agents", version = "0.1.0", features = ["fixtures"] }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0", features = ["fixtures"] }

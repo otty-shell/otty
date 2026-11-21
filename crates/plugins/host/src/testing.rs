@@ -25,14 +25,14 @@ version = "1.0.0"
 wasm = "plugin.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "test-agent"
 name = "Test agent"
 icon = "test.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.test-agent/**"]
 "#;
 
@@ -48,62 +48,62 @@ version = "1.0.0"
 wasm = "plugin.wasm"
 
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "test-agent"
 name = "Test agent"
 icon = "test.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.test-agent/**"]
 sqlite = ["~/.test-agent/*.db"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.test-agent/auth.json"]
 fields = ["/*/key", "/token"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.test-agent/*.db"]
 table = "credential"
 column = "value"
 fields = ["/key"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.test-agent/*.db"]
 table = "api_key"
 column = "secret"
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 env = ["TEST_AGENT_KEY"]
 
-[[agent.permissions.keyring]]
+[[agents.agent.permissions.keyring]]
 service = "test-agent"
 user = "work"
 fields = ["/key"]
 
-[[agent.permissions.keyring]]
+[[agents.agent.permissions.keyring]]
 service = "test-agent"
 user = "plain"
 
-[[provider]]
+[[agents.provider]]
 id = "test-cloud"
 name = "Test cloud"
 icon = "cloud.svg"
 hosts = ["example.com"]
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.example.com"]
 
-[[provider]]
+[[agents.provider]]
 id = "other-cloud"
 name = "Other cloud"
 icon = "other.svg"
 hosts = ["example.org"]
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.example.org"]
 "#;
 
@@ -156,42 +156,42 @@ version = "1.0.0"
 wasm = "plugin.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "alpha"
 name = "Alpha"
 icon = "alpha.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.alpha/**", "{ALPHA_HOME}/**"]
 sqlite = ["~/.alpha/*.db"]
 env = ["ALPHA_HOME", "ALPHA_TOKEN"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.alpha/auth.json"]
 fields = ["/key"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.alpha/*.db"]
 table = "credential"
 column = "value"
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.alpha/*.db"]
 table = "login"
 column = "data"
 fields = ["/key"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 env = ["ALPHA_TOKEN"]
 
-[[agent]]
+[[agents.agent]]
 id = "beta"
 name = "Beta"
 icon = "beta.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.beta/**"]
 env = ["BETA_HOME"]
 "#;
@@ -325,38 +325,38 @@ version = "1.0.0"
 wasm = "plugin.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "test-agent"
 name = "Test agent"
 icon = "test.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 write = ["~/.test-agent/probe/**"]
 env = ["STAND_IN_HOME", "STAND_IN_KEY"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "stand-in"
 args = ["--version"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "stand-in"
 args = ["serve", "--profile", "*"]
 
-[[agent.permissions.terminal]]
+[[agents.agent.permissions.terminal]]
 program = "stand-in"
 args = ["tui"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 env = ["STAND_IN_KEY"]
 
-[[agent]]
+[[agents.agent]]
 id = "other-agent"
 name = "Other agent"
 icon = "other.svg"
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "other"
 args = ["--version"]
 "#;

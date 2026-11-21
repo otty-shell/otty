@@ -10,11 +10,11 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::files::{self, FileInfo};
-use otty_plugin_sdk::{
-    Answer, HostError, ModelTokens, ProjectStats, ReadError, SessionStats,
-    TokenCount,
+use otty_plugin_sdk::HostError;
+use otty_plugin_sdk::agents::{
+    Answer, ModelTokens, ProjectStats, ReadError, SessionStats, TokenCount,
 };
+use otty_plugin_sdk::files::{self, FileInfo};
 use serde_json::Value;
 
 use crate::session_file::read_session_meta;

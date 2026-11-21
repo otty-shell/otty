@@ -4,6 +4,7 @@
 //! user presses Try again or OTTY starts again. The plugin's other parts
 //! keep their own count. The last read of the part that failed is kept
 //! for its card on the Plugins page (issue 19), where plugin authors look.
+//! It is the same for a part of any domain (issue 21).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -27,7 +28,7 @@ impl PartHealth {
     /// Whether the part is paused: its last [`PAUSE_AFTER`] reads failed.
     ///
     /// ```
-    /// use otty_agents::PartHealth;
+    /// use otty_plugin_host::PartHealth;
     ///
     /// assert!(!PartHealth::default().is_paused());
     /// ```
@@ -40,7 +41,7 @@ impl PartHealth {
     /// answer.
     ///
     /// ```
-    /// use otty_agents::PartHealth;
+    /// use otty_plugin_host::PartHealth;
     ///
     /// assert!(PartHealth::default().last_failure().is_none());
     /// ```
@@ -112,7 +113,7 @@ mod tests {
 
     use super::*;
     use crate::plugin_failure::PluginFailureKind;
-    use crate::registry::PluginPart;
+    use crate::plugin_part::PluginPart;
 
     fn failure(call: &'static str, kind: PluginFailureKind) -> PluginFailure {
         let part = PluginPart::new(

@@ -34,12 +34,12 @@ impl Manifest {
         &self.api
     }
 
-    /// The `[[agent]]` parts.
+    /// The `[[agents.agent]]` parts.
     pub fn agents(&self) -> &[AgentPart] {
         &self.agents
     }
 
-    /// The `[[provider]]` parts.
+    /// The `[[agents.provider]]` parts.
     pub fn providers(&self) -> &[ProviderPart] {
         &self.providers
     }
@@ -85,14 +85,14 @@ impl Manifest {
     ///     wasm = "example.wasm"
     ///
     ///     [api]
-    ///     agent = "0.1"
+    ///     agents.agent = "0.1"
     ///
-    ///     [[agent]]
+    ///     [[agents.agent]]
     ///     id = "example-agent"
     ///     name = "Example agent"
     ///     icon = "example.svg"
     ///
-    ///     [agent.permissions]
+    ///     [agents.agent.permissions]
     ///     read = ["~/.example-agent/**"]
     ///     "#,
     /// )
@@ -109,11 +109,13 @@ impl Manifest {
         let plugin = PluginInfo::of_raw(&raw.plugin)?;
         let api = Api::of_manifest(&raw.api)?;
         let agents = raw
+            .agents
             .agent
             .iter()
             .map(AgentPart::of_raw)
             .collect::<Result<Vec<_>, _>>()?;
         let providers = raw
+            .agents
             .provider
             .iter()
             .map(ProviderPart::of_raw)
@@ -245,7 +247,7 @@ impl PluginInfo {
     }
 }
 
-/// One `[[agent]]` part.
+/// One `[[agents.agent]]` part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentPart {
     id: String,
@@ -311,7 +313,7 @@ impl AgentPart {
     }
 }
 
-/// One `[[provider]]` part.
+/// One `[[agents.provider]]` part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderPart {
     id: String,
@@ -482,6 +484,46 @@ mod tests {
         );
         assert!(manifest.providers()[0].can_add_by_hand());
         assert_eq!(manifest.agents()[0].permissions().env(), ["CODEX_HOME"]);
+        assert_eq!(
+            manifest.providers()[0].permissions().http(),
+            ["chatgpt.com", "api.openai.com"]
+        );
+    }
+
+    /// Issue 21: the parts belong to the `agents` domain, so a part
+    /// table at the top level is an unknown key.
+    #[test]
+    fn a_part_outside_its_domain_is_an_unknown_key() {
+        let agent = refusal(
+            &OPENAI_MANIFEST
+                .replace("[[agents.agent", "[[agent")
+                .replace("[agents.agent", "[agent"),
+        );
+        let provider = refusal(
+            &OPENAI_MANIFEST
+                .replace("[[agents.provider", "[[provider")
+                .replace("[agents.provider", "[provider"),
+        );
+
+        for error in [agent, provider] {
+            assert!(
+                matches!(&error, ManifestError::Shape(text) if text.contains("unknown field")),
+                "{error:?}"
+            );
+        }
+    }
+
+    /// Issue 21: an extension point the `agents` domain does not have is
+    /// refused.
+    #[test]
+    fn an_unknown_point_of_the_domain_is_refused() {
+        let error = refusal(&edited(
+            OPENAI_MANIFEST,
+            "[[agents.provider]]",
+            "[[agents.panel]]",
+        ));
+
+        assert!(matches!(error, ManifestError::Shape(_)), "{error:?}");
     }
 
     #[test]
@@ -589,8 +631,11 @@ mod tests {
 
     #[test]
     fn a_part_with_no_contract_in_api_is_refused() {
-        let error =
-            refusal(&edited(OPENAI_MANIFEST, "provider = \"0.1\"\n", ""));
+        let error = refusal(&edited(
+            OPENAI_MANIFEST,
+            "agents.provider = \"0.1\"\n",
+            "",
+        ));
 
         assert_eq!(
             error,
@@ -598,14 +643,14 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "The provider part `openai` needs `provider` in [api]"
+            "The provider part `openai` needs `agents.provider` in [api]"
         );
     }
 
     #[test]
     fn a_contract_with_no_part_is_refused() {
         let without_provider = OPENAI_MANIFEST
-            .split("[[provider]]")
+            .split("[[agents.provider]]")
             .next()
             .expect("the agent half");
 
@@ -617,7 +662,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "[api] names `provider`, but the plugin has no provider part"
+            "[api] names `agents.provider`, but the plugin has no provider part"
         );
     }
 
@@ -627,12 +672,15 @@ mod tests {
     fn the_language_receiver_needs_no_part() {
         let manifest = Manifest::parse(&edited(
             OPENCODE_MANIFEST,
-            r#"agent = "0.1""#,
-            "agent = \"0.1\"\nlanguage = \"0.1\"",
+            r#"agents.agent = "0.1""#,
+            "agents.agent = \"0.1\"\nlanguage = \"0.1\"",
         ))
         .expect("valid");
 
-        assert_eq!(manifest.api().to_string(), "agent 0.1, language 0.1");
+        assert_eq!(
+            manifest.api().to_string(),
+            "agents.agent 0.1, language 0.1"
+        );
         assert_eq!(manifest.parts().len(), 1);
     }
 
@@ -640,13 +688,13 @@ mod tests {
     fn an_unknown_contract_version_needs_a_newer_otty() {
         let error = refusal(&edited(
             OPENAI_MANIFEST,
-            r#"agent = "0.1""#,
-            r#"agent = "0.2""#,
+            r#"agents.agent = "0.1""#,
+            r#"agents.agent = "0.2""#,
         ));
 
         assert_eq!(
             error.to_string(),
-            "Needs a newer OTTY (agent contract 0.2)"
+            "Needs a newer OTTY (agents.agent contract 0.2)"
         );
     }
 
@@ -666,10 +714,10 @@ mod tests {
     #[test]
     fn two_parts_of_one_kind_with_one_id_are_refused() {
         let provider = OPENAI_MANIFEST
-            .split("[[provider]]")
+            .split("[[agents.provider]]")
             .nth(1)
             .expect("the provider half");
-        let text = format!("{OPENAI_MANIFEST}\n[[provider]]{provider}");
+        let text = format!("{OPENAI_MANIFEST}\n[[agents.provider]]{provider}");
 
         assert!(matches!(
             refusal(&text),

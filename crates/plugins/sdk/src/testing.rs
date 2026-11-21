@@ -17,66 +17,66 @@ version = "0.1.0"
 wasm = "made-up.wasm"
 
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "made-up-agent"
 name = "Made-up agent"
 icon = "agent.svg"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.made-up/**", "{MADE_UP_HOME}/**"]
 write = ["~/.made-up/probe/*.jsonl"]
 sqlite = ["~/.made-up/*.db"]
 env = ["MADE_UP_HOME", "MADE_UP_KEY"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "made-up"
 args = ["--version"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "made-up"
 args = ["app-server", "--profile", "*"]
 
-[[agent.permissions.terminal]]
+[[agents.agent.permissions.terminal]]
 program = "made-up"
 args = ["--tui"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.made-up/auth.json"]
 fields = ["/*/key", "/token"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.made-up/*.db"]
 table = "credential"
 column = "value"
 fields = ["/key"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 env = ["MADE_UP_KEY"]
 
-[[agent.permissions.keyring]]
+[[agents.agent.permissions.keyring]]
 service = "made-up"
 user = "work"
 fields = ["/key"]
 
-[[agent.permissions.keyring]]
+[[agents.agent.permissions.keyring]]
 service = "made-up"
 user = "plain"
 
-[[agent.permissions.keyring]]
+[[agents.agent.permissions.keyring]]
 service = "made-up"
 user = "home"
 fields = ["/key"]
 
-[[provider]]
+[[agents.provider]]
 id = "made-up-cloud"
 name = "Made-up cloud"
 icon = "cloud.svg"
 hosts = ["example.com"]
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.example.com"]
 "#;
 

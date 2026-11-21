@@ -1,54 +1,11 @@
-//! The provider contract `otty:provider@0.1.0` as a trait.
+//! The provider contract `otty:agents-provider@0.1.0` as a trait.
 
 use std::marker::PhantomData;
 
-use crate::{
-    AccountFacts, AccountNumbers, Bill, DayRange, Key, LoginFacts, ReadError,
+use crate::agents::{
+    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, ReadError,
 };
-
-/// A key the user gave for an account, under the `slot` a need of the
-/// part asked for it with [`NeedAction::AskKey`](crate::NeedAction).
-pub struct GivenKey {
-    slot: String,
-    key: Key,
-}
-
-impl GivenKey {
-    /// The part's own name for the key, such as `admin`.
-    pub fn slot(&self) -> &str {
-        &self.slot
-    }
-
-    /// The handle to the key.
-    pub fn key(&self) -> &Key {
-        &self.key
-    }
-
-    /// The key a provider call is given under `slot`.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn of_call(slot: String, key: Key) -> Self {
-        Self { slot, key }
-    }
-
-    /// The key `key` given under `slot`, for the tests of a plugin; the
-    /// handle comes from [`TestHost::key`](crate::test_host::TestHost::key).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(slot: &str, key: Key) -> Self {
-        Self {
-            slot: slot.to_string(),
-            key,
-        }
-    }
-}
-
-/// The key of `given` under `slot`, when the user gave one, such as the
-/// admin key a part asked for under `admin`.
-pub fn given_key<'a>(given: &'a [GivenKey], slot: &str) -> Option<&'a Key> {
-    given
-        .iter()
-        .find(|given| given.slot() == slot)
-        .map(GivenKey::key)
-}
+use crate::{GivenKey, Key};
 
 /// One company that sells model use: whose account a key is, and its
 /// numbers. A plugin implements it once and serves each provider part its
@@ -92,21 +49,22 @@ pub trait Provider {
 }
 
 /// What [`export!`](crate::export) exports for a plugin type `T` with
-/// `provider`: the binding's trait, served by `T`'s [`Provider`].
+/// `agents::provider`: the binding's trait, served by `T`'s
+/// [`Provider`].
 #[doc(hidden)]
 pub struct ProviderExport<T>(PhantomData<T>);
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
-    use super::{GivenKey, Provider, ProviderExport};
-    use crate::bindings::host::otty::host::keys::Key as WitKey;
-    use crate::bindings::provider::exports::otty::provider::provider::{
-        GivenKey as WitGivenKey, Guest,
+    use super::{Provider, ProviderExport};
+    use crate::agents::{
+        AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, ReadError,
     };
-    use crate::{
-        AccountFacts, AccountNumbers, Bill, DayRange, Key, LoginFacts,
-        ReadError,
+    use crate::bindings::agents_provider::exports::otty::agents_provider::provider::Guest;
+    use crate::bindings::host::otty::host::keys::{
+        GivenKey as WitGivenKey, Key as WitKey,
     };
+    use crate::{GivenKey, Key};
 
     impl<T: Provider> Guest for ProviderExport<T> {
         fn account(
@@ -151,23 +109,5 @@ mod wasm {
                 GivenKey::of_call(given.slot, Key::from_wasm(given.key))
             })
             .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_host::TestHost;
-    use crate::testing::MadeUpPlugin;
-
-    #[test]
-    fn a_given_key_is_found_by_its_slot_only() {
-        let plugin = MadeUpPlugin::new();
-        let host = TestHost::new(plugin.folder());
-        let given = [GivenKey::new("admin", host.key("made-up-given-key"))];
-
-        assert!(given_key(&given, "admin").is_some());
-        assert!(given_key(&given, "other").is_none());
-        assert!(given_key(&[], "admin").is_none());
     }
 }

@@ -2,7 +2,8 @@
 //! a profile, and the database in it, and how its program is pointed at a
 //! profile whose folder is not the default one.
 
-use otty_plugin_sdk::{Command, Profile, ProfilePlace, env};
+use otty_plugin_sdk::agents::{Profile, ProfilePlace};
+use otty_plugin_sdk::{Command, env};
 
 /// The variable that moves the data folder of OpenCode, and of other
 /// programs.

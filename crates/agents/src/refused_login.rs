@@ -7,12 +7,12 @@
 //! answer, OTTY says itself that the provider refused the login of the
 //! profile, with no button: it can not know how that agent logs in again.
 
-use otty_plugin_host::agent::Login;
+use otty_plugin_host::PluginPart;
+use otty_plugin_host::agents::agent::Login;
 
 use crate::agent::Agent;
 use crate::error::SourceError;
 use crate::profile::Profile;
-use crate::registry::PluginPart;
 
 /// A login the provider part `provider` refused, or saw expired, that no
 /// agent part said what to do about: OTTY's own need names the provider
@@ -37,7 +37,8 @@ impl RefusedLogin {
     /// A login `provider` refused, found in no profile yet.
     ///
     /// ```
-    /// use otty_agents::{PluginPart, RefusedLogin};
+    /// use otty_agents::RefusedLogin;
+    /// use otty_plugin_host::PluginPart;
     ///
     /// let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
     /// let refused = RefusedLogin::new(part);
@@ -86,7 +87,7 @@ pub(crate) fn to_holding_agent(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agent::{
+    use otty_plugin_host::agents::agent::{
         Identity, KeyPlace, LoginKind, ProviderRef as PartProvider,
     };
 

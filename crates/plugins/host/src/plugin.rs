@@ -12,7 +12,8 @@ use wasmtime::Engine;
 use wasmtime::component::InstancePre;
 use wasmtime_wasi::cli::OutputFile;
 
-use crate::agent::AgentExports;
+use crate::agents::agent::AgentExports;
+use crate::agents::provider::ProviderExports;
 use crate::cache::LoadKind;
 use crate::calls::{CallBatch, CallError, CallState};
 use crate::contract::ContractExports;
@@ -25,7 +26,6 @@ use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 use crate::pacing::LimitPacing;
 use crate::plugin_log::PluginLog;
-use crate::provider::ProviderExports;
 
 /// A plugin loaded by a [`PluginEngine`](crate::PluginEngine), ready to be
 /// called part by part.

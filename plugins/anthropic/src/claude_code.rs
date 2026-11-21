@@ -1,11 +1,12 @@
 //! The agent part `claude-code`: Claude Code, Anthropic's coding agent,
 //! and the commands that start it.
 
-use otty_plugin_sdk::{
-    Agent, Answers, Command, Limits, Login, LoginRef, Need, Profile,
-    ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
-    SessionStats, SpendItem, SpendKind, SpendPlace,
+use otty_plugin_sdk::agents::{
+    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
+    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
+    SpendKind, SpendPlace,
 };
+use otty_plugin_sdk::{Command, Need};
 
 use crate::glob::escaped;
 use crate::profiles::{CONFIG_VARIABLE, profiles};
@@ -291,7 +292,7 @@ mod tests {
         assert_eq!(answers.answers.len(), 1);
         assert_eq!(
             answers.answers[0].provider,
-            Some(otty_plugin_sdk::ProviderRef::Host(
+            Some(otty_plugin_sdk::agents::ProviderRef::Host(
                 "api.deepseek.com".to_string()
             ))
         );

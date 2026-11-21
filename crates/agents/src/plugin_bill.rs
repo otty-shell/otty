@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use jiff::ToSpan;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
-use otty_plugin_host::provider::{Bill as PartBill, DayRange};
+use otty_plugin_host::agents::provider::{Bill as PartBill, DayRange};
 
 use crate::bill::{Bill, DayCost};
 use crate::dollars::Dollars;
@@ -83,7 +83,7 @@ impl BillDays {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::provider::{DayCost as PartDay, Money};
+    use otty_plugin_host::agents::provider::{DayCost as PartDay, Money};
 
     use super::*;
     use crate::testing::{NOW, at, dollars};

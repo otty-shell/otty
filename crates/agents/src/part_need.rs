@@ -5,13 +5,13 @@
 
 use std::path::{Path, PathBuf};
 
-use otty_plugin_host::agent::{
+use otty_plugin_host::PluginPart;
+use otty_plugin_host::agents::agent::{
     Command as PartCommand, KeyAsk as PartKeyAsk, Need,
     NeedAction as PartAction,
 };
 
 use crate::command::AgentCommand;
-use crate::registry::PluginPart;
 
 /// One thing a plugin part asks the user to do, with one button.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,8 @@ impl PartNeed {
     /// The need `id` of `part`, with its texts and its action.
     ///
     /// ```
-    /// use otty_agents::{PartNeed, PartNeedAction, PluginPart};
+    /// use otty_agents::{PartNeed, PartNeedAction};
+    /// use otty_plugin_host::PluginPart;
     ///
     /// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
     /// let need = PartNeed::new(

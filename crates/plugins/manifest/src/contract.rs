@@ -1,6 +1,7 @@
-//! The versioned contracts between OTTY and a plugin: one per part kind
-//! and the optional ones a plugin may export besides, such as the
-//! language receiver, and the one list of the versions this OTTY knows.
+//! The versioned contracts between OTTY and a plugin: one per part kind,
+//! each an extension point of a domain, and the optional ones of no
+//! domain a plugin may export besides, such as the language receiver, and
+//! the one list of the versions this OTTY knows.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -8,7 +9,8 @@ use std::fmt;
 use semver::{Comparator, Op, Prerelease, Version, VersionReq};
 
 use crate::manifest::ManifestError;
-use crate::part::PartKind;
+use crate::manifest::raw::RawApiEntry;
+use crate::part::{Domain, PartKind};
 
 /// The contract versions this OTTY knows: the list to change when a
 /// version is added (spec 2026-11-19-agent-plugins, Decision 3).
@@ -21,13 +23,14 @@ const KNOWN_VERSIONS: [(Contract, Version); 3] = [
 ];
 
 /// One contract a plugin may export, each with its own versioned WIT
-/// package: the contract of a kind of part, or the language receiver,
-/// which belongs to no part (issue 20).
+/// package: the contract of a kind of part, an extension point of a
+/// domain (issue 21), or the language receiver, which belongs to no part
+/// and no domain (issue 20).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Contract {
-    /// `otty:agent`, served by the `[[agent]]` parts.
+    /// `otty:agents-agent`, served by the `[[agents.agent]]` parts.
     Agent,
-    /// `otty:provider`, served by the `[[provider]]` parts.
+    /// `otty:agents-provider`, served by the `[[agents.provider]]` parts.
     Provider,
     /// `otty:language`: the plugin hears when the language of OTTY's
     /// interface changes.
@@ -39,13 +42,21 @@ impl Contract {
     pub const ALL: [Contract; 3] =
         [Contract::Agent, Contract::Provider, Contract::Language];
 
-    /// The key of the contract in `[api]`, such as `agent = "0.1"`.
+    /// The key of the contract in `[api]`: the domain and the point,
+    /// such as `agents.agent = "0.1"`, or the contract alone for one of
+    /// no domain, such as `language = "0.1"`.
     pub fn key(self) -> &'static str {
         match self {
-            Contract::Agent => "agent",
-            Contract::Provider => "provider",
+            Contract::Agent => "agents.agent",
+            Contract::Provider => "agents.provider",
             Contract::Language => "language",
         }
+    }
+
+    /// The domain whose extension point the contract is; `None` for a
+    /// contract of no domain, such as the language receiver.
+    pub fn domain(self) -> Option<Domain> {
+        self.part_kind().map(PartKind::domain)
     }
 
     /// The contract whose `[api]` key is `key`.
@@ -61,11 +72,11 @@ impl Contract {
     }
 
     /// The name of the interface a component exports for this contract,
-    /// without its version, such as `otty:agent/agent`.
+    /// without its version, such as `otty:agents-agent/agent`.
     pub fn export_name(self) -> &'static str {
         match self {
-            Contract::Agent => "otty:agent/agent",
-            Contract::Provider => "otty:provider/provider",
+            Contract::Agent => "otty:agents-agent/agent",
+            Contract::Provider => "otty:agents-provider/provider",
             Contract::Language => "otty:language/language",
         }
     }
@@ -198,19 +209,19 @@ impl Api {
     /// contract. A contract or a version this OTTY does not know gives
     /// "Needs a newer OTTY" for the whole plugin.
     pub(crate) fn of_manifest(
-        table: &BTreeMap<String, String>,
+        table: &BTreeMap<String, RawApiEntry>,
     ) -> Result<Self, ManifestError> {
         let mut versions = BTreeMap::new();
 
-        for (key, text) in table {
+        for (key, text) in contract_keys(table) {
             let needs_newer_otty = || ManifestError::NeedsNewerOtty {
                 contract: key.clone(),
                 version: text.clone(),
             };
-            let Some(contract) = Contract::from_key(key) else {
+            let Some(contract) = Contract::from_key(&key) else {
                 return Err(needs_newer_otty());
             };
-            let Some(version) = ContractVersion::parse(text) else {
+            let Some(version) = ContractVersion::parse(&text) else {
                 return Err(ManifestError::BadContractVersion {
                     contract: key.clone(),
                     version: text.clone(),
@@ -228,7 +239,7 @@ impl Api {
 }
 
 impl fmt::Display for Api {
-    /// Writes `agent 0.1, provider 0.1`, or `nothing`.
+    /// Writes `agents.agent 0.1, agents.provider 0.1`, or `nothing`.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let listed: Vec<String> = self
             .iter()
@@ -237,6 +248,29 @@ impl fmt::Display for Api {
 
         write_list(formatter, &listed)
     }
+}
+
+/// The entries of `[api]` as `(key, version)`, a domain's points keyed
+/// as `domain.point`, such as `agents.agent`.
+fn contract_keys(
+    table: &BTreeMap<String, RawApiEntry>,
+) -> Vec<(String, String)> {
+    let mut keys = Vec::new();
+
+    for (key, entry) in table {
+        match entry {
+            RawApiEntry::Version(version) => {
+                keys.push((key.clone(), version.clone()));
+            },
+            RawApiEntry::Domain(points) => {
+                for (point, version) in points {
+                    keys.push((format!("{key}.{point}"), version.clone()));
+                }
+            },
+        }
+    }
+
+    keys
 }
 
 /// The versions of `contract` this OTTY knows, oldest first.
@@ -262,71 +296,115 @@ fn write_list(
 mod tests {
     use super::*;
 
-    fn table(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
-        entries
-            .iter()
-            .map(|(key, value)| (key.to_string(), value.to_string()))
-            .collect()
+    fn table(text: &str) -> BTreeMap<String, RawApiEntry> {
+        #[derive(serde::Deserialize)]
+        struct Manifest {
+            api: BTreeMap<String, RawApiEntry>,
+        }
+
+        let manifest: Manifest =
+            toml::from_str(&format!("[api]\n{text}")).expect("an [api] table");
+
+        manifest.api
     }
 
     #[test]
     fn known_versions_of_api_are_kept() {
-        let api =
-            Api::of_manifest(&table(&[("agent", "0.1"), ("provider", "0.1")]))
-                .expect("known versions");
+        let api = Api::of_manifest(&table(
+            "agents.agent = \"0.1\"\nagents.provider = \"0.1\"",
+        ))
+        .expect("known versions");
 
         assert_eq!(
             api.version_of(Contract::Agent),
             ContractVersion::parse("0.1")
         );
-        assert_eq!(api.to_string(), "agent 0.1, provider 0.1");
+        assert_eq!(api.to_string(), "agents.agent 0.1, agents.provider 0.1");
+    }
+
+    /// Issue 21: the contracts of a domain are keyed by the domain and the
+    /// extension point, `agents.agent`; the language receiver belongs to no
+    /// domain.
+    #[test]
+    fn a_contract_is_keyed_by_its_domain_and_point() {
+        assert_eq!(Contract::Agent.key(), "agents.agent");
+        assert_eq!(Contract::Provider.key(), "agents.provider");
+        assert_eq!(Contract::Language.key(), "language");
+        assert_eq!(Contract::Agent.domain(), Some(Domain::Agents));
+        assert_eq!(Contract::Language.domain(), None);
+        assert_eq!(Contract::Agent.export_name(), "otty:agents-agent/agent");
+        assert_eq!(
+            Contract::Provider.export_name(),
+            "otty:agents-provider/provider"
+        );
+    }
+
+    /// Issue 21: `agent` alone, outside its domain, is not a contract.
+    #[test]
+    fn a_point_outside_its_domain_needs_a_newer_otty() {
+        let error = Api::of_manifest(&table("agent = \"0.1\""))
+            .expect_err("no such contract");
+
+        assert!(matches!(error, ManifestError::NeedsNewerOtty { .. }));
     }
 
     /// Issue 20: the language receiver is a contract of its own in
     /// `[api]`, of no kind of part.
     #[test]
     fn the_language_receiver_is_a_contract_of_no_part() {
-        let api =
-            Api::of_manifest(&table(&[("language", "0.1"), ("agent", "0.1")]))
-                .expect("known versions");
+        let api = Api::of_manifest(&table(
+            "language = \"0.1\"\nagents.agent = \"0.1\"",
+        ))
+        .expect("known versions");
 
         assert_eq!(
             api.version_of(Contract::Language),
             ContractVersion::parse("0.1")
         );
-        assert_eq!(api.to_string(), "agent 0.1, language 0.1");
+        assert_eq!(api.to_string(), "agents.agent 0.1, language 0.1");
         assert_eq!(Contract::Language.part_kind(), None);
         assert_eq!(Contract::Agent.part_kind(), Some(PartKind::Agent));
     }
 
     #[test]
     fn an_unknown_contract_version_needs_a_newer_otty() {
-        let error = Api::of_manifest(&table(&[("agent", "0.2")]))
+        let error = Api::of_manifest(&table("agents.agent = \"0.2\""))
             .expect_err("unknown version");
 
         assert_eq!(
             error.to_string(),
-            "Needs a newer OTTY (agent contract 0.2)"
+            "Needs a newer OTTY (agents.agent contract 0.2)"
         );
     }
 
     #[test]
     fn an_unknown_contract_needs_a_newer_otty() {
-        let error = Api::of_manifest(&table(&[("panel", "0.1")]))
-            .expect_err("unknown contract");
+        for text in [
+            "panel = \"0.1\"",
+            "agents.panel = \"0.1\"",
+            "boxes.provider = \"0.1\"",
+        ] {
+            let error =
+                Api::of_manifest(&table(text)).expect_err("unknown contract");
 
-        assert!(matches!(error, ManifestError::NeedsNewerOtty { .. }));
+            assert!(
+                matches!(error, ManifestError::NeedsNewerOtty { .. }),
+                "{text}"
+            );
+        }
     }
 
     #[test]
     fn a_contract_version_is_major_and_minor_only() {
-        for text in ["0.1.0", "^0.1", "=0.1", "0", "0.1-beta", ">=0.1"] {
-            let error = Api::of_manifest(&table(&[("agent", text)]))
-                .expect_err("not MAJOR.MINOR");
+        for version in ["0.1.0", "^0.1", "=0.1", "0", "0.1-beta", ">=0.1"] {
+            let error = Api::of_manifest(&table(&format!(
+                "agents.agent = \"{version}\""
+            )))
+            .expect_err("not MAJOR.MINOR");
 
             assert!(
                 matches!(error, ManifestError::BadContractVersion { .. }),
-                "{text}"
+                "{version}"
             );
         }
     }

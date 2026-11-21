@@ -11,10 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::{
-    Answer, HostError, ModelTokens, ProjectStats, ReadError, SessionStats,
-    TokenCount, files,
+use otty_plugin_sdk::agents::{
+    Answer, ModelTokens, ProjectStats, ReadError, SessionStats, TokenCount,
 };
+use otty_plugin_sdk::{HostError, files};
 
 use crate::glob::escaped;
 use crate::project_folder::{project_folder_names, projects_folder};

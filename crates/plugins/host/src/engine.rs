@@ -76,6 +76,8 @@ impl PluginEngine {
             |state| state,
         )
         .map_err(|error| EngineError::Setup(error.to_string()))?;
+        crate::agents::agent::add_types_to_linker(&mut linker)
+            .map_err(|error| EngineError::Setup(error.to_string()))?;
 
         let shared = Arc::new(EngineShared {
             engine,
@@ -333,12 +335,12 @@ mod tests {
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
         let with_provider = format!(
-            "{}\n[[provider]]\nid = \"test-provider\"\nname = \"Test \
+            "{}\n[[agents.provider]]\nid = \"test-provider\"\nname = \"Test \
              provider\"\nicon = \"test.svg\"\nhosts = [\"example.com\"]\n",
             edited(
                 TEST_PLUGIN_MANIFEST,
-                "agent = \"0.1\"",
-                "agent = \"0.1\"\nprovider = \"0.1\""
+                "agents.agent = \"0.1\"",
+                "agents.agent = \"0.1\"\nagents.provider = \"0.1\""
             ),
         );
 
@@ -349,8 +351,8 @@ mod tests {
         assert_eq!(
             error,
             LoadError::ApiMismatch {
-                declared: "agent 0.1, provider 0.1".to_string(),
-                exported: "agent 0.1.0".to_string(),
+                declared: "agents.agent 0.1, agents.provider 0.1".to_string(),
+                exported: "agents.agent 0.1.0".to_string(),
             }
         );
     }

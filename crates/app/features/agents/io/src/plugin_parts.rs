@@ -7,10 +7,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use otty_agents::{Agent, PartHealth, PluginAgent, PluginProvider, Registry};
+use otty_agents::{Agent, PluginAgent, PluginProvider, Registry};
 use otty_plugin_host::{
-    Environment, LoadedPlugin, Manifest, PartKind, PartRef, PluginEngine,
-    PluginLog,
+    Environment, LoadedPlugin, Manifest, PartHealth, PartKind, PartRef,
+    PluginEngine, PluginLog,
 };
 
 use crate::plugin_language::LanguageReceivers;

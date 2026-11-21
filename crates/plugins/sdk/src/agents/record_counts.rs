@@ -2,7 +2,7 @@
 //! records of the kind it reads, the ones it understood, and the names
 //! (never the values) of the fields it missed and found.
 
-use crate::{Identity, RecordCounts, TokenCount};
+use crate::agents::{Identity, RecordCounts, TokenCount};
 
 /// The most field names the counts keep.
 const MOST_FIELDS: usize = 20;
@@ -26,7 +26,7 @@ impl RecordCounts {
     /// left out.
     ///
     /// ```
-    /// use otty_plugin_sdk::RecordCounts;
+    /// use otty_plugin_sdk::agents::RecordCounts;
     ///
     /// let mut counts = RecordCounts::default();
     /// counts.add_understood();

@@ -5,7 +5,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use otty_plugin_sdk::{ProfilePlace, env, files};
+use otty_plugin_sdk::agents::ProfilePlace;
+use otty_plugin_sdk::{env, files};
 
 use crate::detect::connection;
 use crate::glob::escaped;

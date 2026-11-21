@@ -6,8 +6,9 @@
 
 use std::borrow::Cow;
 
+use otty_plugin_host::PluginPart;
+
 use crate::account::AccountKind;
-use crate::registry::PluginPart;
 
 /// The prefix of a provider saved in `agents.json` by the host of its
 /// server, such as `host:api.example.com`.
@@ -222,7 +223,8 @@ impl ProviderEntry {
     /// ends with `.` and one.
     ///
     /// ```
-    /// use otty_agents::{PluginPart, ProviderEntry, ProviderId};
+    /// use otty_agents::{ProviderEntry, ProviderId};
+    /// use otty_plugin_host::PluginPart;
     ///
     /// let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
     /// let cloud = ProviderEntry::new(ProviderId::new("cloud"), "Cloud", part)

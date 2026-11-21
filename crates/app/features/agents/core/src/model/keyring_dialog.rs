@@ -42,9 +42,8 @@ impl KeyringDialogViewModel {
 mod tests {
     use std::sync::Arc;
 
-    use otty_agents::{
-        AgentEntry, AgentId, PluginPart, Registry, SavedProfiles,
-    };
+    use otty_agents::{AgentEntry, AgentId, Registry, SavedProfiles};
+    use otty_plugin_host::PluginPart;
 
     use super::*;
     use crate::event::AgentsIntent;

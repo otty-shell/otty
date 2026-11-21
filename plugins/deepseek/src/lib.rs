@@ -25,4 +25,4 @@ impl Language for DeepSeek {
     }
 }
 
-otty_plugin_sdk::export!(DeepSeek with provider, language);
+otty_plugin_sdk::export!(DeepSeek with agents::provider, language);

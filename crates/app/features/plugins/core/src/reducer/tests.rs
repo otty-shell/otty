@@ -1,7 +1,6 @@
-use otty_agents::PartHealth;
-use otty_agents::fixtures::paused_health;
 use otty_app_domain::plugins::{PluginNotes, WaitingUpdate};
-use otty_plugin_host::PluginLog;
+use otty_plugin_host::fixtures::paused_health;
+use otty_plugin_host::{PartHealth, PluginLog};
 use otty_plugin_manifest::PluginVersion;
 use otty_plugin_releases::fixtures::{
     conflict, example_manifest, install_plan, pending_update, report,
@@ -169,7 +168,7 @@ fn a_release_that_needs_a_newer_otty_says_so() {
     let _ = reduce(
         &mut state,
         PluginsIntent::Found(Err(InstallError::NeedsNewerOtty(String::from(
-            "Needs a newer OTTY (agent contract 0.2)",
+            "Needs a newer OTTY (agents.agent contract 0.2)",
         )))),
     );
 
@@ -178,7 +177,7 @@ fn a_release_that_needs_a_newer_otty_says_so() {
         state.error(),
         Some(
             crate::words::needs_newer_otty(
-                "Needs a newer OTTY (agent contract 0.2)"
+                "Needs a newer OTTY (agents.agent contract 0.2)"
             )
             .as_str()
         )
@@ -381,7 +380,7 @@ fn the_checks_note_updates_and_waiting_updates() {
             from: PluginVersion::parse("0.1.0").expect("version"),
             to: PluginVersion::parse("0.2.0").expect("version"),
         }),
-        Some(("v0.3.0", "Needs a newer OTTY (agent contract 0.2)")),
+        Some(("v0.3.0", "Needs a newer OTTY (agents.agent contract 0.2)")),
     );
 
     let _ = reduce(

@@ -93,14 +93,14 @@ version = "0.1.0"
 wasm = "made-up.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "made-up-agent"
 name = "Made-up agent"
 icon = "agent.svg"
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.made-up/auth.json"]
 fields = [{}]
 "#,

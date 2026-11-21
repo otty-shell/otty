@@ -25,4 +25,4 @@ impl Language for OpenRouter {
     }
 }
 
-otty_plugin_sdk::export!(OpenRouter with provider, language);
+otty_plugin_sdk::export!(OpenRouter with agents::provider, language);

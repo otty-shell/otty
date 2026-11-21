@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use otty_plugin_sdk::Profile;
+use otty_plugin_sdk::agents::Profile;
 use otty_plugin_sdk::test_host::TestHost;
 use rusqlite::{Connection, params};
 

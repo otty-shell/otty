@@ -10,11 +10,12 @@ use otty_agents::{
     Account, AccountIdentity, AccountKind, AccountLogin, AgentCommand,
     AgentEnv, AgentId, AgentSession, Answer, Bill, Billing, DayCost, DaySpend,
     Dollars, FetchedPrices, FoundIn, GivenKey, KeyRef, LimitWindow, Limits,
-    ModelPrice, ModelTokens, MoneyTotal, PluginPart, PriceTable, Profile,
-    ProfileStatus, ProviderEntry, ProviderId, ProviderRef, Registry,
-    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
-    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile, ProfileStatus,
+    ProviderEntry, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
+    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
+    Unavailable, UsageWindows, WindowId,
 };
+use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::event::{AgentsIntent, AgentsOutcome};

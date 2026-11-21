@@ -11,11 +11,11 @@
 // A `ReadError` may hold a need, a record the contract can not box.
 #![allow(clippy::result_large_err)]
 
-use otty_plugin_sdk::{
-    Agent, Answers, Command, Limits, Login, LoginRef, Need, NeedAction,
-    Profile, ProfilePlace, ProfileStatus, ReadError, Session, SpendItem,
-    SpendPlace,
+use otty_plugin_sdk::agents::{
+    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session, SpendItem, SpendPlace,
 };
+use otty_plugin_sdk::{Command, Need, NeedAction};
 
 /// The test plugin.
 struct Plugin;
@@ -83,7 +83,7 @@ impl Agent for Plugin {
     }
 }
 
-otty_plugin_sdk::export!(Plugin with agent);
+otty_plugin_sdk::export!(Plugin with agents::agent);
 
 #[cfg(feature = "misbehave")]
 mod misbehave {

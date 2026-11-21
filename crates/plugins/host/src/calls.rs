@@ -10,7 +10,8 @@ use wasmtime::component::{Instance, ResourceTable};
 use wasmtime::{Store, StoreContextMut, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::agent::AgentCalls;
+use crate::agents::agent::AgentCalls;
+use crate::agents::provider::ProviderCalls;
 use crate::call_programs::CallPrograms;
 use crate::call_terminals::CallTerminals;
 use crate::engine::TICK;
@@ -19,7 +20,6 @@ use crate::operations::ZstdCursor;
 use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 use crate::plugin_log::PluginLog;
-use crate::provider::ProviderCalls;
 
 /// What a call does, which sets its deadline (spec "Engine limits").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -388,7 +388,7 @@ fn error_text(error: &wasmtime::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Profile;
+    use crate::agents::agent::Profile;
     use crate::engine::PluginEngine;
     use crate::testing::{TempDir, load_fixture};
 

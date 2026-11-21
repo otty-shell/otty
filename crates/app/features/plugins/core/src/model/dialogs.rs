@@ -324,10 +324,10 @@ mod tests {
     fn a_new_part_of_an_update_is_marked_new() {
         let mut plugin = released_example();
         let agent_only = example_manifest("0.1.0")
-            .split("[[provider]]")
+            .split("[[agents.provider]]")
             .next()
             .expect("the agent half")
-            .replace("provider = \"0.1\"\n", "");
+            .replace("agents.provider = \"0.1\"\n", "");
         plugin.installed = otty_plugin_releases::fixtures::installed(
             &agent_only,
             plugin.installed.source().clone(),

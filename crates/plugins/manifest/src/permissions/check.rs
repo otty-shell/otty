@@ -536,8 +536,8 @@ mod tests {
     fn a_part_with_a_terminal_rule_has_terminals() {
         let text = edited(
             OPENAI_MANIFEST,
-            "[[agent.permissions.run]]",
-            "[[agent.permissions.terminal]]\nprogram = \"codex\"\nargs = [\"tui\"]\n\n[[agent.permissions.run]]",
+            "[[agents.agent.permissions.run]]",
+            "[[agents.agent.permissions.terminal]]\nprogram = \"codex\"\nargs = [\"tui\"]\n\n[[agents.agent.permissions.run]]",
         );
         let codex = permissions_of(&text, &PartRef::agent("codex"));
 
@@ -583,15 +583,15 @@ mod tests {
     fn a_keyring_entry_names_its_key_fields() {
         let manifest = edited(
             OPENCODE_MANIFEST,
-            "[[agent.permissions.keys]]",
-            "[[agent.permissions.keyring]]\n\
+            "[[agents.agent.permissions.keys]]",
+            "[[agents.agent.permissions.keyring]]\n\
              service = \"made-up\"\n\
              user = \"work\"\n\
              fields = [\"/key\", \"/*/token\"]\n\n\
-             [[agent.permissions.keyring]]\n\
+             [[agents.agent.permissions.keyring]]\n\
              service = \"made-up\"\n\
              user = \"plain\"\n\n\
-             [[agent.permissions.keys]]",
+             [[agents.agent.permissions.keys]]",
         );
         let opencode = permissions_of(&manifest, &PartRef::agent("opencode"));
 

@@ -1,6 +1,7 @@
 //! Whether a Claude Code profile is logged in, and how it pays.
 
-use otty_plugin_sdk::{Billing, Command, Connection, ProfileStatus, files};
+use otty_plugin_sdk::agents::{Billing, Connection, ProfileStatus};
+use otty_plugin_sdk::{Command, files};
 
 use crate::config_files::{
     OauthAccount, OauthLogin, read_credentials, read_global_configs,

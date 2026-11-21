@@ -14,7 +14,8 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::{ProviderRef, files};
+use otty_plugin_sdk::agents::ProviderRef;
+use otty_plugin_sdk::files;
 
 /// The name of the config file in the config folder.
 const CONFIG_FILE: &str = "config.toml";

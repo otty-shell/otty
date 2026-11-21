@@ -11,8 +11,9 @@
 //! while it answers it, and on the owner's computer it deleted rows of
 //! that index (spec 2026-11-19-agent-plugins, Decision 13).
 
+use otty_plugin_sdk::agents::{Limits, ReadError};
 use otty_plugin_sdk::programs::Talk;
-use otty_plugin_sdk::{HostError, Limits, ReadError, clock};
+use otty_plugin_sdk::{HostError, clock};
 use serde_json::{Value, json};
 
 use crate::individual_limit::individual_limit_in;
@@ -203,8 +204,8 @@ fn window(window: &Value) -> Option<WindowNumbers> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::{Credits, LimitWindow};
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{Credits, LimitWindow};
 
     use super::*;
     use crate::rate_limits::no_numbers;

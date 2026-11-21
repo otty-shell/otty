@@ -80,27 +80,27 @@ license = "Apache-2.0"
 authors = ["You"]
 wasm = "example.wasm"           # must be "<id>.wasm"
 
-[api]                           # one contract version per kind of part
-agent = "0.1"
-provider = "0.1"
-language = "0.1"                # optional: the plugin's texts come in several languages
+[api]                           # one contract version per kind of part: domain.part
+agents.agent = "0.1"
+agents.provider = "0.1"
+language = "0.1"                # optional, of no domain: the plugin's texts come in several languages
 
-[[agent]]
+[[agents.agent]]
 id = "example-agent"            # saved by OTTY; never change it
 name = "Example Agent"
 icon = "example-agent.svg"
 program = "example-agent"       # looked up on PATH
 tested_version = "1.4.2"        # newest agent version this release was checked with
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
 env = ["EXAMPLE_AGENT_HOME"]
 
-[[agent.permissions.keys]]      # readable only with the keys replaced by handles
+[[agents.agent.permissions.keys]]      # readable only with the keys replaced by handles
 files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
 fields = ["/api_key"]
 
-[[provider]]
+[[agents.provider]]
 id = "example-cloud"
 name = "Example Cloud"
 icon = "example-cloud.svg"
@@ -108,12 +108,16 @@ hosts = ["example.com"]         # keys found for these hosts go to this part
 usage_page = "https://example.com/usage"
 add_by_hand = true              # Add account offers this provider for a key no agent uses
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.example.com"]
 ```
 
-Each `[[agent]]` and `[[provider]]` is a **part** with its own id, icon and permissions. A plugin may
-have any number of parts; a new part is a new release. The permissions of a part apply only while
+Each part belongs to a **domain** of OTTY, the place of the window it fills, and is written under the
+domain's name: the agents and providers of Agents mode are the `agents` domain, so each
+`[[agents.agent]]` and `[[agents.provider]]` is a **part** with its own id, icon and permissions, and
+`[api]` names its contract as `agents.agent` and `agents.provider`. A part at the top level, such as
+`[[agent]]`, is refused as an unknown field. A plugin may have any number of parts; a new part is a
+new release. The permissions of a part apply only while
 OTTY calls that part: above, the provider part may not read `~/.example-agent`, and the agent part
 may not call `api.example.com`.
 
@@ -123,10 +127,10 @@ may not call `api.example.com`.
 | `write`                          | agent  | Deleting files that match the globs.                                    |
 | `sqlite`                         | agent  | Read-only queries of the databases that match.                          |
 | `env`                            | agent  | Reading these environment variables, and using them in globs as `{NAME}`. |
-| `[[agent.permissions.run]]`      | agent  | Running `program` with arguments that match `args`, once or line by line. |
-| `[[agent.permissions.terminal]]` | agent  | Running `program` with `args` in a hidden terminal.                     |
-| `[[agent.permissions.keyring]]`  | agent  | Reading the keyring entry `service` / `user` once the user allows the keyring; `fields` are its key fields. |
-| `[[agent.permissions.keys]]`     | agent  | Where keys are: JSON `fields` of `files`, a `column` of a `table` in `sqlite` databases (with `fields` for a JSON column), or `env` variables. |
+| `[[agents.agent.permissions.run]]`      | agent  | Running `program` with arguments that match `args`, once or line by line. |
+| `[[agents.agent.permissions.terminal]]` | agent  | Running `program` with `args` in a hidden terminal.                     |
+| `[[agents.agent.permissions.keyring]]`  | agent  | Reading the keyring entry `service` / `user` once the user allows the keyring; `fields` are its key fields. |
+| `[[agents.agent.permissions.keys]]`     | agent  | Where keys are: JSON `fields` of `files`, a `column` of a `table` in `sqlite` databases (with `fields` for a JSON column), or `env` variables. |
 | `http`                           | provider | HTTPS requests to exactly these hosts.                                |
 
 Paths start with `~` or with a listed variable (`{XDG_DATA_HOME}/...`) and may not contain `..`.
@@ -140,7 +144,10 @@ misspelt permission is never dropped silently.
 
 One plugin type serves all its parts. All agent parts share one `impl Agent`, all provider parts one
 `impl Provider`; OTTY passes the part's id with each call (`agent`, `profile.agent` or `provider`).
-The last line names the traits, and must match `[api]`:
+The traits and every type of the domain are in `otty_plugin_sdk::agents`; the host operations
+(`files`, `http`, `keys`, `env` and the rest), `Need`, `Key` and `HostError` are at the root of the
+SDK, since every domain uses them. The last line names the domain's parts the plugin serves, and must
+match `[api]`:
 
 ```rust
 // src/lib.rs
@@ -150,11 +157,11 @@ mod provider;
 /// The plugin: one type serves every part its manifest lists.
 pub struct Example;
 
-otty_plugin_sdk::export!(Example with agent, provider, language);
+otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);
 ```
 
-A plugin with only agent parts and texts only in English writes `export!(Example with agent)` and
-has only `agent` in `[api]`.
+A plugin with only agent parts and texts only in English writes
+`export!(Example with agents::agent)` and has only `agents.agent` in `[api]`.
 
 | `Agent`                                   | Gives OTTY                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------- |
@@ -236,7 +243,8 @@ once; OTTY keeps only where the user keeps it (a file or a variable) and from th
 `numbers` and `read_bill` in `given`, as a handle with its slot. `given_key(given, slot)` finds it:
 
 ```rust
-use otty_plugin_sdk::{AccountFacts, Bill, DayRange, GivenKey, Key, ReadError, given_key};
+use otty_plugin_sdk::agents::{AccountFacts, Bill, DayRange, ReadError};
+use otty_plugin_sdk::{GivenKey, Key, given_key};
 
 fn read_bill(_provider: &str, _account: &AccountFacts, key: &Key, given: &[GivenKey],
              days: &DayRange) -> Result<Bill, ReadError> {
@@ -281,8 +289,8 @@ region (`pt` for `pt-BR`), else English. OTTY's own languages are `en`, `zh-CN`,
 plugin.
 
 A plugin with translations also implements the optional `Language` trait, exports it
-(`export!(Example with agent, provider, language)`) and names it in the manifest as
-`[api] language = "0.1"`. It belongs to no part:
+(`export!(Example with agents::agent, agents::provider, language)`) and names it in the manifest as
+`[api] language = "0.1"`. It belongs to no part and no domain:
 
 ```rust
 impl otty_plugin_sdk::Language for Example {
@@ -341,8 +349,8 @@ folder, answers requests from canned answers, and checks every call against the 
 part being tested, as OTTY does:
 
 ```rust
+use otty_plugin_sdk::agents::{AccountFacts, Identity, Provider};
 use otty_plugin_sdk::test_host::TestHost;
-use otty_plugin_sdk::{AccountFacts, Identity, Provider};
 
 use crate::Example;
 

@@ -1,11 +1,13 @@
-// The agent contract: what an agent part gives OTTY. A plugin exports it
-// once for all its agent parts; OTTY names the part in each call (the
-// `agent` argument, or `profile.agent`).
-package otty:agent@0.1.0;
+// The agent contract of the `agents` domain: what an agent part gives
+// OTTY. A plugin exports it once for all its agent parts; OTTY names the
+// part in each call (the `agent` argument, or `profile.agent`). The
+// domain's shared values are in `types.wit` of this package.
+package otty:agents-agent@0.1.0;
 
 interface agent {
-  use otty:host/types@0.1.0.{read-error, identity, login-kind, limits, command, need};
+  use otty:host/types@0.1.0.{command, need};
   use otty:host/keys@0.1.0.{key-place};
+  use types.{read-error, identity, login-kind, limits};
 
   /// A config folder of the agent found on this computer.
   record profile-place {
@@ -208,5 +210,6 @@ world agent-part {
   import otty:host/env@0.1.0;
   import otty:host/clock@0.1.0;
   import otty:host/log@0.1.0;
+  import types;
   export agent;
 }

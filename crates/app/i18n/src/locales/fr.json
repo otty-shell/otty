@@ -839,7 +839,7 @@
     "plugins_local": "Local",
     "plugins_part_agent": "agent",
     "plugins_part_provider": "fournisseur",
-    "tpl_plugins_part": "{name} ({kind})",
+    "tpl_plugins_part": "{name} ({domain} : {kind})",
     "plugins_paused": "En pause après trois échecs",
     "plugins_try_again": "Réessayer",
     "plugins_check_for_updates": "Rechercher des mises à jour",

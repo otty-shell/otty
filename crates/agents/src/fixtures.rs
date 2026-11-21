@@ -8,6 +8,8 @@ pub(crate) mod stand_in;
 
 use std::path::{Path, PathBuf};
 
+use otty_plugin_host::PluginPart;
+
 pub use self::stand_in::{claude_code_stand_in, codex_stand_in, not_logged_in};
 use crate::command::AgentCommand;
 use crate::error::SourceError;
@@ -16,7 +18,6 @@ use crate::price_source::PriceSource;
 use crate::record_format::{
     FormatChange, RecordCounts, RecordFormat, format_change as judged,
 };
-use crate::registry::PluginPart;
 use crate::source_id::SourceId;
 use crate::walk::{Answer, SourceFailure, walk};
 
@@ -197,51 +198,4 @@ pub fn key_need(plugin: &str, part: &str, slot: &str) -> PartNeed {
         "OTTY shows an estimate from the tokens.",
         PartNeedAction::AskKey(ask),
     )
-}
-
-/// The health of a plugin part paused after three failed reads in a row,
-/// as the Plugins page shows it with Try again.
-///
-/// ```
-/// use otty_agents::fixtures::paused_health;
-///
-/// assert!(paused_health().is_paused());
-/// ```
-pub fn paused_health() -> crate::part_health::PartHealth {
-    let health = crate::part_health::PartHealth::default();
-    for _ in 0..crate::part_health::PAUSE_AFTER {
-        health.failed();
-    }
-
-    health
-}
-
-/// The health of a plugin part whose last call `failure` failed at `at`,
-/// as the card of the part on the Plugins page shows it.
-///
-/// ```
-/// use std::time::SystemTime;
-///
-/// use otty_agents::fixtures::failed_health;
-/// use otty_agents::{PluginFailure, PluginFailureKind, PluginPart};
-///
-/// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
-/// let failure =
-///     PluginFailure::new(part, "read-limits", PluginFailureKind::TooSlow);
-///
-/// let health = failed_health(&failure, SystemTime::UNIX_EPOCH);
-///
-/// assert_eq!(
-///     health.last_failure().map(|last| last.at()),
-///     Some(SystemTime::UNIX_EPOCH)
-/// );
-/// ```
-pub fn failed_health(
-    failure: &crate::plugin_failure::PluginFailure,
-    at: std::time::SystemTime,
-) -> crate::part_health::PartHealth {
-    let health = crate::part_health::PartHealth::default();
-    health.remember_failure(failure, at);
-
-    health
 }

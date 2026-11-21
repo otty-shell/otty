@@ -26,7 +26,7 @@ pub use crate::environment::Environment;
 pub use crate::manifest::{
     AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,
 };
-pub use crate::part::{PartKind, PartRef};
+pub use crate::part::{Domain, PartKind, PartRef};
 pub use crate::path_glob::{GlobProblem, PathGlob};
 pub use crate::permissions::{
     JsonPointer, KeyColumn, KeyPlace, KeyRule, KeyringRule, PartPermissions,

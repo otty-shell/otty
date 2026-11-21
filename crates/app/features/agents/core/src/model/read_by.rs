@@ -4,9 +4,10 @@
 //! on the Plugins page; the plugin with "(off)" when its part is off; or
 //! "no plugin".
 
-use otty_agents::{AgentId, PluginPart, ProviderRef};
+use otty_agents::{AgentId, ProviderRef};
 use otty_app_domain::plugins::{OffPart, PartSide};
 use otty_app_i18n::{self as i18n, Key};
+use otty_plugin_host::PluginPart;
 
 use super::super::state::AgentsState;
 use super::FactViewModel;
@@ -95,10 +96,9 @@ fn no_plugin() -> FactViewModel {
 mod tests {
     use std::sync::Arc;
 
-    use otty_agents::{
-        AgentEntry, PluginPart, ProviderEntry, ProviderId, Registry,
-    };
+    use otty_agents::{AgentEntry, ProviderEntry, ProviderId, Registry};
     use otty_app_domain::plugins::PluginNotes;
+    use otty_plugin_host::PluginPart;
 
     use super::*;
     use crate::event::AgentsIntent;

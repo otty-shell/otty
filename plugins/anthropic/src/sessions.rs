@@ -5,8 +5,9 @@
 //! right inside it is one session. The sessions of helper agents are kept
 //! deeper, in `<session id>/subagents/`, so they are not listed.
 
+use otty_plugin_sdk::HostError;
+use otty_plugin_sdk::agents::{ReadError, Session};
 use otty_plugin_sdk::files::{self, FileInfo};
-use otty_plugin_sdk::{HostError, ReadError, Session};
 
 use crate::file_ends::END_BYTES;
 use crate::glob::escaped;

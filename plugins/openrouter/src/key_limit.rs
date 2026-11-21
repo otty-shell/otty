@@ -4,11 +4,12 @@
 //! what the key used and `data.limit` its limit, `null` for none, both in
 //! US dollars.
 
-use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, GivenKey, Identity, Key, KeyLimit,
-    LoginFacts, Money, Provider, ReadError,
+use otty_plugin_sdk::agents::{
+    AccountFacts, AccountNumbers, Identity, KeyLimit, LoginFacts, Money,
+    Provider, ReadError,
 };
+use otty_plugin_sdk::http::{self, Request};
+use otty_plugin_sdk::{GivenKey, Key};
 use serde_json::Value;
 
 use crate::{OpenRouter, needs};
@@ -318,7 +319,7 @@ mod tests {
         let host = host();
         let key = host.key(MADE_UP_KEY);
         let found = LoginFacts {
-            kind: otty_plugin_sdk::LoginKind::ApiKey,
+            kind: otty_plugin_sdk::agents::LoginKind::ApiKey,
             identity: Identity::default(),
             plan: None,
         };

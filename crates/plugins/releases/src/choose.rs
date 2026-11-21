@@ -29,7 +29,7 @@ impl SkippedRelease {
         &self.tag
     }
 
-    /// Why, such as "Needs a newer OTTY (agent contract 0.2)".
+    /// Why, such as "Needs a newer OTTY (agents.agent contract 0.2)".
     pub fn reason(&self) -> &str {
         &self.reason
     }
@@ -218,7 +218,10 @@ mod tests {
         assert_eq!(picked_tag(&picked), Some("v0.1.0"));
         let skipped = picked.too_new.expect("skipped");
         assert_eq!(skipped.tag(), "v0.2.0");
-        assert_eq!(skipped.reason(), "Needs a newer OTTY (agent contract 0.2)");
+        assert_eq!(
+            skipped.reason(),
+            "Needs a newer OTTY (agents.agent contract 0.2)"
+        );
     }
 
     #[test]

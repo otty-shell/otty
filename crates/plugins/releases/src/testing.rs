@@ -178,10 +178,11 @@ impl FakeRelease {
     }
 }
 
-/// The release `release` asking for the agent contract 0.2, which this
+/// The release `release` asking for the `agents.agent` contract 0.2, which this
 /// OTTY does not know.
 pub(crate) fn needs_agent_0_2(release: FakeRelease) -> FakeRelease {
-    release.with_manifest_edit("agent = \"0.1\"", "agent = \"0.2\"")
+    release
+        .with_manifest_edit("agents.agent = \"0.1\"", "agents.agent = \"0.2\"")
 }
 
 /// The releases list body of `releases`: (tag, pre-release, file names).

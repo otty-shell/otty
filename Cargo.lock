@@ -4178,6 +4178,7 @@ dependencies = [
  "otty-app-slots",
  "otty-app-testing",
  "otty-app-theme",
+ "otty-plugin-host",
  "otty-ui-kit",
 ]
 
@@ -4337,7 +4338,6 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "iced_test",
- "otty-agents",
  "otty-app-domain",
  "otty-app-i18n",
  "otty-app-slots",

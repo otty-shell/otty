@@ -5,7 +5,9 @@
 //! it came.
 
 use otty_app_i18n::{self as i18n, Key};
-use otty_plugin_manifest::{Manifest, PartKind, PartRef, PermissionLine};
+use otty_plugin_manifest::{
+    Domain, Manifest, PartKind, PartRef, PermissionLine,
+};
 use otty_plugin_releases::{InstallError, Trust};
 
 /// `line` in the user's language, such as "Reads files in
@@ -207,8 +209,8 @@ pub(crate) fn error_text(error: &InstallError) -> String {
     }
 }
 
-/// "Needs a newer OTTY (agent contract 0.2)", from the English reason
-/// the manifest gives, such as "Needs a newer OTTY (agent contract 0.2)".
+/// "Needs a newer OTTY (agents.agent contract 0.2)", from the English reason
+/// the manifest gives, such as "Needs a newer OTTY (agents.agent contract 0.2)".
 pub(crate) fn needs_newer_otty(reason: &str) -> String {
     let detail = reason
         .split_once('(')
@@ -232,11 +234,23 @@ pub(crate) fn kind_text(part: &PartRef) -> &'static str {
     }
 }
 
-/// A part with its kind, such as "Coder (agent)".
+/// The domain of `part` as a plain word, such as "Agents", after the mode
+/// of OTTY the domain fills (issue 21).
+pub(crate) fn domain_text(part: &PartRef) -> &'static str {
+    match part.kind().domain() {
+        Domain::Agents => i18n::t(Key::ModeAgents),
+    }
+}
+
+/// A part with its domain and kind, such as "Coder (Agents: agent)".
 pub(crate) fn part_title(name: &str, part: &PartRef) -> String {
     i18n::filled(
         Key::TplPluginsPart,
-        &[("name", name), ("kind", kind_text(part))],
+        &[
+            ("name", name),
+            ("domain", domain_text(part)),
+            ("kind", kind_text(part)),
+        ],
     )
 }
 
@@ -360,15 +374,36 @@ mod tests {
 
     #[test]
     fn needs_a_newer_otty_names_the_contract() {
-        let text = needs_newer_otty("Needs a newer OTTY (agent contract 0.2)");
+        let text =
+            needs_newer_otty("Needs a newer OTTY (agents.agent contract 0.2)");
 
         assert_eq!(
             text,
             i18n::filled(
                 Key::TplPluginsErrorNeedsNewerOtty,
-                &[("detail", "agent contract 0.2")]
+                &[("detail", "agents.agent contract 0.2")]
             )
         );
+    }
+
+    /// Issue 21: the list of a plugin's parts names the domain of each,
+    /// after the mode of OTTY it fills.
+    #[test]
+    fn a_part_title_names_its_domain_and_kind() {
+        let title = part_title("Coder", &PartRef::agent("coder"));
+
+        assert_eq!(
+            title,
+            i18n::filled(
+                Key::TplPluginsPart,
+                &[
+                    ("name", "Coder"),
+                    ("domain", i18n::t(Key::ModeAgents)),
+                    ("kind", i18n::t(Key::PluginsPartAgent)),
+                ]
+            )
+        );
+        assert!(title.contains(i18n::t(Key::ModeAgents)), "{title}");
     }
 
     #[test]

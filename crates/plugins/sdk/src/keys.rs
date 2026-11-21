@@ -138,6 +138,42 @@ impl JsonWithKeys {
     }
 }
 
+/// A key the user gave, under the `slot` a need of the part asked for it
+/// with [`NeedAction::AskKey`](crate::NeedAction), such as the admin key
+/// of an account.
+pub struct GivenKey {
+    slot: String,
+    key: Key,
+}
+
+impl GivenKey {
+    /// The part's own name for the key, such as `admin`.
+    pub fn slot(&self) -> &str {
+        &self.slot
+    }
+
+    /// The handle to the key.
+    pub fn key(&self) -> &Key {
+        &self.key
+    }
+
+    /// The key a call is given under `slot`.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn of_call(slot: String, key: Key) -> Self {
+        Self { slot, key }
+    }
+
+    /// The key `key` given under `slot`, for the tests of a plugin; the
+    /// handle comes from [`TestHost::key`](crate::test_host::TestHost::key).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new(slot: &str, key: Key) -> Self {
+        Self {
+            slot: slot.to_string(),
+            key,
+        }
+    }
+}
+
 /// A handle to the key at `place`, which must be a key place the called
 /// part declares in `keys`.
 pub fn open(place: &KeyPlace) -> Result<Key, HostError> {
@@ -148,5 +184,32 @@ pub fn open(place: &KeyPlace) -> Result<Key, HostError> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         crate::test_host::open_key(place)
+    }
+}
+
+/// The key of `given` under `slot`, when the user gave one, such as the
+/// admin key a part asked for under `admin`.
+pub fn given_key<'a>(given: &'a [GivenKey], slot: &str) -> Option<&'a Key> {
+    given
+        .iter()
+        .find(|given| given.slot() == slot)
+        .map(GivenKey::key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_host::TestHost;
+    use crate::testing::MadeUpPlugin;
+
+    #[test]
+    fn a_given_key_is_found_by_its_slot_only() {
+        let plugin = MadeUpPlugin::new();
+        let host = TestHost::new(plugin.folder());
+        let given = [GivenKey::new("admin", host.key("made-up-given-key"))];
+
+        assert!(given_key(&given, "admin").is_some());
+        assert!(given_key(&given, "other").is_none());
+        assert!(given_key(&[], "admin").is_none());
     }
 }

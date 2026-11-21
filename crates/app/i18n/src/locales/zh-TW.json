@@ -839,7 +839,7 @@
     "plugins_local": "本機",
     "plugins_part_agent": "代理程式",
     "plugins_part_provider": "供應商",
-    "tpl_plugins_part": "{name}（{kind}）",
+    "tpl_plugins_part": "{name}（{domain}：{kind}）",
     "plugins_paused": "連續三次失敗後已暫停",
     "plugins_try_again": "重試",
     "plugins_check_for_updates": "檢查更新",

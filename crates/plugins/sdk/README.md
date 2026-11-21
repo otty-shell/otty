@@ -1,13 +1,21 @@
 # otty-plugin-sdk
 
 What an OTTY plugin is written with: the WIT files of every contract
-version (`wit/host/`, `wit/agent/`, `wit/provider/`, `wit/language/`), one
-trait per kind of plugin part (`Agent`, `Provider`), the optional
-`Language` trait of the whole plugin, plain functions over the host
-operations, key handles, and the `export!` macro that names the plugin
-type and the traits it exports, such as
-`export!(Example with agent, provider, language)`. The host's bindings
-read the same WIT files.
+version, the plain functions over the host operations, key handles,
+needs, and the `export!` macro that names the plugin type and the
+extension points it exports. The host's bindings read the same WIT files.
+
+A part of a plugin is an extension point of one domain of OTTY, and each
+domain has its own module and its own WIT packages, so two domains may
+each have a "provider". The `agents` domain, Agents mode, is
+`otty_plugin_sdk::agents`: the `Agent` and `Provider` traits and every
+type only they use, with the WIT packages `otty:agents-agent` (whose
+`types` interface holds the values both share, such as `ReadError` and
+`Limits`) and `otty:agents-provider`. The host operations, keys and
+needs are at the crate root and in `otty:host`, since no domain owns
+them. The optional `Language` trait of the whole plugin belongs to no
+domain (`otty:language`). A plugin names what it exports as
+`export!(Example with agents::agent, agents::provider, language)`.
 
 It also holds a test host, so a plugin's tests run natively with plain
 `cargo test`: the host operations are served from the plugin's

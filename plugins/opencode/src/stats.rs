@@ -4,9 +4,9 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::{
-    Answer, HostError, ModelTokens, ProjectStats, ReadError, SessionStats,
-    TokenCount,
+use otty_plugin_sdk::HostError;
+use otty_plugin_sdk::agents::{
+    Answer, ModelTokens, ProjectStats, ReadError, SessionStats, TokenCount,
 };
 
 use crate::database::{Database, SessionRow};

@@ -1,9 +1,10 @@
 //! One session file of the made-up agent: JSON lines with one `meta`
 //! record, the user's messages, and the model's `answer`s.
 
-use otty_plugin_sdk::{
-    Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount, files,
+use otty_plugin_sdk::agents::{
+    Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
 };
+use otty_plugin_sdk::files;
 use serde_json::Value;
 
 /// What marks the lines the part reads; the host leaves out the others.

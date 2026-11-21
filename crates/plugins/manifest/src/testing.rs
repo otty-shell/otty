@@ -15,33 +15,33 @@ authors = ["OTTY team"]
 wasm = "openai.wasm"
 
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "codex"
 name = "Codex"
 icon = "codex.svg"
 program = "codex"
 tested_version = "0.169.0"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.codex*/**", "{CODEX_HOME}/**"]
 env = ["CODEX_HOME"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "codex"
 args = ["--version"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "codex"
 args = ["-s", "read-only", "-a", "never", "app-server"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
 fields = ["/OPENAI_API_KEY", "/tokens/access_token"]
 
-[[provider]]
+[[agents.provider]]
 id = "openai"
 name = "OpenAI"
 icon = "openai.svg"
@@ -49,7 +49,7 @@ hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"
 add_by_hand = true
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
 "#;
 
@@ -63,20 +63,20 @@ version = "0.2.0"
 wasm = "opencode.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "opencode"
 name = "OpenCode"
 icon = "opencode.svg"
 program = "opencode"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.local/share/opencode/**", "{XDG_DATA_HOME}/opencode/**"]
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db"]
 env = ["XDG_DATA_HOME"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db"]
 table = "credential"
 column = "value"

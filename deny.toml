@@ -32,6 +32,13 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+deny = [
+    # A crate dependency limit of the app architecture (issue 21): only
+    # Agents mode and the binary know the `agents` domain. The Plugins page
+    # (otty-app-plugins and otty-app-plugins-io) calls the parts of any
+    # domain through otty-plugin-host and must not depend on otty-agents.
+    { crate = "otty-agents", wrappers = ["otty-app-agents", "otty-app-agents-io", "otty"] },
+]
 
 [sources]
 unknown-registry = "deny"

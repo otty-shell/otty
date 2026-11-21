@@ -1,5 +1,6 @@
 # The manifest of the template plugin: one agent part and one provider
-# part, each with its own permissions. Both are made up.
+# part of the `agents` domain, each with its own permissions. Both are
+# made up.
 [plugin]
 id = "example"
 name = "Example"
@@ -10,15 +11,16 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "example.wasm"
 
-# One contract version per kind of part the .wasm exports, and the
-# language receiver, which belongs to no part: the texts of this plugin
-# come in every language of OTTY.
+# One contract version per kind of part the .wasm exports, keyed by the
+# domain and the part, and the language receiver, which belongs to no
+# part and no domain: the texts of this plugin come in every language of
+# OTTY.
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "example-agent"
 name = "Example Agent"
 icon = "example-agent.svg"
@@ -26,16 +28,16 @@ program = "example-agent"
 tested_version = "1.4.2"
 
 # Apply only while a function of this part runs.
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
 env = ["EXAMPLE_AGENT_HOME"]
 
 # Where the keys are: readable only with the keys replaced by handles.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
 fields = ["/api_key"]
 
-[[provider]]
+[[agents.provider]]
 id = "example-cloud"
 name = "Example Cloud"
 icon = "example-cloud.svg"
@@ -43,5 +45,5 @@ hosts = ["example.com"]
 usage_page = "https://example.com/usage"
 add_by_hand = true
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.example.com"]

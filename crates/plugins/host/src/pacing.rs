@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use otty_plugin_manifest::PartRef;
 
-use crate::operations::v0_1::otty::host::types::{Limits, ReadError};
+use crate::agents::agent::{Limits, ReadError};
 
 /// How long the answer of a reading is given again instead of starting
 /// the program anew. The app reads the limits every five minutes; a
@@ -91,7 +91,7 @@ struct Reading {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::operations::v0_1::otty::host::types::LimitWindow;
+    use crate::agents::agent::LimitWindow;
 
     fn limits(percent_used: f64) -> Limits {
         Limits {

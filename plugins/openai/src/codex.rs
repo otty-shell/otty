@@ -1,11 +1,12 @@
 //! The agent part `codex`: Codex, OpenAI's coding agent, and the commands
 //! that start it.
 
-use otty_plugin_sdk::{
-    Agent, Answers, Command, KeyPlace, Limits, Login, LoginRef, Need, Profile,
-    ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
-    SessionStats, SpendItem, SpendKind, SpendPlace, clock, keys,
+use otty_plugin_sdk::agents::{
+    Agent, Answers, Limits, Login, LoginRef, Profile, ProfilePlace,
+    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
+    SpendKind, SpendPlace,
 };
+use otty_plugin_sdk::{Command, KeyPlace, Need, clock, keys};
 
 use crate::auth_file::ACCESS_TOKEN_FIELD;
 use crate::glob::escaped;

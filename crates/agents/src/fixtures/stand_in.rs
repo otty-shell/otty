@@ -7,6 +7,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use otty_plugin_host::PluginPart;
+
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
@@ -18,7 +20,6 @@ use crate::local_time::LocalNow;
 use crate::part_need::{PartNeed, PartNeedAction};
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::StartProgram;
-use crate::registry::PluginPart;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;

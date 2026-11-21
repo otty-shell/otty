@@ -13,7 +13,7 @@
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexSpendControlLimitMapping.swift>.
 //! CodexBar treats these numbers as credits, not money, and so does OTTY.
 
-use otty_plugin_sdk::Credits;
+use otty_plugin_sdk::agents::Credits;
 use serde_json::Value;
 
 use crate::rate_limits::codex_number;

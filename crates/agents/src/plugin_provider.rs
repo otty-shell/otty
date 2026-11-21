@@ -11,22 +11,22 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use otty_plugin_host::agent::{Identity, Login, LoginKind};
-use otty_plugin_host::provider::{
+use otty_plugin_host::agents::agent::{Identity, Login, LoginKind};
+use otty_plugin_host::agents::provider::{
     AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, DayRange,
     LoginFacts, Money,
 };
-use otty_plugin_host::{KeySource, KeyText, LoadedPlugin, PartRef};
+use otty_plugin_host::{
+    CalledPart, KeySource, KeyText, LoadedPlugin, PartHealth, PartRef,
+};
 
 use crate::account::{Account, AccountKind};
 use crate::account_numbers::AccountNumbers;
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::bill::Bill;
-use crate::called_part::CalledPart;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenSecret, KeySecret};
 use crate::limits::{Billing, ExtraUsage, Limits, UsageWindows};
-use crate::part_health::PartHealth;
 use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
@@ -292,7 +292,7 @@ impl PluginProvider {
         hosts: &[&str],
         calls: MockProviderPartCalls,
     ) -> Self {
-        let part = crate::registry::PluginPart::new(
+        let part = otty_plugin_host::PluginPart::new(
             "example",
             "Example",
             "0.1.0",
@@ -438,7 +438,7 @@ fn balance_of(numbers: &PartNumbers) -> Balance {
 /// The limits of a subscription in `numbers`: its windows with the extra
 /// usage it may buy, else its credits, with the plan `plan`.
 fn subscription_limits(numbers: &PartNumbers, plan: Option<String>) -> Limits {
-    let as_limits = otty_plugin_host::agent::Limits {
+    let as_limits = otty_plugin_host::agents::agent::Limits {
         windows: numbers.windows.clone(),
         credits: numbers.credits,
         plan,
@@ -470,7 +470,7 @@ fn amount_of(money: &Money) -> Option<Amount> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agent::{JsonField, KeyPlace};
+    use otty_plugin_host::agents::agent::{JsonField, KeyPlace};
 
     use super::*;
     use crate::account::{AccountIdentity, AccountLogin, FoundIn};
@@ -482,7 +482,7 @@ mod tests {
     fn key_login() -> Login {
         Login {
             kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agent::ProviderRef::Id(
+            for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
                 "example-cloud".to_string(),
             ),
             place: KeyPlace::JsonField(JsonField {
@@ -695,7 +695,7 @@ mod tests {
         );
         let login = Login {
             kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agent::ProviderRef::Host(
+            for_whom: otty_plugin_host::agents::agent::ProviderRef::Host(
                 "api.deepseek.com".to_string(),
             ),
             place: KeyPlace::JsonField(JsonField {
@@ -831,7 +831,7 @@ mod tests {
         calls.expect_read_numbers().returning(|_, _, _| {
             let numbers = PartNumbers {
                 spent_this_month: Some(usd(4.2)),
-                credits: Some(otty_plugin_host::agent::Credits {
+                credits: Some(otty_plugin_host::agents::agent::Credits {
                     left: Some(80.0),
                     used: Some(20.0),
                     pool: Some(100.0),
@@ -867,11 +867,13 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_numbers().returning(|_, _, _| {
             let numbers = PartNumbers {
-                extra_usage: Some(otty_plugin_host::provider::ExtraUsage {
-                    used: Some(8.3),
-                    monthly_limit: Some(50.0),
-                    currency: Some("USD".to_string()),
-                }),
+                extra_usage: Some(
+                    otty_plugin_host::agents::provider::ExtraUsage {
+                        used: Some(8.3),
+                        monthly_limit: Some(50.0),
+                        currency: Some("USD".to_string()),
+                    },
+                ),
                 ..nothing()
             };
             Ok((facts(), numbers))
@@ -904,7 +906,7 @@ mod tests {
     /// row of its database.
     #[test]
     fn a_chatgpt_login_found_in_opencode_is_read_once_with_its_place() {
-        use otty_plugin_host::agent::SqliteField;
+        use otty_plugin_host::agents::agent::SqliteField;
 
         let auth = KeyPlace::JsonField(JsonField {
             file: "/home/dev/.local/share/opencode/auth.json".to_string(),
@@ -921,7 +923,7 @@ mod tests {
         for place in [auth, row] {
             let login = Login {
                 kind: LoginKind::Subscription,
-                for_whom: otty_plugin_host::agent::ProviderRef::Id(
+                for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
                     "openai".to_string(),
                 ),
                 place: place.clone(),
@@ -1020,7 +1022,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| {
                 Ok(PartBill {
-                    days: vec![otty_plugin_host::provider::DayCost {
+                    days: vec![otty_plugin_host::agents::provider::DayCost {
                         day: "2026-11-16".to_string(),
                         cost: usd(12.4),
                     }],

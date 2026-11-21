@@ -1,17 +1,44 @@
-//! The parts of a plugin: their kinds and how a call names one.
+//! The parts of a plugin: the domains they belong to, their kinds and
+//! how a call names one.
 
 use std::fmt;
 
 use crate::contract::Contract;
 
-/// The kind of a plugin part. Each kind is one extension point with its
+/// A domain of OTTY that plugins extend, with extension points of its
+/// own (issue 21). Each domain names its parts in the manifest under its
+/// key, such as `[[agents.agent]]`, so two domains may each have a
+/// point with the same name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Domain {
+    /// Agents mode: coding agents and the providers they pay through.
+    Agents,
+}
+
+impl Domain {
+    /// The key of the domain in the manifest, such as `agents`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Domain::Agents => "agents",
+        }
+    }
+}
+
+impl fmt::Display for Domain {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.key())
+    }
+}
+
+/// The kind of a plugin part: one extension point of one domain, with its
 /// own versioned contract (spec 2026-11-19-agent-plugins, Decision 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PartKind {
-    /// An `[[agent]]` part: reads an agent's profiles, sessions and
-    /// tokens.
+    /// An `[[agents.agent]]` part: reads an agent's profiles, sessions
+    /// and tokens.
     Agent,
-    /// A `[[provider]]` part: reads an account's numbers at a provider.
+    /// An `[[agents.provider]]` part: reads an account's numbers at a
+    /// provider.
     Provider,
 }
 
@@ -19,12 +46,29 @@ impl PartKind {
     /// Every kind, in the order the manifest lists them.
     pub const ALL: [PartKind; 2] = [PartKind::Agent, PartKind::Provider];
 
-    /// The name of the kind in the manifest, both as the table of its
-    /// parts (`[[agent]]`) and as its key in `[api]` (`agent = "0.1"`).
-    pub fn key(self) -> &'static str {
+    /// The domain the kind belongs to.
+    pub fn domain(self) -> Domain {
+        match self {
+            PartKind::Agent | PartKind::Provider => Domain::Agents,
+        }
+    }
+
+    /// The name of the extension point within its domain, such as
+    /// `agent`; the kind in plain words, as in "agent part".
+    pub fn point(self) -> &'static str {
         match self {
             PartKind::Agent => "agent",
             PartKind::Provider => "provider",
+        }
+    }
+
+    /// The name of the kind in the manifest, both as the table of its
+    /// parts (`[[agents.agent]]`) and as its key in `[api]`
+    /// (`agents.agent = "0.1"`).
+    pub fn key(self) -> &'static str {
+        match self {
+            PartKind::Agent => "agents.agent",
+            PartKind::Provider => "agents.provider",
         }
     }
 
@@ -43,8 +87,10 @@ impl PartKind {
 }
 
 impl fmt::Display for PartKind {
+    /// Writes the point, such as `agent`, for plain reasons such as
+    /// "agent part `codex`".
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.key())
+        formatter.write_str(self.point())
     }
 }
 
@@ -106,11 +152,26 @@ pub(crate) fn is_valid_id(id: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// Issue 21: the kind of a part is its domain and its extension
+    /// point, `agents.agent`.
     #[test]
     fn a_kind_is_found_by_its_manifest_key() {
-        assert_eq!(PartKind::from_key("agent"), Some(PartKind::Agent));
-        assert_eq!(PartKind::from_key("provider"), Some(PartKind::Provider));
-        assert_eq!(PartKind::from_key("panel"), None);
+        assert_eq!(PartKind::from_key("agents.agent"), Some(PartKind::Agent));
+        assert_eq!(
+            PartKind::from_key("agents.provider"),
+            Some(PartKind::Provider)
+        );
+        assert_eq!(PartKind::from_key("agent"), None);
+        assert_eq!(PartKind::from_key("agents.panel"), None);
+    }
+
+    #[test]
+    fn a_kind_is_a_domain_and_a_point() {
+        assert_eq!(PartKind::Agent.domain(), Domain::Agents);
+        assert_eq!(PartKind::Provider.domain(), Domain::Agents);
+        assert_eq!(PartKind::Agent.point(), "agent");
+        assert_eq!(PartKind::Provider.point(), "provider");
+        assert_eq!(Domain::Agents.key(), "agents");
     }
 
     #[test]

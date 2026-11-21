@@ -16,23 +16,26 @@ Open the Plugins page from **Settings** (<kbd>Ctrl</kbd> <kbd>,</kbd> on Linux, 
 
 ## Plugins and parts
 
-A plugin has one or more **parts**: an **agent part** reads one agent's folders, a **provider
-part** reads the accounts of one provider. Each part has its own permissions and its own switch.
+A plugin has one or more **parts**. Each part belongs to a domain of OTTY, the place of the window
+it fills; the plugins of Agents mode have parts of the **Agents** domain: an **agent part** reads one
+agent's folders, a **provider part** reads the accounts of one provider. The Plugins page names the
+domain next to the kind, such as "Codex (Agents: agent)". Each part has its own permissions and its
+own switch.
 
 <figure class="not-content">
 <svg viewBox="0 0 560 150" width="100%" role="img" aria-labelledby="plugin-parts-title" style="max-width: 560px; font-family: var(--sl-font); font-size: 13px;">
-  <title id="plugin-parts-title">The OpenAI plugin holds two parts: Codex, an agent part that reads ~/.codex, and OpenAI, a provider part that sends requests to chatgpt.com and api.openai.com. Each part has its own switch.</title>
+  <title id="plugin-parts-title">The OpenAI plugin holds two parts: Codex, an agent part of the Agents domain that reads ~/.codex, and OpenAI, a provider part that sends requests to chatgpt.com and api.openai.com. Each part has its own switch.</title>
   <rect x="10" y="10" width="540" height="130" rx="8" style="fill: none; stroke: var(--sl-color-hairline);" />
   <text x="26" y="34" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI 0.2.0</text>
   <text x="130" y="34" style="fill: var(--sl-color-gray-3);">Official · built in</text>
   <rect x="26" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-  <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex (agent)</text>
+  <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex (Agents: agent)</text>
   <text x="42" y="94" style="fill: var(--sl-color-gray-3);">Reads files in ~/.codex*/**</text>
   <text x="42" y="112" style="fill: var(--sl-color-gray-3);">Runs codex app-server</text>
   <rect x="234" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
   <circle cx="254" cy="70" r="6" style="fill: var(--sl-color-white);" />
   <rect x="286" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-  <text x="302" y="74" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI (provider)</text>
+  <text x="302" y="74" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI (Agents: provider)</text>
   <text x="302" y="94" style="fill: var(--sl-color-gray-3);">Sends requests to chatgpt.com</text>
   <text x="302" y="112" style="fill: var(--sl-color-gray-3);">and api.openai.com</text>
   <rect x="494" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
@@ -143,7 +146,7 @@ itself.
 | An agent part is off, or its plugin removed | Its profiles leave the lists; accounts found only there leave too. Names and hidden items are kept. |
 | A plugin is updated               | Nothing moves. "Read by" shows the new version.                                       |
 | A part fails                      | The last good numbers stay, greyed. Need "*Plugin version* could not read …" with **Copy report**. |
-| A plugin needs a newer OTTY       | At install: "Needs a newer OTTY (agent contract 0.2)". Installed plugins keep running. |
+| A plugin needs a newer OTTY       | At install: "Needs a newer OTTY (agents.agent contract 0.2)". Installed plugins keep running. |
 
 <Aside title="Where plugins are kept">
 The installed files are in `~/.local/share/otty/plugins/<id>/<version>/`, the compiled copies in

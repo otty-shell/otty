@@ -16,12 +16,15 @@
 //! its [`CallKind`]. A trap, a missed deadline or the memory cap fails that
 //! call only. What the plugin writes to stderr goes to its [`PluginLog`].
 //!
-//! [`CallBatch::agent`] and [`CallBatch::provider`] call the functions of
-//! a contract with the types of its newest version, [`agent`] and
-//! [`provider`]; each version the host keeps has its own bindings, such
-//! as [`agent::v0_1`]. The host operations a plugin imports are
-//! [`operations`]. A plugin may also export the [`language`] receiver,
-//! which belongs to no part: [`PluginEngine::set_language`] gives the
+//! The extension points of a domain are a module of that domain, such as
+//! [`agents`]: [`CallBatch::agent`] and [`CallBatch::provider`] call the
+//! functions of the `agents.agent` and `agents.provider` contracts with
+//! the types of their newest versions, [`agents::agent`] and
+//! [`agents::provider`]; each version the host keeps has its own
+//! bindings, such as [`agents::agent::v0_1`]. The host operations a
+//! plugin imports are [`operations`]. A plugin may also export the
+//! [`language`] receiver, which belongs to no part and no domain:
+//! [`PluginEngine::set_language`] gives the
 //! plugins the language of OTTY's interface at each call, and
 //! [`LoadedPlugin::language_changed`] tells a plugin that it changed.
 //!
@@ -39,13 +42,16 @@
 //! source that ran a program or a terminal is paced: at most once in five
 //! minutes per profile.
 
-pub mod agent;
+pub mod agents;
 mod cache;
 mod call_programs;
 mod call_terminals;
+mod called_part;
 mod calls;
 mod contract;
 mod engine;
+#[cfg(any(test, feature = "fixtures"))]
+pub mod fixtures;
 mod https;
 mod imports;
 mod keys;
@@ -54,28 +60,33 @@ mod memory_cap;
 pub mod operations;
 mod outside;
 mod pacing;
+mod part_health;
 mod plugin;
+mod plugin_failure;
 mod plugin_log;
+mod plugin_part;
 mod programs;
-pub mod provider;
 mod system_keyring;
 mod terminal;
 #[cfg(test)]
 mod testing;
 
 pub use otty_plugin_manifest::{
-    AgentPart, Api, Contract, ContractVersion, Environment, GlobProblem,
-    JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest, ManifestError,
-    PartKind, PartPermissions, PartRef, PathGlob, PermissionLine, Permissions,
-    PluginInfo, PluginVersion, ProgramRule, ProviderPart,
+    AgentPart, Api, Contract, ContractVersion, Domain, Environment,
+    GlobProblem, JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest,
+    ManifestError, PartKind, PartPermissions, PartRef, PathGlob,
+    PermissionLine, Permissions, PluginInfo, PluginVersion, ProgramRule,
+    ProviderPart,
 };
 /// The error wasmtime gives inside a call.
 pub use wasmtime::Error;
 
-pub use crate::agent::AgentCalls;
+pub use crate::agents::agent::AgentCalls;
+pub use crate::agents::provider::ProviderCalls;
 pub use crate::cache::LoadKind;
 pub use crate::call_programs::TalkHandle;
 pub use crate::call_terminals::TerminalHandle;
+pub use crate::called_part::CalledPart;
 pub use crate::calls::{CallBatch, CallError, CallKind, CallState};
 pub use crate::contract::ExportedApi;
 pub use crate::engine::{EngineError, LoadError, PluginEngine, TICK};
@@ -83,11 +94,13 @@ pub use crate::keys::{KeyHandle, KeySource, KeyText};
 pub use crate::memory_cap::MEMORY_CAP;
 /// A file `files.list` found: its path, size and change time.
 pub use crate::operations::v0_1::otty::host::files::FileInfo;
+pub use crate::part_health::{LastFailure, PAUSE_AFTER, PartHealth};
 pub use crate::plugin::LoadedPlugin;
+pub use crate::plugin_failure::{PluginFailure, PluginFailureKind};
 pub use crate::plugin_log::{LOG_CAP, PluginLog};
+pub use crate::plugin_part::PluginPart;
 pub use crate::programs::{
     LineOutput, ProgramCommand, ProgramError, RunOutput, RunningProgram,
     StartProgram,
 };
-pub use crate::provider::ProviderCalls;
 pub use crate::terminal::{RunningTerminal, ScreenOutput, StartTerminal};

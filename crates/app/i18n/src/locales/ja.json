@@ -839,7 +839,7 @@
     "plugins_local": "ローカル",
     "plugins_part_agent": "エージェント",
     "plugins_part_provider": "プロバイダー",
-    "tpl_plugins_part": "{name}（{kind}）",
+    "tpl_plugins_part": "{name}（{domain}：{kind}）",
     "plugins_paused": "3 回連続で失敗したため一時停止中",
     "plugins_try_again": "再試行",
     "plugins_check_for_updates": "アップデートを確認",

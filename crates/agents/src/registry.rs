@@ -4,114 +4,17 @@
 //! provider no entry serves stays known by the host of its key. The parts
 //! of the installed plugins that are on fill it.
 
-use otty_plugin_host::Manifest;
-
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
 use crate::plugin_provider::PluginProvider;
 use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 
-/// One part of a plugin that reads an agent or a provider: the plugin's
-/// id, name, version and repository, and the id of the part.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginPart {
-    plugin: String,
-    name: String,
-    version: String,
-    repository: String,
-    part: String,
-}
-
-impl PluginPart {
-    /// The id of the plugin, such as `example`.
-    pub fn plugin(&self) -> &str {
-        &self.plugin
-    }
-
-    /// The name of the plugin, such as "Example".
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The version of the plugin, such as `0.4.0`.
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// The git repository of the plugin.
-    pub fn repository(&self) -> &str {
-        &self.repository
-    }
-
-    /// The id of the part in the plugin, such as `coder`.
-    pub fn part(&self) -> &str {
-        &self.part
-    }
-
-    /// The part `part` of the plugin `plugin`, named `name`, at `version`
-    /// from `repository`.
-    ///
-    /// ```
-    /// use otty_agents::PluginPart;
-    ///
-    /// let coder = PluginPart::new(
-    ///     "example",
-    ///     "Example",
-    ///     "0.4.0",
-    ///     "https://github.com/otty-shell/otty-plugin-example",
-    ///     "coder",
-    /// );
-    ///
-    /// assert_eq!(coder.part(), "coder");
-    /// ```
-    pub fn new(
-        plugin: impl Into<String>,
-        name: impl Into<String>,
-        version: impl Into<String>,
-        repository: impl Into<String>,
-        part: impl Into<String>,
-    ) -> Self {
-        Self {
-            plugin: plugin.into(),
-            name: name.into(),
-            version: version.into(),
-            repository: repository.into(),
-            part: part.into(),
-        }
-    }
-
-    /// The part `part` of the plugin of `manifest`; a plugin with no
-    /// repository, such as a local one, has an empty one.
-    pub fn of_manifest(manifest: &Manifest, part: &str) -> Self {
-        let plugin = manifest.plugin();
-
-        Self::new(
-            plugin.id(),
-            plugin.name(),
-            plugin.version().to_string(),
-            plugin.repository().unwrap_or_default(),
-            part,
-        )
-    }
-
-    /// The lines a report names the part with: the plugin, its version,
-    /// its repository and the part. Never anything the part read.
-    pub(crate) fn report_lines(&self) -> [String; 3] {
-        [
-            format!("Plugin: {} {}", self.plugin, self.version),
-            format!("Repository: {}", self.repository),
-            format!("Part: {}", self.part),
-        ]
-    }
-}
-
 /// The agents and providers OTTY knows right now, with one entry per agent
 /// id, provider id and provider host (spec Decision 4).
 ///
 /// ```
-/// use otty_agents::{
-///     PluginPart, ProviderEntry, ProviderId, ProviderRef, Registry,
-/// };
+/// use otty_agents::{ProviderEntry, ProviderId, ProviderRef, Registry};
+/// use otty_plugin_host::PluginPart;
 ///
 /// let part = PluginPart::new("example", "Example", "0.1.0", "", "cloud");
 /// let cloud = ProviderEntry::new(ProviderId::new("cloud"), "Cloud", part)

@@ -7,7 +7,7 @@
 //! session" or "Current week" block has a line with a percent and the word
 //! "used" or "left", and a line that starts with "Resets".
 
-use otty_plugin_sdk::{LimitWindow, ReadError};
+use otty_plugin_sdk::agents::{LimitWindow, ReadError};
 
 /// The header of the panel: the panel on screen is the text after the
 /// last one.

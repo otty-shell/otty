@@ -86,8 +86,10 @@
 //! counts an answer once and judges "format changed" from what the part
 //! saw. A [`PluginProvider`] reads the numbers of the accounts of its own
 //! provider id or hosts, with a handle to the key an agent part found. A
-//! trap or a missed deadline fails that read only, as a
-//! [`PluginFailure`]; three in a row pause the part ([`PartHealth`]).
+//! trap or a missed deadline fails that read only, as a `PluginFailure`
+//! of `otty-plugin-host`, which calls the parts of any domain; three in a
+//! row pause the part (`PartHealth`). This crate turns only what the
+//! `agents.agent` and `agents.provider` parts answer into its own types.
 //!
 //! The crate knows nothing about the window and reads no environment
 //! itself: the app passes in an [`AgentEnv`], built from the
@@ -103,7 +105,6 @@ mod account_numbers;
 mod agent;
 mod balance;
 mod bill;
-mod called_part;
 mod command;
 mod config_dir;
 mod dollars;
@@ -121,12 +122,10 @@ mod limits;
 mod litellm;
 mod local_time;
 mod money_estimate;
-mod part_health;
 mod part_need;
 mod percent;
 mod plugin_agent;
 mod plugin_bill;
-mod plugin_failure;
 mod plugin_provider;
 mod plugin_sources;
 mod plugin_spend;
@@ -141,6 +140,7 @@ mod program_version;
 mod project;
 mod provider;
 mod provider_limits;
+mod read_failure;
 mod record_format;
 mod refused_login;
 mod registry;
@@ -186,11 +186,9 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
-pub use crate::part_health::{LastFailure, PAUSE_AFTER, PartHealth};
 pub use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;
-pub use crate::plugin_failure::{PluginFailure, PluginFailureKind};
 pub use crate::plugin_provider::PluginProvider;
 pub use crate::price_source::{FetchedPrices, PriceSource};
 pub use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
@@ -208,7 +206,7 @@ pub use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 pub use crate::provider_limits::read_profile_limits;
 pub use crate::record_format::FormatChange;
 pub use crate::refused_login::RefusedLogin;
-pub use crate::registry::{PluginPart, Registry};
+pub use crate::registry::Registry;
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,
 };

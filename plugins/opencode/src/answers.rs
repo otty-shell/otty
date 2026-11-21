@@ -11,9 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::{
-    Answers, ReadError, RecordCounts, SpendItem, SpendKind, SpendPlace, clock,
+use otty_plugin_sdk::agents::{
+    Answers, ReadError, RecordCounts, SpendItem, SpendKind, SpendPlace,
 };
+use otty_plugin_sdk::clock;
 
 use crate::database::{Database, SessionRow};
 use crate::glob::escaped;
@@ -140,7 +141,7 @@ fn newest_counts(mut seen: Vec<Seen>) -> RecordCounts {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::ProviderRef;
+    use otty_plugin_sdk::agents::ProviderRef;
 
     use super::*;
     use crate::testing::{

@@ -10,21 +10,27 @@ the folder into a new repository and replace what the parts read.
 
 ## Parts, permissions and `[api]`
 
-- Each `[[agent]]` and `[[provider]]` of the manifest is a part with its
-  own id and its own permissions. While OTTY calls a function of one part,
-  only that part's permissions apply: here the provider part may not read
-  `~/.example-agent/`, and the agent part may not call `api.example.com`.
+- Each part belongs to a domain of OTTY. This plugin fills the `agents`
+  domain, Agents mode: each `[[agents.agent]]` and `[[agents.provider]]`
+  of the manifest is a part with its own id and its own permissions
+  (`[agents.agent.permissions]`, `[agents.provider.permissions]`). While
+  OTTY calls a function of one part, only that part's permissions apply:
+  here the provider part may not read `~/.example-agent/`, and the agent
+  part may not call `api.example.com`.
 - All agent parts are served by one `impl Agent`, all provider parts by
-  one `impl Provider`; the part's id comes with each call.
+  one `impl Provider`; the part's id comes with each call. The traits and
+  the types of the domain are in `otty_plugin_sdk::agents`; the host
+  operations (`files`, `http`, `keys`, `env` and the rest), a `Need` and a
+  `Key` are at the root of the SDK, since no domain owns them.
 - `[api]` names the version of each contract the plugin exports, one per
-  kind of part it has: `agent = "0.1"` for the `Agent` trait,
-  `provider = "0.1"` for the `Provider` trait, and `language = "0.1"` for
-  the optional `Language` trait, which belongs to no part. The last line
-  of `src/lib.rs`,
-  `otty_plugin_sdk::export!(Example with agent, provider, language);`,
-  must name the same traits. A plugin with only agent parts and texts in
-  English only writes `export!(Example with agent)` and only `agent` in
-  `[api]`.
+  kind of part it has, by its domain and its name: `agents.agent = "0.1"`
+  for the `Agent` trait, `agents.provider = "0.1"` for the `Provider`
+  trait, and `language = "0.1"` for the optional `Language` trait, which
+  belongs to no part and no domain. The last line of `src/lib.rs`,
+  `otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);`,
+  must name the same contracts. A plugin with only agent parts and texts
+  in English only writes `export!(Example with agents::agent)` and only
+  `agents.agent` in `[api]`.
 - An agent part that reads the limits its agent shows implements
   `read_limits(profile, login)`. Where a number comes from is the
   plugin's business: try your sources in your own order and return the

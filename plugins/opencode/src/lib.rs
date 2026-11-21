@@ -48,4 +48,4 @@ impl Language for OpenCode {
     }
 }
 
-otty_plugin_sdk::export!(OpenCode with agent, language);
+otty_plugin_sdk::export!(OpenCode with agents::agent, language);

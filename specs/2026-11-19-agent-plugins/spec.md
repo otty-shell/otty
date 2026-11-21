@@ -52,13 +52,18 @@ per-file numbers.
   has one or more parts, all listed in its manifest; it never adds a part
   while running. Each part has its own id and its own permissions, and
   can be turned on or off on its own.
-- **Extension point**: a kind of part OTTY can load. Now `agent` and
-  `provider`; later commands, panels, block actions.
+- **Domain**: a place of OTTY that plugins extend, with extension points
+  of its own (owner, 2026-11-21, issue 21). Now `agents`, after Agents
+  mode; a second domain, such as containers, may have a "provider" of its
+  own, so every name of a part is the domain and the point.
+- **Extension point**: a kind of part OTTY can load, within a domain. Now
+  `agents.agent` and `agents.provider`; later commands, panels, block
+  actions.
 - **Contract (API)**: the typed interface of one extension point, written
   in WIT (the interface language of the WebAssembly component model). It
   lists what the part gives OTTY and what OTTY gives the part. Each
-  contract has its own version, such as `otty:agent@0.1.0`; a manifest
-  names it without the patch number, as `agent = "0.1"`.
+  contract has its own version, such as `otty:agents-agent@0.1.0`; a
+  manifest names it without the patch number, as `agents.agent = "0.1"`.
 - **Host**: OTTY's side, the code that runs plugins.
 - **Host operation**: one function the host gives plugins, such as "read
   file bytes" or "HTTP request".
@@ -108,20 +113,30 @@ OTTY release.
 
 ### 3. The SDK: one trait and one versioned contract per extension point
 
-- The crate `otty-plugin-sdk` holds one trait per extension point, now
-  `Agent` and `Provider`, later others, and plain helper functions that
-  wrap the host operations.
-- Each trait maps to its own versioned WIT contract: `otty:agent@0.1.0`,
-  `otty:provider@0.1.0`. There is no combined contract: a component
-  exports one or both, and the plugin's manifest names the version of
-  each one it exports in `[api]` (`agent = "0.1"`, `provider = "0.1"`).
+- The crate `otty-plugin-sdk` holds one trait per extension point, in a
+  module per domain: now `otty_plugin_sdk::agents::{Agent, Provider}`
+  with every type only that domain uses, later others. The plain helper
+  functions that wrap the host operations, keys and needs stay at the
+  crate root, since no domain owns them (issue 21).
+- Each trait maps to its own versioned WIT contract:
+  `otty:agents-agent@0.1.0` and `otty:agents-provider@0.1.0` (WIT names
+  nested by domain, such as `otty:agents:agent`, are experimental, so the
+  domain is the first word of the package name). The values both share
+  (`read-error`, `identity`, `login-kind`, `limits`, `limit-window`,
+  `credits`) are the interface `otty:agents-agent/types`, which the
+  provider package imports. `otty:host` keeps only what any domain could
+  use: the host operations and their errors, keys and key places, a
+  command, a need and a key the user gave (`given-key`). There is no
+  combined contract: a component exports one or both, and the plugin's
+  manifest names the version of each one it exports in `[api]`
+  (`agents.agent = "0.1"`, `agents.provider = "0.1"`).
 - One optional contract belongs to no part (owner, 2026-11-21, issue 20):
   the language receiver `otty:language@0.1.0`, at the root of the SDK
-  and not under agent or provider. It has one function,
+  and in no domain. It has one function,
   `language-changed(tag) -> bool`, true when the plugin's texts depend on
   the language. The SDK trait is `Language`, exported with
-  `export!(T with agent, provider, language)`; the manifest names it as
-  `[api] language = "0.1"` and needs no part for it.
+  `export!(T with agents::agent, agents::provider, language)`; the
+  manifest names it as `[api] language = "0.1"` and needs no part for it.
 - A plugin exports each trait once, so all its agent parts share one
   `agent` version and all its provider parts share one `provider`
   version. The parts are told apart by the id OTTY passes to each call.
@@ -129,9 +144,10 @@ OTTY release.
   version stays in the host with converters from its types to the newest
   ones. A plugin runs only if OTTY knows every contract version in its
   `[api]`; otherwise the whole plugin shows "Needs a newer OTTY".
-- The only macro is `export!`, which names the plugin type and the traits
-  it exports: `export!(OpenAi with agent, provider, language)`. It wraps
-  the export that `wit-bindgen` makes.
+- The only macro is `export!`, which names the plugin type and the
+  extension points it exports, each by its domain:
+  `export!(OpenAi with agents::agent, agents::provider, language)`. It
+  wraps the export that `wit-bindgen` makes.
 - Plugin authors depend on the SDK by a git tag of the OTTY repository
   for now. It goes to crates.io with its first stable version
   (2026-11-20). The official plugins in this repository use it by path.
@@ -140,8 +156,9 @@ OTTY release.
 
 - **One plugin**: one git repository, one `.wasm`, one release version.
   A new version updates all its parts at once.
-- **Parts are listed up front.** The manifest lists every part
-  (`[[agent]]`, `[[provider]]`), each with its id and its own permissions.
+- **Parts are listed up front.** The manifest lists every part under its
+  domain (`[[agents.agent]]`, `[[agents.provider]]`), each with its id
+  and its own permissions.
   A plugin can never add a part while running; a new part is a new
   release. A plugin may have any number of parts: the OpenAI plugin has
   the agent Codex and the provider OpenAI; a pack such as "OpenAI-
@@ -430,37 +447,37 @@ authors = ["OTTY team"]
 wasm = "openai.wasm"
 
 [api]                             # one version per contract the .wasm exports
-agent = "0.1"
-provider = "0.1"
-language = "0.1"                  # the language receiver; belongs to no part
+agents.agent = "0.1"              # domain.point
+agents.provider = "0.1"
+language = "0.1"                  # the language receiver; belongs to no part and no domain
 
-[[agent]]
+[[agents.agent]]
 id = "codex"                      # saved in agents.json; never changes
 name = "Codex"
 icon = "codex.svg"
 program = "codex"                 # looked up on PATH, "installed or not"
 tested_version = "0.169.0"        # newest agent version this release was checked with
 
-[agent.permissions]               # apply only while a function of this part runs
+[agents.agent.permissions]               # apply only while a function of this part runs
 read = ["~/.codex*/**", "{CODEX_HOME}/**"]
 env = ["CODEX_HOME"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "codex"
 args = ["--version"]
 
-[[agent.permissions.run]]         # talked to line by line
+[[agents.agent.permissions.run]]         # talked to line by line
 program = "codex"
 args = ["-s", "read-only", "-a", "never", "app-server"]
 
 # Where keys are. These places are readable only with the keys
 # replaced by key handles.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
 fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
           "/tokens/refresh_token"]
 
-[[provider]]
+[[agents.provider]]
 id = "openai"                     # provider ids and agent ids are separate lists
 name = "OpenAI"
 icon = "openai.svg"
@@ -469,7 +486,7 @@ usage_page = "https://platform.openai.com/usage"            # of a key or an org
 plan_usage_page = "https://chatgpt.com/codex/settings/usage" # of a subscription; usage_page when absent
 add_by_hand = true                # Add account offers it for a key no agent uses
 
-[provider.permissions]
+[agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
 ```
 
@@ -487,43 +504,44 @@ authors = ["OTTY team"]
 wasm = "opencode.wasm"
 
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "opencode"
 name = "OpenCode"
 icon = "opencode.svg"
 program = "opencode"
 tested_version = "2.3.2"
 
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.local/share/opencode/**", "{XDG_DATA_HOME}/opencode/**"]
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
 env = ["XDG_DATA_HOME", "OPENCODE_DB"]
 
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.local/share/opencode/auth.json", "{XDG_DATA_HOME}/opencode/auth.json"]
 fields = ["/*/key", "/*/access", "/*/refresh"]
 
-[[agent.permissions.keys]]        # a JSON column of a table
+[[agents.agent.permissions.keys]]        # a JSON column of a table
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
 table = "credential"
 column = "value"
 fields = ["/key", "/access", "/refresh"]
 ```
 
-A pack such as "OpenAI-compatible providers" has no `[[agent]]`, only
-`[api] provider = "0.1"` and many `[[provider]]` parts, each with its own
-hosts and `http` permission.
+A pack such as "OpenAI-compatible providers" has no `[[agents.agent]]`,
+only `[api] agents.provider = "0.1"` and many `[[agents.provider]]`
+parts, each with its own hosts and `http` permission. A part outside its
+domain, such as a top-level `[[agent]]`, is an unknown field and refused.
 
 Paths start with `~` (home) or with a variable the part listed in `env`,
 written `{XDG_DATA_HOME}`; a glob may not contain `..` and may not leave
 home unless a listed variable points there. Writes are listed as
-`write = [...]`, programs as `[[agent.permissions.run]]` with the program
-and an argument pattern, hidden terminals as
-`[[agent.permissions.terminal]]`, keyring entries as
-`[[agent.permissions.keyring]]` with service, user and the JSON fields
+`write = [...]`, programs as `[[agents.agent.permissions.run]]` with the
+program and an argument pattern, hidden terminals as
+`[[agents.agent.permissions.terminal]]`, keyring entries as
+`[[agents.agent.permissions.keyring]]` with service, user and the JSON fields
 holding keys. The manifest is checked as a whole: every part needs the
 contract of its kind in `[api]`, and `[api]` names no contract without a
 part, except `language`, which belongs to the whole plugin.
@@ -710,11 +728,11 @@ part's translations for the language now, else English), `clock::now`,
 `has_prefix(text)` and `jwt_claims()`, and goes into a request as
 `request.header_with_key("authorization", "Bearer ", &key)`.
 
-A plugin ends with one line that names the traits it exports; they must
-match its `[api]`:
+A plugin ends with one line that names the extension points it exports,
+each by its domain; they must match its `[api]`:
 
 ```rust
-otty_plugin_sdk::export!(OpenAi with agent, provider, language);
+otty_plugin_sdk::export!(OpenAi with agents::agent, agents::provider, language);
 ```
 
 Inside, the SDK keeps one generated binding per contract; when the
@@ -747,7 +765,8 @@ one plain struct for the whole file; the host has already left out the
 lines without a marker and decoded `.zst`):
 
 ```rust
-use otty_plugin_sdk::{files, Agent, Answer, Answers, RecordCounts, SpendItem, TokenCount};
+use otty_plugin_sdk::agents::{Agent, Answer, Answers, RecordCounts, SpendItem, TokenCount};
+use otty_plugin_sdk::files;
 
 const MARKERS: [&[u8]; 3] = [b"\"token_count\"", b"\"turn_context\"", b"\"session_meta\""];
 
@@ -801,10 +820,7 @@ impl FileState {
 package otty:host@0.1.0;
 
 interface types {
-  /* host-error, identity, login-kind (subscription, api-key, gateway-token),
-     limit-window, credits, limits, command */
-  variant read-error { not-supported, host(host-error), unexpected(string),
-                       needs-user(need), login-refused, failed(string) }
+  /* host-error, command: what any domain could use */
   record key-ask { slot: string, label: string, hint: string,
                    prefix: option<string>, page: option<string> }
   variant need-action { run(command), ask-key(key-ask), open-page(string),
@@ -826,6 +842,8 @@ interface keys {
     keyring(tuple<string, string, option<string>>),
     sqlite-field(tuple<string, string, string, s64, option<string>>),
   }
+  /// A key the user gave for an ask-key need, under its slot; a handle for one call.
+  record given-key { slot: string, key: key }
   /// The key at `place`, read now; it must be a key place of the called part.
   open: func(place: key-place) -> result<key, host-error>;
 }
@@ -889,15 +907,28 @@ interface log     { write: func(level: level, text: string); }
 ```
 
 ```wit
-// otty-plugin-sdk/wit/agent/0.1.0/agent.wit
-package otty:agent@0.1.0;
+// otty-plugin-sdk/wit/agents-agent/0.1.0/types.wit
+package otty:agents-agent@0.1.0;
 
-interface types { /* profile, profile-status (connected, not-logged-in(need),
-                     config-folder-not-found), login, session, spend-place,
-                     answer, answers, record-counts, stats */ }
+/// The values of the `agents` domain both its contracts share.
+interface types {
+  use otty:host/types@0.1.0.{host-error, need};
+  variant read-error { not-supported, host(host-error), unexpected(string),
+                       needs-user(need), login-refused, failed(string) }
+  /* identity, login-kind (subscription, api-key, gateway-token),
+     limit-window, credits, limits */
+}
+```
+
+```wit
+// otty-plugin-sdk/wit/agents-agent/0.1.0/agent.wit
+package otty:agents-agent@0.1.0;
 
 interface agent {
-  use types.{...};
+  use types.{read-error, identity, login-kind, limits};
+  /* profile, profile-status (connected, not-logged-in(need),
+     config-folder-not-found), login, session, spend-place,
+     answer, answers, record-counts, stats */
   profiles: func(agent: string, env: environment) -> list<profile-place>;
   detect: func(profile: profile) -> profile-status;
   version: func(profile: profile) -> option<string>;
@@ -919,23 +950,24 @@ world agent-part {
   import otty:host/programs@0.1.0; import otty:host/terminal@0.1.0;
   import otty:host/keyring@0.1.0; import otty:host/env@0.1.0;
   import otty:host/clock@0.1.0;  import otty:host/log@0.1.0;
+  import types;
   export agent;
 }
 ```
 
 ```wit
-// otty-plugin-sdk/wit/provider/0.1.0/provider.wit
-package otty:provider@0.1.0;
+// otty-plugin-sdk/wit/agents-provider/0.1.0/provider.wit
+package otty:agents-provider@0.1.0;
 
 interface provider {
-  use types.{...};
+  use otty:host/keys@0.1.0.{key, given-key};
+  use otty:agents-agent/types@0.1.0.{read-error, identity, login-kind, limit-window, credits};
   record extra-usage { used: option<f64>, monthly-limit: option<f64>, currency: option<string> }
   record account-numbers { windows: list<limit-window>, credits: option<credits>,
                            extra-usage: option<extra-usage>, left: option<money>,
                            key-limit: option<key-limit>, spent-this-month: option<money>,
                            plan: option<string> }
   record day-range { first: string, last: string }       // UTC days, YYYY-MM-DD
-  record given-key { slot: string, key: key }             // a key the user gave for an ask-key need
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
   numbers: func(provider: string, account: account-facts, key: borrow<key>,
                 given: list<given-key>) -> result<account-numbers, read-error>;
@@ -947,7 +979,8 @@ interface provider {
 world provider-part {
   import otty:host/keys@0.1.0; import otty:host/http@0.1.0;
   import otty:host/env@0.1.0;  import otty:host/clock@0.1.0;
-  import otty:host/log@0.1.0;  export provider;
+  import otty:host/log@0.1.0;  import otty:agents-agent/types@0.1.0;
+  export provider;
 }
 ```
 
@@ -965,8 +998,8 @@ world language-receiver { export language; }
 ```
 
 Each contract is its own package with its own version; there is no world
-that joins them. A component exports `otty:agent/agent@0.1.0`,
-`otty:provider/provider@0.1.0` or both, and may also export
+that joins them. A component exports `otty:agents-agent/agent@0.1.0`,
+`otty:agents-provider/provider@0.1.0` or both, and may also export
 `otty:language/language@0.1.0`, which imports nothing. The host reads which contracts and
 versions a component exports from its export names (wasmtime resolves
 semver-compatible imports itself), checks them against the manifest's
@@ -1338,8 +1371,14 @@ New crates (each with a `README.md`, per the rules):
 
 - `otty-plugin-host` (`crates/plugins/host`): the wasmtime engine, the
   compiled cache, the manifest and the permissions of each part, the host
-  operations and the bindings of every contract version. Knows no agent
-  and no provider; must not depend on `iced` or `crates/app/`.
+  operations and the bindings of every contract version, a module per
+  domain (`agents::agent::v0_1`, `agents::provider::v0_1`). Calling a part
+  is no domain's business, so it lives here too (owner, 2026-11-21, issue
+  21): `CalledPart` (one read is one batch with the part's permissions
+  only), `PartHealth` and `LastFailure` (three failed reads in a row
+  pause the part until Try again), `PluginFailure` with its general kinds
+  and its report, and `PluginPart` (how a part is named in reports). Knows
+  no agent and no provider; must not depend on `iced` or `crates/app/`.
 - `otty-plugin-sdk` (`crates/plugins/sdk`): the guest side; the WIT files
   live here and the host's bindings read them. Built for `wasm32-wasip2`
   by plugin authors, natively for its own tests. Plugin authors depend on
@@ -1350,6 +1389,8 @@ New crates (each with a `README.md`, per the rules):
   organization.
 - `otty-app-plugins` and `otty-app-plugins-io` (`crates/app/features/plugins/`):
   the Plugins page and its I/O, following the app's architecture checks.
+  They list the parts of any domain and must not depend on `otty-agents`
+  (a crate dependency limit in `deny.toml`, issue 21).
 - Official plugins are built in `plugins/<id>/` of this repository
   (`anthropic`, `openai`, `opencode`, `deepseek`, `openrouter`,
   and `template`), each its own cargo workspace (as the spike's

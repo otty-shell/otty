@@ -9,16 +9,16 @@ use otty_plugin_manifest::{Api, Contract, ContractVersion};
 use semver::Version;
 use wasmtime::component::InstancePre;
 
-use crate::agent::AgentExports;
+use crate::agents::agent::AgentExports;
+use crate::agents::provider::ProviderExports;
 use crate::calls::CallState;
 use crate::engine::LoadError;
 use crate::language::LanguageExports;
-use crate::provider::ProviderExports;
 
 /// A version of the agent contract this OTTY has bindings for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentVersion {
-    /// `otty:agent@0.1`, [`crate::agent::v0_1`].
+    /// `otty:agents-agent@0.1`, [`crate::agents::agent::v0_1`].
     V0_1,
 }
 
@@ -36,7 +36,7 @@ impl AgentVersion {
 /// A version of the provider contract this OTTY has bindings for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProviderVersion {
-    /// `otty:provider@0.1`, [`crate::provider::v0_1`].
+    /// `otty:agents-provider@0.1`, [`crate::agents::provider::v0_1`].
     V0_1,
 }
 
@@ -151,7 +151,7 @@ impl ContractExports {
 }
 
 /// The contracts a component exports, read from its export names such as
-/// `otty:agent/agent@0.1.0`.
+/// `otty:agents-agent/agent@0.1.0`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExportedApi {
     versions: BTreeMap<Contract, Version>,
@@ -209,7 +209,7 @@ impl ExportedApi {
 }
 
 impl fmt::Display for ExportedApi {
-    /// Writes `agent 0.1.0, provider 0.1.0`, or `nothing`.
+    /// Writes `agents.agent 0.1.0, agents.provider 0.1.0`, or `nothing`.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let listed: Vec<String> = self
             .versions
@@ -261,6 +261,23 @@ mod tests {
         }
     }
 
+    /// Issue 21: `[api]` keys the contracts on the domain and the point,
+    /// and `agents.agent` picks the bindings of the agent contract.
+    #[test]
+    fn api_with_agents_agent_picks_the_agent_bindings() {
+        let manifest = Manifest::parse(TEST_PLUGIN_MANIFEST).expect("valid");
+        let api = manifest.api();
+
+        let agent = api.version_of(Contract::Agent).and_then(AgentVersion::of);
+        let provider = api
+            .version_of(Contract::Provider)
+            .and_then(ProviderVersion::of);
+
+        assert_eq!(api.to_string(), "agents.agent 0.1");
+        assert_eq!(agent, Some(AgentVersion::V0_1));
+        assert_eq!(provider, None);
+    }
+
     #[test]
     fn a_version_with_no_bindings_maps_to_none() {
         let version = ContractVersion::parse("0.2").expect("a version");
@@ -273,22 +290,27 @@ mod tests {
     #[test]
     fn exports_give_their_contracts_and_skip_other_exports() {
         let exported = exports(&[
-            "otty:agent/agent@0.1.3",
+            "otty:agents-agent/agent@0.1.3",
             "otty:test/misbehave@0.1.0",
             "otty:language/language@0.1.0",
-            "otty:provider/provider@0.1.0",
+            "otty:agents-provider/provider@0.1.0",
+            "otty:agent/agent@0.1.0",
         ]);
 
         assert_eq!(
             exported.to_string(),
-            "agent 0.1.3, provider 0.1.0, language 0.1.0"
+            "agents.agent 0.1.3, agents.provider 0.1.0, language 0.1.0"
         );
     }
 
     #[test]
     fn a_contract_exported_twice_is_not_one_api() {
         let exported = ExportedApi::of_exports(
-            ["otty:agent/agent@0.1.0", "otty:agent/agent@0.2.0"].into_iter(),
+            [
+                "otty:agents-agent/agent@0.1.0",
+                "otty:agents-agent/agent@0.2.0",
+            ]
+            .into_iter(),
         );
 
         assert_eq!(exported, None);
@@ -299,15 +321,18 @@ mod tests {
         let manifest = Manifest::parse(TEST_PLUGIN_MANIFEST).expect("valid");
         let api = manifest.api();
 
-        assert!(exports(&["otty:agent/agent@0.1.2"]).matches(api));
+        assert!(exports(&["otty:agents-agent/agent@0.1.2"]).matches(api));
         assert!(
             !exports(&[
-                "otty:agent/agent@0.1.0",
-                "otty:provider/provider@0.1.0",
+                "otty:agents-agent/agent@0.1.0",
+                "otty:agents-provider/provider@0.1.0",
             ])
             .matches(api)
         );
-        assert!(!exports(&["otty:provider/provider@0.1.0"]).matches(api));
+        assert!(
+            !exports(&["otty:agents-provider/provider@0.1.0"]).matches(api)
+        );
+        assert!(!exports(&["otty:agent/agent@0.1.0"]).matches(api));
         assert!(!exports(&[]).matches(api));
     }
 }

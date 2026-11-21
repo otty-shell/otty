@@ -7,8 +7,9 @@
 
 use std::collections::BTreeMap;
 
+use otty_plugin_sdk::HostError;
+use otty_plugin_sdk::agents::{ReadError, Session};
 use otty_plugin_sdk::files::{self, FileInfo};
-use otty_plugin_sdk::{HostError, ReadError, Session};
 
 use crate::glob::escaped;
 use crate::session_file::{SessionMeta, read_session_meta};

@@ -107,9 +107,8 @@ mod tests {
 
     use otty_plugin_manifest::PartRef;
 
-    use crate::agent::{LoginRef, Profile};
+    use crate::agents::agent::{Limits, LoginRef, Profile, ReadError};
     use crate::engine::PluginEngine;
-    use crate::operations::v0_1::otty::host::types::{Limits, ReadError};
     use crate::programs::{
         LineOutput, MockRunningProgram, MockStartProgram, RunOutput,
     };

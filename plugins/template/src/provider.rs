@@ -1,11 +1,12 @@
 //! The provider part `example-cloud`: a made-up provider whose API tells
 //! whose account a key is and how much money is left on it.
 
-use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, GivenKey, Identity,
-    Key, LoginFacts, Money, Provider, ReadError, given_key,
+use otty_plugin_sdk::agents::{
+    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, Identity,
+    LoginFacts, Money, Provider, ReadError,
 };
+use otty_plugin_sdk::http::{self, Request};
+use otty_plugin_sdk::{GivenKey, Key, given_key};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -160,8 +161,9 @@ fn get_json<T: DeserializeOwned>(url: &str, key: &Key) -> Result<T, ReadError> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::LoginKind;
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{GivenKey, HostError, LoginKind, NeedAction, files};
+    use otty_plugin_sdk::{GivenKey, HostError, NeedAction, files};
 
     use super::*;
 

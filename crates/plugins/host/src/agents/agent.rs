@@ -10,16 +10,23 @@ pub mod v0_1;
 use std::time::Instant;
 
 use wasmtime::Store;
-use wasmtime::component::InstancePre;
+use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
-pub use crate::agent::v0_1::exports::otty::agent::agent::{
+pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Answer, Answers, Billing, Connection, Login, LoginRef, ModelTokens,
     Profile, ProfilePlace, ProfileStatus, ProjectStats, ProviderRef,
     RecordCounts, Session, SessionStats, SpendItem, SpendKind, SpendPlace,
     TokenCount,
 };
-use crate::agent::v0_1::exports::otty::agent::agent::{Guest, GuestIndices};
+use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
+    Guest, GuestIndices,
+};
+/// The values of the `agents` domain both its contracts use, in the
+/// newest version.
+pub use crate::agents::agent::v0_1::otty::agents_agent::types::{
+    Credits, Identity, LimitWindow, Limits, LoginKind, ReadError,
+};
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::AgentVersion;
 /// The host's types the agent contract uses.
@@ -28,8 +35,7 @@ pub use crate::operations::v0_1::otty::host::keys::{
 };
 /// The host's types the agent contract uses.
 pub use crate::operations::v0_1::otty::host::types::{
-    Command, Credits, HostError, Identity, KeyAsk, LimitWindow, Limits,
-    LoginKind, Need, NeedAction, ReadError,
+    Command, HostError, KeyAsk, Need, NeedAction,
 };
 use crate::pacing::PaceKey;
 
@@ -237,6 +243,22 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
             },
         })
     }
+}
+
+/// The domain's shared values, `otty:agents-agent/types`, have no
+/// function to serve.
+impl crate::agents::agent::v0_1::otty::agents_agent::types::Host for CallState {}
+
+/// Adds the domain's shared values, `otty:agents-agent/types`, to
+/// `linker`: a component imports them with either contract of the
+/// domain.
+pub(crate) fn add_types_to_linker(
+    linker: &mut Linker<CallState>,
+) -> wasmtime::Result<()> {
+    crate::agents::agent::v0_1::otty::agents_agent::types::add_to_linker::<
+        CallState,
+        HasSelf<CallState>,
+    >(linker, |state| state)
 }
 
 #[cfg(test)]

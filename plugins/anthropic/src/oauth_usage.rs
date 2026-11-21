@@ -11,8 +11,9 @@
 //! the part does not know which agent keeps it, so OTTY asks the agent
 //! part that found it what the user must do.
 
+use otty_plugin_sdk::Key;
+use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::http::Request;
-use otty_plugin_sdk::{Key, ReadError};
 
 use crate::requests::json_answer;
 use crate::usage_answer::{UsageNumbers, usage_numbers};

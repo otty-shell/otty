@@ -63,6 +63,11 @@ wasmtime = { version = "48.0.10", default-features = false, features = [
 # `wasm32-wasip2` plugin works but sees no file, network or variable.
 wasmtime-wasi = { version = "48.0.10", default-features = false, features = ["p2"] }
 
+[features]
+# `otty_plugin_host::fixtures`: values for the tests of the crates that use
+# this one, such as the health of a paused part.
+fixtures = []
+
 [dev-dependencies]
 # Mocks of the HTTPS client, the system keyring and the app's program and
 # terminal starters, so no test reaches the network, the keyring or a real

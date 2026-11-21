@@ -839,7 +839,7 @@
     "plugins_local": "로컬",
     "plugins_part_agent": "에이전트",
     "plugins_part_provider": "제공자",
-    "tpl_plugins_part": "{name} ({kind})",
+    "tpl_plugins_part": "{name} ({domain}: {kind})",
     "plugins_paused": "세 번 연속 실패하여 일시 중지됨",
     "plugins_try_again": "다시 시도",
     "plugins_check_for_updates": "업데이트 확인",

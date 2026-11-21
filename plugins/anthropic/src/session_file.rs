@@ -4,8 +4,9 @@
 
 use std::path::Path;
 
+use otty_plugin_sdk::HostError;
+use otty_plugin_sdk::agents::Session;
 use otty_plugin_sdk::files::FileInfo;
-use otty_plugin_sdk::{HostError, Session};
 use serde::Deserialize;
 use serde_json::Value;
 

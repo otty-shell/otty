@@ -14,10 +14,11 @@
 
 use std::collections::BTreeMap;
 
-use otty_plugin_sdk::{
-    Billing, Connection, Identity, JsonField, JsonWithKeys, KeyPlace, Login,
-    LoginKind, Profile, ProfileStatus, ProviderRef, SqliteField, files,
+use otty_plugin_sdk::agents::{
+    Billing, Connection, Identity, Login, LoginKind, Profile, ProfileStatus,
+    ProviderRef,
 };
+use otty_plugin_sdk::{JsonField, JsonWithKeys, KeyPlace, SqliteField, files};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 

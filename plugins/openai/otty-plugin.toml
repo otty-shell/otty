@@ -14,11 +14,11 @@ wasm = "openai.wasm"
 # language receiver: the texts of the needs come in every language of
 # OTTY.
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "codex"
 name = "Codex"
 icon = "codex.svg"
@@ -27,24 +27,24 @@ tested_version = "0.169.0"
 
 # Apply only while a function of this part runs. `CODEX_HOME` moves the
 # default config folder.
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.codex*/**", "{CODEX_HOME}/**"]
 env = ["CODEX_HOME"]
 
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "codex"
 args = ["--version"]
 
 # Talked to line by line for the limits of the login; only `initialize`,
 # `initialized` and `account/rateLimits/read` are ever sent.
-[[agent.permissions.run]]
+[[agents.agent.permissions.run]]
 program = "codex"
 args = ["-s", "read-only", "-a", "never", "app-server"]
 
 # Where the keys are: readable only with the keys replaced by handles.
 # The login of `codex login`, a ChatGPT login or an API key. The plugin
 # reads whether a key is there and the claims of the tokens, never a key.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
 fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
           "/tokens/refresh_token"]
@@ -53,7 +53,7 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
 # login (also one only OpenCode keeps) and the costs of an organization
 # read with an admin key added by hand. A login behind a gateway is for
 # the gateway's host and is not read here.
-[[provider]]
+[[agents.provider]]
 id = "openai"
 name = "OpenAI"
 icon = "openai.svg"
@@ -64,5 +64,5 @@ add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the `codex`
 # part are refused then.
-[provider.permissions]
+[agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]

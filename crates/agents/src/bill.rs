@@ -151,8 +151,8 @@ pub fn read_bill(
 #[cfg(test)]
 mod tests {
     use otty_plugin_host::KeySource;
-    use otty_plugin_host::agent::KeyPlace;
-    use otty_plugin_host::provider::Bill as PartBill;
+    use otty_plugin_host::agents::agent::KeyPlace;
+    use otty_plugin_host::agents::provider::Bill as PartBill;
 
     use super::*;
     use crate::account::{AccountIdentity, AccountKind, AccountLogin, FoundIn};
@@ -198,8 +198,8 @@ mod tests {
     }
 
     /// An API key login of the profile, with the organization's id.
-    fn api_key_login() -> otty_plugin_host::agent::Login {
-        use otty_plugin_host::agent::{
+    fn api_key_login() -> otty_plugin_host::agents::agent::Login {
+        use otty_plugin_host::agents::agent::{
             Identity, JsonField, Login, LoginKind, ProviderRef as PartProvider,
         };
 

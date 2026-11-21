@@ -647,7 +647,7 @@ mod tests {
 
     /// A registry with the DeepSeek entry its plugin puts in it.
     fn registry() -> Registry {
-        let part = crate::registry::PluginPart::new(
+        let part = otty_plugin_host::PluginPart::new(
             "deepseek", "DeepSeek", "0.1.0", "", "deepseek",
         );
         let deepseek = crate::provider::ProviderEntry::new(

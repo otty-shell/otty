@@ -13,15 +13,16 @@ use wasmtime::component::{InstancePre, Resource};
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::ProviderVersion;
 use crate::keys::{KeyHandle, KeySource};
-use crate::operations::v0_1::otty::host::types::ReadError;
+use crate::agents::agent::ReadError;
 /// The newest provider contract's types, which the rest of OTTY uses.
-pub use crate::provider::v0_1::exports::otty::provider::provider::{
+pub use crate::agents::provider::v0_1::exports::otty::agents_provider::provider::{
     AccountFacts, AccountNumbers, Bill, DayCost, DayRange, ExtraUsage,
     KeyLimit, LoginFacts, Money,
 };
-use crate::provider::v0_1::exports::otty::provider::provider::{
-    GivenKey, Guest, GuestIndices,
+use crate::agents::provider::v0_1::exports::otty::agents_provider::provider::{
+    Guest, GuestIndices,
 };
+use crate::operations::v0_1::otty::host::keys::GivenKey;
 
 /// The provider contract of one loaded plugin, in the version its `[api]`
 /// names.
@@ -156,11 +157,12 @@ mod tests {
     use otty_plugin_manifest::{Environment, PartRef};
 
     use super::*;
+    use crate::agents::agent::Identity;
     use crate::https::MockHttpsSend;
     use crate::keys::KeyText;
     use crate::operations::v0_1::otty::host::http::Response;
     use crate::operations::v0_1::otty::host::keys::KeyPlace;
-    use crate::operations::v0_1::otty::host::types::{Identity, NeedAction};
+    use crate::operations::v0_1::otty::host::types::NeedAction;
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{TempDir, engine_with, load_template, template_env};
 

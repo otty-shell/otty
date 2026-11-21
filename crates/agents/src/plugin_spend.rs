@@ -10,24 +10,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use otty_plugin_host::CallError;
-use otty_plugin_host::agent::{
+use otty_plugin_host::agents::agent::{
     AgentCalls, Answers, HostError, KeyPlace, Profile as PartProfile,
     ReadError, SpendItem, SpendKind,
 };
+use otty_plugin_host::{CallError, CalledPart, PluginFailureKind};
 
 use crate::account::AccountIdentity;
-use crate::called_part::CalledPart;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
 use crate::plugin_agent::account_of;
-use crate::plugin_failure::PluginFailureKind;
 use crate::plugin_values::{
     is_same_place, part_profile, provider_of, time_of, tokens_of,
 };
 use crate::profile::Profile;
+use crate::read_failure::read_failure;
 use crate::record_format::{RecordCounts, RecordFormat};
 use crate::spend::{Spend, SpendCounter};
 use crate::spend_files::{CountedAnswer, FileSpend, count_spend};
@@ -226,7 +225,7 @@ impl PluginSpend {
 
     /// The error of a read the part answered it could not do.
     fn could_not_read(&self, error: &ReadError) -> SourceError {
-        let kind = PluginFailureKind::of_read(error);
+        let kind = read_failure(error);
 
         self.part.failure(READ_ANSWERS, kind).into()
     }
@@ -250,11 +249,12 @@ impl SpendCounter for Arc<PluginSpend> {
 mod tests {
     use std::path::Path;
 
+    use otty_plugin_host::PluginFailure;
+
     use super::*;
     use crate::account::{Account, AccountKind, AccountLogin, FoundIn};
     use crate::agent::Agent;
     use crate::plugin_agent::PluginAgent;
-    use crate::plugin_failure::PluginFailure;
     use crate::plugin_provider::PluginProvider;
     use crate::provider::ProviderRef;
     use crate::spend::ModelTokens;
@@ -458,12 +458,12 @@ mod tests {
 
     /// A login whose key file is not there: the host finds no key, so
     /// nothing is sent.
-    fn missing_key() -> otty_plugin_host::agent::Login {
-        use otty_plugin_host::agent::{JsonField, Login, LoginKind};
+    fn missing_key() -> otty_plugin_host::agents::agent::Login {
+        use otty_plugin_host::agents::agent::{JsonField, Login, LoginKind};
 
         Login {
             kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agent::ProviderRef::Id(
+            for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
                 "example-cloud".to_string(),
             ),
             place: KeyPlace::JsonField(JsonField {

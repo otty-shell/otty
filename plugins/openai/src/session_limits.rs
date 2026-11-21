@@ -5,8 +5,8 @@
 //! `primary` and `secondary` windows, the `credits` and the `plan_type`.
 //! The numbers are as old as that record, so the limits carry its time.
 
+use otty_plugin_sdk::agents::{Limits, ReadError};
 use otty_plugin_sdk::files::{self, FileInfo};
-use otty_plugin_sdk::{Limits, ReadError};
 use serde_json::Value;
 
 use crate::individual_limit::individual_limit_in;
@@ -163,7 +163,7 @@ fn window(window: &Value, recorded_at_ms: i64) -> Option<WindowNumbers> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::Credits;
+    use otty_plugin_sdk::agents::Credits;
 
     use super::*;
     use crate::rate_limits::no_numbers;
@@ -212,14 +212,14 @@ mod tests {
     fn five_hour_and_weekly() -> Limits {
         Limits {
             windows: vec![
-                otty_plugin_sdk::LimitWindow {
+                otty_plugin_sdk::agents::LimitWindow {
                     length_minutes: Some(300),
                     model: None,
                     percent_used: 42.0,
                     resets_at_ms: Some(NOW + 3_600_000),
                     reset_text: None,
                 },
-                otty_plugin_sdk::LimitWindow {
+                otty_plugin_sdk::agents::LimitWindow {
                     length_minutes: Some(10_080),
                     model: None,
                     percent_used: 17.0,

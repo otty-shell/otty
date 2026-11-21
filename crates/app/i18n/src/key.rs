@@ -1769,7 +1769,8 @@ pub enum Key {
     PluginsPartAgent,
     /// Kind of a provider part, as in "Example Cloud (provider)".
     PluginsPartProvider,
-    /// A part with its kind: {name}, {kind}.
+    /// A part with its domain and kind, as in "Coder (Agents: agent)":
+    /// {name}, {domain}, {kind}.
     TplPluginsPart,
     /// Line next to a part paused after three failures in a row.
     PluginsPaused,
@@ -1903,7 +1904,7 @@ pub enum Key {
     TplPluginsErrorUnexpected,
     /// Error of a repository with no release OTTY can install.
     PluginsErrorNoRelease,
-    /// Error: {detail} names the contract, such as "agent contract 0.2".
+    /// Error: {detail} names the contract, such as "agents.agent contract 0.2".
     TplPluginsErrorNeedsNewerOtty,
     /// Error: {error}.
     TplPluginsErrorManifest,

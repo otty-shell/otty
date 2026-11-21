@@ -69,4 +69,4 @@ impl Language for OpenAi {
     }
 }
 
-otty_plugin_sdk::export!(OpenAi with agent, provider, language);
+otty_plugin_sdk::export!(OpenAi with agents::agent, agents::provider, language);

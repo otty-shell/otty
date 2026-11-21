@@ -26,10 +26,10 @@
 //! and understood, so a changed format is told and not taken for fewer
 //! tokens.
 
-use otty_plugin_sdk::{
-    Answer, Answers, KeyPlace, ProviderRef, ReadError, RecordCounts,
-    TokenCount, files,
+use otty_plugin_sdk::agents::{
+    Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
 };
+use otty_plugin_sdk::{KeyPlace, files};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -429,7 +429,7 @@ fn usage(info: &Value, field: &str) -> Option<Option<Usage>> {
 /// Test-only values of the tokens of a session file.
 #[cfg(test)]
 pub(crate) mod testing {
-    use otty_plugin_sdk::TokenCount;
+    use otty_plugin_sdk::agents::TokenCount;
 
     /// The tokens `input`, `cached` and `output`, with no reasoning.
     pub(crate) fn tokens(input: u64, cached: u64, output: u64) -> TokenCount {

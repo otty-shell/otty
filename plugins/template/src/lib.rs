@@ -25,7 +25,7 @@ impl Language for Example {
     }
 }
 
-otty_plugin_sdk::export!(Example with agent, provider, language);
+otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);
 
 #[cfg(test)]
 mod tests {

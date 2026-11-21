@@ -4,7 +4,8 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use otty_plugin_host::agent::Login;
+use otty_plugin_host::PluginPart;
+use otty_plugin_host::agents::agent::Login;
 
 use crate::account::Account;
 use crate::command::AgentCommand;
@@ -15,7 +16,6 @@ use crate::part_need::PartNeed;
 use crate::profile::{Profile, ProfileStatus};
 use crate::profile_list::found_in_home;
 use crate::program::StartProgram;
-use crate::registry::PluginPart;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -104,7 +104,8 @@ impl AgentEntry {
     /// An entry with no icon, read by `part`.
     ///
     /// ```
-    /// use otty_agents::{AgentEntry, AgentId, PluginPart};
+    /// use otty_agents::{AgentEntry, AgentId};
+    /// use otty_plugin_host::PluginPart;
     ///
     /// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
     /// let coder = AgentEntry::new(

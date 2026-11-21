@@ -2,7 +2,7 @@
 //! the keys of `auth.json` and `integration_id` of a login, and the ids of
 //! the provider parts that serve them in OTTY.
 
-use otty_plugin_sdk::ProviderRef;
+use otty_plugin_sdk::agents::ProviderRef;
 
 /// The id of OpenAI in OTTY: ChatGPT logins and OpenAI keys.
 pub(crate) const OPENAI: &str = "openai";

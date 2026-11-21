@@ -4,8 +4,7 @@
 
 use std::path::PathBuf;
 
-use otty_agents::PartHealth;
-use otty_plugin_host::PluginLog;
+use otty_plugin_host::{PartHealth, PluginLog};
 use otty_plugin_manifest::{Manifest, PartKind, PartRef};
 use otty_plugin_releases::{InstalledPlugin, Source};
 

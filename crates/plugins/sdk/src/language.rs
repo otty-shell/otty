@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 /// implement it, and OTTY never calls it.
 ///
 /// It belongs to no kind of part: it is exported for the whole plugin
-/// with `export!(Example with agent, language)` and named in the
+/// with `export!(Example with agents::agent, language)` and named in the
 /// manifest as `[api] language = "0.1"`.
 pub trait Language {
     /// The user changed the language to `tag`, such as `ru` or `pt-BR`.

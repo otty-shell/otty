@@ -14,11 +14,12 @@
 //! about.
 
 use otty_agents::{
-    Account, AgentCommand, FormatChange, PartNeed, PartNeedAction,
-    PluginFailure, ProviderId, RefusedLogin, SourceError, SourceFailure,
+    Account, AgentCommand, FormatChange, PartNeed, PartNeedAction, ProviderId,
+    RefusedLogin, SourceError, SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
+use otty_plugin_host::PluginFailure;
 
 use super::super::failure_text::source_error_text;
 use super::super::keyring::keyring_part_names;
@@ -645,12 +646,12 @@ fn format_changed_title(agent: &str, change: &FormatChange) -> String {
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        FormatChange, PluginFailureKind, PluginPart, ProfileStatus,
-        ProviderRef, SavedProfiles, SourceError,
+        FormatChange, ProfileStatus, ProviderRef, SavedProfiles, SourceError,
     };
     use otty_app_domain::plugins::{
         OffPart, PartSide, PluginNotes, WaitingUpdate,
     };
+    use otty_plugin_host::{PluginFailureKind, PluginPart};
 
     use super::*;
     use crate::event::AgentsIntent;

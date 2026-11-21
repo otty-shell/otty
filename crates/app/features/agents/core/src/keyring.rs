@@ -118,7 +118,8 @@ fn give(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 mod tests {
     use std::sync::Arc;
 
-    use otty_agents::{AgentEntry, AgentId, PluginPart, SavedProfiles};
+    use otty_agents::{AgentEntry, AgentId, SavedProfiles};
+    use otty_plugin_host::PluginPart;
 
     use super::*;
     use crate::event::AgentsIntent;

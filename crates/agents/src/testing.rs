@@ -7,8 +7,10 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use mockall::mock;
-use otty_plugin_host::agent::Login;
-use otty_plugin_host::{Environment, LoadedPlugin, Manifest, PluginEngine};
+use otty_plugin_host::agents::agent::Login;
+use otty_plugin_host::{
+    Environment, LoadedPlugin, Manifest, PluginEngine, PluginPart,
+};
 
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
@@ -27,7 +29,6 @@ use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
 use crate::program::{MockStartProgram, StartProgram};
 use crate::provider::ProviderRef;
-use crate::registry::PluginPart;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -484,8 +485,8 @@ pub(crate) fn key_account(provider: ProviderRef, key: &str) -> Account {
 
 /// What a plugin part tells of whom a login is for when its files say
 /// nothing.
-pub(crate) fn no_identity() -> otty_plugin_host::agent::Identity {
-    otty_plugin_host::agent::Identity {
+pub(crate) fn no_identity() -> otty_plugin_host::agents::agent::Identity {
+    otty_plugin_host::agents::agent::Identity {
         account_id: None,
         organization_id: None,
         email: None,

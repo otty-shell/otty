@@ -7,7 +7,7 @@
 //! `ClaudeWeb/ClaudeWebExtraRateWindowParser.swift` next to it. The answer
 //! is not documented by Anthropic, so it is read tolerantly.
 
-use otty_plugin_sdk::{ExtraUsage, LimitWindow, ReadError};
+use otty_plugin_sdk::agents::{ExtraUsage, LimitWindow, ReadError};
 use serde_json::{Map, Value};
 
 use crate::timestamp::millis_of;

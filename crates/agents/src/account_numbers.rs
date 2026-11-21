@@ -146,16 +146,15 @@ pub fn read_account_numbers(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_plugin_host::KeySource;
-    use otty_plugin_host::provider::{
+    use otty_plugin_host::agents::provider::{
         AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, Money,
     };
+    use otty_plugin_host::{KeySource, PluginPart};
 
     use super::*;
     use crate::given_key::KeyRef;
     use crate::plugin_provider::MockProviderPartCalls;
     use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
-    use crate::registry::PluginPart;
     use crate::testing::{
         NOW, TempDir, at, chatgpt_login, key_account, no_identity,
         organization, write_file,
@@ -331,13 +330,13 @@ mod tests {
         );
     }
 
-    fn example_login() -> otty_plugin_host::agent::Login {
-        use otty_plugin_host::agent::{
+    fn example_login() -> otty_plugin_host::agents::agent::Login {
+        use otty_plugin_host::agents::agent::{
             JsonField, KeyPlace as PartPlace, LoginKind,
             ProviderRef as PartProvider,
         };
 
-        otty_plugin_host::agent::Login {
+        otty_plugin_host::agents::agent::Login {
             kind: LoginKind::ApiKey,
             for_whom: PartProvider::Id("example-cloud".to_string()),
             place: PartPlace::JsonField(JsonField {

@@ -4,7 +4,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use otty_plugin_host::agent::{
+use otty_plugin_host::agents::agent::{
     Credits as PartCredits, KeyPlace, Limits as PartLimits,
     ModelTokens as PartModelTokens, Profile as PartProfile,
     ProviderRef as PartProviderRef, TokenCount as PartTokenCount,
@@ -142,7 +142,7 @@ pub(crate) fn is_same_place(one: &KeyPlace, other: &KeyPlace) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agent::{
+    use otty_plugin_host::agents::agent::{
         Credits as PartCredits, LimitWindow as PartWindow,
     };
 
@@ -212,7 +212,7 @@ mod tests {
     }
     #[test]
     fn two_places_are_the_same_only_with_every_field_the_same() {
-        use otty_plugin_host::agent::JsonField;
+        use otty_plugin_host::agents::agent::JsonField;
 
         let field = |pointer: &str| {
             KeyPlace::JsonField(JsonField {

@@ -1,12 +1,13 @@
 //! Why a plugin part gave no answer, and the report the user copies for
 //! the plugin's author (spec 2026-11-19-agent-plugins, "What the UI
 //! shows"): it names the plugin, its version and repository, the part, the
-//! call and the kind of error, never a value the part read.
+//! call and the kind of error, never a value the part read. The kinds are
+//! those of any domain; a domain turns what its parts answer they could
+//! not read into a short tag of [`PluginFailureKind::CouldNotRead`].
 
-use otty_plugin_host::CallError;
-use otty_plugin_host::agent::{HostError, ReadError};
-
-use crate::registry::PluginPart;
+use crate::calls::CallError;
+use crate::operations::v0_1::otty::host::types::HostError;
+use crate::plugin_part::PluginPart;
 
 /// The kind of error of a call into a plugin part, without its text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +20,8 @@ pub enum PluginFailureKind {
     /// again or a restart.
     Paused,
     /// The part answered that it could not read, for the reason `0`, such
-    /// as "host error: not found".
+    /// as "host error: not found": a host operation refused, or a reason
+    /// of the domain's contract.
     CouldNotRead(&'static str),
 }
 
@@ -37,28 +39,22 @@ impl PluginFailureKind {
     }
 
     /// The kind of `error`, a call that failed.
-    pub(crate) fn of_call(error: &CallError) -> Self {
+    pub fn of_call(error: &CallError) -> Self {
         match error {
             CallError::MissedDeadline(_) => PluginFailureKind::TooSlow,
             _ => PluginFailureKind::Stopped,
         }
     }
 
-    /// The kind of `error`, what the part answered it could not read.
-    pub(crate) fn of_read(error: &ReadError) -> Self {
+    /// The kind of a read the part gave up on because the host operation
+    /// failed with `error`; its text, which may name a path, is left out.
+    pub fn of_host_error(error: &HostError) -> Self {
         let reason = match error {
-            ReadError::NotSupported => "the part does not read this",
-            ReadError::Host(HostError::NotAllowed(_)) => {
-                "host error: not allowed"
-            },
-            ReadError::Host(HostError::NotFound(_)) => "host error: not found",
-            ReadError::Host(HostError::TooBig(_)) => "host error: too big",
-            ReadError::Host(HostError::TimedOut(_)) => "host error: timed out",
-            ReadError::Host(HostError::Failed(_)) => "host error: failed",
-            ReadError::Unexpected(_) => "unexpected shape",
-            ReadError::NeedsUser(_) => "a need OTTY can not show",
-            ReadError::LoginRefused => "the login was refused",
-            ReadError::Failed(_) => "failed",
+            HostError::NotAllowed(_) => "host error: not allowed",
+            HostError::NotFound(_) => "host error: not found",
+            HostError::TooBig(_) => "host error: too big",
+            HostError::TimedOut(_) => "host error: timed out",
+            HostError::Failed(_) => "host error: failed",
         };
 
         PluginFailureKind::CouldNotRead(reason)
@@ -106,7 +102,7 @@ impl PluginFailure {
     /// read.
     ///
     /// ```
-    /// use otty_agents::{PluginFailure, PluginFailureKind, PluginPart};
+    /// use otty_plugin_host::{PluginFailure, PluginFailureKind, PluginPart};
     ///
     /// let part = PluginPart::new(
     ///     "example",
@@ -162,13 +158,13 @@ mod tests {
     /// repository, part id, the call and the error kind, and no value.
     #[test]
     fn the_report_names_the_part_the_call_and_the_kind_only() {
-        let error = ReadError::Host(HostError::NotFound(
+        let error = HostError::NotFound(
             "/home/user/.example-agent/secret-session.jsonl".to_string(),
-        ));
+        );
         let failure = PluginFailure::new(
             part(),
             "read-answers",
-            PluginFailureKind::of_read(&error),
+            PluginFailureKind::of_host_error(&error),
         );
 
         let report = failure.report();
@@ -203,6 +199,27 @@ mod tests {
         assert_eq!(
             PluginFailureKind::of_call(&CallError::MemoryCap),
             PluginFailureKind::Stopped
+        );
+    }
+
+    #[test]
+    fn a_host_error_is_named_by_its_kind_only() {
+        let kinds = [
+            HostError::NotAllowed("~/.ssh".to_string()),
+            HostError::TooBig("8 MiB".to_string()),
+            HostError::TimedOut("10 s".to_string()),
+            HostError::Failed("no".to_string()),
+        ]
+        .map(|error| PluginFailureKind::of_host_error(&error));
+
+        assert_eq!(
+            kinds,
+            [
+                PluginFailureKind::CouldNotRead("host error: not allowed"),
+                PluginFailureKind::CouldNotRead("host error: too big"),
+                PluginFailureKind::CouldNotRead("host error: timed out"),
+                PluginFailureKind::CouldNotRead("host error: failed"),
+            ]
         );
     }
 }

@@ -5,25 +5,27 @@
 //! of its own.
 
 /// The host operations of `otty:host@0.1.0` and the values the contracts
-/// share.
+/// of every domain share.
 pub mod host {
     wit_bindgen::generate!({
         path: "wit/host/0.1.0",
         world: "otty:host/operations@0.1.0",
-        // The contracts use values of `types` no operation uses.
+        // The contracts use values of `types` and `keys` no operation
+        // uses.
         generate_unused_types: true,
         // Plugin tests compare values; the types that hold a key can not
         // be compared.
         additional_derives: [PartialEq],
-        additional_derives_ignore: ["json-with-keys", "value", "header", "request"],
+        additional_derives_ignore: ["json-with-keys", "value", "header", "request", "given-key"],
     });
 }
 
-/// The agent contract `otty:agent@0.1.0`.
-pub mod agent {
+/// The agent contract of the `agents` domain, `otty:agents-agent@0.1.0`,
+/// with the domain's shared values, `otty:agents-agent/types`.
+pub mod agents_agent {
     wit_bindgen::generate!({
-        path: ["wit/host/0.1.0", "wit/agent/0.1.0"],
-        world: "otty:agent/agent-part@0.1.0",
+        path: ["wit/host/0.1.0", "wit/agents-agent/0.1.0"],
+        world: "otty:agents-agent/agent-part@0.1.0",
         with: {
             "otty:host/types@0.1.0": crate::bindings::host::otty::host::types,
             "otty:host/keys@0.1.0": crate::bindings::host::otty::host::keys,
@@ -40,15 +42,16 @@ pub mod agent {
         additional_derives: [PartialEq],
         pub_export_macro: true,
         export_macro_name: "export_agent",
-        default_bindings_module: "otty_plugin_sdk::bindings::agent",
+        default_bindings_module: "otty_plugin_sdk::bindings::agents_agent",
     });
 }
 
-/// The provider contract `otty:provider@0.1.0`.
-pub mod provider {
+/// The provider contract of the `agents` domain,
+/// `otty:agents-provider@0.1.0`.
+pub mod agents_provider {
     wit_bindgen::generate!({
-        path: ["wit/host/0.1.0", "wit/provider/0.1.0"],
-        world: "otty:provider/provider-part@0.1.0",
+        path: ["wit/host/0.1.0", "wit/agents-agent/0.1.0", "wit/agents-provider/0.1.0"],
+        world: "otty:agents-provider/provider-part@0.1.0",
         with: {
             "otty:host/types@0.1.0": crate::bindings::host::otty::host::types,
             "otty:host/keys@0.1.0": crate::bindings::host::otty::host::keys,
@@ -56,17 +59,17 @@ pub mod provider {
             "otty:host/env@0.1.0": crate::bindings::host::otty::host::env,
             "otty:host/clock@0.1.0": crate::bindings::host::otty::host::clock,
             "otty:host/log@0.1.0": crate::bindings::host::otty::host::log,
+            "otty:agents-agent/types@0.1.0": crate::bindings::agents_agent::otty::agents_agent::types,
         },
         additional_derives: [PartialEq],
-        // A given key holds a handle, which can not be compared.
-        additional_derives_ignore: ["given-key"],
         pub_export_macro: true,
         export_macro_name: "export_provider",
-        default_bindings_module: "otty_plugin_sdk::bindings::provider",
+        default_bindings_module: "otty_plugin_sdk::bindings::agents_provider",
     });
 }
 
-/// The language receiver `otty:language@0.1.0`, which imports nothing.
+/// The language receiver `otty:language@0.1.0`, which imports nothing
+/// and belongs to no domain.
 pub mod language {
     wit_bindgen::generate!({
         path: "wit/language/0.1.0",

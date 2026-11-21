@@ -1,13 +1,13 @@
-//! The agent contract `otty:agent@0.1.0` as a trait.
+//! The agent contract `otty:agents-agent@0.1.0` as a trait.
 
 use std::marker::PhantomData;
 
-use crate::bindings::agent::exports::otty::agent::agent::Guest;
-use crate::{
-    Answers, Command, Limits, Login, LoginRef, Need, Profile, ProfilePlace,
-    ProfileStatus, ProjectStats, ReadError, Session, SessionStats, SpendItem,
-    SpendPlace,
+use crate::agents::{
+    Answers, Limits, Login, LoginRef, Profile, ProfilePlace, ProfileStatus,
+    ProjectStats, ReadError, Session, SessionStats, SpendItem, SpendPlace,
 };
+use crate::bindings::agents_agent::exports::otty::agents_agent::agent::Guest;
+use crate::{Command, Need};
 
 /// One coding agent program: its profiles, sessions, tokens and logins.
 /// A plugin implements it once and serves each agent part its manifest
@@ -95,7 +95,7 @@ pub trait Agent {
 }
 
 /// What [`export!`](crate::export) exports for a plugin type `T` with
-/// `agent`: the binding's trait, served by `T`'s [`Agent`].
+/// `agents::agent`: the binding's trait, served by `T`'s [`Agent`].
 #[doc(hidden)]
 pub struct AgentExport<T>(PhantomData<T>);
 

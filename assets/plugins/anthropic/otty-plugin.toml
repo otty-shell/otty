@@ -14,11 +14,11 @@ wasm = "anthropic.wasm"
 # language receiver: the texts of the needs come in every language of
 # OTTY.
 [api]
-agent = "0.1"
-provider = "0.1"
+agents.agent = "0.1"
+agents.provider = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "claude-code"
 name = "Claude Code"
 icon = "claude-code.svg"
@@ -34,7 +34,7 @@ tested_version = "2.1.328"
 # `projects/-home-<user>--cache-otty-agent-probe`. The probe deletes those
 # files, and the folder once it is empty; nothing else may be written.
 # `DISABLE_AUTOUPDATER` is passed to that run only.
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.claude*/**", "{CLAUDE_CONFIG_DIR}/**"]
 write = [
   "~/.claude*/projects/*--cache-otty-agent-probe",
@@ -47,7 +47,7 @@ env = ["CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER"]
 # The `/usage` probe: `claude` that can run nothing, with no tools, no MCP
 # servers of the user, no hooks and no remote control. Each argument is a
 # glob, so the braces of the settings are escaped.
-[[agent.permissions.terminal]]
+[[agents.agent.permissions.terminal]]
 program = "claude"
 args = [
   "--allowed-tools",
@@ -59,18 +59,18 @@ args = [
 
 # Where the keys are: readable only with the keys replaced by handles.
 # The Claude login.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.claude*/.credentials.json", "{CLAUDE_CONFIG_DIR}/.credentials.json"]
 fields = ["/claudeAiOauth/accessToken", "/claudeAiOauth/refreshToken"]
 
 # The global config file: next to `~/.claude`, or inside the config folder
 # of another profile.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.claude.json", "~/.claude*/.claude.json", "{CLAUDE_CONFIG_DIR}/.claude.json"]
 fields = ["/primaryApiKey"]
 
 # The variables the settings give Claude Code.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.claude*/settings.json", "{CLAUDE_CONFIG_DIR}/settings.json"]
 fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
 
@@ -78,7 +78,7 @@ fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
 # from Anthropic's usage request, and the bill of an organization read
 # with an admin key added by hand. A key behind another server is for
 # that server's host and is not read here.
-[[provider]]
+[[agents.provider]]
 id = "anthropic"
 name = "Anthropic"
 icon = "anthropic.svg"
@@ -89,5 +89,5 @@ add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the
 # `claude-code` part are refused then.
-[provider.permissions]
+[agents.provider.permissions]
 http = ["api.anthropic.com"]

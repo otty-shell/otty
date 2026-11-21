@@ -83,8 +83,8 @@ mod tests {
             .join("../../../../plugins/host/tests/fixtures/minimal.wasm");
         let manifest = "[plugin]\nid = \"english-only\"\nname = \"English \
                         only\"\nversion = \"1.0.0\"\nwasm = \
-                        \"plugin.wasm\"\n\n[api]\nagent = \"0.1\"\n\n\
-                        [[agent]]\nid = \"test-agent\"\nname = \"Test \
+                        \"plugin.wasm\"\n\n[api]\nagents.agent = \"0.1\"\n\n\
+                        [[agents.agent]]\nid = \"test-agent\"\nname = \"Test \
                         agent\"\nicon = \"test.svg\"\n";
 
         std::fs::create_dir_all(&folder).expect("the folder");

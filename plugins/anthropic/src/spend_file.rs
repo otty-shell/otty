@@ -16,10 +16,10 @@
 //! records seen and understood, so a changed format is told and not taken
 //! for fewer tokens.
 
-use otty_plugin_sdk::files::{self, BATCH_BYTES};
-use otty_plugin_sdk::{
+use otty_plugin_sdk::agents::{
     Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
 };
+use otty_plugin_sdk::files::{self, BATCH_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 

@@ -1,6 +1,6 @@
 # 21 The `agents` domain: agent and provider parts live under one name
 
-Status: ready-for-agent
+Status: done
 Blocked by: 20
 
 ## Why
@@ -94,3 +94,72 @@ change in place and no alias of an old name stays.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-21 (agent): done. What moved where, and the choices made:
+  - WIT: `otty:agents-agent@0.1.0` (`wit/agents-agent/0.1.0/`, files
+    `types.wit` and `agent.wit`) and `otty:agents-provider@0.1.0`
+    (`wit/agents-provider/0.1.0/`). The agent-only values moved out of
+    `otty:host/types` into the interface `otty:agents-agent/types`:
+    `read-error`, `identity`, `login-kind`, `limit-window`, `credits`,
+    `limits`. The provider package imports that interface. I chose this
+    over a third package `otty:agents-types` because it is simpler: one
+    package and one version fewer to keep, and `use` of another package's
+    interface works cleanly in both `wit-bindgen` and wasmtime (the
+    provider bindings reuse the agent bindings' module with `with`). The
+    cost: a new major version of the agent contract that changes these
+    values also makes a new provider version name it.
+  - What stays in `otty:host`, because any domain could use it:
+    `host-error`, `command`, `need`, `need-action` and `key-ask`. A
+    container engine or a cloud also needs the user to log in, give a
+    key or open a page, and OTTY shows every need the same way.
+    `given-key` (a key the user gave under the slot a need named) moved
+    from the provider package into `otty:host/keys`, next to `key`: it is
+    the answer to `ask-key`, which is in `otty:host`. `read-error` went
+    to the domain: `login-refused` is about logins coding agents keep,
+    and `not-supported` names the optional functions of these contracts.
+  - SDK: `otty_plugin_sdk::agents` holds `Agent`, `Provider`, every type
+    of both contracts and of `otty:agents-agent/types`, and the
+    `RecordCounts` helpers. The root keeps the host operation modules,
+    `Key`, `JsonWithKeys`, `GivenKey` and `given_key` (now in `keys`),
+    `Command`, `HostError`, `KeyAsk`, `Need`, `NeedAction`, the key places
+    and `Language`. Nothing of the domain is at the root. The macro is
+    `export!(T with agents::agent, agents::provider, language)`.
+  - Manifest: `[[agents.agent]]`, `[[agents.provider]]` with their
+    permissions under them, and `[api] agents.agent = "0.1"`,
+    `agents.provider = "0.1"`, `language = "0.1"`. A top-level `[[agent]]`
+    is an unknown field. `Domain` (now only `Agents`) is new;
+    `PartKind::domain()` and `point()` give the kind as (domain, point),
+    and `PartKind::key()` / `Contract::key()` are `agents.agent`. The Rust
+    names `PartKind::Agent` / `Provider` and `Contract::Agent` / `Provider`
+    stay: renaming them now would touch about 150 lines for no change in
+    meaning; a second domain is the time to name its own variants.
+    `plugins.json` keeps the kind as `agents.agent` (no migration: not
+    released).
+  - Host: `otty_plugin_host::agents::{agent, provider}` with their
+    bindings `agents::agent::v0_1` and `agents::provider::v0_1`; the
+    engine links `otty:agents-agent/types`, which a component imports with
+    either contract. `contract.rs` keys `[api]` on the domain and the
+    point.
+  - Calling a part moved from `otty-agents` into `otty-plugin-host`:
+    `CalledPart`, `PartHealth`, `LastFailure`, `PAUSE_AFTER`,
+    `PluginFailure`, `PluginFailureKind` and `PluginPart`, with a
+    `fixtures` feature for the health of a paused or failed part. The
+    kinds stay four (stopped, too slow, paused, could not read with a
+    short tag); `PluginFailureKind::of_host_error` gives the tag of a host
+    operation that failed, and `otty-agents` (`read_failure.rs`) turns the
+    domain's `read-error` into the tag, so the reports read as before.
+    `otty-agents` does not re-export them; its users import them from the
+    host, so `otty-app-agents` now depends on `otty-plugin-host` too.
+  - The dependency limit is a `[bans] deny` rule with `wrappers` in
+    `deny.toml`: only `otty-app-agents`, `otty-app-agents-io` and `otty`
+    may depend on `otty-agents`. `cargo deny check bans` failed with the
+    old `otty-app-plugins` dependency before it was removed. Compiler and
+    clippy can not tell which crate a `Cargo.toml` may list, so this is
+    the check that fails.
+  - The Plugins page writes a part as "Codex (Agents: agent)": the domain
+    is the name of Agents mode (`mode_agents`), in all ten languages.
+  - Rebuilt: the five official plugins and the template with
+    `plugins/embed.sh`, and the host's test plugins with
+    `scripts/build-test-plugins.sh`. `docs/research/` keeps the old names:
+    it records research done before, as the `specs/` history does.
+

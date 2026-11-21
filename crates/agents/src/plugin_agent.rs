@@ -7,23 +7,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use otty_plugin_host::agent::{
+use otty_plugin_host::agents::agent::{
     Billing as PartBilling, Login, LoginKind, ProfilePlace,
     ProfileStatus as PartStatus,
 };
-use otty_plugin_host::{LoadedPlugin, PartRef};
+use otty_plugin_host::{CalledPart, LoadedPlugin, PartHealth, PartRef};
 
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
-use crate::called_part::CalledPart;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::hidden_terminal::StartTerminal;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::{BillingKind, LimitSource};
-use crate::part_health::PartHealth;
 use crate::part_need::{PartNeed, agent_command};
 use crate::plugin_sources::{PluginLimits, PluginSessions, PluginStats};
 use crate::plugin_spend::PluginSpend;

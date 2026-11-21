@@ -7,7 +7,8 @@
 //! the id token, through its handle. An API key tells nothing of its
 //! account: OTTY tells it by the key's fingerprint.
 
-use otty_plugin_sdk::{Identity, JsonField, KeyPlace, Login, LoginKind};
+use otty_plugin_sdk::agents::{Identity, Login, LoginKind};
+use otty_plugin_sdk::{JsonField, KeyPlace};
 
 use crate::auth_file::{ACCESS_TOKEN_FIELD, API_KEY_FIELD, AuthFile};
 use crate::base_url::CodexConfig;
@@ -97,7 +98,8 @@ fn json_field(file: &str, pointer: &str) -> KeyPlace {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::{ProviderRef, keys};
+    use otty_plugin_sdk::agents::ProviderRef;
+    use otty_plugin_sdk::keys;
 
     use super::*;
     use crate::base_url::OPENAI;

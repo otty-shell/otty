@@ -1,12 +1,14 @@
-// The provider contract: what a provider part gives OTTY. A plugin
-// exports it once for all its provider parts; OTTY names the part in
-// each call (the `provider` argument). A provider part gets keys only as
-// handles, and only of accounts of its own provider id or hosts.
-package otty:provider@0.1.0;
+// The provider contract of the `agents` domain: what a provider part
+// gives OTTY. A plugin exports it once for all its provider parts; OTTY
+// names the part in each call (the `provider` argument). A provider part
+// gets keys only as handles, and only of accounts of its own provider id
+// or hosts. The values it shares with the agent contract come from
+// `otty:agents-agent/types`.
+package otty:agents-provider@0.1.0;
 
 interface provider {
-  use otty:host/types@0.1.0.{read-error, identity, login-kind, limit-window, credits};
-  use otty:host/keys@0.1.0.{key};
+  use otty:host/keys@0.1.0.{key, given-key};
+  use otty:agents-agent/types@0.1.0.{read-error, identity, login-kind, limit-window, credits};
 
   /// What OTTY found about a login in the agents' files.
   record login-facts {
@@ -75,14 +77,6 @@ interface provider {
     days: list<day-cost>,
   }
 
-  /// A key the user gave for the account, after a need of the part asked
-  /// for it with `ask-key`, under the `slot` that need named. The handle
-  /// is the part's for this call only.
-  record given-key {
-    slot: string,
-    key: key,
-  }
-
   /// Whose account `key` is.
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
   /// The account's numbers right now, read with the account's `key` and
@@ -102,5 +96,6 @@ world provider-part {
   import otty:host/env@0.1.0;
   import otty:host/clock@0.1.0;
   import otty:host/log@0.1.0;
+  import otty:agents-agent/types@0.1.0;
   export provider;
 }

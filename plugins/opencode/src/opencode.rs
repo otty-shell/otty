@@ -1,11 +1,11 @@
 //! The agent part `opencode`: OpenCode, the coding agent by Anomaly, and
 //! the commands that start it.
 
-use otty_plugin_sdk::{
-    Agent, Answers, Command, HostError, Login, LoginRef, Need, Profile,
-    ProfilePlace, ProfileStatus, ProjectStats, ReadError, Session,
-    SessionStats, SpendItem, SpendPlace,
+use otty_plugin_sdk::agents::{
+    Agent, Answers, Login, LoginRef, Profile, ProfilePlace, ProfileStatus,
+    ProjectStats, ReadError, Session, SessionStats, SpendItem, SpendPlace,
 };
+use otty_plugin_sdk::{Command, HostError, Need};
 
 use crate::database::Database;
 use crate::location::{database_of, profiles, start_command};
@@ -113,9 +113,10 @@ impl Agent for OpenCode {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::{
-        Billing, Connection, LoginKind, ProviderRef, SpendKind, files,
+    use otty_plugin_sdk::agents::{
+        Billing, Connection, LoginKind, ProviderRef, SpendKind,
     };
+    use otty_plugin_sdk::files;
 
     use super::*;
     use crate::location::DATABASE_VARIABLE;

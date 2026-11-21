@@ -107,7 +107,7 @@ mod tests {
 
     use otty_plugin_manifest::PartRef;
 
-    use crate::agent::{LoginRef, Profile};
+    use crate::agents::agent::{LoginRef, Profile};
     use crate::engine::PluginEngine;
     use crate::terminal::{
         MockRunningTerminal, MockStartTerminal, ScreenOutput,

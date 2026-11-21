@@ -3,7 +3,7 @@
 //! another session started, are not listed: their tokens count with the
 //! others.
 
-use otty_plugin_sdk::{ReadError, Session};
+use otty_plugin_sdk::agents::{ReadError, Session};
 
 use crate::database::{Database, SessionRow};
 

@@ -8,7 +8,7 @@
 //! `reasoning` and `cache.read` and `cache.write`, none of them part of
 //! another; the cost is in dollars.
 
-use otty_plugin_sdk::{Answer, TokenCount};
+use otty_plugin_sdk::agents::{Answer, TokenCount};
 use serde_json::Value;
 
 use crate::database::MessageRow;
@@ -175,7 +175,7 @@ fn not_understood(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::ProviderRef;
+    use otty_plugin_sdk::agents::ProviderRef;
 
     use super::*;
     use crate::testing::{

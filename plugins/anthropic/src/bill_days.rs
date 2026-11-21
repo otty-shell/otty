@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use jiff::civil::Date;
-use otty_plugin_sdk::{Bill, DayCost, DayRange, Money, ReadError};
+use otty_plugin_sdk::agents::{Bill, DayCost, DayRange, Money, ReadError};
 
 /// Micro-dollars in one dollar.
 const MICRO_DOLLARS_IN_DOLLAR: f64 = 1_000_000.0;

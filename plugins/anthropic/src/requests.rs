@@ -1,7 +1,7 @@
 //! What the requests of the provider part `anthropic` share: the JSON answer
 //! of a request and the percent encoding of a value put into an address.
 
-use otty_plugin_sdk::ReadError;
+use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::http::{self, Request};
 use serde_json::Value;
 

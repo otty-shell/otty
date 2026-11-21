@@ -408,7 +408,7 @@ fn test_registry() -> otty_agents::Registry {
         .iter()
         .map(|agent| agent.entry().clone())
         .collect();
-    let part = otty_agents::PluginPart::new(
+    let part = otty_plugin_host::PluginPart::new(
         "example",
         "Example",
         "0.1.0",

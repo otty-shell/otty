@@ -2,7 +2,7 @@
 //! `fixtures/`, which stands for the home folder, and the profiles of its
 //! made-up config folders.
 
-use otty_plugin_sdk::Profile;
+use otty_plugin_sdk::agents::Profile;
 use otty_plugin_sdk::files::FileInfo;
 use otty_plugin_sdk::test_host::TestHost;
 

@@ -1,6 +1,7 @@
 //! Whether a Codex profile can be used: its config folder and its login.
 
-use otty_plugin_sdk::{Billing, Command, Connection, ProfileStatus, files};
+use otty_plugin_sdk::agents::{Billing, Connection, ProfileStatus};
+use otty_plugin_sdk::{Command, files};
 
 use crate::auth_file::AuthFile;
 use crate::glob::escaped;

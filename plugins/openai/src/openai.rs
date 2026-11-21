@@ -4,10 +4,11 @@
 //! handle to the login token or the key, never the key, and only of
 //! accounts of OpenAI: a login behind a gateway is not one.
 
-use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, Bill, DayRange, GivenKey, Key, LoginFacts,
-    Provider, ReadError, given_key,
+use otty_plugin_sdk::agents::{
+    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, Provider,
+    ReadError,
 };
+use otty_plugin_sdk::{GivenKey, Key, given_key};
 
 use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{OpenAi, chatgpt_usage, organization_costs};
@@ -87,10 +88,10 @@ fn no_numbers() -> AccountNumbers {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::{Identity, LoginKind};
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::{
-        GivenKey, HostError, Identity, JsonField, KeyPlace, LoginKind,
-        NeedAction, files, keys,
+        GivenKey, HostError, JsonField, KeyPlace, NeedAction, files, keys,
     };
 
     use super::*;

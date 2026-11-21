@@ -7,10 +7,10 @@
 //! read, is put in as it came.
 
 use otty_agents::{
-    KeyRef, PluginFailureKind, SourceError, SourceFailure, SourceId,
-    Unavailable, Unexpected,
+    KeyRef, SourceError, SourceFailure, SourceId, Unavailable, Unexpected,
 };
 use otty_app_i18n::{self as i18n, Key};
+use otty_plugin_host::PluginFailureKind;
 
 /// `error` in the user's language, such as "not available: no session
 /// files" or "network error: connection refused".
@@ -236,7 +236,7 @@ mod tests {
     }
 
     fn plugin_failed(kind: PluginFailureKind) -> SourceError {
-        let part = otty_agents::PluginPart::new(
+        let part = otty_plugin_host::PluginPart::new(
             "example",
             "Example",
             "0.1.0",
@@ -245,7 +245,7 @@ mod tests {
         );
 
         let failure =
-            otty_agents::PluginFailure::new(part, "read-answers", kind);
+            otty_plugin_host::PluginFailure::new(part, "read-answers", kind);
 
         SourceError::PluginFailed(Box::new(failure))
     }

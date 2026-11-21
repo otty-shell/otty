@@ -47,12 +47,15 @@ fn fork_release(tag: &str, version: &str) -> FakeRelease {
 fn agent_only(release: FakeRelease) -> FakeRelease {
     let text = String::from_utf8(example_files("0.1.0")[MANIFEST_FILE].clone())
         .expect("text");
-    let provider_half = text.split_once("[[provider]]").expect("a provider").1;
+    let provider_half = text
+        .split_once("[[agents.provider]]")
+        .expect("a provider")
+        .1;
 
     release
         .with_manifest_edit(provider_half, "")
-        .with_manifest_edit("[[provider]]", "")
-        .with_manifest_edit("provider = \"0.1\"\n", "")
+        .with_manifest_edit("[[agents.provider]]", "")
+        .with_manifest_edit("agents.provider = \"0.1\"\n", "")
 }
 
 fn part_is_on(installer: &Installer, plugin: &str, part: &PartRef) -> bool {
@@ -148,7 +151,10 @@ fn a_repository_whose_releases_all_need_a_newer_otty_names_the_contract() {
         .find_release(&url(REPO), false)
         .expect_err("refused");
 
-    assert_eq!(error.to_string(), "Needs a newer OTTY (agent contract 0.2)");
+    assert_eq!(
+        error.to_string(),
+        "Needs a newer OTTY (agents.agent contract 0.2)"
+    );
 }
 
 #[test]

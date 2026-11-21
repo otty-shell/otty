@@ -23,10 +23,9 @@
 //! the reading at most once in five minutes per profile and gives the last
 //! answer in between.
 
+use otty_plugin_sdk::agents::{LimitWindow, Limits, Profile, ReadError};
 use otty_plugin_sdk::terminal::{self, HiddenTerminal};
-use otty_plugin_sdk::{
-    Command, HostError, LimitWindow, Limits, Profile, ReadError, clock,
-};
+use otty_plugin_sdk::{Command, HostError, clock};
 
 use crate::claude_code::start_command;
 use crate::needs;

@@ -7,9 +7,8 @@
 //! `settings.json` (`ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`), which
 //! is a key for the host of `ANTHROPIC_BASE_URL` when it is set.
 
-use otty_plugin_sdk::{
-    Identity, JsonField, KeyPlace, Login, LoginKind, ProviderRef,
-};
+use otty_plugin_sdk::agents::{Identity, Login, LoginKind, ProviderRef};
+use otty_plugin_sdk::{JsonField, KeyPlace};
 
 use crate::config_files::{
     API_KEY_FIELD, AUTH_TOKEN_FIELD, GlobalConfig, KeyFile, OauthAccount,

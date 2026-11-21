@@ -90,11 +90,11 @@ fn provider_limits(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agent::{
+    use otty_plugin_host::agents::agent::{
         Identity, JsonField, KeyPlace, Login, LoginKind,
         ProviderRef as PartProvider,
     };
-    use otty_plugin_host::provider::{
+    use otty_plugin_host::agents::provider::{
         AccountFacts, AccountNumbers as PartNumbers,
     };
 

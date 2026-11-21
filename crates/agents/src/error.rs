@@ -7,10 +7,11 @@
 
 use std::path::PathBuf;
 
+use otty_plugin_host::PluginFailure;
+
 use crate::agent::AgentId;
 use crate::given_key::KeyRef;
 use crate::part_need::PartNeed;
-use crate::plugin_failure::PluginFailure;
 use crate::record_format::FormatChange;
 use crate::refused_login::RefusedLogin;
 use crate::session::SessionId;

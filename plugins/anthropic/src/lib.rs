@@ -65,4 +65,4 @@ impl Language for Anthropic {
     }
 }
 
-otty_plugin_sdk::export!(Anthropic with agent, provider, language);
+otty_plugin_sdk::export!(Anthropic with agents::agent, agents::provider, language);

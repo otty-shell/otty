@@ -331,12 +331,12 @@ impl JsonPointer {
     /// # version = "0.1.0"
     /// # wasm = "example.wasm"
     /// # [api]
-    /// # agent = "0.1"
-    /// # [[agent]]
+    /// # agents.agent = "0.1"
+    /// # [[agents.agent]]
     /// # id = "example-agent"
     /// # name = "Example agent"
     /// # icon = "example.svg"
-    /// # [[agent.permissions.keys]]
+    /// # [[agents.agent.permissions.keys]]
     /// # files = ["~/.example-agent/auth.json"]
     /// # fields = ["/*/key"]
     /// # "#).expect("valid");

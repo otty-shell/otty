@@ -1,13 +1,16 @@
-// What OTTY gives every plugin: the host operations and the values the
-// contracts share. Each contract version names the host version it
-// imports. Operations know no agent and no provider; every call is
-// checked against the permissions of the part being called.
+// What OTTY gives every plugin: the host operations and the values any
+// domain's contracts share. Each contract version names the host version
+// it imports. Operations know no domain, no agent and no provider; every
+// call is checked against the permissions of the part being called. The
+// values only one domain uses live in that domain's packages, such as
+// `otty:agents-agent/types`.
 //
 // Paths are absolute: a plugin builds them from `env.home` and the
 // variables its part lists. Times are milliseconds since the Unix epoch.
 package otty:host@0.1.0;
 
-/// Values shared by the host operations and the contracts.
+/// Values shared by the host operations and the contracts of every
+/// domain.
 interface types {
   /// Why a host operation refused or failed. Its text never holds a key
   /// or a value read from a file.
@@ -25,29 +28,6 @@ interface types {
     failed(string),
   }
 
-  /// Why a part could not give what OTTY asked for.
-  variant read-error {
-    /// The part does not give this; an optional function's answer.
-    not-supported,
-    /// A host operation failed and the part gave up.
-    host(host-error),
-    /// What was read is not in a shape the part understands. The text
-    /// names fields, never values.
-    unexpected(string),
-    /// The part can not read until the user does what `need` asks, such
-    /// as give a key the part asks for or replace one the provider
-    /// refused.
-    needs-user(need),
-    /// The provider refused the login the part read with, or the login
-    /// expired: a login an agent keeps, such as a ChatGPT or a Claude
-    /// login. The provider part does not know which agent keeps it, so
-    /// OTTY asks the agent part that found it (`login-refused` of the
-    /// agent contract) what the user must do.
-    login-refused,
-    /// Anything else, in plain words.
-    failed(string),
-  }
-
   /// A program with its arguments and variables, run in a terminal tab.
   record command {
     program: string,
@@ -57,7 +37,7 @@ interface types {
 
   /// A key OTTY asks the user for. OTTY keeps only where the user keeps
   /// it, a file or a variable, never the key, and gives it back to the
-  /// part as a handle with its `slot`.
+  /// part as a handle with its `slot` (`keys.given-key`).
   record key-ask {
     /// The part's own name for the key, such as `admin`.
     slot: string,
@@ -97,61 +77,6 @@ interface types {
     /// Why, and what the button does.
     text: string,
     action: need-action,
-  }
-
-  /// What a login or an account is known by. Any of the fields may be
-  /// missing; OTTY joins accounts by any of them.
-  record identity {
-    account-id: option<string>,
-    organization-id: option<string>,
-    email: option<string>,
-  }
-
-  /// What kind of login a key is.
-  enum login-kind {
-    /// A login to a subscription, such as a ChatGPT or Claude plan.
-    subscription,
-    /// An API key of an account.
-    api-key,
-    /// A token of a gateway that resells models.
-    gateway-token,
-  }
-
-  /// One usage window, such as the five-hour or the weekly one.
-  record limit-window {
-    /// How long the window is, when the source tells.
-    length-minutes: option<u32>,
-    /// The model the window counts alone, such as "Opus"; none for a
-    /// window of every model.
-    model: option<string>,
-    /// How much of the window is used, from 0 to 100; past 100 when
-    /// used past its limit.
-    percent-used: f64,
-    /// When the window starts again, when known.
-    resets-at-ms: option<s64>,
-    /// When it starts again as the agent wrote it, for a source that
-    /// gives no time.
-    reset-text: option<string>,
-  }
-
-  /// The credits of an account paid for by a pool of credits.
-  record credits {
-    left: option<f64>,
-    used: option<f64>,
-    pool: option<f64>,
-    renews-at-ms: option<s64>,
-    is-unlimited: bool,
-  }
-
-  /// What an account may still use.
-  record limits {
-    windows: list<limit-window>,
-    credits: option<credits>,
-    /// The name of the account's plan, when known.
-    plan: option<string>,
-    /// When the numbers were true, for numbers read from an older record
-    /// such as a session file; none when they are true now.
-    recorded-at-ms: option<s64>,
   }
 }
 
@@ -210,6 +135,14 @@ interface keys {
   record json-with-keys {
     json: string,
     keys: list<key>,
+  }
+
+  /// A key the user gave after a need of the part asked for it with
+  /// `ask-key`, under the `slot` that need named. The handle is the
+  /// part's for this call only.
+  record given-key {
+    slot: string,
+    key: key,
   }
 
   /// A handle to the key at `place`; it must be a key place the called

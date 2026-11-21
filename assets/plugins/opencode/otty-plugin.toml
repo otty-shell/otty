@@ -16,10 +16,10 @@ wasm = "opencode.wasm"
 # language receiver: the texts of the needs come in every language of
 # OTTY.
 [api]
-agent = "0.1"
+agents.agent = "0.1"
 language = "0.1"
 
-[[agent]]
+[[agents.agent]]
 id = "opencode"
 name = "OpenCode"
 icon = "opencode.svg"
@@ -28,19 +28,19 @@ tested_version = "2.3.2"
 
 # Apply only while a function of this part runs. The database is opened
 # read-only by OTTY; the plugin never writes to it.
-[agent.permissions]
+[agents.agent.permissions]
 read = ["~/.local/share/opencode/**", "{XDG_DATA_HOME}/opencode/**"]
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
 env = ["XDG_DATA_HOME", "OPENCODE_DB"]
 
 # Where the keys are: readable only with the keys replaced by handles.
 # The logins of `opencode auth login`, by the id of their provider.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 files = ["~/.local/share/opencode/auth.json", "{XDG_DATA_HOME}/opencode/auth.json"]
 fields = ["/*/key", "/*/access", "/*/refresh"]
 
 # The logins of the `credential` table: its `value` column is JSON.
-[[agent.permissions.keys]]
+[[agents.agent.permissions.keys]]
 sqlite = ["~/.local/share/opencode/*.db", "{XDG_DATA_HOME}/opencode/*.db", "{OPENCODE_DB}"]
 table = "credential"
 column = "value"

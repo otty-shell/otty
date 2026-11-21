@@ -15,7 +15,8 @@ rust-version = { workspace = true }
 # crates/app/features/clippy.toml apply: otty-app-agents-io reads
 # agents.json, finds the agents' programs and reads the sessions.
 # `otty-agents` gives the data types and the command that starts an agent;
-# the feature calls none of its reads. iced's `tokio` feature gives the
+# the feature calls none of its reads. `otty-plugin-host` names the plugin
+# part a fact or a failure comes from, and the kind of a failure. iced's `tokio` feature gives the
 # timer of the limits, `iced::time::every`; it adds no crate. `jiff` gives
 # the dates and the user's time zone the dashboard writes its times in;
 # otty-app-agents-io reads the time zone and passes it in.
@@ -28,6 +29,7 @@ otty-app-domain = { path = "../../../domain", version = "0.1.0" }
 otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
 otty-app-slots = { path = "../../../slots", version = "0.1.0" }
 otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
 otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
 
 # `test-ids`: the ids of the widgets the tests of the binary press or type

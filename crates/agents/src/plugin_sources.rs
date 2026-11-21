@@ -5,18 +5,17 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use otty_plugin_host::CallBatch;
-use otty_plugin_host::agent::{Login, LoginKind, ReadError};
+use otty_plugin_host::agents::agent::{Login, LoginKind, ReadError};
+use otty_plugin_host::{CallBatch, CalledPart};
 
 use crate::agent::AgentId;
-use crate::called_part::CalledPart;
 use crate::error::{SourceError, Unavailable};
 use crate::limits::{LimitSource, Limits};
 use crate::local_time::LocalNow;
 use crate::part_need::PartNeed;
-use crate::plugin_failure::PluginFailureKind;
 use crate::plugin_values::{limits_of, models_of, part_profile, time_of};
 use crate::profile::Profile;
+use crate::read_failure::read_failure;
 use crate::refused_login::RefusedLogin;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -233,9 +232,7 @@ pub(crate) fn read_error(
             SourceError::NeedsUser(Box::new(need))
         },
         (Some(need), None) => SourceError::NeedsUser(Box::new(need)),
-        (None, _) => {
-            part.failure(call, PluginFailureKind::of_read(error)).into()
-        },
+        (None, _) => part.failure(call, read_failure(error)).into(),
     }
 }
 

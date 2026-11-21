@@ -21,7 +21,8 @@
 //! `applyingSpendControlsMonthlyLimit` in
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexProviderDescriptor.swift>.
 
-use otty_plugin_sdk::{Credits, Key};
+use otty_plugin_sdk::Key;
+use otty_plugin_sdk::agents::Credits;
 use serde_json::Value;
 
 use crate::chatgpt_usage::{login_refused, usage_request};

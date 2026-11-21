@@ -19,10 +19,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use otty_plugin_host::PluginPart;
 #[cfg(any(test, feature = "fixtures"))]
 use serde_json::Value;
-
-use crate::registry::PluginPart;
 
 /// The fewest records of the kind a reader reads, in the newest files, the
 /// verdict is made on.

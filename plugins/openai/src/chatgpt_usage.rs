@@ -13,8 +13,9 @@
 //! gateway's host, not for OpenAI: this part does not serve it, and its
 //! token never goes to `chatgpt.com`.
 
+use otty_plugin_sdk::agents::{Limits, ReadError};
 use otty_plugin_sdk::http::Request;
-use otty_plugin_sdk::{Key, Limits, ReadError, clock};
+use otty_plugin_sdk::{Key, clock};
 use serde_json::Value;
 
 use crate::individual_limit::individual_limit_in;
@@ -167,8 +168,8 @@ fn usage_window(window: &Value) -> Option<WindowNumbers> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::{Credits, LimitWindow};
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{Credits, LimitWindow};
 
     use super::*;
     use crate::testing::{TEN, host};

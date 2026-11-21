@@ -839,7 +839,7 @@
     "plugins_local": "本地",
     "plugins_part_agent": "代理",
     "plugins_part_provider": "提供商",
-    "tpl_plugins_part": "{name}（{kind}）",
+    "tpl_plugins_part": "{name}（{domain}：{kind}）",
     "plugins_paused": "连续三次失败后已暂停",
     "plugins_try_again": "重试",
     "plugins_check_for_updates": "检查更新",

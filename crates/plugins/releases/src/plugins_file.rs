@@ -400,7 +400,8 @@ mod version_text {
     }
 }
 
-/// A [`PartKind`] as its manifest key in JSON, `agent` or `provider`.
+/// A [`PartKind`] as its manifest key in JSON, `agents.agent` or
+/// `agents.provider`.
 mod kind_key {
     use otty_plugin_manifest::PartKind;
     use serde::{Deserialize, Deserializer, Serializer};

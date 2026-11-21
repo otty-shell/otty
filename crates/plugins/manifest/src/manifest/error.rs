@@ -80,10 +80,10 @@ pub enum ManifestError {
         version: String,
     },
     /// A part's kind has no contract in `[api]`.
-    #[error("The {0} needs `{kind}` in [api]", kind = .0.kind())]
+    #[error("The {0} needs `{key}` in [api]", key = .0.kind().key())]
     PartWithoutContract(PartRef),
     /// `[api]` names a contract no part uses.
-    #[error("[api] names `{0}`, but the plugin has no {0} part")]
+    #[error("[api] names `{key}`, but the plugin has no {0} part", key = .0.key())]
     ContractWithoutPart(PartKind),
     /// A permission glob is refused.
     #[error("The glob `{glob}` of the {part} {problem}")]

@@ -4,11 +4,12 @@
 //! the balance in each currency of the account, `total_balance` as decimal
 //! text.
 
-use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{
-    AccountFacts, AccountNumbers, GivenKey, Identity, Key, LoginFacts, Money,
-    Provider, ReadError,
+use otty_plugin_sdk::agents::{
+    AccountFacts, AccountNumbers, Identity, LoginFacts, Money, Provider,
+    ReadError,
 };
+use otty_plugin_sdk::http::{self, Request};
+use otty_plugin_sdk::{GivenKey, Key};
 use serde_json::Value;
 
 use crate::{DeepSeek, needs};
@@ -307,7 +308,7 @@ mod tests {
         let host = host();
         let key = host.key(MADE_UP_KEY);
         let found = LoginFacts {
-            kind: otty_plugin_sdk::LoginKind::ApiKey,
+            kind: otty_plugin_sdk::agents::LoginKind::ApiKey,
             identity: Identity::default(),
             plan: None,
         };
