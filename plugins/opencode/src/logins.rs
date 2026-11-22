@@ -266,12 +266,12 @@ fn chatgpt_login(found: &Found<'_>) -> Option<Login> {
         .login
         .access
         .and_then(|index| found.document.key(index))?;
-    let claims: AccessClaims = token
-        .jwt_claims()
-        .ok()
-        .flatten()
-        .and_then(|claims| serde_json::from_str(&claims).ok())
-        .unwrap_or_default();
+    // A token that is no JWT is not a ChatGPT login. One whose claims name
+    // no account, such as a login by "chatgpt-token-sharing" that keeps
+    // them encrypted, is still a login, with no name.
+    let claims = token.jwt_claims().ok().flatten()?;
+    let claims: AccessClaims =
+        serde_json::from_str(&claims).unwrap_or_default();
     let auth = claims.auth.as_ref();
 
     let account_id = found.login.account_id().or_else(|| {
@@ -281,9 +281,6 @@ fn chatgpt_login(found: &Found<'_>) -> Option<Login> {
         .profile
         .as_ref()
         .and_then(|profile| filled(profile.email.as_deref()));
-    if account_id.is_none() && email.is_none() {
-        return None;
-    }
     let plan = auth
         .and_then(|auth| filled(auth.chatgpt_plan_type.as_deref()))
         .and_then(plan_name);
@@ -571,6 +568,55 @@ mod tests {
         let profile = data.profile();
 
         assert_eq!(data.run(|| logins(&profile)), []);
+    }
+
+    /// Owner, 2026-11-22: a ChatGPT login made by `opencode auth login`
+    /// with "chatgpt-token-sharing" keeps its account and email encrypted
+    /// in the token. It is still a login: the profile is connected, the
+    /// login has no name.
+    #[test]
+    fn a_chatgpt_login_whose_token_names_no_account_is_a_login() {
+        let data = DataFolder::new();
+        let database = data.first_shape();
+        let token = made_up_jwt(
+            r#"{"https://api.openai.com/auth": {
+                "encrypted_auth_metadata": "made-up", "per_user_salt": "made-up"},
+                "sub": "made-up-user"}"#,
+        );
+        let row = database.credential(
+            "cred_1",
+            "openai",
+            &format!(
+                r#"{{"type": "oauth", "methodID": "chatgpt-token-sharing",
+                "refresh": "r", "access": "{token}", "expires": 1,
+                "metadata": {{"clientID": "made-up", "scopes": []}}}}"#
+            ),
+        );
+        let profile = data.profile();
+
+        let (found, status) = data.run(|| (logins(&profile), status(&profile)));
+
+        let place = KeyPlace::SqliteField(SqliteField {
+            database: data.file("opencode.db"),
+            table: "credential".to_string(),
+            column: "value".to_string(),
+            row_id: row,
+            pointer: Some("/access".to_string()),
+        });
+        assert_eq!(
+            found,
+            [Login {
+                kind: LoginKind::Subscription,
+                for_whom: openai(),
+                place,
+                identity: Identity::default(),
+                plan: None,
+            }]
+        );
+        assert!(
+            matches!(status, ProfileStatus::Connected(_)),
+            "connected: {status:?}"
+        );
     }
 
     /// A folder with no login needs one: the button runs `opencode auth
