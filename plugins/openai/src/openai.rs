@@ -94,8 +94,7 @@ impl Provider for OpenAi {
             return organization_costs::bill(admin_key, Some(ADMIN_SLOT), days);
         }
 
-        let is_bill_key =
-            key.has_prefix(ADMIN_PREFIX).map_err(ReadError::Host)?;
+        let is_bill_key = is_bill_key(key)?;
         if !is_bill_key {
             return Err(ReadError::NeedsUser(needs::bill_key()));
         }
@@ -107,6 +106,16 @@ impl Provider for OpenAi {
             false => Some(ADMIN_SLOT),
         };
         organization_costs::bill(key, refused_slot, days)
+    }
+}
+
+/// Whether `key` reads bills: an admin key. A key that is not at its
+/// place is not one; the part then asks for an admin key.
+fn is_bill_key(key: &Key) -> Result<bool, ReadError> {
+    match key.has_prefix(ADMIN_PREFIX) {
+        Ok(is_bill_key) => Ok(is_bill_key),
+        Err(HostError::NotFound(_)) => Ok(false),
+        Err(error) => Err(ReadError::Host(error)),
     }
 }
 
@@ -370,6 +379,32 @@ mod tests {
         });
 
         assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty());
+    }
+
+    /// With no login token at its place and no admin key given, the bill
+    /// asks for an admin key, as for any key that does not read bills,
+    /// and sends nothing: a key that is not there is not a failure.
+    #[test]
+    fn a_bill_with_no_token_and_no_admin_key_asks_for_one() {
+        let host = host();
+        let key = token_at(&host, ".codex-empty");
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(
+                PROVIDER,
+                &login_in(&host, ".codex-empty"),
+                &organization(),
+                &key,
+                &[],
+                &one_day(),
+            )
+        });
+
+        let Err(ReadError::NeedsUser(need)) = bill else {
+            panic!("a need: {bill:?}");
+        };
+        assert_eq!(need.id, "bill-key");
         assert!(host.requests().is_empty());
     }
 

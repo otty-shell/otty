@@ -127,8 +127,7 @@ impl Provider for Example {
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
         let url = format!("{API}/bill?from={}&to={}", days.first, days.last);
-        let is_bill_key =
-            key.has_prefix(ADMIN_PREFIX).map_err(ReadError::Host)?;
+        let is_bill_key = is_bill_key(key)?;
 
         let answer: BillAnswer = match is_bill_key {
             true => get_json(&url, key, || refused_key_need(key))?,
@@ -152,6 +151,16 @@ impl Provider for Example {
             })
             .collect();
         Ok(Bill { days })
+    }
+}
+
+/// Whether `key` reads bills: an admin key. A key that is not at its
+/// place is not one; the part then asks for an admin key.
+fn is_bill_key(key: &Key) -> Result<bool, ReadError> {
+    match key.has_prefix(ADMIN_PREFIX) {
+        Ok(is_bill_key) => Ok(is_bill_key),
+        Err(HostError::NotFound(_)) => Ok(false),
+        Err(error) => Err(ReadError::Host(error)),
     }
 }
 
@@ -329,6 +338,34 @@ mod tests {
             first: "2026-11-01".to_string(),
             last: "2026-11-02".to_string(),
         }
+    }
+
+    /// With the account's key not at its place and no admin key given,
+    /// the part asks for an admin key and sends nothing: a key that is
+    /// not there is not a failure.
+    #[test]
+    fn a_bill_with_no_key_there_and_no_admin_key_asks_for_one() {
+        let host = host();
+        let key = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
+            "EXAMPLE_CLOUD_KEY".to_string(),
+        ));
+
+        let bill = host.as_provider(PROVIDER, || {
+            Example::read_bill(
+                PROVIDER,
+                &found(),
+                &account(),
+                &key,
+                &[],
+                &days(),
+            )
+        });
+
+        assert!(
+            matches!(bill, Err(ReadError::NeedsUser(_))),
+            "a need: {bill:?}"
+        );
+        assert!(host.requests().is_empty(), "nothing is sent");
     }
 
     /// With no admin key the part asks for one, under its slot.

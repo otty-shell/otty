@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.0"
+version = "0.2.1"
 description = "Claude Code profiles, sessions, tokens and logins; Claude limits, from Anthropic or the /usage panel of Claude Code; Anthropic organization bills."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
