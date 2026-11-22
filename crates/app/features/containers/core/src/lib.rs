@@ -299,10 +299,11 @@ pub enum ContainersOverlay {
     RowMenu,
 }
 
-/// Which screen fills the main area of Containers mode. The table of an
-/// open list is no screen: it scrolls on its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which screen fills the main area of Containers mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainersScreen {
+    /// The open list of this page, whose table scrolls down on its own.
+    List(Place),
     /// The spinner while the engine search runs.
     Searching,
     /// The no-engine card of one diagnosis.
@@ -316,7 +317,9 @@ impl MainArea for Containers {
 
     /// The Run container form while it is open, else the open list of an
     /// engine, a spinner while the engines are looked for, or a card when
-    /// none is found; ages are counted up to the current time.
+    /// none is found; ages are counted up to the current time. Every screen
+    /// keeps the minimum width and scrolls sideways below it, the open list
+    /// too, whose table scrolls down on its own (issue 39).
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
@@ -336,19 +339,22 @@ impl MainArea for Containers {
 
         let vm = MainAreaViewModel::from_state(&self.state, format::unix_now());
         let id = match &vm {
-            MainAreaViewModel::Table(_) => None,
-            MainAreaViewModel::Searching => Some(ContainersScreen::Searching),
+            MainAreaViewModel::Table(table) => {
+                ContainersScreen::List(table.page.clone())
+            },
+            MainAreaViewModel::Searching => ContainersScreen::Searching,
             MainAreaViewModel::NoEngine(card) => {
-                Some(ContainersScreen::NoEngine(card.case))
+                ContainersScreen::NoEngine(card.case)
             },
         };
+        let has_table = matches!(vm, MainAreaViewModel::Table(_));
 
         let content = main_area::view(main_area::MainAreaProps { vm, theme });
-
-        match id {
-            Some(id) => MainContent::Screen { id, content },
-            None => MainContent::ScrollsOnItsOwn(content),
+        if has_table {
+            return MainContent::TableScreen { id, content };
         }
+
+        MainContent::Screen { id, content }
     }
 }
 
@@ -638,14 +644,58 @@ mod tests {
         ));
     }
 
+    /// Issue 39: the open list is a screen as every page: it keeps the
+    /// minimum width and scrolls sideways below it, while its table, with
+    /// a fixed header over rows that scroll, scrolls down on its own.
+    /// Each list is a screen of its own.
     #[test]
-    fn the_main_area_is_a_table_that_scrolls_on_its_own() {
+    fn the_open_list_is_a_screen_whose_table_scrolls_on_its_own() {
         let themes = ThemeManager::new();
         let containers = loaded();
+        let docker = fixtures::engine(EngineKind::Docker);
 
         let content = containers.main_area(ThemeProps::new(themes.current()));
 
-        assert!(matches!(content, MainContent::ScrollsOnItsOwn(_)));
+        let MainContent::TableScreen { id, content } = content else {
+            panic!("the open list is a screen with a table");
+        };
+        assert_eq!(
+            id,
+            ContainersScreen::List(Place::new(
+                docker.address().clone(),
+                ResourceKind::Containers,
+            ))
+        );
+        let mut ui = simulator(content);
+        ui.find("otty-fx-exit3")
+            .expect("the table should list containers");
+    }
+
+    /// Issue 39: in a main area narrower than a screen's minimum the open
+    /// list keeps the minimum width, as every other screen does: its search
+    /// field is as wide and at the same place as in the smallest main area.
+    #[test]
+    fn in_a_narrow_main_area_the_open_list_keeps_the_minimum_width() {
+        let themes = ThemeManager::new();
+        let theme = ThemeProps::new(themes.current());
+        let containers = loaded();
+        let search_field = |width: f32| {
+            let content = containers.main_area(theme).into_element(theme);
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                Size::new(width, 600.0),
+                content,
+            );
+            ui.find(iced::widget::Id::new(TABLE_SEARCH_ID))
+                .expect("the search field shows")
+                .bounds()
+        };
+
+        let smallest = search_field(size::SCREEN_MIN);
+        let narrow = search_field(320.0);
+
+        assert!((narrow.x - smallest.x).abs() < 0.5, "{narrow:?}");
+        assert!((narrow.width - smallest.width).abs() < 0.5, "{narrow:?}");
     }
 
     #[test]

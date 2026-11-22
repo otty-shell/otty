@@ -313,6 +313,68 @@ mod tests {
         );
     }
 
+    /// A main area of 900 by 1600 px, much taller than any page.
+    const TALL: iced::Size = iced::Size::new(900.0, 1600.0);
+
+    /// The main area of `plugins` drawn in a [`TALL`] window.
+    fn tall_main_area<'a>(
+        plugins: &'a Plugins,
+        theme: ThemeProps<'a>,
+    ) -> iced_test::Simulator<'a, PluginsIntent> {
+        let content = plugins.main_area(theme).into_element(theme);
+
+        iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            TALL,
+            content,
+        )
+    }
+
+    /// Issue 39: the page of a plugin starts at the top of the main area
+    /// and runs down, as the pages of Agents mode do; it is no card.
+    #[test]
+    fn the_page_of_a_plugin_starts_at_the_top() {
+        let mut plugins =
+            Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
+        let _ = plugins.reduce(
+            PluginsIntent::Open(PluginsPlace::Plugin(String::from("example"))),
+            PluginsCtx::default(),
+        );
+        let themes = ThemeManager::new();
+        let mut ui =
+            tall_main_area(&plugins, ThemeProps::new(themes.current()));
+
+        let trust = ui
+            .find(i18n::t(Key::PluginsOfficial))
+            .expect("the header shows")
+            .bounds();
+
+        assert!(trust.y < 80.0, "the header is at the top: {trust:?}");
+    }
+
+    /// Issue 39: the card that says what to do stays in the middle of the
+    /// main area.
+    #[test]
+    fn the_hint_card_stays_in_the_middle() {
+        let plugins =
+            Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
+        let themes = ThemeManager::new();
+        let mut ui =
+            tall_main_area(&plugins, ThemeProps::new(themes.current()));
+
+        let title = ui
+            .find(i18n::t(Key::PluginsNoneSelected))
+            .expect("the card shows")
+            .bounds();
+
+        // The title starts at the left of the card, which is in the middle.
+        assert!(
+            (title.center_y() - TALL.height / 2.0).abs() < 200.0,
+            "the card is in the middle: {title:?}"
+        );
+        assert!(title.x > TALL.width / 5.0, "{title:?}");
+    }
+
     #[test]
     fn the_parts_that_are_on_are_loaded_at_start() {
         let plugins =

@@ -4,9 +4,10 @@ use otty_ui_kit::components::screen_area::ScreenArea;
 
 /// What fills the main area. A feature that fills it has to say which of the
 /// three it is, so a new screen can not miss the rule of [`ScreenArea`]:
-/// anything that is not a terminal or a table is a [`MainContent::Screen`],
-/// and a page around a table that scrolls on its own is a
-/// [`MainContent::TableScreen`].
+/// a page around a table that scrolls on its own is a
+/// [`MainContent::TableScreen`], the panes of a terminal are
+/// [`MainContent::ScrollsOnItsOwn`], and anything else is a
+/// [`MainContent::Screen`].
 ///
 /// `Screen` is the feature's own type that names its screens, such as an
 /// enum with a start card and one value per tab. Each value is one screen to
@@ -47,7 +48,7 @@ pub enum MainContent<'a, Message, Screen> {
     },
     /// A screen with a table that fills the rest of its height and scrolls
     /// down on its own under its sticky header, such as the sessions of a
-    /// project. It keeps the minimum width of a screen and scrolls sideways
+    /// project or a Containers list. It keeps the minimum width of a screen and scrolls sideways
     /// below it, by the same [`ScreenArea`], which then never scrolls down.
     TableScreen {
         /// Which screen this is.
@@ -55,10 +56,9 @@ pub enum MainContent<'a, Message, Screen> {
         /// What the screen shows: its table fills the height that is left.
         content: Element<'a, Message>,
     },
-    /// The panes of a terminal or the table of a Containers list. They
-    /// scroll on their own and fill a height they are given: a table's
-    /// sticky header and its rows can not work in an outer scroller, where
-    /// the height has no end.
+    /// The panes of a terminal. They scroll on their own and fill a height
+    /// they are given, and keep no minimum width: a terminal fits its
+    /// columns to the room.
     ScrollsOnItsOwn(Element<'a, Message>),
 }
 

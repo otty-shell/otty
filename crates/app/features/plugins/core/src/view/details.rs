@@ -1,6 +1,6 @@
-//! The main area of Plugins mode: the page of the selected plugin, one
-//! column at most as wide as a form and centred, as the pages of Agents
-//! mode, with the tag of who reviewed it after its version and each of its
+//! The main area of Plugins mode: the page of the selected plugin, from the
+//! top down, one column at most as wide as a form and centred left and
+//! right, as the pages of Agents mode, with the tag of who reviewed it after its version and each of its
 //! parts a card with its description and Can access (issues 35, 36); or a
 //! card with a short line that says what to do, and the two ways to add a
 //! plugin.
@@ -77,7 +77,7 @@ fn hint<'a>(
 }
 
 /// The page of a plugin: the header, what it is, its news and actions,
-/// then its parts.
+/// then its parts, from the top of the main area down.
 fn plugin_page<'a>(
     page: PluginPageViewModel,
     palette: &UiPalette,
@@ -110,9 +110,12 @@ fn plugin_page<'a>(
         .width(Length::Fill)
         .max_width(size::FORM);
 
+    // Filling the height keeps the page at the top: the main area centres
+    // only a screen lower than the room, such as a card (issue 39).
     container(content)
         .padding([spacing::SPACE_5, PAGE_PADDING_X])
         .center_x(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 

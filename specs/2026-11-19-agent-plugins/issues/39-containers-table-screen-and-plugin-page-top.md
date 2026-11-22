@@ -1,6 +1,6 @@
 # 39 The Containers list shrinks like every screen; a plugin page starts at the top
 
-Status: ready
+Status: done
 Blocked by: 38
 
 ## Why
@@ -48,3 +48,30 @@ Owner, 2026-11-22:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-22, done. The open list of Containers mode is a screen now:
+`MainContent::TableScreen` with the new screen key
+`ContainersScreen::List(Place)`, one per list of an engine, so another
+list starts at the top left and the same list keeps its scrolling. It
+keeps `size::SCREEN_MIN` and scrolls sideways below it, and its table
+fills the rest of the height and scrolls down on its own. The table has
+no side padding, so a list and its "⋯" column (36 px) must fit 592 px.
+The minimums of Images (534), Volumes (378) and Networks (544) did; those
+of Containers (572) did not, so the minimum of the Name column went from
+110 to 94 px, as the Title column of the Agents sessions table went down
+in issue 38: the name has the widest share and ends with "…". No table
+scrolls sideways itself now, so nothing scrolls twice.
+
+`ScrollsOnItsOwn` is now used by the terminal panes only; its doc says
+so. No other page with a header over a table used it.
+
+The page of a plugin fills the height of the main area, as the pages of
+Agents mode do (`.height(Length::Fill)` on the page container), so
+`ScreenArea` no longer centres it up and down and it starts at the top;
+it stays centred left and right. The "No plugin selected" card is still
+centred both ways.
+
+Tests: the open list is a `TableScreen` named by its page and keeps the
+minimum width at 320 px, and every list fits the smallest screen; a
+plugin page's header is at the top of a tall main area, and the hint
+card stays in the middle. No user docs described these layouts.

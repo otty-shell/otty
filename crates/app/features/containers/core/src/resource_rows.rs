@@ -22,8 +22,10 @@ pub(crate) const PORTS_COLUMN: usize = 4;
 
 /// The table columns of `resource`, with their width shares and minimum
 /// widths. Number columns are right-aligned. A minimum keeps the title and a
-/// typical value readable (side padding included); on a narrow window the
-/// table scrolls sideways instead of going below the minimums.
+/// typical value readable (side padding included). The minimums of a list
+/// and its "⋯" column fit the smallest screen (`size::SCREEN_MIN`), so the
+/// table never scrolls sideways itself: on a narrow window the main area
+/// keeps the page at that width and scrolls it sideways (issue 39).
 pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
     columns_in(i18n::current_locale(), resource)
 }
@@ -41,7 +43,9 @@ pub(super) fn columns_in(
 
     let columns = match resource {
         ResourceKind::Containers => vec![
-            column(Key::ContainersColumnName, 3, 110),
+            // 94, not 110: with it the list fits the smallest screen. A
+            // long name ends with "…" and has the widest share.
+            column(Key::ContainersColumnName, 3, 94),
             // The dot and "Exited (3)".
             column(Key::ContainersColumnStatus, 2, 104),
             column(Key::ContainersColumnImage, 3, 96),
@@ -319,7 +323,7 @@ mod tests {
             titles(ResourceKind::Containers),
             vec![
                 TableColumn::new(i18n::t(Key::ContainersColumnName), 3)
-                    .min_width(110)
+                    .min_width(94)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::ContainersColumnStatus), 2)
                     .min_width(104)

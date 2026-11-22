@@ -466,7 +466,7 @@ mod tests {
         let by_status = default_sort(ResourceKind::Containers);
         // The narrowest area that still shows the column without scrolling
         // sideways: only the minimums and the row menu fit.
-        let narrow = 572.0 + ROW_MENU_COLUMN;
+        let narrow = 556.0 + ROW_MENU_COLUMN;
 
         for (sort, width) in [
             (by_status, WIDE),
@@ -488,6 +488,45 @@ mod tests {
                 sent(link),
                 vec![ContainersIntent::OpenPortLink { row: 0, link: 0 }],
                 "{sort:?} at {width}"
+            );
+        }
+    }
+
+    /// Issue 39: every list, its "⋯" column too, fits the smallest screen,
+    /// so its table never scrolls sideways itself: in less room the main
+    /// area keeps the page at that width and scrolls it sideways, as every
+    /// screen, and nothing scrolls twice. The last column, Age, ends
+    /// before the "⋯" column only when no column is pushed out.
+    #[test]
+    fn every_list_fits_the_smallest_screen() {
+        let themes = ThemeManager::new();
+        let smallest = otty_ui_kit::size::SCREEN_MIN;
+        let age_min = 52.0;
+
+        for resource in [
+            ResourceKind::Containers,
+            ResourceKind::Images,
+            ResourceKind::Volumes,
+            ResourceKind::Networks,
+        ] {
+            let vm = with(|mut table| {
+                table.resource = resource;
+                table.columns = resource_rows::columns_in(Locale::En, resource);
+                table.rows = Vec::new();
+                table
+            });
+            let mut ui = simulator(area(
+                vm,
+                smallest,
+                ThemeProps::new(themes.current()),
+            ));
+
+            let age = ui.find("Age").expect("the column shows").bounds();
+
+            let column_end = age.x - spacing::SPACE_4 + age_min;
+            assert!(
+                column_end <= smallest - ROW_MENU_COLUMN + 0.5,
+                "{resource:?}: the Age column ends at {column_end}"
             );
         }
     }
