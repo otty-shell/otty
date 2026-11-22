@@ -725,6 +725,7 @@
     "tpl_agents_need_program_not_found_text": "OTTY n’a pas trouvé {program} dans le PATH de votre shell de connexion.",
     "tpl_agents_need_program_not_found_at_places_text": "OTTY n’a trouvé {program} ni dans le PATH de votre shell de connexion, ni à {places}.",
     "tpl_agents_need_install_runs": "« Installer {agent} » lance {command} dans un onglet de terminal.",
+    "tpl_agents_need_runs_command": "Le bouton lance {command} dans un onglet de terminal.",
     "tpl_agents_install_agent": "Installer {agent}",
     "tpl_agents_key_starts_with": "La clé commence par {prefix}.",
     "agents_seven_days": "7 jours",

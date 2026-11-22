@@ -1540,6 +1540,8 @@ pub enum Key {
     TplAgentsNeedProgramNotFoundAtPlacesText,
     /// Added to the line of a missing program: what its install button runs; {agent} is the agent's name, {command} the command as typed.
     TplAgentsNeedInstallRuns,
+    /// Added to the line of a need whose program is started by a full path: what its button runs; {command} is the whole command as typed.
+    TplAgentsNeedRunsCommand,
     /// The button of a missing program that runs its install in a terminal tab: {agent} is the agent's name, such as "OpenCode".
     TplAgentsInstallAgent,
     /// A line of the dialog of a key a plugin part asks for: what the key starts with, {prefix}.
@@ -2011,7 +2013,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 940] = [
+    pub(super) const ALL: [Self; 941] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2722,6 +2724,7 @@ impl Key {
         Self::TplAgentsNeedProgramNotFoundText,
         Self::TplAgentsNeedProgramNotFoundAtPlacesText,
         Self::TplAgentsNeedInstallRuns,
+        Self::TplAgentsNeedRunsCommand,
         Self::TplAgentsInstallAgent,
         Self::TplAgentsKeyStartsWith,
         Self::AgentsSevenDays,

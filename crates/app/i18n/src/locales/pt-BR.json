@@ -725,6 +725,7 @@
     "tpl_agents_need_program_not_found_text": "O OTTY não encontrou {program} no PATH do seu shell de login.",
     "tpl_agents_need_program_not_found_at_places_text": "O OTTY não encontrou {program} nem no PATH do seu shell de login nem em {places}.",
     "tpl_agents_need_install_runs": "“Instalar {agent}” executa {command} em uma aba de terminal.",
+    "tpl_agents_need_runs_command": "O botão executa {command} em uma aba de terminal.",
     "tpl_agents_install_agent": "Instalar {agent}",
     "tpl_agents_key_starts_with": "A chave começa com {prefix}.",
     "agents_seven_days": "7 dias",

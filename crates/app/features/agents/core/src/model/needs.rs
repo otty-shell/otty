@@ -13,6 +13,8 @@
 //! folder is missing, and a refused login the agent part said nothing
 //! about.
 
+use std::path::Path;
+
 use otty_agents::{
     Account, AgentCommand, AgentEntry, AgentInstall, FormatChange, PartNeed,
     PartNeedAction, ProfileStatus, ProviderId, RefusedLogin, SourceError,
@@ -232,13 +234,14 @@ fn part_need_view(
     account: Option<&Account>,
 ) -> NeedViewModel {
     let plugin = need.part().name();
+    let line = match need.action() {
+        PartNeedAction::Run(command) => run_line(need.text(), command),
+        _ => need.text().to_string(),
+    };
 
     let fix = match need.action() {
         PartNeedAction::Run(command) => NeedFixViewModel {
-            label: i18n::filled(
-                Key::TplAgentsNeedRun,
-                &[("command", &command_text(command))],
-            ),
+            label: run_label(command),
             action: Some(NeedAction::Run {
                 title: place.to_string(),
                 command: command.clone(),
@@ -274,10 +277,43 @@ fn part_need_view(
             &[("plugin", plugin)],
         )),
         title: need.title().to_string(),
-        line: need.text().to_string(),
+        line,
         fix: Some(fix),
         extra: None,
     }
+}
+
+/// The label of a button that runs `command`, kept short: "Run" and the
+/// command with only the name of its program, such as "Run opencode auth
+/// login" for a program OTTY found at a full path.
+fn run_label(command: &AgentCommand) -> String {
+    let program = command.program();
+    let name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program);
+    let short = std::iter::once(name)
+        .chain(command.args().iter().map(String::as_str))
+        .map(typed_word)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    i18n::filled(Key::TplAgentsNeedRun, &[("command", &short)])
+}
+
+/// The line of a need whose button runs `command`: the part's `text`,
+/// and, when the program is started by a full path, the whole command,
+/// since the button names only the program.
+fn run_line(text: &str, command: &AgentCommand) -> String {
+    if !command.program().contains('/') {
+        return text.to_string();
+    }
+
+    let runs = i18n::filled(
+        Key::TplAgentsNeedRunsCommand,
+        &[("command", &command_text(command))],
+    );
+    format!("{text} {runs}")
 }
 
 /// The label of a button that opens `page`: "Open" and its host, such as
@@ -778,6 +814,43 @@ mod tests {
             Key::TplAgentsNeedPluginLabel,
             &[("plugin", plugin)],
         ))
+    }
+
+    /// Owner, 2026-11-22: a program found at a full path (issue 32) keeps
+    /// the button short, with only the program's name; the line says the
+    /// whole command it runs.
+    #[test]
+    fn a_run_button_names_the_program_and_the_line_has_its_path() {
+        let by_path = AgentCommand::new("/home/user/.opencode/bin/opencode")
+            .with_arg("auth")
+            .with_arg("login");
+        let by_name = AgentCommand::new("codex").with_arg("login");
+
+        let label = run_label(&by_path);
+        let line = run_line("Nobody is logged in.", &by_path);
+        let named_line = run_line("Nobody is logged in.", &by_name);
+
+        assert_eq!(
+            label,
+            i18n::filled(
+                Key::TplAgentsNeedRun,
+                &[("command", "opencode auth login")]
+            )
+        );
+        assert_eq!(
+            line,
+            format!(
+                "Nobody is logged in. {}",
+                i18n::filled(
+                    Key::TplAgentsNeedRunsCommand,
+                    &[(
+                        "command",
+                        "/home/user/.opencode/bin/opencode auth login"
+                    )]
+                )
+            )
+        );
+        assert_eq!(named_line, "Nobody is logged in.");
     }
 
     /// Spec Decision 6: the needs of the accounts and of the profiles are
