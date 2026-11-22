@@ -1,8 +1,7 @@
-//! The dialogs of the page that show permissions (spec
+//! The dialogs of Plugins mode that show permissions (spec
 //! 2026-11-19-agent-plugins, "Install and update flow", "Permissions"):
 //! the install dialog with each part and its permissions in words, the
-//! update dialog with what changed part by part, and the permissions of
-//! an installed plugin.
+//! update dialog with what changed part by part.
 
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::Manifest;
@@ -55,15 +54,6 @@ pub(crate) struct UpdateDialogViewModel {
     pub(crate) error: Option<String>,
     /// Whether the update runs.
     pub(crate) is_busy: bool,
-}
-
-/// The permissions of an installed plugin.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PermissionsViewModel {
-    /// "Permissions of Example".
-    pub(crate) title: String,
-    /// Each part with the permissions the user granted.
-    pub(crate) parts: Vec<PartPermissionsViewModel>,
 }
 
 /// The install dialog of `plan`.
@@ -136,38 +126,6 @@ pub(crate) fn update_dialog(
         parts,
         error: state.error().map(String::from),
         is_busy: state.is_busy(),
-    }
-}
-
-/// The permissions the user granted to each part of `plugin`.
-pub(crate) fn permissions(plugin: &ListedPlugin) -> PermissionsViewModel {
-    let manifest = plugin.manifest.as_ref();
-
-    let parts = plugin
-        .installed
-        .parts()
-        .iter()
-        .map(|part| {
-            let reference = part.part();
-            PartPermissionsViewModel {
-                title: part_title(&plugin.part_name(&reference), &reference),
-                mark: None,
-                lines: part
-                    .granted()
-                    .iter()
-                    .map(|line| granted_text(line, manifest))
-                    .collect(),
-                removed: Vec::new(),
-            }
-        })
-        .collect();
-
-    PermissionsViewModel {
-        title: i18n::filled(
-            Key::TplPluginsPermissionsTitle,
-            &[("name", plugin.installed.name())],
-        ),
-        parts,
     }
 }
 
@@ -330,18 +288,6 @@ mod tests {
         assert_eq!(dialog.parts[0].mark, Some(i18n::t(Key::PluginsNewPart)));
         assert!(
             dialog.parts[0]
-                .lines
-                .contains(&sends_requests("api.example.com"))
-        );
-    }
-
-    #[test]
-    fn the_permissions_of_an_installed_plugin_are_the_granted_ones() {
-        let permissions = permissions(&released_example());
-
-        assert_eq!(permissions.parts.len(), 2);
-        assert!(
-            permissions.parts[1]
                 .lines
                 .contains(&sends_requests("api.example.com"))
         );

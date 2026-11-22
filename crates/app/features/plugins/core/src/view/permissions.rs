@@ -1,5 +1,5 @@
-//! The dialogs that show permissions: the install dialog, the update
-//! dialog with what changed, and the permissions of an installed plugin.
+//! The dialogs that show permissions: the install dialog and the update
+//! dialog with what changed.
 //! Each part is a title and its lines.
 
 use iced::Element;
@@ -11,11 +11,9 @@ use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing};
 
-use super::forms::back;
 use crate::event::PluginsIntent;
 use crate::model::{
-    InstallDialogViewModel, PartPermissionsViewModel, PermissionsViewModel,
-    UpdateDialogViewModel,
+    InstallDialogViewModel, PartPermissionsViewModel, UpdateDialogViewModel,
 };
 
 /// The install dialog: who made the plugin and who reviewed it, each part
@@ -86,19 +84,6 @@ pub(super) fn update<'a>(
         .body(body)
         .action(not_now)
         .action(update)
-        .into()
-}
-
-/// The permissions the user granted to each part of a plugin, and Back.
-pub(super) fn granted<'a>(
-    dialog: PermissionsViewModel,
-    palette: &UiPalette,
-) -> Element<'a, PluginsIntent> {
-    Dialog::new(dialog.title, palette)
-        .width(size::DIALOG_WIDE)
-        .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
-        .body(parts(dialog.parts, false, palette))
-        .action(back(palette))
         .into()
 }
 

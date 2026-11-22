@@ -1,6 +1,6 @@
-//! The work the Plugins page asks for, each on a thread of its own: it may
+//! The work Plugins mode asks for, each on a thread of its own: it may
 //! reach GitHub, copy and check files and compile a plugin, so it never
-//! holds up the window. Each answers with the page's intent.
+//! holds up the window. Each answers with the mode's intent.
 
 use std::path::PathBuf;
 use std::time::SystemTime;

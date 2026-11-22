@@ -1,20 +1,23 @@
-//! The Plugins page of the OTTY app (spec 2026-11-19-agent-plugins,
-//! Decision 12, "Install and update flow", "UI changes"): a wide dialog
-//! over every mode, opened from Settings and from the links and needs of
-//! Agents mode, with the installed plugins and a switch for each of their
-//! parts, Add plugin… by a GitHub link, Add plugin from folder…, the
-//! install dialog with the permissions of each part, the update dialog
-//! with the permission changes, and the daily update check. Two plugins
-//! may serve one id: every part that is on reads, and nothing is asked
-//! (issue 29).
+//! Plugins mode of the OTTY app (spec 2026-11-19-agent-plugins,
+//! Decision 12, "Install and update flow", "UI changes"; issue 30): the
+//! installed plugins in the left panel with a search by name, Add
+//! plugin… by a GitHub link and Add plugin from folder…; the page of the
+//! selected plugin in the main area with a switch for each of its parts,
+//! their permissions and health; the install dialog with the permissions
+//! of each part, the update dialog with the permission changes, and the
+//! daily update check. Settings and the links and needs of Agents mode
+//! open the mode at a [`PluginsPlace`]. Two plugins may serve one id:
+//! every part that is on reads, and nothing is asked (issue 29).
 //!
-//! The page touches no network and no disk. It reports what it needs as a
-//! [`PluginsOutcome`]; `otty-app-plugins-io` does it and answers with a
-//! [`PluginsIntent`]. When the installed plugins change, the page reports
+//! The mode touches no network and no disk. It reports what it needs as
+//! a [`PluginsOutcome`]; `otty-app-plugins-io` does it and answers with a
+//! [`PluginsIntent`]. When the installed plugins change, the mode reports
 //! [`PluginsOutcome::LoadParts`] and the binary loads the parts that are
 //! on into Agents mode, and [`PluginsOutcome::Notes`] with what Agents
 //! mode shows of the plugins: the parts that are off and the updates that
 //! wait.
+//!
+//! [`PluginsPlace`]: otty_app_domain::plugins::PluginsPlace
 //!
 //! # Example
 //!
@@ -22,7 +25,7 @@
 //! use std::path::PathBuf;
 //!
 //! use otty_app_domain::plugins::PluginsPlace;
-//! use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome};
+//! use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome, URL_FIELD};
 //! use otty_app_slots::Component;
 //!
 //! let mut plugins = Plugins::new(Vec::new(), PathBuf::from("/home/user"));
@@ -37,7 +40,8 @@
 //! );
 //! let find = plugins.reduce(PluginsIntent::Find, ());
 //!
-//! assert_eq!(opened[0], PluginsOutcome::Opened);
+//! assert_eq!(opened, vec![PluginsOutcome::FocusField(URL_FIELD)]);
+//! assert!(plugins.has_dialog());
 //! assert_eq!(
 //!     find,
 //!     vec![PluginsOutcome::FindRelease(String::from(
@@ -58,35 +62,37 @@ mod view;
 mod words;
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 pub use event::{ChangeAnswer, PluginsIntent, PluginsOutcome};
-use iced::Subscription;
 use iced::widget::Id;
-use model::PageViewModel;
+use iced::{Element, Subscription};
+use model::{DialogViewModel, MainViewModel, SidePanelViewModel};
 use otty_app_domain::plugins::PluginNotes;
-use otty_app_slots::{Component, Overlay, Overlays};
+use otty_app_slots::{Component, MainArea, MainContent, Overlay, Overlays};
 use otty_app_theme::theme::ThemeProps;
 use state::PluginsState;
 pub use types::{ListedPlugin, PartsToLoad, RunningPlugin};
 
 /// The id of the GitHub link field of Add plugin…; the binary moves the
-/// keyboard focus to it when the page opens there.
+/// keyboard focus to it when the dialog opens.
 pub const URL_FIELD: Id = view::URL_FIELD;
 
-/// How often the page asks whether the daily update check is due.
+/// How often the mode asks whether the daily update check is due.
 const UPDATE_TICK: Duration = Duration::from_secs(60 * 60);
 
-/// The Plugins page: the installed plugins, the parts that run, what the
-/// update checks said, and the dialog while it is open.
+/// Plugins mode: the installed plugins, the parts that run, what the
+/// update checks said, the selected plugin, the search and the dialog
+/// while it is open.
 pub struct Plugins {
     state: PluginsState,
 }
 
 impl Plugins {
-    /// Whether the page is open.
-    pub fn is_open(&self) -> bool {
-        self.state.is_open()
+    /// Whether a dialog of the mode is open: the install or update dialog,
+    /// Add plugin…, the log or the question before Remove.
+    pub fn has_dialog(&self) -> bool {
+        self.state.dialog().is_some()
     }
 
     /// What Agents mode shows of the installed plugins: the parts that are
@@ -105,9 +111,20 @@ impl Plugins {
             .collect()
     }
 
-    /// The page closed, with the installed plugins `plugins` as
-    /// `otty-app-plugins-io` read them at start; `~` in a typed folder
-    /// stands for `home`.
+    /// Left panel of the mode under the switcher: the installed plugins,
+    /// the search and the two ways to add one.
+    pub fn left_panel<'a>(
+        &'a self,
+        theme: ThemeProps<'a>,
+    ) -> Element<'a, PluginsIntent> {
+        let vm = SidePanelViewModel::from_state(&self.state);
+
+        view::side_panel::view(vm, theme.theme.ui())
+    }
+
+    /// No dialog and nothing selected, with the installed plugins
+    /// `plugins` as `otty-app-plugins-io` read them at start; `~` in a
+    /// typed folder stands for `home`.
     pub fn new(plugins: Vec<ListedPlugin>, home: PathBuf) -> Self {
         Self {
             state: PluginsState::new(plugins).with_home(home),
@@ -128,24 +145,57 @@ impl Component for Plugins {
         reducer::reduce(&mut self.state, intent)
     }
 
-    /// The timer of the daily update check: once an hour the page asks
+    /// The timer of the daily update check: once an hour the mode asks
     /// whether a day has passed since the last check.
     fn subscription(&self) -> Subscription<PluginsIntent> {
         iced::time::every(UPDATE_TICK).map(|_| PluginsIntent::UpdateTick)
     }
 }
 
+impl MainArea for Plugins {
+    type Screen = PluginsScreen;
+
+    /// The page of the selected plugin, or the card that says what to do;
+    /// the ages of the last failures count up to the current time.
+    fn main_area<'a>(
+        &'a self,
+        theme: ThemeProps<'a>,
+    ) -> MainContent<'a, PluginsIntent, PluginsScreen> {
+        let vm = MainViewModel::from_state(&self.state, SystemTime::now());
+        let id = match &vm {
+            MainViewModel::Hint { .. } => PluginsScreen::Hint,
+            MainViewModel::Plugin(page) => {
+                PluginsScreen::Plugin(page.id.clone())
+            },
+        };
+
+        MainContent::Screen {
+            id,
+            content: view::details::view(vm, theme.theme.ui()),
+        }
+    }
+}
+
 impl Overlays for Plugins {
-    /// The open page: a wide dialog in the middle of the window, over a
-    /// dimmed layer. Esc and the close cross close it.
+    /// The open dialog, in the middle of the window over a dimmed layer.
+    /// Esc and Cancel close it.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> Option<Overlay<'a, PluginsIntent>> {
-        let vm = PageViewModel::from_state(&self.state)?;
+        let vm = DialogViewModel::from_state(&self.state)?;
 
-        Some(Overlay::dialog(view::view(view::PageProps { vm, theme })))
+        Some(Overlay::dialog(view::dialog(vm, theme.theme.ui())))
     }
+}
+
+/// Which screen fills the main area of Plugins mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginsScreen {
+    /// The card that says what to do.
+    Hint,
+    /// The page of the plugin with this id.
+    Plugin(String),
 }
 
 #[cfg(test)]
@@ -159,23 +209,41 @@ mod tests {
     use super::*;
     use crate::testing::official_example;
 
+    /// Issue 30: the left panel lists the plugins and the main area shows
+    /// the page of the selected one.
     #[test]
-    fn the_open_page_is_a_dialog_with_its_plugins() {
+    fn the_left_panel_lists_the_plugins_and_the_main_area_the_selected() {
         let themes = ThemeManager::new();
         let theme = ThemeProps::new(themes.current());
         let mut plugins =
             Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
-        let closed = plugins.overlay(theme).is_none();
+        let _ = plugins.reduce(
+            PluginsIntent::Open(PluginsPlace::Plugin(String::from("example"))),
+            (),
+        );
 
-        let _ = plugins.reduce(PluginsIntent::Open(PluginsPlace::List), ());
+        let mut panel = simulator(plugins.left_panel(theme));
+        let mut main = simulator(plugins.main_area(theme).into_element(theme));
 
-        let page = plugins.overlay(theme).expect("the page");
-        assert!(closed);
-        assert_eq!(page.kind(), OverlayKind::Dialog);
-        let mut ui = simulator(page.into_content());
-        assert!(ui.find(i18n::t(Key::PluginsTitle)).is_ok());
-        assert!(ui.find("Example").is_ok());
-        assert!(ui.find(i18n::t(Key::PluginsOfficial)).is_ok());
+        assert!(panel.find("Example").is_ok());
+        assert!(main.find(i18n::t(Key::PluginsOfficialNote)).is_ok());
+        assert!(plugins.overlay(theme).is_none());
+    }
+
+    /// A dialog of the mode lies over the window.
+    #[test]
+    fn a_dialog_of_the_mode_is_an_overlay() {
+        let themes = ThemeManager::new();
+        let theme = ThemeProps::new(themes.current());
+        let mut plugins = Plugins::new(Vec::new(), PathBuf::from("/home/user"));
+
+        let _ = plugins.reduce(PluginsIntent::AddPlugin, ());
+
+        let dialog = plugins.overlay(theme).expect("the dialog");
+        assert!(plugins.has_dialog());
+        assert_eq!(dialog.kind(), OverlayKind::Dialog);
+        let mut ui = simulator(dialog.into_content());
+        assert!(ui.find(i18n::t(Key::PluginsAddPluginTitle)).is_ok());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 //! Made-up plugin records for the tests of other crates, such as the
-//! Plugins page: an installed plugin, an install plan, a waiting update
+//! Plugins mode: an installed plugin, an install plan, a waiting update
 //! and the report of an update check, each from the text of a manifest.
 //! Only with the `fixtures` feature, which only test builds turn on.
 

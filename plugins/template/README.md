@@ -96,7 +96,7 @@ cargo build --release --target wasm32-wasip2
 The component is `target/wasm32-wasip2/release/otty_plugin_example.wasm`.
 To try it in OTTY, put it as `example.wasm` in a folder with
 `otty-plugin.toml` and the icons, and use **Add plugin from folder…** on
-the Plugins page.
+Plugins mode.
 
 ## Release
 

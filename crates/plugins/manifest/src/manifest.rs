@@ -185,7 +185,7 @@ impl PluginInfo {
         &self.id
     }
 
-    /// The name shown on the Plugins page.
+    /// The name shown in Plugins mode.
     pub fn name(&self) -> &str {
         &self.name
     }

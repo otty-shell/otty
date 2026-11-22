@@ -86,7 +86,7 @@ pub(crate) struct App {
     /// The plugins that are on and export the language receiver: they are
     /// told when the user picks another language.
     pub(crate) language_receivers: LanguageReceivers,
-    /// The Plugins page: the installed plugins and their parts, opened
+    /// Plugins mode: the installed plugins and their parts, opened
     /// from Settings and from Agents mode.
     pub(crate) plugins: Plugins,
     /// The engine of the plugins and the installed plugins, kept for the
@@ -191,7 +191,7 @@ impl App {
     /// of a new pane is started: the app gives the one that starts real
     /// programs, a test may give one whose programs are mocks. `plugin_io`
     /// is the engine of the plugins and the installed plugins; the
-    /// Plugins page starts with none listed.
+    /// Plugins mode starts with none listed.
     pub(crate) fn with_saved(
         saved: SettingsData,
         pinned_modes: &[Mode],
@@ -304,7 +304,7 @@ impl App {
 }
 
 /// The one engine of the plugins and the installed plugins it checks and
-/// compiles: the Plugins page changes them, and Agents mode reads with
+/// compiles: Plugins mode changes them, and Agents mode reads with
 /// the parts that are on.
 pub(crate) struct PluginIo {
     pub(crate) engine: Arc<PluginEngine>,

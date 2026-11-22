@@ -36,8 +36,8 @@ pub enum SettingsIntent {
     EqualizePanesToggled(bool),
     /// A theme was picked in the theme selector.
     ThemeSelected(BuiltinTheme),
-    /// Manage plugins… was pressed: open the Plugins page over the
-    /// dialog.
+    /// Manage plugins… was pressed: the dialog closes, as on Close, and
+    /// Plugins mode opens.
     OpenPlugins,
 }
 
@@ -61,7 +61,6 @@ pub enum SettingsOutcome {
     Closed,
     /// Tell the user about a failure.
     Failed(SettingsProblem),
-    /// Open the Plugins page over the dialog; the dialog stays open under
-    /// it.
+    /// The dialog closed for Plugins mode: switch to it.
     OpenPlugins,
 }

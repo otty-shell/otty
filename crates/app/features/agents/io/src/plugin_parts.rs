@@ -24,7 +24,7 @@ pub type ProviderList = Arc<[PluginProvider]>;
 
 /// One installed plugin as Agents mode loads it: the folder of its
 /// installed version, with its manifest, `.wasm` and icons, and its parts
-/// that are on. A plain parameter bag: the Plugins page knows which parts
+/// that are on. A plain parameter bag: Plugins mode knows which parts
 /// are on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledParts {
@@ -53,7 +53,7 @@ pub struct Readers {
 }
 
 /// One loaded plugin: its log and the health of each of its parts that
-/// was loaded, which the Plugins page shows and starts again. A plain bag
+/// was loaded, which Plugins mode shows and starts again. A plain bag
 /// of shared handles.
 #[derive(Debug, Clone)]
 pub struct RunningParts {

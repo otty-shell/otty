@@ -1,6 +1,6 @@
-//! What the Plugins page does with each intent: which dialog it shows,
-//! what it asks `otty-app-plugins-io` to do, and what it tells the binary
-//! when the installed plugins change.
+//! What Plugins mode does with each intent: which plugin it selects and
+//! which dialog it shows, what it asks `otty-app-plugins-io` to do, and
+//! what it tells the binary when the installed plugins change.
 
 use std::path::{Path, PathBuf};
 
@@ -11,7 +11,7 @@ use otty_plugin_releases::{InstallError, UpdateOutcome, UpdateReport};
 use crate::event::{ChangeAnswer, PluginsIntent, PluginsOutcome};
 use crate::model::failed;
 use crate::notes::notes;
-use crate::state::{PluginNews, PluginsState, Screen};
+use crate::state::{Dialog, PluginNews, PluginsState};
 use crate::types::ListedPlugin;
 use crate::view::{FOLDER_FIELD, URL_FIELD};
 use crate::words::error_text;
@@ -23,37 +23,36 @@ pub(crate) fn reduce(
 ) -> Vec<PluginsOutcome> {
     match intent {
         PluginsIntent::Open(place) => open(state, place),
-        PluginsIntent::Close => close(state),
-        PluginsIntent::Escape => {
-            if *state.screen() == Screen::List {
-                close(state)
-            } else {
-                state.show(Screen::List);
-                Vec::new()
-            }
+        PluginsIntent::Select(plugin) => {
+            state.select(Some(plugin));
+            Vec::new()
+        },
+        PluginsIntent::SearchChanged(text) => {
+            state.set_search(text);
+            Vec::new()
         },
         PluginsIntent::Back => {
-            state.show(Screen::List);
+            state.close_dialog();
             Vec::new()
         },
         PluginsIntent::AddPlugin => {
-            state.show(Screen::AddUrl { url: String::new() });
+            state.show(Dialog::AddUrl { url: String::new() });
             vec![PluginsOutcome::FocusField(URL_FIELD)]
         },
         PluginsIntent::AddFromFolder => {
-            state.show(Screen::AddFolder {
+            state.show(Dialog::AddFolder {
                 folder: String::new(),
             });
             vec![PluginsOutcome::FocusField(FOLDER_FIELD)]
         },
         PluginsIntent::UrlChanged(text) => {
-            if let Screen::AddUrl { url } = state.screen_mut() {
+            if let Some(Dialog::AddUrl { url }) = state.dialog_mut() {
                 *url = text;
             }
             Vec::new()
         },
         PluginsIntent::FolderChanged(text) => {
-            if let Screen::AddFolder { folder } = state.screen_mut() {
+            if let Some(Dialog::AddFolder { folder }) = state.dialog_mut() {
                 *folder = text;
             }
             Vec::new()
@@ -62,7 +61,7 @@ pub(crate) fn reduce(
         PluginsIntent::Found(found) => {
             state.set_busy(false);
             match found {
-                Ok(plan) => state.show(Screen::Install { plan }),
+                Ok(plan) => state.show(Dialog::Install { plan }),
                 Err(error) => state.set_error(Some(error_text(&error))),
             }
             Vec::new()
@@ -78,40 +77,24 @@ pub(crate) fn reduce(
         PluginsIntent::CopyReport(report) => {
             vec![PluginsOutcome::CopyText(report)]
         },
-        PluginsIntent::ToggleActions(plugin) => {
-            let is_open = state.actions_open() == Some(plugin.as_str());
-            state.set_actions_open((!is_open).then_some(plugin));
-            Vec::new()
-        },
         PluginsIntent::CheckForUpdates(plugin) => {
-            state.set_actions_open(None);
             vec![PluginsOutcome::CheckUpdate(plugin)]
         },
-        PluginsIntent::Reload(plugin) => {
-            state.set_actions_open(None);
-            vec![PluginsOutcome::Reload(plugin)]
-        },
+        PluginsIntent::Reload(plugin) => vec![PluginsOutcome::Reload(plugin)],
         PluginsIntent::Review(plugin) => {
             open(state, PluginsPlace::Review(plugin))
         },
         PluginsIntent::ApplyUpdate => apply_update(state),
-        PluginsIntent::ShowPermissions(plugin) => {
-            state.show(Screen::Permissions(plugin));
-            Vec::new()
-        },
         PluginsIntent::ShowLog(plugin) => {
-            state.show(Screen::Log(plugin));
+            state.show(Dialog::Log(plugin));
             Vec::new()
         },
-        PluginsIntent::OpenRepository(plugin) => {
-            state.set_actions_open(None);
-            repository_of(state, &plugin)
-                .map(PluginsOutcome::OpenPage)
-                .into_iter()
-                .collect()
-        },
+        PluginsIntent::OpenRepository(plugin) => repository_of(state, &plugin)
+            .map(PluginsOutcome::OpenPage)
+            .into_iter()
+            .collect(),
         PluginsIntent::AskRemove(plugin) => {
-            state.show(Screen::Remove(plugin));
+            state.show(Dialog::Remove(plugin));
             Vec::new()
         },
         PluginsIntent::Remove => remove(state),
@@ -142,49 +125,34 @@ pub(crate) fn reduce(
     }
 }
 
-/// Opens the page at `place`.
+/// Shows `place` in the mode: nothing selected for the list, the plugin
+/// of "Read by" selected, the update dialog of Review, or Add plugin….
 fn open(state: &mut PluginsState, place: PluginsPlace) -> Vec<PluginsOutcome> {
-    let mut outcomes = if state.is_open() {
-        Vec::new()
-    } else {
-        vec![PluginsOutcome::Opened]
-    };
-    state.set_open(true);
-    state.set_highlighted(None);
+    state.close_dialog();
 
     match place {
         PluginsPlace::AddPlugin => {
-            state.show(Screen::AddUrl { url: String::new() });
-            outcomes.push(PluginsOutcome::FocusField(URL_FIELD));
+            state.show(Dialog::AddUrl { url: String::new() });
+            vec![PluginsOutcome::FocusField(URL_FIELD)]
         },
         PluginsPlace::Plugin(plugin) => {
-            state.show(Screen::List);
-            state.set_highlighted(Some(plugin));
+            state.select(Some(plugin));
+            Vec::new()
         },
         PluginsPlace::Review(plugin) => {
             if state.waiting_update(&plugin).is_some() {
-                state.show(Screen::Update { plugin });
-            } else {
-                state.show(Screen::List);
-                state.set_highlighted(Some(plugin));
+                state.show(Dialog::Update {
+                    plugin: plugin.clone(),
+                });
             }
+            state.select(Some(plugin));
+            Vec::new()
         },
-        _ => state.show(Screen::List),
+        _ => {
+            state.select(None);
+            Vec::new()
+        },
     }
-
-    outcomes
-}
-
-fn close(state: &mut PluginsState) -> Vec<PluginsOutcome> {
-    if !state.is_open() {
-        return Vec::new();
-    }
-
-    state.set_open(false);
-    state.show(Screen::List);
-    state.set_highlighted(None);
-
-    vec![PluginsOutcome::Closed]
 }
 
 /// Next under the link or the folder: find the plugin there.
@@ -193,11 +161,11 @@ fn find(state: &mut PluginsState) -> Vec<PluginsOutcome> {
         return Vec::new();
     }
 
-    let outcome = match state.screen() {
-        Screen::AddUrl { url } if !url.trim().is_empty() => {
+    let outcome = match state.dialog() {
+        Some(Dialog::AddUrl { url }) if !url.trim().is_empty() => {
             PluginsOutcome::FindRelease(url.trim().to_string())
         },
-        Screen::AddFolder { folder } if !folder.trim().is_empty() => {
+        Some(Dialog::AddFolder { folder }) if !folder.trim().is_empty() => {
             PluginsOutcome::FindLocal(typed_folder(folder.trim(), state.home()))
         },
         _ => return Vec::new(),
@@ -212,7 +180,7 @@ fn install(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Screen::Install { plan } = state.screen() else {
+    let Some(Dialog::Install { plan }) = state.dialog() else {
         return Vec::new();
     };
 
@@ -276,7 +244,7 @@ fn apply_update(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Screen::Update { plugin } = state.screen() else {
+    let Some(Dialog::Update { plugin }) = state.dialog() else {
         return Vec::new();
     };
     let Some(update) = state.waiting_update(plugin) else {
@@ -296,7 +264,7 @@ fn remove(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Screen::Remove(plugin) = state.screen() else {
+    let Some(Dialog::Remove(plugin)) = state.dialog() else {
         return Vec::new();
     };
 
@@ -307,8 +275,9 @@ fn remove(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     vec![outcome]
 }
 
-/// A change finished: back to the list with the plugins as they are now,
-/// or the reason it failed in the open dialog.
+/// A change finished: the dialog closes and the plugins are as they are
+/// now, a new one selected; or the reason it failed, in the open dialog or
+/// on the page.
 fn changed(
     state: &mut PluginsState,
     answer: ChangeAnswer,
@@ -322,8 +291,8 @@ fn changed(
         },
     };
 
-    match state.screen().clone() {
-        Screen::Update { plugin, .. } => {
+    let installed = match state.dialog().cloned() {
+        Some(Dialog::Update { plugin }) => {
             let version = state
                 .waiting_update(&plugin)
                 .map(|update| update.to().to_string());
@@ -333,17 +302,25 @@ fn changed(
                 },
                 None => state.forget_news(&plugin),
             }
-            state.show(Screen::List);
+            None
         },
-        Screen::Remove(plugin) => {
+        Some(Dialog::Remove(plugin)) => {
             state.forget_news(&plugin);
-            state.show(Screen::List);
+            None
         },
-        Screen::Install { .. } => state.show(Screen::List),
-        _ => state.set_error(None),
+        Some(Dialog::Install { plan }) => {
+            Some(plan.manifest().plugin().id().to_string())
+        },
+        _ => None,
+    };
+    state.close_dialog();
+
+    let outcomes = take_plugins(state, plugins);
+    if installed.is_some() {
+        state.select(installed);
     }
 
-    take_plugins(state, plugins)
+    outcomes
 }
 
 /// Keeps `plugins`: the parts to load when they changed, then the notes
@@ -364,7 +341,7 @@ fn take_plugins(
     outcomes
 }
 
-/// What `report` says of its plugin, on its row. `asked`: the user asked
+/// What `report` says of its plugin, on its page. `asked`: the user asked
 /// for the check, so "Up to date" shows too.
 fn note_report(state: &mut PluginsState, report: &UpdateReport, asked: bool) {
     let plugin = report.plugin_id();
@@ -376,7 +353,7 @@ fn note_report(state: &mut PluginsState, report: &UpdateReport, asked: bool) {
     note_outcome(state, plugin, report.outcome().clone(), asked);
 }
 
-/// What `outcome` says of the plugin `plugin`, on its row.
+/// What `outcome` says of the plugin `plugin`, on its page.
 fn note_outcome(
     state: &mut PluginsState,
     plugin: &str,

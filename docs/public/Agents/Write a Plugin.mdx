@@ -486,15 +486,16 @@ one codegen unit, stripped. The `.wasm` may be at most 20 MiB.
 
 1. Put the built `target/wasm32-wasip2/release/<crate>.wasm` as `<id>.wasm` in a folder with
    `otty-plugin.toml` and the icons.
-2. In OTTY: **Settings** → **Plugins** → **Manage plugins…** → **Add plugin from folder…**, type the
-   folder, **Next**, **Install**. The checks and the install dialog are the same as for a release.
-3. After a rebuild, copy the new `.wasm` into the folder and press "⋯" → **Reload**. When the new
-   copy asks for more, OTTY shows what changed first.
+2. In OTTY, open Plugins mode (from **All modes**, or **Settings** → **Plugins** → **Manage
+   plugins…**) → **Add plugin from folder…** (the folder button on the left), type the folder,
+   **Next**, **Install**. The checks and the install dialog are the same as for a release.
+3. After a rebuild, copy the new `.wasm` into the folder and press **Reload** on the plugin's page.
+   When the new copy asks for more, OTTY shows what changed first.
 
 </Steps>
 
-A plugin from a folder is marked **Local** and never updated on its own. "⋯" → **Show log** shows
-what it wrote with `log::*` and to stderr.
+A plugin from a folder is marked **Local** and never updated on its own. **Show log** on its page
+shows what it wrote with `log::*` and to stderr.
 
 ## Release
 

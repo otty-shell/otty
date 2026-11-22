@@ -242,6 +242,8 @@ pub enum Key {
     ModeContainers,
     /// Name of the Agents mode.
     ModeAgents,
+    /// Name of Plugins mode in the mode switcher and the All modes menu.
+    ModePlugins,
     /// Tooltip of the "⋯" button that opens the All modes menu.
     ModesAllModes,
     /// Label of the menu section with Terminal and the pinned modes.
@@ -824,6 +826,8 @@ pub enum Key {
     PaletteSwitchToContainersMode,
     /// Palette entry that switches to Agents mode.
     PaletteSwitchToAgentsMode,
+    /// Palette entry that switches to Plugins mode.
+    PaletteSwitchToPluginsMode,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -1464,7 +1468,7 @@ pub enum Key {
     AgentsNeedNoProviderTitle,
     /// What the need of an account with no provider plugin means, such as "Key for api.example.com found in Coder: no provider plugin". Placeholders: `{host}`, `{agent}`.
     TplAgentsNeedNoProviderText,
-    /// Button of the need of an account with no provider plugin: adds a plugin (off until the Plugins page).
+    /// Button of the need of an account with no provider plugin: adds a plugin (off until Plugins mode).
     AgentsAddPlugin,
     /// Title of the Accounts section of the Agents mode left panel.
     AgentsSectionAccounts,
@@ -1743,25 +1747,57 @@ pub enum Key {
     /// Button of the keyring dialog that allows the read.
     AgentsAllow,
 
-    // The Plugins page and the plugins in Agents mode and Settings.
+    // Plugins mode and the plugins in Agents mode and Settings.
     /// Title of the Plugins section of Settings.
     SectionPlugins,
     /// Row of the Plugins section of Settings.
     FieldInstalledPlugins,
     /// Description of the plugins row of Settings.
     DescPlugins,
-    /// Button of Settings that opens the Plugins page.
+    /// Button of Settings that opens Plugins mode.
     ButtonManagePlugins,
-    /// Title of the Plugins page.
-    PluginsTitle,
-    /// Button of the Plugins page that adds a plugin by its GitHub link.
+    /// Button of Plugins mode that adds a plugin by its GitHub link.
     PluginsAddPlugin,
-    /// Button of the Plugins page that adds a plugin from a local folder.
+    /// Button of Plugins mode that adds a plugin from a local folder.
     PluginsAddFromFolder,
-    /// Title of the empty Plugins page.
+    /// Title of Plugins mode with no plugin installed.
     PluginsEmpty,
-    /// Line of the empty Plugins page.
+    /// Line of Plugins mode with no plugin installed.
     PluginsEmptyHint,
+    /// Title of the section of the installed plugins in Plugins mode.
+    PluginsSectionInstalled,
+    /// Placeholder of the search field of Plugins mode.
+    PluginsSearchPlaceholder,
+    /// Line of Plugins mode when the search hides every plugin.
+    PluginsNoMatch,
+    /// Title of the main area of Plugins mode with no plugin selected.
+    PluginsNoneSelected,
+    /// Line of the main area of Plugins mode with no plugin selected.
+    PluginsPickHint,
+    /// Sign of a plugin whose parts are all off.
+    PluginsSignOff,
+    /// Sign of a plugin whose update waits for the user's OK.
+    PluginsSignUpdate,
+    /// Sign of a plugin with a paused part or a failed check.
+    PluginsSignFailed,
+    /// Key of the installed version on the page of a plugin.
+    PluginsFieldVersion,
+    /// Key of the authors on the page of a plugin.
+    PluginsFieldAuthors,
+    /// Key of the repository on the page of a plugin.
+    PluginsFieldRepository,
+    /// Key of where a plugin came from on its page.
+    PluginsFieldSource,
+    /// Source of a plugin installed from GitHub releases.
+    PluginsSourceRelease,
+    /// Source of a plugin installed from a folder: {folder}.
+    TplPluginsSourceFolder,
+    /// Title of the parts on the page of a plugin.
+    PluginsSectionParts,
+    /// Health of a part that is on and not paused.
+    PluginsHealthWorking,
+    /// Health of a part that is off.
+    PluginsHealthOff,
     /// Mark of an official plugin.
     PluginsOfficial,
     /// Mark of a community plugin.
@@ -1785,8 +1821,6 @@ pub enum Key {
     PluginsReload,
     /// Action of a plugin that opens its repository.
     PluginsOpenRepository,
-    /// Action of a plugin that shows its permissions.
-    PluginsShowPermissions,
     /// Action of a plugin that shows its log.
     PluginsShowLog,
     /// Action and button that remove a plugin.
@@ -1847,8 +1881,6 @@ pub enum Key {
     PluginsUpdate,
     /// Button of the update dialog that keeps the installed version.
     PluginsNotNow,
-    /// Title of the permissions of a plugin: {name}.
-    TplPluginsPermissionsTitle,
     /// Title of the log of a plugin: {name}.
     TplPluginsLogTitle,
     /// Text of the log of a plugin that wrote nothing.
@@ -1929,7 +1961,7 @@ pub enum Key {
     TplPluginsErrorNoSuchPart,
     /// Error: {id}.
     TplPluginsErrorNotLocal,
-    /// The last call of a plugin part that failed, on its card of the Plugins page. Placeholders: `{time}`, `{call}`, `{kind}`.
+    /// The last call of a plugin part that failed, on its card in Plugins mode. Placeholders: `{time}`, `{call}`, `{kind}`.
     TplPluginsLastFailure,
     /// Fact of Account info and Profile info: the plugin that reads it.
     AgentsFieldReadBy,
@@ -1975,7 +2007,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 923] = [
+    pub(super) const ALL: [Self; 939] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2072,6 +2104,7 @@ impl Key {
         Self::ModeTerminal,
         Self::ModeContainers,
         Self::ModeAgents,
+        Self::ModePlugins,
         Self::ModesAllModes,
         Self::ModesPinnedSection,
         Self::TplModesPinnedNote,
@@ -2355,6 +2388,7 @@ impl Key {
         Self::PaletteSwitchToTerminalMode,
         Self::PaletteSwitchToContainersMode,
         Self::PaletteSwitchToAgentsMode,
+        Self::PaletteSwitchToPluginsMode,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,
@@ -2791,11 +2825,27 @@ impl Key {
         Self::FieldInstalledPlugins,
         Self::DescPlugins,
         Self::ButtonManagePlugins,
-        Self::PluginsTitle,
         Self::PluginsAddPlugin,
         Self::PluginsAddFromFolder,
         Self::PluginsEmpty,
         Self::PluginsEmptyHint,
+        Self::PluginsSectionInstalled,
+        Self::PluginsSearchPlaceholder,
+        Self::PluginsNoMatch,
+        Self::PluginsNoneSelected,
+        Self::PluginsPickHint,
+        Self::PluginsSignOff,
+        Self::PluginsSignUpdate,
+        Self::PluginsSignFailed,
+        Self::PluginsFieldVersion,
+        Self::PluginsFieldAuthors,
+        Self::PluginsFieldRepository,
+        Self::PluginsFieldSource,
+        Self::PluginsSourceRelease,
+        Self::TplPluginsSourceFolder,
+        Self::PluginsSectionParts,
+        Self::PluginsHealthWorking,
+        Self::PluginsHealthOff,
         Self::PluginsOfficial,
         Self::PluginsCommunity,
         Self::PluginsLocal,
@@ -2807,7 +2857,6 @@ impl Key {
         Self::PluginsCheckForUpdates,
         Self::PluginsReload,
         Self::PluginsOpenRepository,
-        Self::PluginsShowPermissions,
         Self::PluginsShowLog,
         Self::PluginsRemove,
         Self::PluginsReview,
@@ -2838,7 +2887,6 @@ impl Key {
         Self::TplPluginsNoLonger,
         Self::PluginsUpdate,
         Self::PluginsNotNow,
-        Self::TplPluginsPermissionsTitle,
         Self::TplPluginsLogTitle,
         Self::PluginsLogEmpty,
         Self::TplPluginsRemoveTitle,

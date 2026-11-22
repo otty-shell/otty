@@ -37,7 +37,7 @@ usvg = { version = "0.45.1", default-features = false }
 
 [features]
 # `otty_plugin_releases::fixtures`: made-up plugin records for the tests
-# of the crates that use this one, such as the Plugins page.
+# of the crates that use this one, such as Plugins mode.
 fixtures = []
 
 [dev-dependencies]

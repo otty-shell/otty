@@ -3,7 +3,7 @@
 //! read only, and three failed reads in a row pause the part until the
 //! user presses Try again or OTTY starts again. The plugin's other parts
 //! keep their own count. The last read of the part that failed is kept
-//! for its card on the Plugins page (issue 19), where plugin authors look.
+//! for its card in Plugins mode (issue 19), where plugin authors look.
 //! It is the same for a part of any domain (issue 21).
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -16,7 +16,7 @@ use crate::plugin_failure::PluginFailure;
 pub const PAUSE_AFTER: u32 = 3;
 
 /// The failed reads in a row of one plugin part and its last failure.
-/// Clones share both, so the Plugins page can tell a part is paused,
+/// Clones share both, so Plugins mode can tell a part is paused,
 /// start it again and show what failed last.
 #[derive(Debug, Clone, Default)]
 pub struct PartHealth {
@@ -168,7 +168,7 @@ mod tests {
         assert!(!health.is_paused());
     }
 
-    /// Issue 19: the card of the part on the Plugins page shows the last
+    /// Issue 19: the card of the part in Plugins mode shows the last
     /// failure, the newest one, with its time; an answer after it keeps it.
     #[test]
     fn the_last_failure_is_kept_with_its_time_and_clones_share_it() {

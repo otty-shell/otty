@@ -13,7 +13,7 @@ use crate::frame::sidebar::view::{focus_note, panels};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
-use crate::screens::{agents, containers, over_main_area, terminal};
+use crate::screens::{agents, containers, over_main_area, plugins, terminal};
 
 /// Render the window: the window content and the overlays over it, in one
 /// order for every mode.
@@ -27,13 +27,13 @@ use crate::screens::{agents, containers, over_main_area, terminal};
 /// 4. the command palette;
 /// 5. the notifications list;
 /// 6. Settings;
-/// 7. the Plugins page, which opens over Settings;
-/// 8. the SSH secret prompt;
-/// 9. the grips at the window edges.
+/// 7. the SSH secret prompt;
+/// 8. the grips at the window edges.
 ///
-/// The overlays of Containers mode (the row menu and the dialogs) and of
+/// The overlays of Containers mode (the row menu and the dialogs), of
 /// Agents mode (the menus and the profile, remove, statistics and New
-/// session dialogs) lie in the mode overlays layer.
+/// session dialogs) and of Plugins mode (its dialogs) lie in the mode
+/// overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -44,6 +44,7 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
         Mode::Terminal => terminal::overlays(app, theme),
         Mode::Containers => containers::overlays(app, theme),
         Mode::Agents => agents::overlays(app, theme),
+        Mode::Plugins => plugins::overlays(app, theme),
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
@@ -57,7 +58,6 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let palette = view_palette(app, theme);
     let notification_list = view_notification_list(app, theme);
     let settings = view_settings(app, theme);
-    let plugins = view_plugins(app, theme);
     let secret_prompt = view_secret_prompt(app, theme);
     let resize_grips = view_resize_grips(app);
 
@@ -72,7 +72,6 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     layers.extend(palette.map(over_main_area));
     layers.extend(notification_list.map(over_main_area));
     layers.extend(settings.map(over_main_area));
-    layers.extend(plugins.map(over_main_area));
     layers.extend(secret_prompt.map(over_main_area));
     layers.push(resize_grips);
 
@@ -105,6 +104,7 @@ fn view_window_content<'a>(
                 containers::main(app, theme)
             },
             (SidebarPane::Main, Mode::Agents) => agents::main(app, theme),
+            (SidebarPane::Main, Mode::Plugins) => plugins::main(app, theme),
             (SidebarPane::Right, Mode::Terminal) => {
                 terminal::right_panel(app, theme)
             },
@@ -112,6 +112,7 @@ fn view_window_content<'a>(
                 containers::right_panel(app, theme)
             },
             (SidebarPane::Right, Mode::Agents) => agents::right_panel(),
+            (SidebarPane::Right, Mode::Plugins) => plugins::right_panel(),
         },
         on_intent: AppEvent::Sidebar,
     });
@@ -138,6 +139,7 @@ fn view_window_content<'a>(
         Mode::Terminal => terminal::status_bar(app, theme),
         Mode::Containers => containers::status_bar(app, theme),
         Mode::Agents => agents::status_bar(app, theme),
+        Mode::Plugins => plugins::status_bar(app, theme),
     };
 
     column![header, main_area, status_bar]
@@ -187,6 +189,7 @@ fn view_left_panel<'a>(
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
         Mode::Containers => containers::left_panel(app, theme),
         Mode::Agents => agents::left_panel(app, theme),
+        Mode::Plugins => plugins::left_panel(app, theme),
     };
 
     column![switcher, content]
@@ -207,7 +210,7 @@ fn view_header_menu<'a>(
 
     match mode {
         Mode::Terminal => terminal::header_menu(app, open, theme),
-        Mode::Containers | Mode::Agents => None,
+        Mode::Containers | Mode::Agents | Mode::Plugins => None,
     }
 }
 
@@ -252,17 +255,6 @@ fn view_settings<'a>(
     Some(dialog.into_content().map(AppEvent::Settings))
 }
 
-/// The Plugins page, while it is open, in either mode, over Settings it
-/// was opened from.
-fn view_plugins<'a>(
-    app: &'a App,
-    theme: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent>> {
-    let page = app.plugins.overlay(theme)?;
-
-    Some(page.into_content().map(AppEvent::Plugins))
-}
-
 /// The SSH secret prompt, while a launch waits for its password or
 /// passphrase, in either mode. A press on the dimmed area around it does
 /// nothing: it waits for Connect or Cancel.
@@ -278,17 +270,16 @@ fn view_secret_prompt<'a>(
 /// The grips that resize the window at its edges. While a menu (a header
 /// menu, the All modes menu, a pane menu, the context menu of the launches
 /// or of Files, the row menu of Containers mode), the notifications list,
-/// Settings, the Plugins page, the delete dialog of Files, a Containers or Agents dialog or
-/// the SSH secret prompt is open, an empty layer stands
-/// in for them. The overlays of Containers mode count only in that mode: in
-/// Terminal mode they are not on screen.
+/// Settings, the delete dialog of Files, a Containers, Agents or Plugins
+/// dialog or the SSH secret prompt is open, an empty layer stands in for
+/// them. The overlays of a mode count only in that mode: in another mode
+/// they are not on screen.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
         || app.modes.is_menu_open()
         || app.notifications.is_list_open()
         || app.settings.is_open()
-        || app.plugins.is_open()
         || app.terminal.has_context_menu()
         || app.quick_launch.has_context_menu()
         || app.quick_launch.has_secret_prompt()
@@ -297,6 +288,7 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || (app.modes.active() == Mode::Containers
             && containers::has_overlay(app))
         || (app.modes.active() == Mode::Agents && agents::has_overlay(app))
+        || (app.modes.active() == Mode::Plugins && app.plugins.has_dialog())
     {
         return container(Space::new())
             .width(Length::Fill)

@@ -1,4 +1,4 @@
-//! The small dialogs of the page: the GitHub link of Add plugin…, the
+//! The small dialogs of Plugins mode: the GitHub link of Add plugin…, the
 //! folder of Add plugin from folder…, the log of a plugin and the
 //! question before Remove.
 
@@ -31,7 +31,7 @@ pub(super) fn add_url<'a>(
     let mut field = TextField::new(i18n::t(Key::PluginsUrlLabel), url, palette)
         .id(URL_FIELD)
         .placeholder(i18n::t(Key::PluginsUrlHint))
-        .on_escape(PluginsIntent::Escape);
+        .on_escape(PluginsIntent::Back);
     if !is_busy {
         field = field
             .on_input(PluginsIntent::UrlChanged)
@@ -59,7 +59,7 @@ pub(super) fn add_folder<'a>(
         TextField::new(i18n::t(Key::PluginsFolderLabel), folder, palette)
             .id(FOLDER_FIELD)
             .placeholder(i18n::t(Key::PluginsFolderHint))
-            .on_escape(PluginsIntent::Escape);
+            .on_escape(PluginsIntent::Back);
     if !is_busy {
         field = field
             .on_input(PluginsIntent::FolderChanged)
@@ -129,8 +129,8 @@ pub(super) fn remove<'a>(
         .into()
 }
 
-/// Back to the list.
-pub(super) fn back<'a>(palette: &UiPalette) -> Element<'a, PluginsIntent> {
+/// Back: the dialog closes.
+fn back<'a>(palette: &UiPalette) -> Element<'a, PluginsIntent> {
     Button::new(i18n::t(Key::PluginsBack), palette)
         .kind(ButtonKind::Ghost)
         .on_press(PluginsIntent::Back)

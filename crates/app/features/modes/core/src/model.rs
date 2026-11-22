@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn first_start_shows_terminal_containers_agents_and_a_closed_menu() {
+    fn first_start_shows_terminal_containers_agents_and_plugins_unpinned() {
         let vm = ModesViewModel::from_state(&ModesState::default());
 
         assert_eq!(
@@ -174,7 +174,7 @@ mod tests {
                     row(Mode::Containers, false, PinButton::Unpin),
                     row(Mode::Agents, false, PinButton::Unpin),
                 ],
-                other_rows: Vec::new(),
+                other_rows: vec![row(Mode::Plugins, false, PinButton::Pin)],
                 pinned_count: 2,
                 pin_limit: 4,
             }
@@ -213,6 +213,7 @@ mod tests {
             vec![
                 row(Mode::Containers, false, PinButton::Pin),
                 row(Mode::Agents, false, PinButton::Pin),
+                row(Mode::Plugins, false, PinButton::Pin),
             ]
         );
         assert_eq!(vm.pinned_count, 0);
@@ -236,7 +237,10 @@ mod tests {
         );
         assert_eq!(
             vm.other_rows,
-            vec![row(Mode::Containers, true, PinButton::Pin)]
+            vec![
+                row(Mode::Containers, true, PinButton::Pin),
+                row(Mode::Plugins, false, PinButton::Pin),
+            ]
         );
     }
 
@@ -262,6 +266,7 @@ mod tests {
             vec![
                 row(Mode::Containers, false, PinButton::PinDisabled),
                 row(Mode::Agents, false, PinButton::PinDisabled),
+                row(Mode::Plugins, false, PinButton::PinDisabled),
             ]
         );
         assert_eq!(vm.pinned_count, 0);

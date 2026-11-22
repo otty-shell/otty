@@ -1,4 +1,4 @@
-//! The plugin's log, shown on the Plugins page. It never holds keys,
+//! The plugin's log, shown in Plugins mode. It never holds keys,
 //! tokens, prompts or session text.
 
 /// How important a line of the log is.

@@ -1,4 +1,4 @@
-//! The words of the page in the user's language: each permission of a
+//! The words of Plugins mode in the user's language: each permission of a
 //! part, each reason an install or an update did not happen, the kind of
 //! a part and how far a plugin is trusted. Text that came from outside,
 //! such as the system's reason a file could not be written, is put in as

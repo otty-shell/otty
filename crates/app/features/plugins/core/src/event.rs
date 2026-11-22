@@ -13,18 +13,18 @@ use crate::types::{ListedPlugin, PartsToLoad, RunningPlugin};
 /// them again, or why the change did not happen.
 pub type ChangeAnswer = Result<Vec<ListedPlugin>, InstallError>;
 
-/// What the Plugins page is asked to do: a press in its views, the answer
-/// of its I/O, or news from the binary.
+/// What Plugins mode is asked to do: a press in its views, the answer of
+/// its I/O, or news from the binary.
 #[derive(Debug, Clone)]
 pub enum PluginsIntent {
-    /// Open the page at `PluginsPlace`: from Settings, from "Read by" or a
-    /// need of Agents mode.
+    /// Show `PluginsPlace` in the mode: from Settings, from "Read by" or a
+    /// need of Agents mode. The binary switches to the mode first.
     Open(PluginsPlace),
-    /// Close the page: the close cross.
-    Close,
-    /// Esc: back to the list from a dialog of the page, else close it.
-    Escape,
-    /// Back to the list: Cancel of a dialog of the page.
+    /// A press on a plugin of the left panel: its page.
+    Select(String),
+    /// The search field of the left panel was edited or cleared.
+    SearchChanged(String),
+    /// Cancel or the close cross of a dialog, or Esc: the dialog closes.
     Back,
     /// Add plugin…: the field for a GitHub link.
     AddPlugin,
@@ -60,8 +60,6 @@ pub enum PluginsIntent {
     },
     /// Copy report of the last failed call of a part: the report.
     CopyReport(String),
-    /// "⋯" of a plugin: show or hide its actions.
-    ToggleActions(String),
     /// Check for updates of a plugin.
     CheckForUpdates(String),
     /// Reload of a local plugin.
@@ -70,8 +68,6 @@ pub enum PluginsIntent {
     Review(String),
     /// Update of the update dialog.
     ApplyUpdate,
-    /// Show permissions of a plugin.
-    ShowPermissions(String),
     /// Show log of a plugin.
     ShowLog(String),
     /// Open repository of a plugin.
@@ -108,15 +104,11 @@ pub enum PluginsIntent {
     Running(Vec<RunningPlugin>),
 }
 
-/// What the Plugins page reports to the binary.
+/// What Plugins mode reports to the binary.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PluginsOutcome {
-    /// The page opened: it takes the keyboard from every widget.
-    Opened,
-    /// The page closed.
-    Closed,
-    /// Move the keyboard focus to this field of the page, such as the
-    /// GitHub link of Add plugin….
+    /// Move the keyboard focus to this field, such as the GitHub link of
+    /// Add plugin….
     FocusField(Id),
     /// Find the newest release of the GitHub repository at this link;
     /// answer [`PluginsIntent::Found`].

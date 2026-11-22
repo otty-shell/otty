@@ -4,14 +4,14 @@
 //! arrives on its own, skips them (see `update_internal` in `update.rs`), so
 //! it can not get lost.
 //!
-//! The overlays are the SSH secret prompt, the Plugins page, the Settings
+//! The overlays are the SSH secret prompt, the Settings
 //! dialog, the notifications list, the command palette, the All modes menu,
 //! the header menus, the pane menu of the terminal, the context menu and the name field
 //! (the inline edit) of the Launches tree, the context menu, the name field
 //! and the delete dialog of the Files tree, the create dialogs, the
 //! confirmation dialog and the row menu of Containers mode, and the profile
 //! dialog, the remove dialog, the statistics dialog, the New session dialog
-//! and the menus of Agents mode.
+//! and the menus of Agents mode, and the dialogs of Plugins mode.
 //! A new dialog adds its answers to [`dialog_guard`].
 
 use otty_app_agents::{AgentsIntent, AgentsOverlay};
@@ -46,8 +46,6 @@ pub(crate) enum Overlay {
     SecretPrompt,
     /// The Settings dialog, over every mode.
     Settings,
-    /// The Plugins page, over every mode and over Settings.
-    Plugins,
     /// The notifications list under the bell, over every mode.
     NotificationsList,
     /// The command palette, over every mode.
@@ -98,6 +96,9 @@ pub(crate) enum Overlay {
     /// profiles of New session, the menu of a session, of a profile or of
     /// an account, or the "⋯" of All accounts or All profiles.
     AgentsMenu,
+    /// A dialog of Plugins mode: Add plugin…, the install or update
+    /// dialog, the log of a plugin or the question before Remove.
+    PluginsDialog,
 }
 
 impl Overlay {
@@ -111,7 +112,6 @@ impl Overlay {
         match self {
             Overlay::SecretPrompt
             | Overlay::Settings
-            | Overlay::Plugins
             | Overlay::FilesDeleteDialog
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
@@ -122,7 +122,8 @@ impl Overlay {
             | Overlay::AgentsKeyringDialog
             | Overlay::AgentsStatsDialog
             | Overlay::AgentsNewSessionDialog
-            | Overlay::AgentsFoundReport => Some(OverlayKind::Dialog),
+            | Overlay::AgentsFoundReport
+            | Overlay::PluginsDialog => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -145,8 +146,6 @@ impl Overlay {
             },
             // Closing Settings drops the edits that were not saved.
             Overlay::Settings => AppEvent::Settings(SettingsIntent::Close),
-            // Esc goes back from a dialog of the page, then closes it.
-            Overlay::Plugins => AppEvent::Plugins(PluginsIntent::Escape),
             Overlay::NotificationsList => {
                 AppEvent::Notifications(NotificationsIntent::CloseList)
             },
@@ -213,6 +212,7 @@ impl Overlay {
                 AppEvent::Agents(AgentsIntent::CloseFoundReport)
             },
             Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
+            Overlay::PluginsDialog => AppEvent::Plugins(PluginsIntent::Back),
         }
     }
 }
@@ -364,8 +364,7 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 
 /// Return the overlay on top of the window, if one is open.
 ///
-/// The order is fixed, top first: the SSH prompt, the Plugins page,
-/// Settings, the
+/// The order is fixed, top first: the SSH prompt, Settings, the
 /// notifications list, the palette, the All modes menu, the header menus,
 /// then the overlays of the active mode: in Terminal mode the delete dialog
 /// of Files, the pane menu of the terminal, the context menus of the
@@ -373,13 +372,11 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
 /// mode the profile dialog, the Rename dialog, the remove dialog, the
 /// statistics dialog, the New session dialog, the Found by OTTY report and
-/// a menu. Those of the other modes are not on screen, so they do not count.
+/// a menu, in Plugins mode its dialog. Those of the other modes are not on
+/// screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
-    }
-    if app.plugins.is_open() {
-        return Some(Overlay::Plugins);
     }
     if app.settings.is_open() {
         return Some(Overlay::Settings);
@@ -401,6 +398,9 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
         Mode::Terminal => terminal_overlay(app),
         Mode::Containers => containers_overlay(app),
         Mode::Agents => agents_overlay(app),
+        Mode::Plugins => {
+            app.plugins.has_dialog().then_some(Overlay::PluginsDialog)
+        },
     }
 }
 
@@ -558,9 +558,9 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::OpenPlugins
             )
         ),
-        // Every field, switch and button of the page and its dialogs; the
+        // Every field and button of the dialogs of Plugins mode; the
         // answers of its I/O arrive on their own.
-        Overlay::Plugins => matches!(event, AppEvent::Plugins(_)),
+        Overlay::PluginsDialog => matches!(event, AppEvent::Plugins(_)),
         Overlay::FilesDeleteDialog => matches!(
             event,
             AppEvent::Explorer(

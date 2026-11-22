@@ -84,7 +84,7 @@ impl PluginProvider {
         &self.entry
     }
 
-    /// How the part's reads went: the Plugins page pauses and starts it
+    /// How the part's reads went: Plugins mode pauses and starts it
     /// with this.
     pub fn health(&self) -> &PartHealth {
         &self.health

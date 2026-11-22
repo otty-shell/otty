@@ -10,6 +10,7 @@ fn name_key(mode: Mode) -> Key {
         Mode::Terminal => Key::ModeTerminal,
         Mode::Containers => Key::ModeContainers,
         Mode::Agents => Key::ModeAgents,
+        Mode::Plugins => Key::ModePlugins,
     }
 }
 
@@ -22,5 +23,6 @@ mod tests {
         assert_eq!(name_key(Mode::Terminal), Key::ModeTerminal);
         assert_eq!(name_key(Mode::Containers), Key::ModeContainers);
         assert_eq!(name_key(Mode::Agents), Key::ModeAgents);
+        assert_eq!(name_key(Mode::Plugins), Key::ModePlugins);
     }
 }

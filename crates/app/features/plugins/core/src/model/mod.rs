@@ -1,34 +1,29 @@
-//! What the page shows, built from its state: the list of the installed
-//! plugins or the dialog open over it.
+//! What Plugins mode shows, built from its state: the list of the left
+//! panel, the page of the selected plugin in the main area, and the dialog
+//! open over the window.
 
+mod details;
 mod dialogs;
-mod list;
+mod side_panel;
 
-use std::time::SystemTime;
-
-pub(crate) use dialogs::{
-    InstallDialogViewModel, PartPermissionsViewModel, PermissionsViewModel,
-    UpdateDialogViewModel,
-};
 #[cfg(test)]
-pub(crate) use list::LastFailureViewModel;
-pub(crate) use list::{PartRowViewModel, PluginRowViewModel, failed};
+pub(crate) use details::LastFailureViewModel;
+pub(crate) use details::{
+    MainViewModel, PartRowViewModel, PluginPageViewModel, failed,
+};
+pub(crate) use dialogs::{
+    InstallDialogViewModel, PartPermissionsViewModel, UpdateDialogViewModel,
+};
 use otty_app_i18n::{self as i18n, Key};
+#[cfg(test)]
+pub(crate) use side_panel::PluginSign;
+pub(crate) use side_panel::{PluginListRowViewModel, SidePanelViewModel};
 
-use crate::state::{PluginsState, Screen};
+use crate::state::{Dialog, PluginsState};
 
-/// What the open page shows.
+/// What the open dialog shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PageViewModel<'a> {
-    /// The installed plugins.
-    List {
-        /// One row per plugin.
-        rows: Vec<PluginRowViewModel>,
-        /// Why the latest switch or removal failed.
-        error: Option<&'a str>,
-        /// Whether a change runs.
-        is_busy: bool,
-    },
+pub(crate) enum DialogViewModel<'a> {
     /// Add plugin…: the GitHub link.
     AddUrl {
         /// The link typed so far.
@@ -51,8 +46,6 @@ pub(crate) enum PageViewModel<'a> {
     Install(InstallDialogViewModel),
     /// The update dialog.
     Update(UpdateDialogViewModel),
-    /// The permissions of a plugin.
-    Permissions(PermissionsViewModel),
     /// The log of a plugin.
     Log {
         /// "Log of Example".
@@ -71,44 +64,33 @@ pub(crate) enum PageViewModel<'a> {
     },
 }
 
-impl<'a> PageViewModel<'a> {
-    /// What the page shows; `None` while it is closed, or when the plugin
-    /// of its dialog is gone, as after a removal elsewhere.
+impl<'a> DialogViewModel<'a> {
+    /// What the open dialog shows; `None` while none is open, or when the
+    /// plugin of the dialog is gone, as after a removal elsewhere.
     pub(crate) fn from_state(state: &'a PluginsState) -> Option<Self> {
-        if !state.is_open() {
-            return None;
-        }
         let error = state.error();
         let is_busy = state.is_busy();
 
-        let page = match state.screen() {
-            Screen::List => Self::List {
-                rows: list::rows(state, SystemTime::now()),
-                error,
-                is_busy,
-            },
-            Screen::AddUrl { url } => Self::AddUrl {
+        let dialog = match state.dialog()? {
+            Dialog::AddUrl { url } => Self::AddUrl {
                 url,
                 error,
                 is_busy,
             },
-            Screen::AddFolder { folder } => Self::AddFolder {
+            Dialog::AddFolder { folder } => Self::AddFolder {
                 folder,
                 error,
                 is_busy,
             },
-            Screen::Install { plan } => {
+            Dialog::Install { plan } => {
                 Self::Install(dialogs::install_dialog(state, plan))
             },
-            Screen::Update { plugin } => {
+            Dialog::Update { plugin } => {
                 let listed = state.plugin(plugin)?;
                 let update = state.waiting_update(plugin)?;
                 Self::Update(dialogs::update_dialog(state, listed, update))
             },
-            Screen::Permissions(plugin) => {
-                Self::Permissions(dialogs::permissions(state.plugin(plugin)?))
-            },
-            Screen::Log(plugin) => {
+            Dialog::Log(plugin) => {
                 let name = state.plugin(plugin)?.installed.name();
                 let text = state
                     .running_plugin(plugin)
@@ -125,7 +107,7 @@ impl<'a> PageViewModel<'a> {
                     text,
                 }
             },
-            Screen::Remove(plugin) => Self::Remove {
+            Dialog::Remove(plugin) => Self::Remove {
                 title: i18n::filled(
                     Key::TplPluginsRemoveTitle,
                     &[("name", state.plugin(plugin)?.installed.name())],
@@ -135,6 +117,6 @@ impl<'a> PageViewModel<'a> {
             },
         };
 
-        Some(page)
+        Some(dialog)
     }
 }

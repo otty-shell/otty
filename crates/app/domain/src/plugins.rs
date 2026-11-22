@@ -1,9 +1,9 @@
-//! What the Plugins page and Agents mode tell each other about the
+//! What Plugins mode and Agents mode tell each other about the
 //! installed plugins (spec 2026-11-19-agent-plugins, "What the UI shows"):
-//! where the page opens, the parts that are off and the updates that wait
-//! for the user's OK.
+//! where Plugins mode opens, the parts that are off and the updates that
+//! wait for the user's OK.
 
-/// Where the Plugins page opens.
+/// Where Plugins mode opens: what it selects or which dialog it shows.
 ///
 /// # Examples
 ///
@@ -16,14 +16,14 @@
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginsPlace {
-    /// The list of the installed plugins.
+    /// The installed plugins, nothing selected.
     List,
-    /// The URL field of Add plugin…, empty.
+    /// Add plugin…, with the URL field empty.
     AddPlugin,
-    /// The row of the plugin with this id, as "Read by" links to it.
+    /// The plugin with this id selected, as "Read by" links to it.
     Plugin(String),
-    /// The update dialog of the plugin with this id, whose update waits
-    /// for the user's OK.
+    /// The plugin with this id selected and its update dialog, when its
+    /// update waits for the user's OK.
     Review(String),
 }
 

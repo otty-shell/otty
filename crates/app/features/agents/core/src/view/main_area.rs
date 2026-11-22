@@ -99,7 +99,7 @@ fn card<'a>(
     EmptyCard::new(i18n::t(title), i18n::t(description), icon, palette)
 }
 
-/// Manage plugins…, which opens the Plugins page, as in Settings.
+/// Manage plugins…, which opens Plugins mode, as in Settings.
 fn manage_plugins_button<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
     Button::new(i18n::t(Key::ButtonManagePlugins), palette)
         .kind(ButtonKind::Primary)

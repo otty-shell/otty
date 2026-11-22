@@ -62,7 +62,10 @@ pub(super) fn reduce(
             state.set_theme(theme);
             Vec::new()
         },
-        SettingsIntent::OpenPlugins => vec![SettingsOutcome::OpenPlugins],
+        SettingsIntent::OpenPlugins => {
+            state.close();
+            vec![SettingsOutcome::OpenPlugins]
+        },
     }
 }
 
@@ -140,10 +143,10 @@ mod tests {
 
     use super::*;
 
-    /// Spec 2026-11-19-agent-plugins, Decision 12: the Plugins page opens
-    /// from Settings, which stays open under it with its edits.
+    /// Issue 30: Manage plugins… closes Settings, as Close does, and asks
+    /// for Plugins mode.
     #[test]
-    fn manage_plugins_opens_the_plugins_page_and_keeps_the_edits() {
+    fn manage_plugins_closes_the_dialog_and_opens_plugins_mode() {
         let mut state = SettingsState::default();
         let _ = reduce(&mut state, SettingsIntent::Open);
         let _ = reduce(&mut state, SettingsIntent::EditorChanged("vim".into()));
@@ -151,8 +154,8 @@ mod tests {
         let outcomes = reduce(&mut state, SettingsIntent::OpenPlugins);
 
         assert_eq!(outcomes, vec![SettingsOutcome::OpenPlugins]);
-        assert!(state.is_open());
-        assert!(state.is_dirty());
+        assert!(!state.is_open());
+        assert!(!state.is_dirty());
     }
     use crate::types::{LanguageSetting, SettingsData};
 

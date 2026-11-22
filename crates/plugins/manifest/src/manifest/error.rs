@@ -4,7 +4,7 @@ use crate::part::{PartKind, PartRef};
 use crate::path_glob::GlobProblem;
 
 /// Why `otty-plugin.toml` is refused. The text of each value is a plain
-/// reason the Plugins page can show as it is.
+/// reasin Plugins mode can show as it is.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ManifestError {
     /// The file is not TOML, or not the shape of a manifest.

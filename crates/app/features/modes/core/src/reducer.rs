@@ -136,6 +136,31 @@ mod tests {
         assert!(!state.is_menu_open());
     }
 
+    /// Issue 30: Plugins mode is in All modes but not pinned on first
+    /// start; the user can pin it like any mode.
+    #[test]
+    fn plugins_mode_is_not_pinned_on_first_start_and_can_be_pinned() {
+        let mut state = ModesState::default();
+        let first_start = state.pinned().to_vec();
+
+        let outcomes = reduce(&mut state, ModesIntent::Pin(Mode::Plugins));
+
+        assert!(!first_start.contains(&Mode::Plugins));
+        assert!(Mode::ALL.contains(&Mode::Plugins));
+        assert_eq!(
+            state.pinned(),
+            &[Mode::Containers, Mode::Agents, Mode::Plugins]
+        );
+        assert_eq!(
+            outcomes,
+            vec![ModesOutcome::SavePinned(vec![
+                Mode::Containers,
+                Mode::Agents,
+                Mode::Plugins,
+            ])]
+        );
+    }
+
     #[test]
     fn selecting_another_mode_makes_it_active_and_reports_the_change() {
         let mut state = containers_pinned();

@@ -45,11 +45,11 @@ pub enum AgentsIntent {
     /// What the mode shows of the installed plugins changed: the parts
     /// that are off and the updates that wait.
     PluginNotesChanged(PluginNotes),
-    /// "Read by" of a page was pressed: open the Plugins page at this
+    /// "Read by" of a page was pressed: open Plugins mode at this
     /// plugin.
     OpenPlugin(String),
     /// Manage plugins… of the card with no agent part was pressed: open
-    /// the list of the Plugins page.
+    /// Plugins mode with nothing selected.
     OpenPluginsPage,
     /// The profiles were read.
     ProfilesLoaded(LoadedProfiles),
@@ -424,7 +424,7 @@ pub enum AgentsOutcome {
     /// A menu opened. It takes the keyboard, so typed keys do not reach the
     /// search field under it and Esc reaches the frame, which closes it.
     MenuOpened,
-    /// Open the Plugins page at this place: "Read by", Add plugin… or
+    /// Open Plugins mode at this place: "Read by", Add plugin… or
     /// Review of a need.
     OpenPlugins(PluginsPlace),
     /// Turn on this part of a plugin: Turn on of the need "<Part> of the

@@ -40,7 +40,7 @@ pub enum NeedAction {
     /// Ask the user to allow OTTY to read the system keyring, in the
     /// keyring dialog (spec 2026-11-19, Decision 8).
     AllowKeyring,
-    /// Open the Plugins page with the URL field of Add plugin… empty: a
+    /// Open Plugins mode with the URL field of Add plugin… empty: a
     /// key was found for a host no provider plugin serves.
     AddPlugin,
     /// Turn on this part of a plugin, which is off.
@@ -186,7 +186,7 @@ mod tests {
     }
 
     /// Spec 2026-11-19-agent-plugins, "What the UI shows": Add plugin…
-    /// opens the Plugins page with the URL field empty, Review opens the
+    /// opens Plugins mode with the URL field empty, Review opens the
     /// update dialog, and Turn on turns the part on.
     #[test]
     fn the_buttons_of_the_plugin_needs_go_to_the_plugins_page() {

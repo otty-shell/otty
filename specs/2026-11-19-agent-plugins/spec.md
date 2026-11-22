@@ -238,7 +238,7 @@ OTTY release.
   3) of every plugin that exports it, and reads Agents mode again at once
   when one answers true; a plugin without it is not called.
 - **Each part on its own.** The user turns each part on or off on the
-  Plugins page. A failing part is paused alone (Decision 8). Remove
+  Plugins mode. A failing part is paused alone (Decision 8). Remove
   deletes the whole plugin.
 - **No fight over names** (owner, 2026-11-22, issue 29). Nothing is
   asked at install or later, and `plugins.json` keeps no choices. Every
@@ -251,7 +251,7 @@ OTTY release.
   `agents.json` with its plugin. An account the user added is one entry
   for every plugin that offers Add account for its provider. Two agent
   parts with one agent id: the first installed reads it, and the user
-  turns the other off on the Plugins page.
+  turns the other off in Plugins mode.
 - **Accounts and profiles are not plugins.** OTTY joins one account found
   in several agents by account id, organization id, email, or SHA-256 key
   fingerprint, as today (`merge_accounts`), within one provider; with
@@ -428,7 +428,7 @@ Grouped by vendor, one plugin each (changed on 2026-11-20):
 - OTTY ships no plugin (owner, 2026-11-21, issue 28; this replaces the
   embedding of 2026-11-20). On first start nothing is installed and
   Agents mode says in one line that no agent plugin is on, with a button
-  that opens the Plugins page. The user installs the official plugins the
+  that opens Plugins mode. The user installs the official plugins the
   same way as any other plugin; installed plugins stay in `plugins.json`
   between starts. A plugin that finds nothing on this computer simply
   does nothing.
@@ -456,17 +456,22 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
 
 ### 12. UI
 
-- A **Plugins** page, opened from Settings (plugins will not only be for
-  agents): installed plugins with their parts, Add by git URL, Add from
-  a local folder, updates with the permission changes, a switch per
-  part, Remove.
+- **Plugins mode** (owner, 2026-11-22, issue 30; it was a page over
+  Settings until then): a mode of its own, like Agents mode, in the mode
+  switcher and All modes and not pinned by default (plugins will not
+  only be for agents). The left panel lists the installed plugins with a
+  search by name, Add by git URL and Add from a local folder; the main
+  area shows the selected plugin with its parts, a switch per part, their
+  permissions and health, updates with the permission changes, Reload
+  and Remove. Settings' Manage plugins… and the links and needs of
+  Agents mode open it.
 - Account info and Profile info get a row "Read by: <plugin> <version>".
 - No table of sources (owner, 2026-11-20, issue 19): where a number comes
   from is the plugin's business. A page tells how old its numbers are,
   greys the last good ones with why when a read fails, puts what the
   user must do in "Needs from you", marks money estimated at the list
   prices "estimate, list prices", and names the plugin in "Read by". The
-  card of a part on the Plugins page shows its last failed call.
+  card of a part in Plugins mode shows its last failed call.
 - One mark of an estimate everywhere (owner, 2026-11-21): money at the
   list prices has no "~" and no note; the mark "estimate, list prices"
   stands under the sum (account page, usage block in Money) with the
@@ -1108,7 +1113,7 @@ it.
 
 Every operation checks the permissions of the part being called, on each
 call, not only at install. A denied call returns `host-error::not-allowed`
-with the path or host, and the Plugins page lists the last denied calls of
+with the path or host, and Plugins mode lists the last denied calls of
 each part.
 
 | Operation | What it does | Permission | Limits |
@@ -1131,7 +1136,7 @@ each part.
 | `env.var(name)` | One environment variable as text | `env` | Key variables only through `keys.open` |
 | `env.language()` | The language of OTTY's interface shown now, as a tag (`en`, `ru`, `pt-BR`) | none | May change between two calls |
 | `clock.now-ms` | The time | none | |
-| `log.write(level, text)` | A line in the plugin's log, shown on the Plugins page | none | 64 KiB per plugin, oldest dropped |
+| `log.write(level, text)` | A line in the plugin's log, shown in Plugins mode | none | 64 KiB per plugin, oldest dropped |
 
 Key columns in `sqlite.query`. The plugin's SQL never sees a key: SQLite
 reads every declared key column as `NULL` wherever the statement uses it
@@ -1200,7 +1205,7 @@ reads each account once per refresh, not per profile.
 
 ## Install and update flow
 
-1. **Add.** Plugins page → **Add plugin…** → the user pastes a URL such as
+1. **Add.** Plugins mode → **Add plugin…** → the user pastes a URL such as
    `https://github.com/otty-shell/otty-plugin-opencode`. Only GitHub URLs are
    accepted at first.
 2. **Find the version.** OTTY lists the repository's releases (GitHub
@@ -1246,7 +1251,7 @@ keeps the installed copy."
 
 **No plugin ships with OTTY** (issue 28, 2026-11-21; this replaces
 "Embedded plugins"). The binary carries no plugin and a start installs
-none: the first start has an empty Plugins page, and Agents mode with no
+none: the first start has an empty Plugins mode, and Agents mode with no
 agent part on says so in one line with a button that opens the Plugins
 page. The Found by OTTY report waits for the first read with an agent
 part on, and is not marked shown before it was shown. The official
@@ -1382,14 +1387,14 @@ table above.
 
 | Situation | Accounts | Profiles | Needs and messages |
 | --- | --- | --- | --- |
-| No provider part installed | Listed by provider id or host, letter icon; Used by, tokens and money from LiteLLM prices with the mark "estimate, list prices"; no Left, Limits, Key limit or bill rows; Account info "Read by: no plugin" | Pays through chips stay, with letter icons | Account need "Key for api.deepseek.com found in Claude Code: no provider plugin [Add plugin…]"; Add plugin opens the Plugins page with the URL field empty |
+| No provider part installed | Listed by provider id or host, letter icon; Used by, tokens and money from LiteLLM prices with the mark "estimate, list prices"; no Left, Limits, Key limit or bill rows; Account info "Read by: no plugin" | Pays through chips stay, with letter icons | Account need "Key for api.deepseek.com found in Claude Code: no provider plugin [Add plugin…]"; Add plugin opens Plugins mode with the URL field empty |
 | Provider part off | As above, Account info "Read by: DeepSeek 0.2.0 (off)" | Same | Need "DeepSeek of the DeepSeek plugin is off [Turn on]" |
 | Agent part off, or its plugin removed | Accounts found only in its profiles leave the lists; accounts also found elsewhere stay, without its chips | Its profiles leave the lists | None. Names and hidden items in `agents.json` (keyed by agent id + folder) are kept and come back when the part is on again |
 | Plugin updated to a new version | Nothing moves: ids are stable, names and hidden items stay | Same | "Read by" shows the new version |
 | A part fails, traps or times out | Last good numbers greyed with their time | Same | Need "<Plugin> <version> could not read <what>" with **Copy report** (plugin id, version, repository, part id, the call, the error kind; no values). Three in a row pause that part only |
 | A part says format changed | Same as today, greyed | "format changed" | The need names the agent version and the plugin: "Codex 0.170.0 changed its session files. OpenAI plugin 0.4.0 reads them up to 0.169.0." and **Copy report**, **Open plugin repository** |
 | A part's provider id or provider host is served by another plugin too | One account per plugin that reads it, each named with its plugin; the user hides the one they do not want (issue 29) | Same | Nothing is asked. An agent id two plugins serve is read by the first installed; the other part can be turned off |
-| Plugin update with new permissions | — | — | Plugins page badge and the need "Plugin update needs your OK: OpenAI 0.4.0 → 0.5.0 asks for new permissions [Review]" |
+| Plugin update with new permissions | — | — | Plugins mode sign and the need "Plugin update needs your OK: OpenAI 0.4.0 → 0.5.0 asks for new permissions [Review]" |
 | Newest release needs a newer OTTY | Nothing moves; the installed version keeps running | Same | The plugin's row: "0.6.0 needs a newer OTTY". At install the whole plugin shows "Needs a newer OTTY" |
 
 ### `agents.json`
@@ -1421,24 +1426,38 @@ in-core code it replaces; the owner checks the numbers by hand.
 
 Order: registry first (the UI switches over while the core still reads);
 then the engine, SDK and host operations; then the plugin adapters; then
-install and the Plugins page; then the agent parts
+install and Plugins mode; then the agent parts
 Codex (OpenAI plugin) and Claude Code (Anthropic plugin), then the
 OpenCode plugin; then the provider parts and provider plugins;
 then the cleanup and the docs.
 
 ## UI changes
 
-- **Plugins page**, opened from Settings: a list of installed plugins
-  (icon, name, version, "Official" / "Community" / "Local",
-  its parts, each with its kind and an on/off switch: "Codex (agent) [on]
-  · OpenAI (provider) [on]", "⋯" with Check for updates (Reload for a
-  local plugin), Open repository, Show permissions, Show log, Remove);
-  **Add plugin…** with the URL field; **Add plugin from folder…**; the
-  install dialog with permissions per part and the choice for each id
-  another plugin serves; the update dialog with the permission diff per
-  part; errors in plain words.
+- **Plugins mode** (issue 30), a mode like Agents mode, not pinned by
+  default. Left panel: the installed plugins (icon, name, "Official" /
+  "Community" / "Local", and a sign "failed" when a part is paused or
+  the latest check or change failed, "update" when an update waits,
+  "off" when every part is off), a search field that keeps the plugins
+  whose names hold the text, letter case aside, and in the header `+`
+  (**Add plugin…** with the URL field) and a folder (**Add plugin from
+  folder…**). Main area: the page of the selected plugin: name, version,
+  description, who reviewed it, authors, repository (a link that opens
+  it), source; its parts, each with its kind, an on/off switch, its
+  health ("Working", "Off", "Paused after three failures" with Try
+  again), its last failure and its permissions; the news of the latest
+  check and the waiting update with Review; Check for updates (Reload for
+  a local plugin), Show log, Remove. With nothing installed or nothing
+  selected a card says what to do and offers both ways to add a plugin.
+  Dialogs over the window: the install dialog with permissions per part,
+  the update dialog with the permission diff per part, the log, the
+  question before Remove; errors in plain words. Settings' **Manage
+  plugins…** closes Settings and opens the mode with nothing selected;
+  "Read by" selects its plugin; Add plugin… of a need opens the URL
+  field; Review selects the plugin and opens its update dialog. A plugin
+  removed while selected leaves nothing selected; a plugin just
+  installed is selected.
 - **Account info** and **Profile info**: a row "Read by: <plugin>
-  <version>" linking to its page on the Plugins page; "no plugin" for an
+  <version>" linking to its page in Plugins mode; "no plugin" for an
   account whose provider has no part.
 - **No "Where the numbers come from"** (issue 19): the account and profile
   pages show the time of their numbers, the last good ones greyed with
@@ -1447,7 +1466,7 @@ then the cleanup and the docs.
   LiteLLM prices, and "Read by". The provider part that reads the
   account reads its numbers every way it can (issue 29); its ways are
   not shown as sources.
-- **Plugins page, card of a part**: the last call that failed or that the
+- **Plugins mode, card of a part**: the last call that failed or that the
   host refused, with its time and kind ("Last failure 5 min ago:
   numbers, the plugin did not finish in time"), never a value, key or
   session text, and **Copy report** (issue 19).
@@ -1493,7 +1512,7 @@ New crates (each with a `README.md`, per the rules):
   compares permissions; holds the one constant with the official GitHub
   organization.
 - `otty-app-plugins` and `otty-app-plugins-io` (`crates/app/features/plugins/`):
-  the Plugins page and its I/O, following the app's architecture checks.
+  Plugins mode and its I/O, following the app's architecture checks.
   They list the parts of any domain and must not depend on `otty-agents`
   (a crate dependency limit in `deny.toml`, issue 21).
 - Official plugins are built in `plugins/<id>/` of this repository

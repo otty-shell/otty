@@ -215,7 +215,7 @@ impl Delivery for AgentsIntent {
             },
             AgentsOutcome::MenuOpened => super::take_keyboard(),
             AgentsOutcome::OpenPlugins(place) => {
-                deliver(app, PluginsIntent::Open(place))
+                super::open_plugins_mode(app, place)
             },
             AgentsOutcome::TurnOnPluginPart(part) => {
                 deliver(app, PluginsIntent::TurnOn(part))

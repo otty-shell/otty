@@ -119,8 +119,8 @@ fn general_section<'a>(
         .into()
 }
 
-/// The installed plugins, managed on the Plugins page (spec
-/// 2026-11-19-agent-plugins, Decision 12).
+/// The installed plugins, managed in Plugins mode (spec
+/// 2026-11-19-agent-plugins, Decision 12; issue 30).
 fn plugins_section<'a>(palette: &UiPalette) -> Element<'a, SettingsIntent> {
     let manage = Button::new(i18n::t(Key::ButtonManagePlugins), palette)
         .kind(ButtonKind::Secondary)

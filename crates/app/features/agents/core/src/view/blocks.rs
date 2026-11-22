@@ -69,7 +69,7 @@ pub(super) fn titled<'a>(
 }
 
 /// Each fact as its label and its value; a value that names a plugin
-/// opens its row on the Plugins page.
+/// opens its page in Plugins mode.
 pub(super) fn facts<'a>(
     facts: Vec<FactViewModel>,
     palette: &UiPalette,

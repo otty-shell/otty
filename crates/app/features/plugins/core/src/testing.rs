@@ -1,4 +1,4 @@
-//! Test values of the Plugins page: the template plugin installed from an
+//! Test values of Plugins mode: the template plugin installed from an
 //! official or another release, or from a folder, and its two parts.
 
 use std::path::PathBuf;

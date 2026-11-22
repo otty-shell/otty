@@ -2,7 +2,7 @@
 name = "otty-app-plugins"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Plugins page of the OTTY app: the installed plugins and their parts, Add plugin, the install and update dialogs"
+description = "Plugins mode of the OTTY app: the installed plugins and their parts, Add plugin, the install and update dialogs"
 readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
@@ -15,11 +15,11 @@ rust-version = { workspace = true }
 # crates/app/features/clippy.toml apply: otty-app-plugins-io installs,
 # updates and removes plugins through `otty-plugin-releases`, whose data
 # types (the installed plugins, the install plan, the waiting update and
-# its permission diff) the page shows. `otty-plugin-manifest` names the
+# its permission diff) the mode shows. `otty-plugin-manifest` names the
 # parts and their permissions; `otty-plugin-host` gives the log of a
-# running plugin and the health of a running part, which the page reads
+# running plugin and the health of a running part, which the mode reads
 # and Try again starts again. It must not depend on `otty-agents`: the
-# page lists the parts of any domain (a crate dependency limit in
+# mode lists the parts of any domain (a crate dependency limit in
 # deny.toml, issue 21). iced's `tokio` feature gives the
 # timer of the daily update check, `iced::time::every`; it adds no crate.
 [dependencies]

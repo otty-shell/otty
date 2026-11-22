@@ -12,18 +12,32 @@ WebAssembly program from its author's GitHub repository, or from a folder on you
 inside OTTY in a closed box: it can touch nothing on your computer or the network except what its
 permissions list.
 
-OTTY comes with no plugins. On the first start the Plugins page is empty and Agents mode says that
-no agent plugin is on, with **Manage plugins…**. You install the plugins you want, and they stay
+OTTY comes with no plugins. On the first start Plugins mode is empty and Agents mode says that no
+agent plugin is on, with **Manage plugins…**. You install the plugins you want, and they stay
 installed between starts.
 
-Open the Plugins page from **Settings** (<kbd>Ctrl</kbd> <kbd>,</kbd> on Linux, <kbd>Cmd</kbd>
-<kbd>,</kbd> on macOS) → **Plugins** → **Manage plugins…**. The needs of Agents mode open it too.
+## Plugins mode
+
+Plugins is a mode of its own, like Agents mode. It is not pinned on the first start: open it from
+**All modes** ("⋯" next to the mode switcher, <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd> on
+Linux, <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>M</kbd> on macOS), and pin it there to keep it in the
+switcher. **Settings** → **Plugins** → **Manage plugins…** closes Settings and opens it too, and so
+do "Read by" and the needs of Agents mode, with their plugin selected.
+
+- **On the left**, the installed plugins under **Installed**, each with its icon, name and mark, a
+  search field that keeps the plugins whose names hold what you type, and two buttons in the
+  header: `+` for **Add plugin…** and the folder for **Add plugin from folder…**.
+- **In the main area**, the page of the selected plugin: its version, authors, repository and
+  source, who reviewed it, its parts with their switches, permissions and health, and **Check for
+  updates** (or **Reload** for a local plugin), **Show log** (what the plugin wrote to its log) and
+  **Remove**. The repository link opens it in your browser. With nothing selected, or nothing
+  installed, the main area says what to do and has both ways to add a plugin.
 
 ## Plugins and parts
 
 A plugin has one or more **parts**. Each part belongs to a domain of OTTY, the place of the window
 it fills; the plugins of Agents mode have parts of the **Agents** domain: an **agent part** reads one
-agent's folders, a **provider part** reads the accounts of one provider. The Plugins page names the
+agent's folders, a **provider part** reads the accounts of one provider. Plugins mode names the
 domain next to the kind, such as "Codex (Agents: agent)". Each part has its own permissions and its
 own switch.
 
@@ -48,7 +62,7 @@ own switch.
 </svg>
 </figure>
 
-Each row of the list shows the plugin's icon, name, version and where it comes from:
+Each plugin on the left shows its icon, its name and a mark of where it comes from:
 
 | Mark          | Means                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------ |
@@ -56,12 +70,17 @@ Each row of the list shows the plugin's icon, name, version and where it comes f
 | **Community** | From anyone else's repository, reviewed by its author only.                                            |
 | **Local**     | From a folder on this computer: a plugin you built, or an official plugin from a copy of the OTTY repository. Never updated on its own. |
 
-"⋯" on a row has **Check for updates** (or **Reload** for a local plugin), **Open repository**,
-**Show permissions**, **Show log** (what the plugin wrote to its log) and **Remove**.
+After the mark, a sign says when a plugin needs a look:
+
+| Sign       | Means                                                                       |
+| ---------- | --------------------------------------------------------------------------- |
+| **failed** | A part is paused after three failures, or the latest check or change failed. |
+| **update** | A newer version waits for your OK.                                          |
+| **off**    | Every part of the plugin is off.                                            |
 
 ## Add a plugin
 
-1. **Add plugin…** → paste the link of the plugin's GitHub repository, such as
+1. **Add plugin…** (`+` on the left) → paste the link of the plugin's GitHub repository, such as
    `https://github.com/owner/otty-plugin-name` → **Next**. Only GitHub links work.
 2. OTTY takes the newest release with a semver tag (`v1.2.0` or `1.2.0`) that this OTTY can run;
    pre-releases are skipped. A repository with no such release is refused.
@@ -73,9 +92,9 @@ at most 20 MiB), the icons (SVG, at most 16 KiB, no scripts, links or embedded i
 `.wasm` uses nothing but what OTTY gives plugins. A check that fails says why, and nothing is
 installed.
 
-**Add plugin from folder…** installs a plugin built on this computer: pick the folder that holds its
-`otty-plugin.toml`, its `.wasm` and its icons, then **Next** and **Install**. For a plugin of your own,
-see [Write a plugin](../write-a-plugin/#try-it-in-otty).
+**Add plugin from folder…** (the folder button on the left) installs a plugin built on this
+computer: type the folder that holds its `otty-plugin.toml`, its `.wasm` and its icons, then
+**Next** and **Install**. For a plugin of your own, see [Write a plugin](../write-a-plugin/#try-it-in-otty).
 
 ## Install the official plugins
 
@@ -88,7 +107,7 @@ Until they do, install them from a copy of the OTTY repository, where each one i
    `deepseek`, `openrouter`) → **Next** → **Install**.
 
 A plugin installed this way is marked **Local**: it changes only when you pull a newer copy and
-press **Reload** on its row. Once an official plugin has its own repository, add it with
+press **Reload** on its page. Once an official plugin has its own repository, add it with
 **Add plugin…** and the link of that repository instead; it is then marked **Official** and updates
 from its releases.
 
@@ -110,8 +129,8 @@ the program and the files it needs, under its own name. They are shown like this
 A **handle** stands in for a key or login token: the plugin can put it into a request, but never
 reads the key itself. See [What OTTY reads and sends](../what-otty-reads-and-sends/).
 
-You grant the whole list or nothing; then you can turn single parts off. **Show permissions** shows
-the list at any time.
+You grant the whole list or nothing; then you can turn single parts off. The page of a plugin shows
+the permissions of each part at any time.
 
 ## When two plugins serve the same thing
 
@@ -119,7 +138,7 @@ Nothing is asked. When two plugins both have a provider part for one provider, b
 accounts: one login is then two accounts in Agents mode, each named with its plugin, such as
 "Anthropic · you@example.com (Anthropic Fork)". Hide the one you do not want; a hidden account
 is read by nobody and left out of every total. When two plugins have an agent part for the same
-agent, the one installed first reads it; turn the other part off on this page.
+agent, the one installed first reads it; turn the other part off on its plugin's page.
 
 ## Turn parts on and off
 
@@ -142,9 +161,9 @@ added from GitHub and takes the newest one it can run:
 
 | The new release                          | What happens                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| Asks for nothing new                     | Installs on its own. The row says "Updated to 0.5.0".                                |
-| Asks for new permissions or has a new part | Waits. The row says "0.5.0 asks for new permissions" with **Review**, and Agents mode shows **Plugin update needs your OK**. The dialog marks each permission "New:" or "No longer:". The installed version keeps running until you press **Update**. |
-| Needs a newer OTTY                       | Skipped. The row says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
+| Asks for nothing new                     | Installs on its own. Its page says "Updated to 0.5.0".                               |
+| Asks for new permissions or has a new part | Waits. The plugin is signed **update** on the left, its page says "0.5.0 asks for new permissions" with **Review**, and Agents mode shows **Plugin update needs your OK**, whose **Review** opens the dialog in Plugins mode. The dialog marks each permission "New:" or "No longer:". The installed version keeps running until you press **Update**. |
+| Needs a newer OTTY                       | Skipped. Its page says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
 | Changed its files after you installed it | Refused: "The release v1.2.0 of OpenCode changed after it was installed. OTTY keeps the installed copy." |
 
 Parts keep their on or off state across updates, and a new part is on. Local plugins are never checked;

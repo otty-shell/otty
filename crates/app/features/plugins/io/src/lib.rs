@@ -1,8 +1,8 @@
-//! The I/O of the Plugins page: the installed plugins in `plugins.json`
+//! The I/O of Plugins mode: the installed plugins in `plugins.json`
 //! and everything that changes them, through `otty-plugin-releases`.
 //!
 //! [`SharedInstaller::open`] opens the installed plugins at start and
-//! [`SharedInstaller::plugins`] lists them for the page. Every other
+//! [`SharedInstaller::plugins`] lists them for the mode. Every other
 //! function runs on a thread of its own, since it may reach GitHub, copy
 //! files or compile a plugin, and answers with a
 //! [`PluginsIntent`](otty_app_plugins::PluginsIntent): [`find_release`]

@@ -7,6 +7,7 @@
 
 pub(crate) mod agents;
 pub(crate) mod containers;
+pub(crate) mod plugins;
 pub(crate) mod start_card;
 pub(crate) mod terminal;
 
@@ -35,7 +36,7 @@ pub(crate) fn over_main_area(
         .into()
 }
 
-/// The status bar of Containers and Agents mode: on the left the items
+/// The status bar of Containers, Agents and Plugins mode: on the left the items
 /// `left` gives, from the feature of the mode; on the right the sessions
 /// button, which shows the count of `sessions` and switches to Terminal
 /// mode, and the OTTY version. In a bar too narrow for all of them the left

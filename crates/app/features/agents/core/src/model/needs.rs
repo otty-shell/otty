@@ -319,7 +319,7 @@ fn need_in(failure: Option<&SourceError>) -> Option<&PartNeed> {
 /// The need of an account no installed plugin reads (spec
 /// 2026-11-19-agent-plugins, "What the UI shows"; issue 29): OTTY lists it
 /// by its provider or host with its tokens and estimate, but reads none
-/// of its own numbers. Add plugin… opens the Plugins page with the URL field empty.
+/// of its own numbers. Add plugin… opens Plugins mode with the URL field empty.
 /// An installed part that is off and would serve it asks to be turned on
 /// instead.
 fn no_provider_need(
@@ -1044,7 +1044,7 @@ mod tests {
 
     /// Spec 2026-11-19-agent-plugins, "What the UI shows": a key for a
     /// host no entry serves is an account by its host that asks for a
-    /// provider plugin; Add plugin… opens the Plugins page.
+    /// provider plugin; Add plugin… opens Plugins mode.
     #[test]
     fn a_key_for_a_host_with_no_entry_asks_for_a_provider_plugin() {
         let state = with_accounts_in(

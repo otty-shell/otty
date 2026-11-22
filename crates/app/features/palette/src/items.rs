@@ -168,6 +168,7 @@ fn switch_mode_title(mode: Mode) -> Key {
         Mode::Terminal => Key::PaletteSwitchToTerminalMode,
         Mode::Containers => Key::PaletteSwitchToContainersMode,
         Mode::Agents => Key::PaletteSwitchToAgentsMode,
+        Mode::Plugins => Key::PaletteSwitchToPluginsMode,
     }
 }
 
@@ -413,6 +414,13 @@ mod tests {
                     Key::PaletteSwitchToAgentsMode,
                     None,
                 ),
+                action(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Plugins
+                    )),
+                    Key::PaletteSwitchToPluginsMode,
+                    None,
+                ),
             ]
         );
     }
@@ -437,6 +445,7 @@ mod tests {
                     Mode::Containers
                 )),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Plugins)),
             ]
         );
     }
@@ -452,7 +461,7 @@ mod tests {
 
         let group = i18n::t(Key::PaletteGroupActions);
         assert_eq!(
-            items[items.len() - 3..],
+            items[items.len() - 4..],
             [
                 PaletteItem::new(
                     PaletteTarget::Command(AppCommand::SwitchMode(
@@ -475,6 +484,13 @@ mod tests {
                     )),
                     group,
                     i18n::t(Key::PaletteSwitchToAgentsMode),
+                ),
+                PaletteItem::new(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Plugins
+                    )),
+                    group,
+                    i18n::t(Key::PaletteSwitchToPluginsMode),
                 ),
             ]
         );
@@ -550,6 +566,7 @@ mod tests {
                     Mode::Containers
                 )),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Plugins)),
             ]
         );
     }

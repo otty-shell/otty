@@ -1,6 +1,6 @@
 //! The installed plugins as the app holds them: one installer shared by
 //! the work that runs on threads of its own, where the plugins live on
-//! disk, and the plugins listed for the page.
+//! disk, and the plugins listed for the mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -45,7 +45,7 @@ impl SharedInstaller {
         }
     }
 
-    /// The installed plugins as the page lists them; none when
+    /// The installed plugins as the mode lists them; none when
     /// `plugins.json` could not be read.
     pub fn plugins(&self) -> Vec<ListedPlugin> {
         self.with(|installer| Ok(listed(installer)))

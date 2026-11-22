@@ -168,7 +168,11 @@ mod tests {
 
     #[test]
     fn with_every_mode_pinned_the_other_modes_show_a_hint() {
-        let pinned = ModesState::with_pinned(&[Mode::Containers, Mode::Agents]);
+        let pinned = ModesState::with_pinned(&[
+            Mode::Containers,
+            Mode::Agents,
+            Mode::Plugins,
+        ]);
 
         let _ = drive(&pinned, |ui| {
             ui.find(i18n::t(Key::ModesNoOtherModes))

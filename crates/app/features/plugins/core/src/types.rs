@@ -1,6 +1,6 @@
-//! What the Plugins page is given: the installed plugins as
+//! What Plugins mode is given: the installed plugins as
 //! `otty-app-plugins-io` reads them, the parts of them that run, and what
-//! the page asks the binary to load.
+//! the mode asks the binary to load.
 
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ use otty_plugin_host::{PartHealth, PluginLog};
 use otty_plugin_manifest::{Manifest, PartKind, PartRef};
 use otty_plugin_releases::{InstalledPlugin, Source};
 
-/// One installed plugin as the page lists it: its record in
+/// One installed plugin as the mode lists it: its record in
 /// `plugins.json`, the manifest of its installed version, the folder of
 /// that version and the icon of its first part. A plain bag the io crate
 /// fills.
@@ -80,7 +80,7 @@ pub struct PartsToLoad {
 }
 
 /// One plugin as it runs: its log and the health of each of its parts
-/// that is loaded. A plain bag of shared handles: the page reads them when
+/// that is loaded. A plain bag of shared handles: the mode reads them when
 /// it draws, and Try again starts a paused part again.
 #[derive(Debug, Clone)]
 pub struct RunningPlugin {

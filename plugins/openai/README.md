@@ -46,6 +46,6 @@ cargo build --release --target wasm32-wasip2
 OTTY carries no plugin. `plugins/build.sh openai` from the repository
 root builds this one into `assets/plugins/openai/`: `otty-plugin.toml`,
 `openai.wasm` and the icons. Install it with **Add plugin from
-folder…** on the Plugins page and pick that folder. After a change, run
+folder…** in Plugins mode and pick that folder. After a change, run
 the script again, commit the folder and press **Reload** on the
 plugin's row.

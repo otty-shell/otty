@@ -65,7 +65,7 @@ disallowed-methods = [
     { path = "otty_agents::read_project_stats", reason = "a feature reads no agent; its io crate does it" },
 
     # Plugins are found, installed, updated, removed and loaded in the io
-    # crates. The Plugins page shows the plans, updates and reports
+    # crates. Plugins mode shows the plans, updates and reports
     # otty-app-plugins-io gives it.
     { path = "otty_plugin_releases::Installer::open", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
     { path = "otty_plugin_releases::Installer::find_release", reason = "a feature changes no plugin; otty-app-plugins-io does it" },

@@ -1,12 +1,12 @@
 //! Why an install, an update or a change of a plugin did not happen, in
-//! plain words for the Plugins page.
+//! plain words for Plugins mode.
 
 use otty_plugin_manifest::{ManifestError, PartRef};
 
 use crate::icon::IconProblem;
 
 /// Why an install, an update, a reload or a change was refused. The text
-/// of each value is a plain reason the Plugins page can show as it is.
+/// of each value is a plain reasin Plugins mode can show as it is.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InstallError {
     /// The pasted text is not a GitHub repository link.

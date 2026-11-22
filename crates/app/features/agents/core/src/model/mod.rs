@@ -104,7 +104,7 @@ pub(crate) struct FactViewModel {
     pub(crate) label: String,
     /// Its value, such as "Max".
     pub(crate) value: String,
-    /// The plugin its value links to on the Plugins page, as "Read by"
+    /// The plugin its value links to in Plugins mode, as "Read by"
     /// does.
     pub(crate) plugin: Option<String>,
 }
@@ -120,7 +120,7 @@ impl FactViewModel {
     }
 
     /// The fact `label` with its `value`, which opens the row of the
-    /// plugin `plugin` on the Plugins page.
+    /// plugin `plugin` in Plugins mode.
     pub(crate) fn linked(label: &str, value: String, plugin: String) -> Self {
         Self {
             label: label.to_string(),

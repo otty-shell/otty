@@ -1,7 +1,7 @@
 //! "Read by" on the page of an account or a profile (spec
 //! 2026-11-19-agent-plugins, "Links in the interface"): the plugin and
 //! its version that reads the provider or the agent, linking to its row
-//! on the Plugins page; the plugin with "(off)" when its part is off; or
+//! in Plugins mode; the plugin with "(off)" when its part is off; or
 //! "no plugin".
 
 use otty_agents::{Account, AgentId, ProviderRef};

@@ -19,11 +19,11 @@ Calling a part is no domain's business, so it lives here too: one read of
 a part is one batch with that part's permissions only; a trap or a
 missed deadline fails that read, and three failed reads in a row pause
 the part until Try again; the last failure is kept for the part's card
-on the Plugins page, and the report of a failure names the plugin, its
+in Plugins mode, and the report of a failure names the plugin, its
 version and repository, the part, the call and the kind of error, never
 a value. What a domain's parts answer is the domain's: `otty-agents`
 turns the `read-error` of the `agents` contracts into a short tag of the
-report. So the Plugins page lists the parts of any domain without
+report. So Plugins mode lists the parts of any domain without
 knowing one.
 
 Plugins never see a key: the host gives them key handles and fills a key

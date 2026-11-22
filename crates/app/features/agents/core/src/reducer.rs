@@ -1557,8 +1557,8 @@ mod tests {
         assert_eq!(state.search().query(), "otty");
     }
 
-    /// Issue 28: Manage plugins… of the card with no agent part opens the
-    /// list of the Plugins page.
+    /// Issue 28: Manage plugins… of the card with no agent part opens
+    /// Plugins mode with nothing selected.
     #[test]
     fn manage_plugins_opens_the_plugins_page() {
         let mut state =

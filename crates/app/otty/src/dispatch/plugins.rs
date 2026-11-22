@@ -1,7 +1,8 @@
-//! Delivers the intents of the Plugins page and reads what it reports: the
+//! Delivers the intents of Plugins mode and reads what it reports: the
 //! installs, updates and removals `otty-app-plugins-io` runs, the parts
 //! Agents mode loads when the installed plugins change, and what Agents
-//! mode shows of them.
+//! mode shows of them. Settings and Agents mode open the mode at a place
+//! through [`open_plugins_mode`].
 
 use std::sync::Arc;
 
@@ -9,15 +10,17 @@ use iced::Task;
 use iced::widget::operation;
 use otty_app_agents::AgentsIntent;
 use otty_app_agents_io::{self as agents_io, LoadedReaders, RunningParts};
+use otty_app_domain::mode::Mode;
+use otty_app_domain::plugins::PluginsPlace;
+use otty_app_modes::ModesIntent;
 use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome, RunningPlugin};
 use otty_app_plugins_io as plugins_io;
-use otty_app_terminal::TerminalIntent;
 
 use super::{Delivery, deliver};
 use crate::app::{App, hidden_entries, installed_parts, read_variable};
 use crate::message::AppEvent;
 
-/// The Plugins page reads what it reports.
+/// Plugins mode reads what it reports.
 impl Delivery for PluginsIntent {
     type Component = Plugins;
 
@@ -29,10 +32,6 @@ impl Delivery for PluginsIntent {
         let installer = &app.plugin_io.installer;
 
         match outcome {
-            // The open page takes the keyboard from the terminal, so typed
-            // keys do not reach the shell and Esc reaches the frame.
-            PluginsOutcome::Opened => super::take_keyboard(),
-            PluginsOutcome::Closed => deliver(app, TerminalIntent::FocusActive),
             PluginsOutcome::FocusField(id) => operation::focus(id),
             PluginsOutcome::FindRelease(url) => {
                 plugins_io::find_release(installer, url).map(AppEvent::Plugins)
@@ -88,9 +87,21 @@ impl Delivery for PluginsIntent {
     }
 }
 
+/// Show Plugins mode at `place`: Manage plugins… of Settings, "Read by",
+/// Add plugin… and Review of Agents mode (issue 30).
+pub(crate) fn open_plugins_mode(
+    app: &mut App,
+    place: PluginsPlace,
+) -> Task<AppEvent> {
+    let shown = deliver(app, ModesIntent::Select(Mode::Plugins));
+    let opened = deliver(app, PluginsIntent::Open(place));
+
+    Task::batch([shown, opened])
+}
+
 /// The parts of the installed plugins were loaded: Agents mode reads with
-/// them and their provider parts from now on, and the Plugins page shows
-/// their health and logs.
+/// them and their provider parts from now on, and Plugins mode shows their
+/// health and logs.
 pub(crate) fn loaded_plugins(
     app: &mut App,
     loaded: LoadedReaders,
@@ -105,7 +116,7 @@ pub(crate) fn loaded_plugins(
     Task::batch([agents, plugins])
 }
 
-/// The loaded plugins as the Plugins page holds them.
+/// The loaded plugins as Plugins mode holds them.
 pub(crate) fn running_plugins(
     running: Vec<RunningParts>,
 ) -> Vec<RunningPlugin> {
@@ -121,33 +132,16 @@ pub(crate) fn running_plugins(
 
 #[cfg(test)]
 mod tests {
-    use otty_app_domain::plugins::PluginsPlace;
-
     use super::*;
-    use crate::testing::task_outputs::focuses_nothing;
     use crate::testing::window::app;
 
-    /// The open page takes the keyboard from the terminal, as any
-    /// overlay does.
+    /// Issue 30: Manage plugins… of Settings closes Settings and shows
+    /// Plugins mode with nothing selected.
     #[test]
-    fn the_open_page_takes_the_keyboard() {
-        let mut app = app();
-
-        let task = deliver(&mut app, PluginsIntent::Open(PluginsPlace::List));
-
-        assert!(app.plugins.is_open());
-        assert!(focuses_nothing(task));
-    }
-
-    /// Spec Decision 12: the page opens from Settings, over it; Esc goes
-    /// back from a dialog of the page, then closes it, and Settings stays
-    /// with its edits.
-    #[test]
-    fn the_page_opens_over_settings_and_esc_returns_to_settings() {
+    fn manage_plugins_of_settings_shows_plugins_mode() {
         use otty_app_settings::SettingsIntent;
 
-        use crate::guards::{Overlay, top_overlay};
-        use crate::testing::keyboard::escape_press;
+        use crate::guards::top_overlay;
         use crate::testing::window::{edit_the_shell, open_settings};
         use crate::update::update_input;
 
@@ -159,31 +153,52 @@ mod tests {
             &mut app,
             AppEvent::Settings(SettingsIntent::OpenPlugins),
         );
-        let on_top = top_overlay(&app);
-        let _ =
-            update_input(&mut app, AppEvent::Plugins(PluginsIntent::AddPlugin));
-        let _ = update_input(&mut app, AppEvent::Keyboard(escape_press()));
-        let still_open = app.plugins.is_open();
-        let _ = update_input(&mut app, AppEvent::Keyboard(escape_press()));
 
-        assert_eq!(on_top, Some(Overlay::Plugins));
-        assert!(still_open, "Esc in Add plugin goes back to the list");
-        assert!(!app.plugins.is_open());
-        assert_eq!(top_overlay(&app), Some(Overlay::Settings));
-        assert!(app.settings.has_unsaved_edits());
+        assert_eq!(app.modes.active(), Mode::Plugins);
+        assert!(!app.settings.is_open());
+        assert_eq!(top_overlay(&app), None);
     }
 
-    /// "Read by" and Add plugin… of Agents mode open the page.
+    /// Issue 30: "Read by" of Agents mode shows Plugins mode; Esc in a
+    /// dialog of the mode closes the dialog and stays in the mode.
     #[test]
-    fn agents_mode_opens_the_page_at_a_plugin() {
+    fn agents_mode_opens_plugins_mode_and_esc_closes_its_dialog() {
+        use crate::guards::{Overlay, top_overlay};
+        use crate::testing::keyboard::escape_press;
+        use crate::update::update_input;
+
         let mut app = app();
 
         let _ = deliver(
             &mut app,
             AgentsIntent::OpenPlugin(String::from("example")),
         );
+        let in_mode = app.modes.active();
+        let _ =
+            update_input(&mut app, AppEvent::Plugins(PluginsIntent::AddPlugin));
+        let on_top = top_overlay(&app);
+        let _ = update_input(&mut app, AppEvent::Keyboard(escape_press()));
 
-        assert!(app.plugins.is_open());
+        assert_eq!(in_mode, Mode::Plugins);
+        assert_eq!(on_top, Some(Overlay::PluginsDialog));
+        assert!(!app.plugins.has_dialog());
+        assert_eq!(app.modes.active(), Mode::Plugins);
+    }
+
+    /// A dialog of Plugins mode is not on screen in another mode, so it
+    /// takes no input there.
+    #[test]
+    fn the_dialog_of_plugins_mode_counts_only_in_the_mode() {
+        use crate::guards::top_overlay;
+
+        let mut app = app();
+        let _ = open_plugins_mode(&mut app, PluginsPlace::AddPlugin);
+        let in_mode = top_overlay(&app);
+
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Terminal));
+
+        assert!(in_mode.is_some());
+        assert_eq!(top_overlay(&app), None);
     }
 
     /// Issue 07, left for issue 09: the loaded parts give Agents mode its

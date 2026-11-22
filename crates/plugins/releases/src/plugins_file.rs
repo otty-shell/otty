@@ -259,7 +259,7 @@ impl Source {
     }
 }
 
-/// How far a plugin is trusted, as the Plugins page marks it.
+/// How far a plugin is trusted, as Plugins mode marks it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trust {
     /// Its repository is under the official organization: reviewed by the

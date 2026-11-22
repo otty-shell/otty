@@ -9,7 +9,6 @@ use otty_app_agents::AgentsIntent;
 use otty_app_domain::plugins::PluginsPlace;
 use otty_app_i18n as i18n;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_plugins::PluginsIntent;
 use otty_app_settings::{
     Settings, SettingsData, SettingsIntent, SettingsOutcome,
 };
@@ -52,10 +51,9 @@ impl Delivery for SettingsIntent {
             SettingsOutcome::Failed(problem) => {
                 deliver(app, NotificationsIntent::Push(problem.text()))
             },
-            // The Plugins page opens over Settings, which stays open under
-            // it with its edits.
+            // Settings closed: Plugins mode shows, nothing selected.
             SettingsOutcome::OpenPlugins => {
-                deliver(app, PluginsIntent::Open(PluginsPlace::List))
+                super::open_plugins_mode(app, PluginsPlace::List)
             },
         }
     }

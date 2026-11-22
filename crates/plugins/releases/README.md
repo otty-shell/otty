@@ -9,6 +9,6 @@ permissions of a new version with the ones the user granted.
 
 It is a separate crate so that the network, the files on disk and the
 user's choices stay apart from running plugins (`otty-plugin-host`) and
-from the Plugins page. It holds the one constant with the name of the
+from Plugins mode. It holds the one constant with the name of the
 official GitHub organization. It must not depend on `iced` or on any crate
 under `crates/app/`.

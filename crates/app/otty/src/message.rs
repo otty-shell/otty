@@ -73,7 +73,7 @@ pub(crate) enum AppEvent {
     /// Agents mode: the profiles, the projects and their sessions, and the
     /// answers of their reads.
     Agents(AgentsIntent),
-    /// The Plugins page, over every mode, and the answers of its I/O.
+    /// Plugins mode, its dialogs, and the answers of its I/O.
     Plugins(PluginsIntent),
     /// The parts that are on of the installed plugins were loaded: Agents
     /// mode reads with them from now on.

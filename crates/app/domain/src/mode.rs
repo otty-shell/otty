@@ -24,11 +24,19 @@ pub enum Mode {
     /// Coding agents, read by the parts of plugins: their profiles, the
     /// projects they worked in and the sessions to continue.
     Agents,
+    /// The installed plugins: their parts, permissions and health, and
+    /// the ways to add, update and remove them.
+    Plugins,
 }
 
 impl Mode {
     /// Every mode, in the order the All modes menu lists them.
-    pub const ALL: [Self; 3] = [Self::Terminal, Self::Containers, Self::Agents];
+    pub const ALL: [Self; 4] = [
+        Self::Terminal,
+        Self::Containers,
+        Self::Agents,
+        Self::Plugins,
+    ];
 
     /// Name of the mode in `modes.json`, e.g. `"containers"`.
     pub fn storage_name(self) -> &'static str {
@@ -36,13 +44,14 @@ impl Mode {
             Self::Terminal => "terminal",
             Self::Containers => "containers",
             Self::Agents => "agents",
+            Self::Plugins => "plugins",
         }
     }
 
-    /// Whether the mode fills the right panel. Agents mode does not, so the
-    /// frame hides the panel there and its toggle does nothing.
+    /// Whether the mode fills the right panel. Agents and Plugins mode do
+    /// not, so the frame hides the panel there and its toggle does nothing.
     pub fn has_right_panel(self) -> bool {
-        !matches!(self, Self::Agents)
+        !matches!(self, Self::Agents | Self::Plugins)
     }
 
     /// Mode saved under `name` in `modes.json`; `None` for a name this
@@ -83,7 +92,20 @@ mod tests {
     fn agents_is_saved_under_its_own_name_after_containers() {
         assert_eq!(Mode::Agents.storage_name(), "agents");
         assert_eq!(Mode::from_storage_name("agents"), Some(Mode::Agents));
-        assert_eq!(Mode::ALL, [Mode::Terminal, Mode::Containers, Mode::Agents]);
+        assert_eq!(
+            Mode::ALL[..3],
+            [Mode::Terminal, Mode::Containers, Mode::Agents]
+        );
+    }
+
+    /// Issue 30: Plugins is a mode of its own, last in the All modes menu,
+    /// with no right panel.
+    #[test]
+    fn plugins_is_a_mode_after_agents_without_a_right_panel() {
+        assert_eq!(Mode::Plugins.storage_name(), "plugins");
+        assert_eq!(Mode::from_storage_name("plugins"), Some(Mode::Plugins));
+        assert_eq!(Mode::ALL.last(), Some(&Mode::Plugins));
+        assert!(!Mode::Plugins.has_right_panel());
     }
 
     #[test]

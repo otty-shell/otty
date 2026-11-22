@@ -62,7 +62,9 @@ use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 pub(crate) use self::delivery::{Delivery, deliver};
-pub(crate) use self::plugins::{loaded_plugins, running_plugins};
+pub(crate) use self::plugins::{
+    loaded_plugins, open_plugins_mode, running_plugins,
+};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::{keys, layout};

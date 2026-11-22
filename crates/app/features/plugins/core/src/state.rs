@@ -5,11 +5,9 @@ use otty_plugin_releases::{InstallPlan, PendingUpdate};
 
 use crate::types::{ListedPlugin, RunningPlugin};
 
-/// What the page shows in its dialog.
+/// A dialog of Plugins mode, over the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Screen {
-    /// The installed plugins.
-    List,
+pub(crate) enum Dialog {
     /// Add plugin…: the GitHub link.
     AddUrl {
         /// The link typed so far.
@@ -30,8 +28,6 @@ pub(crate) enum Screen {
         /// The plugin id.
         plugin: String,
     },
-    /// The permissions of the plugin with this id.
-    Permissions(String),
     /// The log of the plugin with this id.
     Log(String),
     /// The dialog that asks before the plugin with this id is removed.
@@ -39,7 +35,7 @@ pub(crate) enum Screen {
 }
 
 /// What the latest update check, reload or change said about one plugin,
-/// on its row.
+/// on its page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PluginNews {
     /// Check for updates found nothing newer: "Up to date".
@@ -52,31 +48,26 @@ pub(crate) enum PluginNews {
     Failed(String),
 }
 
-/// The state of the Plugins page: the installed plugins, the parts that
-/// run, what the checks said, and the open dialog.
+/// The state of Plugins mode: the installed plugins, the parts that run,
+/// what the checks said, the selected plugin, the search and the open
+/// dialog.
 pub(crate) struct PluginsState {
-    is_open: bool,
-    screen: Screen,
+    dialog: Option<Dialog>,
     plugins: Vec<ListedPlugin>,
     running: Vec<RunningPlugin>,
     news: BTreeMap<String, PluginNews>,
     too_new: BTreeMap<String, String>,
-    actions_open: Option<String>,
-    highlighted: Option<String>,
+    selected: Option<String>,
+    search: String,
     error: Option<String>,
     is_busy: bool,
     home: PathBuf,
 }
 
 impl PluginsState {
-    /// Whether the page is open.
-    pub(crate) fn is_open(&self) -> bool {
-        self.is_open
-    }
-
-    /// The open dialog of the page.
-    pub(crate) fn screen(&self) -> &Screen {
-        &self.screen
+    /// The open dialog, if any.
+    pub(crate) fn dialog(&self) -> Option<&Dialog> {
+        self.dialog.as_ref()
     }
 
     /// The installed plugins.
@@ -112,22 +103,24 @@ impl PluginsState {
         }
     }
 
-    /// The plugin whose actions ("⋯") are shown.
-    pub(crate) fn actions_open(&self) -> Option<&str> {
-        self.actions_open.as_deref()
+    /// The plugin whose page the main area shows; never one that is not
+    /// installed.
+    pub(crate) fn selected(&self) -> Option<&str> {
+        self.selected.as_deref()
     }
 
-    /// The plugin "Read by" opened the page at.
-    pub(crate) fn highlighted(&self) -> Option<&str> {
-        self.highlighted.as_deref()
+    /// The text typed in the search field of the left panel.
+    pub(crate) fn search(&self) -> &str {
+        &self.search
     }
 
-    /// Why the latest action of the open dialog failed.
+    /// Why the latest action failed: in the open dialog, or on the page
+    /// of the selected plugin.
     pub(crate) fn error(&self) -> Option<&str> {
         self.error.as_deref()
     }
 
-    /// Whether the page waits for its I/O: its buttons do nothing.
+    /// Whether the mode waits for its I/O: its buttons do nothing.
     pub(crate) fn is_busy(&self) -> bool {
         self.is_busy
     }
@@ -137,17 +130,16 @@ impl PluginsState {
         &self.home
     }
 
-    /// The page closed, with the installed plugins `plugins`.
+    /// No dialog, nothing selected, with the installed plugins `plugins`.
     pub(crate) fn new(plugins: Vec<ListedPlugin>) -> Self {
         Self {
-            is_open: false,
-            screen: Screen::List,
+            dialog: None,
             plugins,
             running: Vec::new(),
             news: BTreeMap::new(),
             too_new: BTreeMap::new(),
-            actions_open: None,
-            highlighted: None,
+            selected: None,
+            search: String::new(),
             error: None,
             is_busy: false,
             home: PathBuf::from("/"),
@@ -160,24 +152,30 @@ impl PluginsState {
         self
     }
 
-    pub(crate) fn set_open(&mut self, is_open: bool) {
-        self.is_open = is_open;
-    }
-
-    /// Shows `screen`, with no error and nothing waited for.
-    pub(crate) fn show(&mut self, screen: Screen) {
-        self.screen = screen;
+    /// Shows `dialog`, with no error and nothing waited for.
+    pub(crate) fn show(&mut self, dialog: Dialog) {
+        self.dialog = Some(dialog);
         self.error = None;
         self.is_busy = false;
-        self.actions_open = None;
     }
 
-    pub(crate) fn screen_mut(&mut self) -> &mut Screen {
-        &mut self.screen
+    /// Closes the open dialog, with no error and nothing waited for.
+    pub(crate) fn close_dialog(&mut self) {
+        self.dialog = None;
+        self.error = None;
+        self.is_busy = false;
     }
 
+    pub(crate) fn dialog_mut(&mut self) -> Option<&mut Dialog> {
+        self.dialog.as_mut()
+    }
+
+    /// Keeps `plugins`; the selection goes when its plugin is gone.
     pub(crate) fn set_plugins(&mut self, plugins: Vec<ListedPlugin>) {
         self.plugins = plugins;
+
+        let selected = self.selected.take();
+        self.select(selected);
     }
 
     pub(crate) fn set_running(&mut self, running: Vec<RunningPlugin>) {
@@ -203,12 +201,19 @@ impl PluginsState {
         };
     }
 
-    pub(crate) fn set_actions_open(&mut self, plugin: Option<String>) {
-        self.actions_open = plugin;
+    /// Selects the plugin `plugin`, or nothing when it is not installed.
+    /// A new selection drops the error of the page shown before.
+    pub(crate) fn select(&mut self, plugin: Option<String>) {
+        let plugin = plugin.filter(|id| self.plugin(id).is_some());
+
+        if plugin != self.selected && self.dialog.is_none() {
+            self.error = None;
+        }
+        self.selected = plugin;
     }
 
-    pub(crate) fn set_highlighted(&mut self, plugin: Option<String>) {
-        self.highlighted = plugin;
+    pub(crate) fn set_search(&mut self, search: String) {
+        self.search = search;
     }
 
     pub(crate) fn set_error(&mut self, error: Option<String>) {

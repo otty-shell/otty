@@ -60,6 +60,12 @@ pub const MODE_CONTAINERS: &[u8] =
 /// Also the icon of a session table row whose agent has no entry.
 pub const MODE_AGENTS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-agents.svg");
+/// Plugins mode in the mode switcher and the All modes menu: a puzzle
+/// piece. Also the icon of its card when nothing is selected.
+pub const MODE_PLUGINS: &[u8] =
+    include_bytes!("../../../../assets/svg/mode-plugins.svg");
+/// A folder: Add plugin from folder… in Plugins mode.
+pub const FOLDER: &[u8] = include_bytes!("../../../../assets/svg/folder.svg");
 /// All accounts in Agents mode: two cards, one behind the other.
 pub const ALL_ACCOUNTS: &[u8] =
     include_bytes!("../../../../assets/svg/all-accounts.svg");
@@ -115,6 +121,7 @@ pub fn mode_icon(mode: Mode) -> &'static [u8] {
     match mode {
         Mode::Containers => MODE_CONTAINERS,
         Mode::Agents => MODE_AGENTS,
+        Mode::Plugins => MODE_PLUGINS,
         _ => MODE_TERMINAL,
     }
 }
@@ -139,6 +146,14 @@ mod tests {
         assert_eq!(mode_icon(Mode::Agents), MODE_AGENTS);
         assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Terminal));
         assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Containers));
+    }
+
+    #[test]
+    fn plugins_mode_has_its_own_icon() {
+        assert_eq!(mode_icon(Mode::Plugins), MODE_PLUGINS);
+        for mode in [Mode::Terminal, Mode::Containers, Mode::Agents] {
+            assert_ne!(mode_icon(Mode::Plugins), mode_icon(mode));
+        }
     }
 
     #[test]

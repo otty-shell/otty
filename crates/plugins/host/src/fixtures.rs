@@ -1,9 +1,9 @@
 //! Values for the tests of the crates that use this one, such as the
-//! Plugins page: the health of a part that is paused or failed. Only with
+//! Plugins mode: the health of a part that is paused or failed. Only with
 //! the `fixtures` feature.
 
 /// The health of a plugin part paused after three failed reads in a row,
-/// as the Plugins page shows it with Try again.
+/// as Plugins mode shows it with Try again.
 ///
 /// ```
 /// use otty_plugin_host::fixtures::paused_health;
@@ -20,7 +20,7 @@ pub fn paused_health() -> crate::part_health::PartHealth {
 }
 
 /// The health of a plugin part whose last call `failure` failed at `at`,
-/// as the card of the part on the Plugins page shows it.
+/// as the card of the part in Plugins mode shows it.
 ///
 /// ```
 /// use std::time::SystemTime;

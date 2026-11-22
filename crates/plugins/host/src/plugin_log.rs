@@ -21,7 +21,7 @@ pub struct PluginLog {
 }
 
 impl PluginLog {
-    /// The log as text, invalid UTF-8 replaced, for the Plugins page.
+    /// The log as text, invalid UTF-8 replaced, for Plugins mode.
     pub fn text(&self) -> String {
         let bytes = self.bytes.lock().unwrap_or_else(PoisonError::into_inner);
         let (front, back) = bytes.as_slices();

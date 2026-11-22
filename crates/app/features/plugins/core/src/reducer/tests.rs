@@ -8,24 +8,27 @@ use otty_plugin_releases::fixtures::{
 };
 
 use super::*;
-use crate::model::{PageViewModel, PluginRowViewModel};
+use crate::model::{MainViewModel, PluginPageViewModel};
 use crate::testing::{
     agent, fork, official_example, provider, released_example,
 };
 use crate::types::RunningPlugin;
 
+/// Plugins mode with `plugins` installed and the plugin `example`
+/// selected.
 fn open_state(plugins: Vec<ListedPlugin>) -> PluginsState {
     let mut state =
         PluginsState::new(plugins).with_home(PathBuf::from("/home/user"));
-    let _ = reduce(&mut state, PluginsIntent::Open(PluginsPlace::List));
+    let _ = reduce(&mut state, PluginsIntent::Select(String::from("example")));
 
     state
 }
 
-fn rows(state: &PluginsState) -> Vec<PluginRowViewModel> {
-    match PageViewModel::from_state(state) {
-        Some(PageViewModel::List { rows, .. }) => rows,
-        other => panic!("the list: {other:?}"),
+/// The page of the selected plugin.
+fn page(state: &PluginsState) -> PluginPageViewModel {
+    match MainViewModel::from_state(state, std::time::SystemTime::now()) {
+        MainViewModel::Plugin(page) => *page,
+        other => panic!("the page of a plugin: {other:?}"),
     }
 }
 
@@ -50,48 +53,138 @@ fn waiting_example() -> (ListedPlugin, otty_plugin_releases::PendingUpdate) {
     (plugin, update)
 }
 
-/// The page opens from Settings over everything and takes the keyboard;
-/// Esc goes back from a dialog of the page, then closes it.
+/// Issue 30: Manage plugins… of Settings opens the mode with nothing
+/// selected and no dialog, whatever was selected before.
 #[test]
-fn the_page_opens_and_esc_goes_back_then_closes() {
-    let mut state = PluginsState::new(Vec::new());
+fn open_from_settings_selects_nothing() {
+    let mut state = open_state(vec![official_example()]);
+    let _ = reduce(&mut state, PluginsIntent::AddPlugin);
 
-    let opened = reduce(&mut state, PluginsIntent::Open(PluginsPlace::List));
-    let added = reduce(&mut state, PluginsIntent::AddPlugin);
-    let back = reduce(&mut state, PluginsIntent::Escape);
-    let on_list = *state.screen() == Screen::List;
-    let closed = reduce(&mut state, PluginsIntent::Escape);
+    let outcomes = reduce(&mut state, PluginsIntent::Open(PluginsPlace::List));
 
-    assert_eq!(opened, [PluginsOutcome::Opened]);
-    assert_eq!(added, [PluginsOutcome::FocusField(URL_FIELD)]);
-    assert!(back.is_empty());
-    assert!(on_list);
-    assert_eq!(closed, [PluginsOutcome::Closed]);
-    assert!(!state.is_open());
+    assert!(outcomes.is_empty());
+    assert_eq!(state.selected(), None);
+    assert_eq!(state.dialog(), None);
 }
 
-/// Spec "What the UI shows": Add plugin of the need opens the page with
-/// the URL field empty.
+/// Issue 30: "Read by" of Agents mode opens the mode with its plugin
+/// selected; a plugin that is not installed selects nothing.
+#[test]
+fn open_from_agents_selects_the_plugin() {
+    let mut state = PluginsState::new(vec![official_example(), fork()]);
+
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::Open(PluginsPlace::Plugin(String::from("example-fork"))),
+    );
+    let fork_selected = state.selected().map(String::from);
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::Open(PluginsPlace::Plugin(String::from("gone"))),
+    );
+
+    assert_eq!(fork_selected.as_deref(), Some("example-fork"));
+    assert_eq!(state.selected(), None);
+}
+
+/// Spec "What the UI shows": Add plugin of the need opens the URL field,
+/// empty, with the keyboard in it.
 #[test]
 fn add_plugin_of_a_need_opens_the_empty_url_field() {
     let mut state = PluginsState::new(Vec::new());
 
-    let _ = reduce(&mut state, PluginsIntent::Open(PluginsPlace::AddPlugin));
+    let outcomes =
+        reduce(&mut state, PluginsIntent::Open(PluginsPlace::AddPlugin));
 
-    assert_eq!(*state.screen(), Screen::AddUrl { url: String::new() });
+    assert_eq!(outcomes, [PluginsOutcome::FocusField(URL_FIELD)]);
+    assert_eq!(state.dialog(), Some(&Dialog::AddUrl { url: String::new() }));
 }
 
-/// "Read by" opens the page at the plugin's row.
+/// Esc or Cancel closes a dialog and keeps the selection.
 #[test]
-fn read_by_opens_the_page_at_its_plugin() {
+fn back_closes_the_dialog_and_keeps_the_selection() {
+    let mut state = open_state(vec![official_example()]);
+    let _ = reduce(&mut state, PluginsIntent::AddFromFolder);
+
+    let outcomes = reduce(&mut state, PluginsIntent::Back);
+
+    assert!(outcomes.is_empty());
+    assert_eq!(state.dialog(), None);
+    assert_eq!(state.selected(), Some("example"));
+}
+
+/// A press on a plugin of the left panel selects it; an id that is not
+/// installed selects nothing.
+#[test]
+fn a_press_selects_the_plugin() {
+    let mut state = PluginsState::new(vec![official_example(), fork()]);
+
+    let _ = reduce(&mut state, PluginsIntent::Select(String::from("example")));
+    let example = state.selected().map(String::from);
+    let _ = reduce(&mut state, PluginsIntent::Select(String::from("gone")));
+
+    assert_eq!(example.as_deref(), Some("example"));
+    assert_eq!(state.selected(), None);
+}
+
+#[test]
+fn the_search_keeps_what_was_typed() {
     let mut state = PluginsState::new(vec![official_example()]);
+
+    let _ =
+        reduce(&mut state, PluginsIntent::SearchChanged(String::from("Ex")));
+
+    assert_eq!(state.search(), "Ex");
+}
+
+/// Issue 30: when the selected plugin is removed, nothing is selected
+/// and the main area says what to do.
+#[test]
+fn removing_the_selected_plugin_selects_nothing() {
+    let mut state = open_state(vec![released_example(), fork()]);
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::AskRemove(String::from("example")),
+    );
+    let _ = reduce(&mut state, PluginsIntent::Remove);
+
+    let _ = reduce(&mut state, PluginsIntent::Changed(Ok(vec![fork()])));
+
+    assert_eq!(state.selected(), None);
+    assert!(matches!(
+        MainViewModel::from_state(&state, std::time::SystemTime::now()),
+        MainViewModel::Hint { .. }
+    ));
+}
+
+/// A plugin removed elsewhere, as by another change, drops the selection
+/// too; another plugin that stays keeps it.
+#[test]
+fn a_change_keeps_the_selection_of_a_plugin_that_stays() {
+    let mut state = open_state(vec![official_example(), fork()]);
 
     let _ = reduce(
         &mut state,
-        PluginsIntent::Open(PluginsPlace::Plugin(String::from("example"))),
+        PluginsIntent::Changed(Ok(vec![official_example()])),
     );
 
-    assert!(rows(&state)[0].is_highlighted);
+    assert_eq!(state.selected(), Some("example"));
+}
+
+/// A finished install selects the plugin it installed.
+#[test]
+fn a_finished_install_selects_the_new_plugin() {
+    let mut state = open_state(vec![official_example()]);
+    let _ = reduce(&mut state, PluginsIntent::Found(Ok(Box::new(fork_plan()))));
+    let _ = reduce(&mut state, PluginsIntent::Install);
+
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::Changed(Ok(vec![official_example(), fork()])),
+    );
+
+    assert_eq!(state.selected(), Some("example-fork"));
+    assert_eq!(state.dialog(), None);
 }
 
 #[test]
@@ -163,7 +256,7 @@ fn a_release_that_needs_a_newer_otty_says_so() {
             .as_str()
         )
     );
-    assert!(matches!(state.screen(), Screen::AddUrl { .. }));
+    assert!(matches!(state.dialog(), Some(Dialog::AddUrl { .. })));
 }
 
 /// Issue 29: a plugin that serves what another plugin serves installs as
@@ -200,7 +293,7 @@ fn a_finished_install_loads_the_parts_that_are_on() {
 
     let outcomes = reduce(&mut state, PluginsIntent::Changed(Ok(now)));
 
-    assert_eq!(*state.screen(), Screen::List);
+    assert_eq!(state.dialog(), None);
     assert!(!state.is_busy());
     let [
         PluginsOutcome::LoadParts(parts),
@@ -240,9 +333,9 @@ fn turning_one_part_off_leaves_the_others_on() {
             on: false,
         }]
     );
-    let rows = rows(&state);
-    assert!(!rows[0].parts[0].is_on);
-    assert!(rows[0].parts[1].is_on);
+    let page = page(&state);
+    assert!(!page.parts[0].is_on);
+    assert!(page.parts[1].is_on);
 }
 
 /// A change that leaves the plugins as they were loads nothing again.
@@ -259,7 +352,7 @@ fn an_unchanged_list_loads_no_parts() {
 }
 
 #[test]
-fn a_failed_switch_says_why_on_the_list() {
+fn a_failed_switch_says_why_on_the_page() {
     let mut state = open_state(vec![official_example()]);
     let _ = reduce(
         &mut state,
@@ -327,7 +420,7 @@ fn try_again_starts_a_paused_part() {
             ],
         }]),
     );
-    let paused = rows(&state)[0].parts[0].is_paused;
+    let paused = page(&state).parts[0].is_paused;
 
     let outcomes = reduce(
         &mut state,
@@ -365,7 +458,7 @@ fn the_checks_note_updates_and_waiting_updates() {
             asked: false,
         },
     );
-    let row = rows(&state)[0].clone();
+    let row = page(&state);
     let waits = report(
         "example",
         Ok(UpdateOutcome::Waiting(Box::new(update))),
@@ -397,7 +490,7 @@ fn the_checks_note_updates_and_waiting_updates() {
             }],
         })]
     );
-    assert!(rows(&state)[0].waiting.is_some());
+    assert!(page(&state).waiting.is_some());
 }
 
 /// Review of the need "Plugin update needs your OK" opens the update
@@ -415,14 +508,15 @@ fn review_opens_the_update_dialog_and_update_applies_it() {
     let applied = reduce(&mut state, PluginsIntent::ApplyUpdate);
     let _ = reduce(&mut state, PluginsIntent::Changed(Ok(vec![plugin])));
 
-    assert_eq!(opened, [PluginsOutcome::Opened]);
+    assert!(opened.is_empty());
+    assert_eq!(state.selected(), Some("example"));
     assert_eq!(
         applied,
         [PluginsOutcome::ApplyUpdate {
             update: Box::new(update),
         }]
     );
-    assert_eq!(*state.screen(), Screen::List);
+    assert_eq!(state.dialog(), None);
     assert_eq!(
         state.news_of("example"),
         Some(&PluginNews::Updated(String::from("0.2.0")))
@@ -475,7 +569,7 @@ fn a_failed_check_says_why_on_the_row() {
         },
     );
 
-    let row = rows(&state)[0].clone();
+    let row = page(&state);
     assert!(row.is_news_failure);
     assert_eq!(
         row.news.as_deref(),
@@ -485,7 +579,7 @@ fn a_failed_check_says_why_on_the_row() {
     );
 }
 
-/// The menu "⋯" of a local plugin reloads it; a reload that asks for
+/// Reload of a local plugin reloads it; a reload that asks for
 /// more waits for the user like an update.
 #[test]
 fn reload_of_a_local_plugin_that_asks_for_more_waits() {
@@ -521,7 +615,7 @@ fn remove_asks_first_then_removes() {
     assert!(asked.is_empty());
     assert_eq!(removed, [PluginsOutcome::Remove(String::from("example"))]);
     assert_eq!(after[0], PluginsOutcome::LoadParts(Vec::new()));
-    assert_eq!(*state.screen(), Screen::List);
+    assert_eq!(state.dialog(), None);
 }
 
 #[test]
