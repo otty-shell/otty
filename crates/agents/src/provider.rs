@@ -44,9 +44,9 @@ impl ProviderId {
 /// id when the agent named one, else the host of the server the key is
 /// for, in lower case, such as `api.example.com`.
 ///
-/// The [`Registry`] turns a host into the id of the provider that serves
-/// it, when one does; with no such provider the account stays known by
-/// its host.
+/// An account known by a host is read by every part of the [`Registry`]
+/// that serves the host, one copy under the id of each (issue 31); with no
+/// such part it stays known by its host.
 ///
 /// [`Registry`]: crate::Registry
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

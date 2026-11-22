@@ -245,24 +245,32 @@ OTTY release.
   provider part that serves an account reads it: when two plugins serve
   one provider, both read its accounts, and each reading is an account of
   its own (`Account::read_by`, the plugin id), named with its plugin
-  ("Anthropic · you@example.com (Anthropic Fork)") while two plugins
-  read the provider. The user hides the one they do not want; the choices
-  for a found account (name, hidden, given keys) are kept in
-  `agents.json` with its plugin. An account the user added is one entry
-  for every plugin that offers Add account for its provider. Two agent
-  parts with one agent id: the first installed reads it, and the user
-  turns the other off in Plugins mode.
+  ("Anthropic · you@example.com (Anthropic Fork)") while a part of
+  another plugin serves the same provider id or host. An account known by
+  a host is read by every part that serves the host, whatever its
+  provider id: one copy per part, under that part's id (owner,
+  2026-11-22, issue 31). The user hides the one they do not want; the
+  choices for an account (name, hidden, given keys) are kept in
+  `agents.json` with its plugin. An account the user added keeps its one
+  key, given once: it is the entry with its key and no plugin, read by
+  every plugin that offers Add account for its provider, and the name,
+  the hidden flag and the given keys of each copy are an entry with the
+  same key and that plugin, so each copy hides alone (issue 31). Two
+  agent parts with one agent id: the first installed reads it, and the
+  user turns the other off in Plugins mode.
 - **Accounts and profiles are not plugins.** OTTY joins one account found
   in several agents by account id, organization id, email, or SHA-256 key
-  fingerprint, as today (`merge_accounts`), within one provider; with
+  fingerprint, as today (`merge_accounts`), within one provider id;
+  copies under different provider ids are never joined, and with
   another provider or another identity it is two accounts, and that is
-  fine (issue 29). An account no installed plugin reads is shown, with
+  fine (issues 29 and 31). An account no installed plugin reads is shown, with
   the line that no installed plugin reads it; its sessions and their
   estimated money still count.
 - **Hidden accounts are left out of every total** (issue 29): no read
   starts for them, and their tokens go, in the totals by account, to
   another copy of the same login the user did not hide, else to no
-  account.
+  account. A copy is hidden alone: the other copies of the login stay
+  shown, read and counted (issue 31).
 
 ### 5. Plugins never see a raw key
 
@@ -1357,7 +1365,8 @@ table above.
   updated or removed, or a part is turned on or off. It holds only parts
   that are on: one part per agent id, and every provider part, so a
   provider two plugins serve has two entries, each reading its own copy
-  of the provider's accounts (issue 29).
+  of the provider's accounts (issue 29), and so does a host two plugins
+  serve under two provider ids (issue 31).
   The app gets it as an `Arc<Registry>` with the agents mode's context.
   App crates read names, icons, usage pages and hosts only through it.
   `otty-app-theme`'s `agent_icon` and `provider_icon` are removed; the kit
@@ -1372,9 +1381,11 @@ table above.
 - An account's identity is (provider reference, account id or
   organization id or email or key fingerprint). The provider reference is
   the provider id when the agent part named one, else the host the key is
-  for, normalized (`api.deepseek.com`). When a provider part later
-  claims that host, OTTY maps the host to its id; saved entries under
-  `host:api.deepseek.com` match it too.
+  for, normalized (`api.deepseek.com`). When provider parts later claim
+  that host, every one of them reads the account, one copy under the id
+  of each part (issue 31). Saved entries under `host:api.deepseek.com`
+  are the choices of the account no plugin reads; the copies the parts
+  read have their own.
 - Keys are fingerprinted by the host, so joining accounts never needs a
   provider part.
 - **Pays through** (profile → accounts) and **Used by** (account →
@@ -1393,7 +1404,7 @@ table above.
 | Plugin updated to a new version | Nothing moves: ids are stable, names and hidden items stay | Same | "Read by" shows the new version |
 | A part fails, traps or times out | Last good numbers greyed with their time | Same | Need "<Plugin> <version> could not read <what>" with **Copy report** (plugin id, version, repository, part id, the call, the error kind; no values). Three in a row pause that part only |
 | A part says format changed | Same as today, greyed | "format changed" | The need names the agent version and the plugin: "Codex 0.170.0 changed its session files. OpenAI plugin 0.4.0 reads them up to 0.169.0." and **Copy report**, **Open plugin repository** |
-| A part's provider id or provider host is served by another plugin too | One account per plugin that reads it, each named with its plugin; the user hides the one they do not want (issue 29) | Same | Nothing is asked. An agent id two plugins serve is read by the first installed; the other part can be turned off |
+| A part's provider id or provider host is served by another plugin too | One account per plugin that reads it, under that part's provider id, each named with its plugin; the user hides the one they do not want, each copy alone, an added account too (issues 29 and 31) | Same | Nothing is asked. An agent id two plugins serve is read by the first installed; the other part can be turned off |
 | Plugin update with new permissions | — | — | Plugins mode sign and the need "Plugin update needs your OK: OpenAI 0.4.0 → 0.5.0 asks for new permissions [Review]" |
 | Newest release needs a newer OTTY | Nothing moves; the installed version keeps running | Same | The plugin's row: "0.6.0 needs a newer OTTY". At install the whole plugin shows "Needs a newer OTTY" |
 

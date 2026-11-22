@@ -60,12 +60,29 @@
 //! can still be hidden: a hidden profile is kept by its folder, not by an
 //! entry.
 //!
-//! Two plugins that serve one provider each read its accounts, and each
-//! reading is an account of its own (spec 2026-11-19-agent-plugins, issue
-//! 29), so the choices for a found account are kept with `plugin`, the
-//! plugin that reads it; without it they are of the account no plugin
-//! reads. An account the user added is one entry for every plugin that
-//! reads it.
+//! Two plugins that serve one provider, or one host under two provider
+//! ids, each read its accounts, and each reading is an account of its own
+//! (spec 2026-11-19-agent-plugins, issues 29 and 31), so the choices for
+//! an account are kept with `plugin`, the plugin that reads it; without it
+//! they are of the account no plugin reads. An account the user added is
+//! the entry with its `key` and no `plugin`; the name, the hidden flag and
+//! the given keys of each copy of it a plugin reads are an entry with the
+//! same `key` and that `plugin`, so hiding one copy leaves the others
+//! shown:
+//!
+//! ```json
+//! {
+//!   "accounts": [
+//!     { "provider": "example-cloud", "key": { "env_var": "EXAMPLE_API_KEY" } },
+//!     {
+//!       "provider": "example-cloud",
+//!       "key": { "env_var": "EXAMPLE_API_KEY" },
+//!       "plugin": "example-fork",
+//!       "hidden": true
+//!     }
+//!   ]
+//! }
+//! ```
 //!
 //! An account may keep where the keys the user gave for it are, each under
 //! the slot of the plugin part that asked for it: a file or an
@@ -99,7 +116,6 @@ use crate::agent::AgentId;
 use crate::given_key::{GivenKey, KeyRef};
 use crate::profile::Profile;
 use crate::provider::ProviderRef;
-use crate::registry::Registry;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
@@ -482,26 +498,27 @@ impl SavedProfiles {
     }
 
     /// The same content with the key of the account the user added,
-    /// `account`, kept at `key` from now on; its name and whether it is
-    /// hidden stay. An account OTTY found changes nothing.
+    /// `account` or a copy of it a plugin reads, kept at `key` from now
+    /// on; the name and whether it is hidden of each copy stay (issue 31).
+    /// An account OTTY found changes nothing.
     pub fn with_added_key(mut self, account: &Account, key: KeyRef) -> Self {
         if account.added_key().is_none_or(|old| *old == key) {
             return self;
         }
 
         let moved = Account::added(account.provider().clone(), key);
-        self.accounts.retain(|saved| !saved.is_of(&moved));
-        if let Some(saved) =
-            self.accounts.iter_mut().find(|saved| saved.is_of(account))
-        {
-            saved.identity = moved.identity().clone();
+        self.accounts.retain(|saved| !saved.is_of_login(&moved));
+        for saved in &mut self.accounts {
+            if saved.is_of_login(account) {
+                saved.identity = moved.identity().clone();
+            }
         }
         self
     }
 
     /// The same content without the account the user added, `account`,
-    /// and its choices: Remove forgets it. An account OTTY found changes
-    /// nothing.
+    /// and the choices of every copy of it: Remove forgets it. An account
+    /// OTTY found changes nothing.
     pub fn without_added_account(mut self, account: &Account) -> Self {
         if account.added_key().is_none() {
             return self;
@@ -521,19 +538,6 @@ impl SavedProfiles {
         self.hidden_profiles.retain(|hidden| !hidden.is_of(profile));
         if is_hidden {
             self.hidden_profiles.push(HiddenProfile::of(profile));
-        }
-
-        self
-    }
-
-    /// The same content with each account kept by the host of its server
-    /// kept by the id of the provider of `registry` that serves the host,
-    /// so it is the choice of the account found for that id (spec
-    /// 2026-11-19-agent-plugins, "Identity and links do not depend on a
-    /// provider plugin"). The text written then names the id.
-    pub fn with_providers_resolved(mut self, registry: &Registry) -> Self {
-        for saved in &mut self.accounts {
-            saved.provider = registry.resolve(&saved.provider);
         }
 
         self
@@ -979,11 +983,12 @@ mod tests {
     }
 
     /// Spec 2026-11-19-agent-plugins, "`agents.json`": an account of a
-    /// provider no entry serves may be kept by the host of its server;
-    /// once an entry serves the host, it is the choice of the account found
-    /// for its id.
+    /// provider no entry serves may be kept by the host of its server, and
+    /// is written back so. Issue 31: it is the choice of the account no
+    /// plugin reads; once parts serve the host, each copy they read under
+    /// their id has its own choices.
     #[test]
-    fn an_account_kept_by_host_is_the_account_of_the_provider_of_the_host() {
+    fn an_account_kept_by_host_is_the_account_no_plugin_reads() {
         let text = r#"{
             "accounts": [
                 {
@@ -1004,21 +1009,13 @@ mod tests {
             )
         };
         let by_host = login(ProviderRef::Host(String::from("api.example.com")));
-        let by_id = login(ProviderRef::of_id("example-cloud"));
-        let cloud = crate::provider::ProviderEntry::new(
-            crate::provider::ProviderId::new("example-cloud"),
-            "Example Cloud",
-            crate::testing::made_up_part("example-cloud"),
-        )
-        .with_hosts(["example.com"]);
-        let registry = Registry::new(Vec::new(), vec![cloud]);
+        let copy = login(ProviderRef::of_id("example-cloud"))
+            .with_read_by(Some(String::from("example-cloud")));
 
         let loaded = load(text);
-        let resolved = loaded.clone().with_providers_resolved(&registry);
 
         assert_eq!(loaded.account_name(&by_host), Some("Gateway"));
-        assert_eq!(loaded.account_name(&by_id), None);
-        assert_eq!(resolved.account_name(&by_id), Some("Gateway"));
+        assert_eq!(loaded.account_name(&copy), None);
         let written = loaded.to_json().expect("the paths are text");
         assert!(written.contains(r#""provider": "host:api.example.com""#));
     }

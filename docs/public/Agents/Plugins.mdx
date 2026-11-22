@@ -134,11 +134,14 @@ the permissions of each part at any time.
 
 ## When two plugins serve the same thing
 
-Nothing is asked. When two plugins both have a provider part for one provider, both read its
-accounts: one login is then two accounts in Agents mode, each named with its plugin, such as
-"Anthropic · you@example.com (Anthropic Fork)". Hide the one you do not want; a hidden account
-is read by nobody and left out of every total. When two plugins have an agent part for the same
-agent, the one installed first reads it; turn the other part off on its plugin's page.
+Nothing is asked. When two plugins both have a provider part for one provider, or for one host
+under two provider ids, both read its accounts: one login or key is then two accounts in Agents
+mode, each named with its plugin, such as "Anthropic · you@example.com (Anthropic Fork)". This is
+also true of an account you added, when both plugins offer **Add account** for its provider: you
+give the key once, and each plugin reads its own copy. Hide the one you do not want; each copy hides
+alone, and a hidden copy is read by nobody and left out of every total, while the other stays. When
+two plugins have an agent part for the same agent, the one installed first reads it; turn the other
+part off on its plugin's page.
 
 ## Turn parts on and off
 

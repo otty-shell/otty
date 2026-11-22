@@ -428,11 +428,10 @@ mod tests {
             .clone()
             .without_provider(&ProviderId::new("example-cloud"));
         let host = ProviderRef::Host(String::from("api.example.com"));
-        let by_host = key_account(host.clone(), "sk-made-up");
-        let resolved = key_account(registry.resolve(&host), "sk-made-up");
+        let by_host = key_account(host, "sk-made-up");
 
         assert_eq!(reader(&by_host, &without), None);
-        assert_eq!(reader(&resolved, &registry), Some(named("example-cloud")));
+        assert_eq!(reader(&by_host, &registry), Some(named("example-cloud")));
     }
 
     /// Issue 17: an account added by hand for a provider no plugin part

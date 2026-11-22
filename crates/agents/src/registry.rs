@@ -3,7 +3,8 @@
 //! icons, usage pages and hosts only from it, and an account whose
 //! provider no entry serves stays known by the host of its key. The parts
 //! of the installed plugins that are on fill it. Two plugins may serve one
-//! provider: both read its accounts (issue 29).
+//! provider, or one host under two provider ids: both read its accounts
+//! (issues 29 and 31).
 
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
@@ -25,7 +26,7 @@ use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 ///
 /// let host = ProviderRef::Host("api.example.com".into());
 ///
-/// assert_eq!(registry.resolve(&host), ProviderRef::of_id("cloud"));
+/// assert!(registry.is_same_provider(&host, &ProviderRef::of_id("cloud")));
 /// assert_eq!(
 ///     registry.provider_of(&host).map(|entry| entry.name()),
 ///     Some("Cloud")
@@ -59,13 +60,18 @@ impl Registry {
     }
 
     /// Every provider part that serves `reference`, in the order of the
-    /// registry: the parts with its id, or that serve its host.
+    /// registry: the parts with its id, or every part that serves its
+    /// host, whatever its id (issue 31).
     pub fn readers_of(&self, reference: &ProviderRef) -> Vec<&ProviderEntry> {
+        let host = reference
+            .as_host()
+            .map(|host| host.trim().to_ascii_lowercase());
+
         self.providers
             .iter()
-            .filter(|entry| match reference {
-                ProviderRef::Id(id) => entry.id() == id,
-                ProviderRef::Host(host) => entry.serves_host(host),
+            .filter(|entry| match &host {
+                Some(host) => entry.serves_host(host),
+                None => reference.as_id() == Some(entry.id()),
             })
             .collect()
     }
@@ -81,8 +87,10 @@ impl Registry {
             .find(|entry| entry.part().plugin() == plugin)
     }
 
-    /// The provider whose servers are at `host`: `host` is one of its
-    /// domains or ends with `.` and one.
+    /// The first provider whose servers are at `host`: `host` is one of its
+    /// domains or ends with `.` and one. It names and draws a host; the
+    /// accounts known by a host are read by every part that serves it
+    /// ([`Registry::readers_of`]).
     pub fn provider_of_host(&self, host: &str) -> Option<&ProviderEntry> {
         let host = host.trim().to_ascii_lowercase();
 
@@ -101,18 +109,6 @@ impl Registry {
         }
     }
 
-    /// `reference` with a host turned into the id of the provider that
-    /// serves it; any other reference as it is.
-    pub fn resolve(&self, reference: &ProviderRef) -> ProviderRef {
-        match reference {
-            ProviderRef::Host(host) => match self.provider_of_host(host) {
-                Some(entry) => ProviderRef::Id(entry.id().clone()),
-                None => reference.clone(),
-            },
-            ProviderRef::Id(_) => reference.clone(),
-        }
-    }
-
     /// The name the price table knows the provider `reference` by (issue
     /// 23): the name its provider part gives, else the id the agent
     /// wrote, even when no part serves it. `None` for the host of a
@@ -127,14 +123,39 @@ impl Registry {
         }
     }
 
-    /// Whether `one` and `other` name the same provider, once each host is
-    /// turned into the id of the provider that serves it.
+    /// Whether `one` and `other` name the same provider: the same
+    /// reference, or a part serves both, as a host is the provider of each
+    /// id whose part serves it (issue 31). Two ids are two providers.
     pub fn is_same_provider(
         &self,
         one: &ProviderRef,
         other: &ProviderRef,
     ) -> bool {
-        one == other || self.resolve(one) == self.resolve(other)
+        if one == other {
+            return true;
+        }
+
+        let ids_of_one: Vec<&ProviderId> = self
+            .readers_of(one)
+            .into_iter()
+            .map(ProviderEntry::id)
+            .collect();
+        self.readers_of(other)
+            .into_iter()
+            .any(|entry| ids_of_one.contains(&entry.id()))
+    }
+
+    /// Whether a provider part of another plugin serves what `entry`
+    /// serves: its provider id, or a host one of them serves. The accounts
+    /// such a part reads say their plugin (issues 29 and 31).
+    pub fn is_shared(&self, entry: &ProviderEntry) -> bool {
+        self.providers.iter().any(|other| {
+            let serves_the_same = other.id() == entry.id()
+                || entry.hosts().iter().any(|host| other.serves_host(host))
+                || other.hosts().iter().any(|host| entry.serves_host(host));
+
+            other.part().plugin() != entry.part().plugin() && serves_the_same
+        })
     }
 
     /// The providers Add account offers, in the order of the registry,
@@ -341,28 +362,67 @@ mod tests {
     }
 
     #[test]
-    fn a_host_some_entry_serves_is_its_id_and_any_other_host_stays() {
+    fn a_host_is_the_same_provider_as_the_id_of_an_entry_that_serves_it() {
         let registry = registry();
         let cloud = ProviderRef::Host(String::from("api.example.com"));
         let gateway = ProviderRef::Host(String::from("gateway.example.org"));
+        let by_id = ProviderRef::of_id("example-cloud");
 
-        assert_eq!(
-            registry.resolve(&cloud),
-            ProviderRef::of_id("example-cloud")
-        );
-        assert_eq!(registry.resolve(&gateway), gateway);
+        assert!(registry.is_same_provider(&cloud, &by_id));
+        assert!(registry.is_same_provider(&by_id, &cloud));
+        assert!(registry.is_same_provider(&gateway, &gateway));
+        assert!(!registry.is_same_provider(&gateway, &by_id));
         assert!(
-            registry
-                .is_same_provider(&cloud, &ProviderRef::of_id("example-cloud"))
+            !registry
+                .is_same_provider(&cloud, &ProviderRef::of_id("other-cloud"))
         );
 
         let without =
             registry.without_provider(&ProviderId::new("example-cloud"));
-        assert_eq!(without.resolve(&cloud), cloud);
-        assert!(
-            !without
-                .is_same_provider(&cloud, &ProviderRef::of_id("example-cloud"))
+        assert!(!without.is_same_provider(&cloud, &by_id));
+    }
+
+    /// Issue 31: a host two plugins serve under two provider ids is the
+    /// same provider as each id, while the two ids stay two providers; the
+    /// part of each is shared with the other plugin, so the accounts it
+    /// reads say their plugin.
+    #[test]
+    fn a_host_two_plugins_serve_under_two_ids_is_each_of_them() {
+        let fork = ProviderEntry::new(
+            ProviderId::new("cloud-fork"),
+            "Cloud Fork",
+            PluginPart::new("fork", "Fork", "0.1.0", "", "cloud-fork"),
+        )
+        .with_hosts(["api.example.com"]);
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                provider("example-cloud", &["example.com"]),
+                fork,
+                provider("other-cloud", &["example.net"]),
+            ],
         );
+        let host = ProviderRef::Host(String::from("api.example.com"));
+        let cloud = ProviderRef::of_id("example-cloud");
+        let fork = ProviderRef::of_id("cloud-fork");
+        let is_shared = |id: &str| {
+            registry
+                .provider(&ProviderId::new(id))
+                .is_some_and(|entry| registry.is_shared(entry))
+        };
+
+        let readers: Vec<_> = registry
+            .readers_of(&host)
+            .iter()
+            .map(|entry| entry.id().as_str())
+            .collect();
+        assert_eq!(readers, ["example-cloud", "cloud-fork"]);
+        assert!(registry.is_same_provider(&host, &cloud));
+        assert!(registry.is_same_provider(&host, &fork));
+        assert!(!registry.is_same_provider(&cloud, &fork));
+        assert!(is_shared("example-cloud"));
+        assert!(is_shared("cloud-fork"));
+        assert!(!is_shared("other-cloud"));
     }
 
     /// One agent entry per agent id, the first one; issue 29: every

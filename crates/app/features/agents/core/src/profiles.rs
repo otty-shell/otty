@@ -413,17 +413,14 @@ impl Profiles {
     /// after an edit of its name; it keeps its bill while the keys given
     /// for its organization are the same. A profile whose config folder is gone
     /// has nothing to read. A time zone that could not be read keeps the
-    /// one known. The provider of each account found by the host of its
-    /// key is named as the registry names it (spec
-    /// 2026-11-19-agent-plugins, "Identity and links do not depend on a
-    /// provider plugin").
+    /// one known. An account found by the host of its key is read by
+    /// every provider part that serves the host, one copy each (spec
+    /// 2026-11-19-agent-plugins, issue 31).
     pub(crate) fn apply_profiles(
         &mut self,
         loaded: LoadedProfiles,
     ) -> Vec<Profile> {
-        let saved = loaded
-            .saved
-            .map(|saved| saved.with_providers_resolved(&self.registry));
+        let saved = loaded.saved;
         let mut earlier = std::mem::take(&mut self.shown);
         let earlier_saved = std::mem::replace(&mut self.saved, saved);
         let mut to_read = Vec::new();

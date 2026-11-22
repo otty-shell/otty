@@ -993,6 +993,71 @@ mod tests {
         assert!(own_reads(again).is_empty(), "the reads are on their way");
     }
 
+    /// Issue 31: a key for `api.deepseek.com`, a host two plugins serve
+    /// under two provider ids, is two accounts, one per plugin under its
+    /// id, each named with its plugin, and both are read.
+    #[test]
+    fn a_key_for_a_host_two_plugins_serve_under_two_ids_is_read_by_both() {
+        let fork = otty_agents::ProviderEntry::new(
+            otty_agents::ProviderId::new("deepseek-fork"),
+            "DeepSeek Fork",
+            otty_plugin_host::PluginPart::new(
+                "deepseek-fork",
+                "DeepSeek Fork",
+                "0.1.0",
+                "",
+                "deepseek-fork",
+            ),
+        )
+        .with_hosts(["deepseek.com"]);
+        let mut state = AgentsState::new(
+            agents(),
+            crate::testing::registry_with(fork),
+            env(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+
+        let loaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[(
+                    claude(),
+                    api_key(),
+                    vec![crate::testing::deepseek_key_by_host()],
+                )],
+                otty_agents::SavedProfiles::default(),
+            ),
+        );
+
+        let read: Vec<(String, Option<String>)> = own_reads(loaded)
+            .iter()
+            .map(|(account, _)| {
+                (
+                    account.provider().as_str().to_string(),
+                    account.read_by().map(String::from),
+                )
+            })
+            .collect();
+        let names: Vec<String> =
+            crate::model::LeftPanelViewModel::from_state(&state, at(0))
+                .accounts
+                .accounts
+                .into_iter()
+                .map(|row| row.name)
+                .collect();
+        let pair = |provider: &str| {
+            (String::from(provider), Some(String::from(provider)))
+        };
+        assert_eq!(read, [pair("deepseek"), pair("deepseek-fork")]);
+        assert_eq!(
+            names,
+            [
+                "DeepSeek · key ••••seek (DeepSeek)",
+                "DeepSeek Fork · key ••••seek (DeepSeek Fork)"
+            ]
+        );
+    }
+
     /// Issue 17: an account added by hand for a provider no plugin part
     /// serves is listed with the others, and its numbers are not read.
     #[test]

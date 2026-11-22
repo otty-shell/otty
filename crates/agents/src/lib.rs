@@ -50,8 +50,9 @@
 //! profiles that pay through it.
 //!
 //! Every account is read by the provider part of each plugin that serves
-//! it, and each plugin's reading is an account of its own
-//! ([`Account::read_by`]; issue 29): [`read_account_numbers`] reads the
+//! it, a key known by its host by every part that serves the host under
+//! its own provider id, and each plugin's reading is an account of its own
+//! ([`Account::read_by`]; issues 29 and 31): [`read_account_numbers`] reads the
 //! [`Balance`] of a key, the [`Limits`] of a subscription login or the
 //! [`Bill`] of an account the user added, with a key the user added read
 //! again from its [`KeyPlace`] and dropped right after the request, or

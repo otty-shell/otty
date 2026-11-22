@@ -78,7 +78,7 @@ mod tests {
         env, now, open_account_menu, open_profile_menu, organization,
         profiles_with_accounts_loaded, profiles_with_hidden_loaded, save,
         saved_with_given_key, session, sessions_loaded,
-        two_agents_with_sessions, with_accounts,
+        two_agents_with_sessions, with_accounts, with_accounts_in,
     };
 
     fn report_shown() -> SavedProfiles {
@@ -219,6 +219,112 @@ mod tests {
         );
         assert_eq!(outcomes, vec![save(report_shown())]);
         assert!(!state.profiles().is_account_hidden(&chatgpt_login()));
+    }
+
+    /// The registry of the tests with a second plugin, DeepSeek Fork, that
+    /// serves DeepSeek and offers Add account for it too.
+    fn with_deepseek_fork() -> std::sync::Arc<otty_agents::Registry> {
+        let fork = otty_agents::ProviderEntry::new(
+            otty_agents::ProviderId::new("deepseek"),
+            "DeepSeek",
+            otty_plugin_host::PluginPart::new(
+                "deepseek-fork",
+                "DeepSeek Fork",
+                "0.1.0",
+                "",
+                "deepseek",
+            ),
+        )
+        .with_hosts(["deepseek.com"])
+        .with_add_by_hand();
+
+        crate::testing::registry_with(fork)
+    }
+
+    /// The copy of the DeepSeek account the user added that `plugin`
+    /// reads.
+    fn added_copy(plugin: &str) -> Account {
+        Account::added(
+            otty_agents::ProviderRef::of_id("deepseek"),
+            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+        )
+        .with_read_by(Some(String::from(plugin)))
+    }
+
+    /// The accounts read by themselves at the first read with `saved`.
+    fn own_reads_at_start(saved: SavedProfiles) -> Vec<Account> {
+        let mut state = AgentsState::new(agents(), with_deepseek_fork(), env());
+        let _ = reduce(&mut state, AgentsIntent::Enter);
+        let outcomes = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[(codex(), connected(), vec![chatgpt_login()])],
+                saved,
+            ),
+        );
+
+        outcomes
+            .into_iter()
+            .filter_map(|outcome| match outcome {
+                AgentsOutcome::LoadAccountNumbers { account, .. } => {
+                    Some(account)
+                },
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Issue 31: an account the user added that two plugins read is two
+    /// copies; hiding one saves only that copy hidden, and the other stays
+    /// listed, read and among the accounts counted.
+    #[test]
+    fn hiding_one_copy_of_an_added_account_keeps_the_other_shown_and_read() {
+        let added = report_shown().with_account_added(
+            otty_agents::ProviderRef::of_id("deepseek"),
+            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+        );
+        let fork_hidden = added
+            .clone()
+            .with_account_hidden(&added_copy("deepseek-fork"), true);
+        let mut state = with_accounts_in(
+            with_deepseek_fork(),
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            added.clone(),
+        );
+        open_account_menu(&mut state, added_copy("deepseek-fork"));
+
+        let outcomes =
+            reduce(&mut state, AgentsIntent::AccountMenu(AccountAction::Hide));
+
+        assert_eq!(outcomes, vec![save(fork_hidden.clone())]);
+        assert!(same_accounts(
+            &state.profiles().accounts(),
+            &[chatgpt_login(), added_copy("deepseek")]
+        ));
+        assert_eq!(
+            listed_accounts(&state)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+            [
+                "OpenAI · you@example.com",
+                "DeepSeek · $DEEPSEEK_API_KEY (DeepSeek)"
+            ]
+        );
+        assert!(
+            state
+                .profiles()
+                .is_account_hidden(&added_copy("deepseek-fork"))
+        );
+        assert!(!state.profiles().is_account_hidden(&added_copy("deepseek")));
+        assert!(same_accounts(
+            &own_reads_at_start(added),
+            &[added_copy("deepseek"), added_copy("deepseek-fork")]
+        ));
+        assert!(same_accounts(
+            &own_reads_at_start(fork_hidden),
+            &[added_copy("deepseek")]
+        ));
     }
 
     /// A hidden profile is not read: its sessions leave the projects and

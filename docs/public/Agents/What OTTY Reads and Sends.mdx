@@ -89,7 +89,8 @@ A read of a ChatGPT login, for example:
 | Fingerprints             | Kept in memory only, to tell when two places hold the same key.                                             |
 
 A provider part gets the handles of its own accounts only: logins and keys an agent part found for
-its provider id or its hosts, and keys you added for it. With each read it is told every profile the
+its provider id or its hosts, and keys you added for it. A host two plugins serve is read by both,
+each under its own provider id. With each read it is told every profile the
 account was found in, with the command its agent starts there, so it may read the numbers by asking
 the agent itself, such as Claude Code's `/usage` panel, with the programs and files its own
 permissions list. A key that is not at its place reads nothing, not a failure.

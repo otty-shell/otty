@@ -172,7 +172,9 @@ terminal tab). After the user logs in there, OTTY picks the new login up.
   - Profile: Rename…, Open folder, Hide or Show again.
   - All accounts / All profiles "⋯": Show hidden … (N) / Hide hidden ….
 - A hidden account or profile is not read; it leaves lists, chips and
-  needs until Show hidden is on.
+  needs until Show hidden is on. An account two plugins read is two
+  copies, one per plugin, and each is hidden alone, an added account too
+  (spec 2026-11-19-agent-plugins, issues 29 and 31).
 - **Add account** is the last resort: a provider (DeepSeek, OpenRouter,
   Moonshot money; Anthropic or OpenAI organization bill with an admin key),
   and a key file or an environment variable. OTTY saves only the path or

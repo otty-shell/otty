@@ -3,13 +3,14 @@
 //! as one plugin reads it. Every provider part that serves the account
 //! reads it, so a login two plugins serve is two accounts, one per plugin,
 //! and the user hides the one they do not want (spec
-//! 2026-11-19-agent-plugins, issue 29).
+//! 2026-11-19-agent-plugins, issue 29). A key known by its host is read by
+//! every part that serves the host, whatever its provider id (issue 31).
 
 use std::path::PathBuf;
 
 use crate::given_key::KeyRef;
 use crate::key_fingerprint::KeyFingerprint;
-use crate::provider::ProviderRef;
+use crate::provider::{ProviderEntry, ProviderRef};
 use crate::registry::Registry;
 use crate::spend::ModelTokens;
 
@@ -267,7 +268,8 @@ impl Account {
     /// logins of one provider that does not write which one paid are not
     /// split between them, and count for none. The copies of one login
     /// that several plugins read each paid them (issue 29). A provider
-    /// named by its host is the one of `registry` that serves the host.
+    /// named by its host is each provider whose part in `registry` serves
+    /// the host (issue 31).
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -325,29 +327,23 @@ impl Account {
             && of_provider.all(|other| other.is_same_login(first))
     }
 
-    /// The same account with its provider named as `registry` names it: a
-    /// host some entry serves becomes the id of that entry.
-    fn with_provider_resolved(mut self, registry: &Registry) -> Self {
-        self.provider = registry.resolve(&self.provider);
-        self
-    }
-
-    /// One copy of the account for each plugin of `registry` whose
-    /// provider part reads it: every part that serves its provider, and
-    /// for an account the user added only those that offer Add account.
-    /// An account already read by a plugin, or one no part reads, stays
-    /// as it is.
+    /// One copy of the account for each provider part of `registry` that
+    /// reads it, under the id of that part and read by its plugin: every
+    /// part with its provider id or, for a key known by its host, every
+    /// part that serves the host, whatever its id (issue 31); for an
+    /// account the user added only those that offer Add account. An
+    /// account already read by a plugin, or one no part reads, stays as it
+    /// is.
     fn read_by_each(self, registry: &Registry) -> Vec<Account> {
         if self.read_by.is_some() {
             return vec![self];
         }
 
         let is_added = self.added_key().is_some();
-        let readers: Vec<String> = registry
+        let readers: Vec<&ProviderEntry> = registry
             .readers_of(&self.provider)
             .into_iter()
             .filter(|entry| !is_added || entry.can_add_by_hand())
-            .map(|entry| entry.part().plugin().to_string())
             .collect();
 
         if readers.is_empty() {
@@ -355,7 +351,12 @@ impl Account {
         }
         readers
             .into_iter()
-            .map(|plugin| self.clone().with_read_by(Some(plugin)))
+            .map(|entry| {
+                let mut copy = self.clone();
+                copy.provider = ProviderRef::Id(entry.id().clone());
+                copy.read_by = Some(entry.part().plugin().to_string());
+                copy
+            })
             .collect()
     }
 
@@ -381,11 +382,11 @@ impl Account {
 /// The accounts of all profiles with each account once (spec Decision 2):
 /// the accounts at the same provider with the same identity are one, found
 /// in every place of them, for each plugin of `registry` that reads it
-/// (issue 29). A provider named by the host of its server is
-/// first named as `registry` names it, so a key found for a host is one
-/// account with the same key found for the id of the provider that serves
-/// the host; with no such provider it stays known by its host, read by no
-/// plugin.
+/// (issue 29). An account known by the host of its server is read by every
+/// part that serves the host, each copy under the id of its part (issue
+/// 31), so a key found for a host is one account with the same key found
+/// for one of those ids, and joins no copy of another id; with no such
+/// part it stays known by its host, read by no plugin.
 ///
 /// The accounts keep the order they come in, the copies of one login side
 /// by side in the order of the registry. A merged account keeps what
@@ -422,7 +423,6 @@ pub fn merge_accounts(
 ) -> Vec<Account> {
     let read = accounts
         .into_iter()
-        .map(|account| account.with_provider_resolved(registry))
         .flat_map(|account| account.read_by_each(registry))
         .collect();
 
@@ -851,6 +851,83 @@ mod tests {
         assert_eq!(accounts[1].found_in().len(), 2);
         assert!(!accounts[0].is_same_account(&accounts[1]));
         assert!(accounts[0].is_same_login(&accounts[1]));
+    }
+
+    /// A registry where the plugin `cloud` serves `example.com` as the
+    /// provider `cloud`, and the plugin `fork` serves it as `cloud-fork`.
+    fn one_host_two_ids() -> Registry {
+        let entry = |plugin: &str, id: &str| {
+            let part = otty_plugin_host::PluginPart::new(
+                plugin, plugin, "0.1.0", "", id,
+            );
+            crate::provider::ProviderEntry::new(
+                crate::provider::ProviderId::new(id),
+                id,
+                part,
+            )
+            .with_hosts(["example.com"])
+        };
+
+        Registry::new(
+            Vec::new(),
+            vec![entry("cloud", "cloud"), entry("fork", "cloud-fork")],
+        )
+    }
+
+    /// Issue 31: a key for a host two plugins serve under two provider ids
+    /// is read by both, one account per plugin under its id. The same key
+    /// found for the id `cloud` joins the copy of `cloud` only: joining
+    /// stays inside one provider id.
+    #[test]
+    fn a_host_two_plugins_serve_under_two_ids_is_read_by_both() {
+        let host = ProviderRef::Host(String::from("api.example.com"));
+        let by_host = key(host, "sk-made-up", "/home/user/.claude");
+        let by_id = key(
+            ProviderRef::of_id("cloud"),
+            "sk-made-up",
+            "/home/user/.local/share/opencode",
+        );
+
+        let accounts =
+            merge_accounts(vec![by_host, by_id], &one_host_two_ids());
+
+        let read: Vec<(&str, Option<&str>, usize)> = accounts
+            .iter()
+            .map(|account| {
+                (
+                    account.provider().as_str(),
+                    account.read_by(),
+                    account.found_in().len(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            read,
+            [("cloud", Some("cloud"), 2), ("cloud-fork", Some("fork"), 1)]
+        );
+        assert!(!accounts[0].is_same_login(&accounts[1]));
+    }
+
+    /// Issue 31: tokens a profile sent to the host are paid by each copy
+    /// of its key, whichever provider id serves the host.
+    #[test]
+    fn each_copy_of_a_key_for_a_host_pays_for_its_tokens() {
+        let host = ProviderRef::Host(String::from("api.example.com"));
+        let registry = one_host_two_ids();
+        let accounts = merge_accounts(
+            vec![key(host.clone(), "sk-made-up", "/home/user/.claude")],
+            &registry,
+        );
+        let tokens = ModelTokens::new(
+            Some("made-up-model"),
+            crate::token_count::TokenCount::new(10, 0, 0),
+            1,
+        )
+        .with_provider(Some(host));
+
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts[0].pays_for(&tokens, &accounts, &registry));
+        assert!(accounts[1].pays_for(&tokens, &accounts, &registry));
     }
 
     /// Issue 29: an account no installed plugin reads is still one

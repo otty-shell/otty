@@ -110,7 +110,7 @@ fields = ["/api_key"]
 id = "example-cloud"
 name = "Example Cloud"
 icon = "example-cloud.svg"
-hosts = ["example.com"]         # keys found for these hosts go to this part
+hosts = ["example.com"]         # keys found for these hosts go to this part, and to any other that serves them
 usage_page = "https://example.com/usage"
 add_by_hand = true              # Add account offers this provider for a key no agent uses
 # priced_as = "example_cloud"   # its name in the LiteLLM price table, when not the id
@@ -204,8 +204,8 @@ A key that is not at its place is a normal case, such as a Claude Code profile w
 `.credentials.json` is `{}` while Claude Code still works: using the handle fails with
 `HostError::NotFound`. Try your other ways then. When no way works, answer numbers with nothing in
 them, not an error; OTTY shows no limits. Every provider part that serves an account reads it:
-when two plugins serve one provider, each reading is an account of its own, named with its plugin,
-and the user hides the one they do not want.
+when two plugins serve one provider, or one host under two provider ids, each reading is an account
+of its own, named with its plugin, and the user hides the one they do not want.
 
 A place is a glob and its kind, files or a database. OTTY lists the files of the places, keeps
 what each file gave, and asks your part again only for a file that is new or whose size or change

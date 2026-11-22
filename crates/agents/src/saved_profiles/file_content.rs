@@ -143,7 +143,7 @@ impl AddedEntry {
 
 /// One account in the text, by its provider and one of its account id,
 /// organization id, email or, for an account the user added, the place of
-/// its key, and the plugin that reads a found one, with the user's name
+/// its key, and the plugin that reads it, with the user's name
 /// for it, whether it is hidden and where the keys the user gave for it
 /// are kept, each under its slot.
 #[derive(Debug, Serialize, Deserialize)]
@@ -221,14 +221,10 @@ impl AccountEntry {
             .filter_map(GivenKeyEntry::into_given)
             .collect();
 
-        let plugin = match identity {
-            AccountIdentity::AddedKey(_) => None,
-            _ => self.plugin,
-        };
         let saved = SavedAccount {
             provider,
             identity,
-            plugin,
+            plugin: self.plugin,
             name: self.name,
             is_hidden: self.hidden,
             given_keys,

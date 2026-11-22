@@ -547,6 +547,17 @@ pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
     Arc::new(test_registry().without_provider(&ProviderId::new("deepseek")))
 }
 
+/// The registry of the tests with `entry`, the provider part of one more
+/// plugin, after its own: two plugins then read what both serve (issues
+/// 29 and 31).
+pub(crate) fn registry_with(entry: ProviderEntry) -> Arc<Registry> {
+    let registry = test_registry();
+    let mut providers = registry.providers().to_vec();
+    providers.push(entry);
+
+    Arc::new(Registry::new(registry.agents().to_vec(), providers))
+}
+
 /// A made-up key for `api.deepseek.com` found in the settings of the
 /// Claude Code folder, as Claude Code with a DeepSeek base URL keeps it.
 pub(crate) fn deepseek_key_by_host() -> Account {
