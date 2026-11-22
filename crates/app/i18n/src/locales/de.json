@@ -889,7 +889,7 @@
     "plugins_can_access": "Hat Zugriff auf",
     "plugins_can_access_note": "Nur das ist für den Teil offen, alles andere verweigert OTTY.",
     "tpl_plugins_can_access_title": "{part} hat Zugriff auf",
-    "tpl_plugins_can_access_button": "Hat Zugriff auf · {count}",
+    "tpl_plugins_can_access_button": "Hat Zugriff auf ({count})",
     "plugins_group_files": "Dateien",
     "plugins_group_changes_files": "Ändert Dateien",
     "plugins_group_databases": "Datenbanken",

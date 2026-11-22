@@ -889,7 +889,7 @@
     "plugins_can_access": "アクセスできるもの",
     "plugins_can_access_note": "このパートに開かれているのはこれだけです。それ以外はすべて OTTY が拒否します。",
     "tpl_plugins_can_access_title": "{part} がアクセスできるもの",
-    "tpl_plugins_can_access_button": "アクセスできるもの · {count}",
+    "tpl_plugins_can_access_button": "アクセスできるもの ({count})",
     "plugins_group_files": "ファイル",
     "plugins_group_changes_files": "変更するファイル",
     "plugins_group_databases": "データベース",

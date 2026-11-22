@@ -1494,7 +1494,7 @@ then the cleanup and the docs.
   opens it, or the folder); its parts, each with its kind, an on/off
   switch, its health ("Working", "Off", "Paused after three failures"
   with Try again), its one-sentence description, its last failure and
-  "Can access · N", which opens a dialog of its permissions in groups,
+  "Can access (N)", which opens a dialog of its permissions in groups,
   each with one line of what it means (issue 36); the news of the latest
   check and the waiting update with Review; Check for updates (Reload for
   a local plugin), Show log, Remove. With nothing installed or nothing

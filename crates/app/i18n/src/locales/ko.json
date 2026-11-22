@@ -889,7 +889,7 @@
     "plugins_can_access": "접근할 수 있는 것",
     "plugins_can_access_note": "이 파트에는 이것만 열려 있으며, 나머지는 모두 OTTY가 거부합니다.",
     "tpl_plugins_can_access_title": "{part}이(가) 접근할 수 있는 것",
-    "tpl_plugins_can_access_button": "접근할 수 있는 것 · {count}",
+    "tpl_plugins_can_access_button": "접근할 수 있는 것 ({count})",
     "plugins_group_files": "파일",
     "plugins_group_changes_files": "변경하는 파일",
     "plugins_group_databases": "데이터베이스",

@@ -286,7 +286,7 @@ fn parts<'a>(
 
 /// One part as a card: a header with its name, the tag of its kind, its
 /// health badge, Try again while it is paused and its switch at the right
-/// end; its description with Can access · 5 at the right end, or "Asks for
+/// end; its description with Can access (5) at the right end, or "Asks for
 /// no permissions"; its last failed call with Copy report.
 fn part_card<'a>(
     plugin: &str,

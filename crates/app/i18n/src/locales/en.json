@@ -889,7 +889,7 @@
     "plugins_can_access": "Can access",
     "plugins_can_access_note": "Only this is open to the part, OTTY refuses everything else.",
     "tpl_plugins_can_access_title": "{part} can access",
-    "tpl_plugins_can_access_button": "Can access · {count}",
+    "tpl_plugins_can_access_button": "Can access ({count})",
     "plugins_group_files": "Files",
     "plugins_group_changes_files": "Changes files",
     "plugins_group_databases": "Databases",

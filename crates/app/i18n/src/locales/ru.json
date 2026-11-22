@@ -889,7 +889,7 @@
     "plugins_can_access": "Есть доступ к",
     "plugins_can_access_note": "Части открыто только это, всё остальное OTTY запрещает.",
     "tpl_plugins_can_access_title": "У {part} есть доступ к",
-    "tpl_plugins_can_access_button": "Есть доступ к · {count}",
+    "tpl_plugins_can_access_button": "Есть доступ к ({count})",
     "plugins_group_files": "Файлы",
     "plugins_group_changes_files": "Меняет файлы",
     "plugins_group_databases": "Базы данных",

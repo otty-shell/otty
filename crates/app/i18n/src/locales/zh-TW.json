@@ -889,7 +889,7 @@
     "plugins_can_access": "可存取",
     "plugins_can_access_note": "只有這些對該部分開放，其他一切都會被 OTTY 拒絕。",
     "tpl_plugins_can_access_title": "{part} 可存取",
-    "tpl_plugins_can_access_button": "可存取 · {count}",
+    "tpl_plugins_can_access_button": "可存取 ({count})",
     "plugins_group_files": "檔案",
     "plugins_group_changes_files": "修改檔案",
     "plugins_group_databases": "資料庫",

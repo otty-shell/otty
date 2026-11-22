@@ -889,7 +889,7 @@
     "plugins_can_access": "Puede acceder a",
     "plugins_can_access_note": "Solo esto está abierto para la parte, OTTY rechaza todo lo demás.",
     "tpl_plugins_can_access_title": "{part} puede acceder a",
-    "tpl_plugins_can_access_button": "Puede acceder a · {count}",
+    "tpl_plugins_can_access_button": "Puede acceder a ({count})",
     "plugins_group_files": "Archivos",
     "plugins_group_changes_files": "Modifica archivos",
     "plugins_group_databases": "Bases de datos",

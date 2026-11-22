@@ -45,7 +45,7 @@ agent's folders, a **provider part** reads the accounts of one provider. On the 
 each part is a card: its name, a small tag with its kind (**Agent** or **Provider**), its health
 (**Working**, **Paused** or **Off**), its switch at the right end, and under them one sentence
 from the plugin on what the part does, such as "Finds Codex profiles, sessions, tokens and
-logins.", with **Can access · N** (N is the number of places it can reach), which opens what it can
+logins.", with **Can access (N)** (N is the number of places it can reach), which opens what it can
 access. Each part has its own permissions and its own switch.
 
 <figure class="not-content">
@@ -61,7 +61,7 @@ access. Each part has its own permissions and its own switch.
   <text x="110" y="74" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Agent</text>
   <text x="42" y="98" style="fill: var(--sl-color-gray-3); font-size: 12px;">Finds Codex sessions…</text>
   <rect x="170" y="100" width="92" height="20" rx="4" style="fill: none; stroke: var(--sl-color-hairline);" />
-  <text x="216" y="114" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Can access · 7</text>
+  <text x="216" y="114" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Can access (7)</text>
   <rect x="234" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
   <circle cx="254" cy="70" r="6" style="fill: var(--sl-color-white);" />
   <rect x="286" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
@@ -70,7 +70,7 @@ access. Each part has its own permissions and its own switch.
   <text x="384" y="74" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Provider</text>
   <text x="302" y="98" style="fill: var(--sl-color-gray-3); font-size: 12px;">Reads ChatGPT limits…</text>
   <rect x="430" y="100" width="92" height="20" rx="4" style="fill: none; stroke: var(--sl-color-hairline);" />
-  <text x="476" y="114" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Can access · 9</text>
+  <text x="476" y="114" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Can access (9)</text>
   <rect x="494" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
   <circle cx="514" cy="70" r="6" style="fill: var(--sl-color-white);" />
 </svg>
@@ -137,7 +137,7 @@ where Codex writes the limits it was last told, but not the rest of `~/.codex`, 
 part of the same plugin reads. A provider part that reads limits by asking the agent itself lists
 the program and the files it needs, under its own name.
 
-**Can access · N** on the card of a part opens the dialog "*Part* can access", such as "Anthropic
+**Can access (N)** on the card of a part opens the dialog "*Part* can access", such as "Anthropic
 can access": the line "Only this is open to the part, OTTY refuses everything else.", then the
 part's permissions grouped by
 what they reach, one row per group with a thin line between rows: the group and one muted line on

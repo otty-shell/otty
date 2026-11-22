@@ -889,7 +889,7 @@
     "plugins_can_access": "可访问",
     "plugins_can_access_note": "只有这些对该部分开放，其他一切都会被 OTTY 拒绝。",
     "tpl_plugins_can_access_title": "{part} 可访问",
-    "tpl_plugins_can_access_button": "可访问 · {count}",
+    "tpl_plugins_can_access_button": "可访问 ({count})",
     "plugins_group_files": "文件",
     "plugins_group_changes_files": "修改文件",
     "plugins_group_databases": "数据库",

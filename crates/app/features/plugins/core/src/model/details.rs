@@ -126,7 +126,7 @@ pub(crate) struct PartRowViewModel {
     pub(crate) health: &'static str,
     /// Whether it is paused after three failures in a row: Try again.
     pub(crate) is_paused: bool,
-    /// How many places the user let it access: Can access · 5 opens
+    /// How many places the user let it access: Can access (5) opens
     /// them; none, and it asks for no permissions.
     pub(crate) places: usize,
     /// The last call of the part that failed or that the host refused,
