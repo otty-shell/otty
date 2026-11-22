@@ -10,11 +10,15 @@ use crate::provider::ProviderRef;
 /// The choices for one account, kept by its provider and an identity that
 /// names it for good: an account id, an organization id, an email or the
 /// place of the key of an account the user added, never the fingerprint of
-/// a key ([`Account::can_be_saved`]).
+/// a key ([`Account::can_be_saved`]). The choices of an account OTTY found
+/// are kept with the plugin that reads it, as each plugin's reading is
+/// its own account (issue 29); those of an account the user added are one
+/// entry for every plugin that reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SavedAccount {
     pub(super) provider: ProviderRef,
     pub(super) identity: AccountIdentity,
+    pub(super) plugin: Option<String>,
     pub(super) name: Option<String>,
     pub(super) is_hidden: bool,
     pub(super) given_keys: Vec<GivenKey>,
@@ -28,17 +32,33 @@ impl SavedAccount {
             return None;
         }
 
+        let plugin = match account.added_key() {
+            Some(_) => None,
+            None => account.read_by().map(String::from),
+        };
+
         Some(Self {
             provider: account.provider().clone(),
             identity: account.identity().clone(),
+            plugin,
             name: None,
             is_hidden: false,
             given_keys: Vec::new(),
         })
     }
 
-    /// Whether these are the choices for `account`.
+    /// Whether these are the choices for `account`: the same provider and
+    /// identity, and for an account OTTY found the same plugin.
     pub(super) fn is_of(&self, account: &Account) -> bool {
+        let is_same_reader =
+            self.is_added() || self.plugin.as_deref() == account.read_by();
+
+        self.is_of_login(account) && is_same_reader
+    }
+
+    /// Whether these are choices for the login or the key of `account`,
+    /// whichever plugin reads it.
+    pub(super) fn is_of_login(&self, account: &Account) -> bool {
         *account.provider() == self.provider
             && *account.identity() == self.identity
     }
@@ -349,6 +369,38 @@ mod tests {
                 )
             ]
         );
+    }
+
+    /// Issue 29: a login two plugins read is two accounts, so the user
+    /// hides or names each for itself: the choice is kept with the plugin
+    /// that reads it. The account the user added is one entry for every
+    /// plugin that reads it.
+    #[test]
+    fn the_choices_of_a_found_account_are_kept_per_plugin() {
+        let read_by = |plugin: &str| {
+            chatgpt_login("made-up-one").with_read_by(Some(plugin.to_string()))
+        };
+        let added = Account::added(ProviderRef::of_id("deepseek"), by_file());
+        let saved = SavedProfiles::default()
+            .with_account_hidden(&read_by("openai-fork"), true)
+            .with_account_name(&read_by("openai"), Some("Home".into()))
+            .with_account_added(ProviderRef::of_id("deepseek"), by_file())
+            .with_account_name(
+                &added.clone().with_read_by(Some("deepseek".into())),
+                Some("Mine".into()),
+            );
+
+        let text = saved.to_json().expect("the paths are text");
+        let loaded = load(&text);
+
+        assert_eq!(loaded, saved);
+        assert!(text.contains(r#""plugin": "openai-fork""#), "{text}");
+        assert!(loaded.is_account_hidden(&read_by("openai-fork")));
+        assert!(!loaded.is_account_hidden(&read_by("openai")));
+        assert_eq!(loaded.account_name(&read_by("openai")), Some("Home"));
+        assert_eq!(loaded.account_name(&chatgpt_login("made-up-one")), None);
+        assert_eq!(loaded.account_name(&added), Some("Mine"));
+        assert_eq!(loaded.added_accounts(), [added]);
     }
 
     /// An entry that names no account or no provider, or whose given key

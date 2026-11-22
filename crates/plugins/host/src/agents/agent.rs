@@ -7,8 +7,6 @@
 
 pub mod v0_1;
 
-use std::time::Instant;
-
 use wasmtime::Store;
 use wasmtime::component::{HasSelf, InstancePre, Linker};
 
@@ -24,7 +22,7 @@ use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
 /// The values of the `agents` domain both its contracts use, in the
 /// newest version.
 pub use crate::agents::agent::v0_1::otty::agents_agent::types::{
-    Credits, Identity, LimitWindow, Limits, LoginKind, ReadError,
+    Credits, Identity, LimitWindow, LoginKind, ReadError,
 };
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::AgentVersion;
@@ -36,7 +34,6 @@ pub use crate::operations::v0_1::otty::host::keys::{
 pub use crate::operations::v0_1::otty::host::types::{
     Command, HostError, KeyAsk, Need, NeedAction,
 };
-use crate::pacing::PaceKey;
 
 /// The agent contract of one loaded plugin, in the version its `[api]`
 /// names.
@@ -170,38 +167,6 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// The limits the agent itself shows for `login`, from wherever the
-    /// part reads them. A reading that ran a program or a hidden terminal
-    /// is slow: it runs at most once in the five minutes of the limits
-    /// read per profile, and the answer of the last reading is given
-    /// within that time.
-    pub fn read_limits(
-        &mut self,
-        profile: &Profile,
-        login: &LoginRef,
-    ) -> Result<Result<Limits, ReadError>, CallError> {
-        let plugin = self.batch.plugin();
-        let key = PaceKey::new(self.batch.part(), &profile.folder);
-        let started_at = Instant::now();
-        if let Some(answer) = plugin.pacing().recent(&key, started_at) {
-            return Ok(answer);
-        }
-
-        let (answer, is_slow) =
-            self.call(CallKind::Numbers, |guest, store| {
-                let answer =
-                    guest.call_read_limits(&mut *store, profile, login)?;
-
-                Ok((answer, store.data().has_started_programs()))
-            })?;
-
-        if is_slow {
-            plugin.pacing().remember(key, started_at, answer.clone());
-        }
-
-        Ok(answer)
-    }
-
     /// What the user must do now that a provider refused `login` of
     /// `profile`, or it expired, as the part that found the login says;
     /// `None` when it says nothing.
@@ -252,17 +217,11 @@ pub(crate) fn add_types_to_linker(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use otty_plugin_manifest::PartRef;
 
     use super::*;
     use crate::engine::PluginEngine;
-    use crate::programs::{MockStartProgram, RunOutput};
-    use crate::testing::{
-        TempDir, load_fixture, load_programs_plugin, load_template,
-        template_env,
-    };
+    use crate::testing::{TempDir, load_fixture, load_template, template_env};
 
     const AGENT: &str = "example-agent";
 
@@ -505,66 +464,6 @@ mod tests {
                 part: PartRef::provider("example-cloud"),
                 asked: otty_plugin_manifest::PartKind::Agent,
             }
-        );
-    }
-
-    #[test]
-    fn pacing_skips_a_second_probe_of_a_profile_within_five_minutes() {
-        let cache = TempDir::new();
-        let mut starter = MockStartProgram::new();
-        starter.expect_run().times(2).returning(|command, _, _| {
-            let folder = command.env()[0].1.clone();
-            Ok(RunOutput::new(Some(0), folder.into_bytes(), Vec::new()))
-        });
-        let engine = PluginEngine::new(cache.path().to_path_buf())
-            .expect("engine")
-            .with_programs(Arc::new(starter));
-        let plugin = load_programs_plugin(&engine);
-        let work = Profile {
-            agent: "test-agent".to_string(),
-            folder: "/home/test-user/.test-agent-work".to_string(),
-            is_default: false,
-        };
-        let home = Profile {
-            folder: "/home/test-user/.test-agent".to_string(),
-            is_default: true,
-            ..work.clone()
-        };
-        let quick = Profile {
-            folder: "/home/test-user/.test-agent-quick".to_string(),
-            ..work.clone()
-        };
-        // The test plugin reads the limits the way its login names.
-        let read = |profile: &Profile, way: &str| {
-            let mut batch = plugin
-                .start_calls(&PartRef::agent("test-agent"))
-                .expect("a listed part");
-            let limits = batch
-                .agent()
-                .expect("an agent part")
-                .read_limits(profile, &LoginRef::EnvVar(way.to_string()))
-                .expect("the call");
-
-            limits.ok().and_then(|limits| limits.plan)
-        };
-
-        let first = read(&work, "run");
-        let second = read(&work, "run");
-        let other_profile = read(&home, "run");
-        let no_program = [read(&quick, "none"), read(&quick, "none")];
-
-        assert_eq!(first.as_deref(), Some("/home/test-user/.test-agent-work"));
-        assert_eq!(second, first);
-        assert_eq!(
-            other_profile.as_deref(),
-            Some("/home/test-user/.test-agent")
-        );
-        assert_eq!(
-            no_program,
-            [
-                Some("no program".to_string()),
-                Some("no program".to_string())
-            ]
         );
     }
 

@@ -13,11 +13,13 @@ repository will be `github.com/otty-shell/otty-plugin-anthropic`
 
 | Part                          | Kind     | Gives                                                                    |
 | ----------------------------- | -------- | ------------------------------------------------------------------------ |
-| [Claude Code](#claude-code-agent) | agent    | Profiles, sessions, tokens, logins, and the limits of `/usage`. |
-| [Anthropic](#anthropic-provider)  | provider | The limits of a Claude login and the bill of an organization.            |
+| [Claude Code](#claude-code-agent) | agent    | Profiles, sessions, tokens and logins.                                   |
+| [Anthropic](#anthropic-provider)  | provider | The limits of a Claude login, from Anthropic or from `/usage`, and the bill of an organization. |
 
-The limits of a Claude Code profile come from the [Anthropic part](#anthropic-provider) first.
-When it gives nothing, the Claude Code part reads them from [`/usage`](#claude-code-usage).
+The limits of a Claude login come from the [Anthropic part](#anthropic-provider): from Anthropic's
+server with the login's token; with no token in the profile's files, or when the server gives no
+answer, from the [`/usage` panel](#claude-code-usage) of Claude Code in a profile the login was
+found in; else there are none, and no failure is shown.
 
 The tokens come from the session files; the money is the bill of the organization when you gave an
 admin key, else an [estimate](../../overview/#the-money).
@@ -29,9 +31,8 @@ admin key, else an [estimate](../../overview/#the-money).
 | Profiles       | `CLAUDE_CONFIG_DIR` or `~/.claude`, and the folders `~/.claude-<name>` and `~/.claude_<name>` that hold a login or sessions. |
 | Reads          | The session files `projects/**/*.jsonl` (sessions, the tokens of each answer with its session and project, the agent's version); `.claude.json` (the account and email of the login); `settings.json` (`ANTHROPIC_BASE_URL`, to tell whom a key is for). |
 | Logins, as handles | `.credentials.json`: `claudeAiOauth.accessToken`, `refreshToken`. `.claude.json` (next to `~/.claude` for the default profile): `primaryApiKey`. `settings.json`: `env.ANTHROPIC_AUTH_TOKEN`, `env.ANTHROPIC_API_KEY`. |
-| Variables      | `CLAUDE_CONFIG_DIR`; `DISABLE_AUTOUPDATER`, passed to the `/usage` run only.                           |
-| Runs           | `claude` in a hidden terminal for `/usage`, see below.                                                 |
-| Deletes        | The session files of that run, in `projects/*--cache-otty-agent-probe/`, and that folder once empty. Nothing else. |
+| Variables      | `CLAUDE_CONFIG_DIR`.                                                                                  |
+| Runs           | Nothing.                                                                                              |
 | Sends          | Nothing.                                                                                              |
 | Commands       | New session `claude`, continue `claude --resume <id>`, Log in `claude`.                                |
 
@@ -43,9 +44,10 @@ A key with `ANTHROPIC_BASE_URL` set is a key for that server's host, not for Ant
 
 <Badge text="runs the agent" variant="note" />
 
-When the usage request gives no answer, and only while Agents mode is on screen, the part starts
+When the profile's files hold no login token, as when Claude Code keeps its login elsewhere, or the
+usage request gives no answer, and only while Agents mode is on screen, the Anthropic part starts
 `claude` in a terminal nobody sees, in OTTY's own folder `~/.cache/otty/agent-probe`, with the
-profile's folder:
+folder of a Claude Code profile the login was found in, as the Claude Code part starts it there:
 
 ```sh
 claude --allowed-tools "" --strict-mcp-config \
@@ -65,14 +67,24 @@ typed. It runs at most once in about 5 minutes per profile and gives up after 30
 | `GET https://api.anthropic.com/api/oauth/usage`            | The Claude login token in `Authorization`, and `anthropic-beta`. | Every read of the limits of a Claude login: the windows and the extra usage. |
 | `GET https://api.anthropic.com/v1/organizations/cost_report` | The admin key in `x-api-key`, and `anthropic-version`.  | Every read of the bill of an organization you gave an admin key: the 31 UTC days up to today, page by page. |
 
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Variables      | `CLAUDE_CONFIG_DIR`; `DISABLE_AUTOUPDATER`, passed to the `/usage` run only.                           |
+| Runs           | `claude` in a hidden terminal for [`/usage`](#claude-code-usage).                                      |
+| Reads, deletes | The session files of that run, in `projects/*--cache-otty-agent-probe/`, and that folder once empty. Nothing else. |
+
 - It gets the logins and keys found for Anthropic (`anthropic.com`, `claude.ai`) in any agent, and the
   admin keys you give: **Add account** → Anthropic, or **Admin key…** on the need **The real bill
-  needs an admin key** of the organization's account.
+  needs an admin key** of the organization's account. OTTY tells it every profile a login was found
+  in.
+- A login token that is not in its file is no failure: the part asks `/usage` instead, or reads
+  nothing. An admin key you gave still reads the bill.
 - An API key has no numbers Anthropic tells: nothing is sent for it.
 - It never sees when a token expires. When Anthropic refuses a Claude login, the part says only
   that; the plugin of the agent that keeps the login gives the need, such as Claude Code's **The
   login expired** below. Nothing is renewed.
-- While it runs, the files of the Claude Code part are refused to it.
+- While it runs, the files of the Claude Code part are refused to it, but for the session files of
+  its own `/usage` run.
 
 **Open usage page** opens `claude.ai/settings/usage` for a login, `console.anthropic.com/settings/usage`
 for a key or an organization.
@@ -84,7 +96,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 | Need                             | Part        | When                                                                 | Button |
 | -------------------------------- | ----------- | -------------------------------------------------------------------- | ------ |
 | Needs login                      | Claude Code | Nobody is logged in with the profile's folder.                       | **Run claude**, with the profile's folder: Claude Code asks you to log in on its first start there. |
-| The login expired                | Claude Code | The Claude login of the profile expired or Anthropic refused it, wherever it was read, or `/usage` asked to log in. | **Run claude**: Claude Code renews the login or asks you to log in again. |
+| The login expired                | Claude Code, Anthropic | The Claude login of the profile expired or Anthropic refused it, wherever it was read (Claude Code), or `/usage` asked to log in (Anthropic). | **Run claude**: Claude Code renews the login or asks you to log in again. |
 | The real bill needs an admin key | Anthropic   | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
 | The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. When the refused key is the key of an account you added with **Add account**, the new one takes its place; otherwise the next bill reads with the new one. |
 
@@ -92,7 +104,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 
 <Aside type="caution" title="Only the /usage run changes something">
 - Claude Code saves your "Yes" for `~/.cache/otty/agent-probe` in the profile's `.claude.json`.
-- The part deletes the session files that run left, and nothing else.
+- The Anthropic part deletes the session files that run left, and nothing else.
 - Claude Code may renew its own login token and update its own records, as on any start.
 </Aside>
 

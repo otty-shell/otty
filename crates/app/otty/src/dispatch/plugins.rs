@@ -40,9 +40,8 @@ impl Delivery for PluginsIntent {
             PluginsOutcome::FindLocal(folder) => {
                 plugins_io::find_local(installer, folder).map(AppEvent::Plugins)
             },
-            PluginsOutcome::Install { plan, use_new_for } => {
-                plugins_io::install(installer, *plan, use_new_for)
-                    .map(AppEvent::Plugins)
+            PluginsOutcome::Install { plan } => {
+                plugins_io::install(installer, *plan).map(AppEvent::Plugins)
             },
             PluginsOutcome::SetPartOn { plugin, part, on } => {
                 plugins_io::set_part_on(installer, plugin, part, on)
@@ -62,11 +61,10 @@ impl Delivery for PluginsIntent {
             PluginsOutcome::Reload(plugin) => {
                 plugins_io::reload(installer, plugin).map(AppEvent::Plugins)
             },
-            PluginsOutcome::ApplyUpdate {
-                update,
-                use_new_for,
-            } => plugins_io::apply_update(installer, *update, use_new_for)
-                .map(AppEvent::Plugins),
+            PluginsOutcome::ApplyUpdate { update } => {
+                plugins_io::apply_update(installer, *update)
+                    .map(AppEvent::Plugins)
+            },
             PluginsOutcome::OpenPage(address) => {
                 agents_io::open_page(address).map(AppEvent::Agents)
             },

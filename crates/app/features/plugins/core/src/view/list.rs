@@ -381,21 +381,18 @@ mod tests {
         let palette = UiPalette::otty_dark();
         let mut plugin = example();
         plugin.parts[0].last_failure = Some(LastFailureViewModel {
-            text: String::from("Last failure 5 min ago: read-limits, failed"),
-            report: String::from("Call: read-limits"),
+            text: String::from("Last failure 5 min ago: numbers, failed"),
+            report: String::from("Call: numbers"),
         });
         let mut ui = simulator(view(vec![plugin], None, false, &palette));
 
-        assert!(
-            ui.find("Last failure 5 min ago: read-limits, failed")
-                .is_ok()
-        );
+        assert!(ui.find("Last failure 5 min ago: numbers, failed").is_ok());
         let _ = ui.click(i18n::t(Key::AgentsCopyReport));
 
         let sent: Vec<PluginsIntent> = ui.into_messages().collect();
         assert!(matches!(
             sent.as_slice(),
-            [PluginsIntent::CopyReport(report)] if report == "Call: read-limits"
+            [PluginsIntent::CopyReport(report)] if report == "Call: numbers"
         ));
     }
 }

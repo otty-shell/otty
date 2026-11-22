@@ -1,20 +1,20 @@
-//! The sessions and limits of a profile as an agent part reads them. Each is one read of the part; what the part answers it can
-//! not do becomes the error of that read.
+//! The sessions of a profile as an agent part reads them, in one read of
+//! the part; what the part answers it can not do becomes the error of that
+//! read.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use otty_plugin_host::agents::agent::{
-    AgentCalls, HostError, Login, LoginKind, ReadError, Session,
+    AgentCalls, HostError, ReadError, Session,
 };
-use otty_plugin_host::{CallBatch, CallError, CalledPart, PluginFailureKind};
+use otty_plugin_host::{CallError, CalledPart, PluginFailureKind};
 
 use crate::error::{SourceError, Unavailable};
 use crate::file_memory::FileMemory;
-use crate::limits::{LimitSource, Limits};
 use crate::part_need::PartNeed;
 use crate::plugin_places::place_items;
-use crate::plugin_values::{limits_of, part_profile, time_of};
+use crate::plugin_values::{part_profile, time_of};
 use crate::profile::Profile;
 use crate::read_failure::read_failure;
 use crate::refused_login::RefusedLogin;
@@ -132,62 +132,6 @@ impl SessionSource for Arc<PluginSessions> {
     }
 }
 
-/// The limits the agent itself shows for the profile's login, from
-/// wherever the part reads them.
-pub(crate) struct PluginLimits {
-    part: Arc<CalledPart>,
-    starts_programs: bool,
-}
-
-impl PluginLimits {
-    /// The limits `part` reads; the read starts the programs and hidden
-    /// terminals the part declares only when `starts_programs`.
-    pub(crate) fn new(part: Arc<CalledPart>, starts_programs: bool) -> Self {
-        Self {
-            part,
-            starts_programs,
-        }
-    }
-}
-
-impl LimitSource for PluginLimits {
-    /// The limits of the profile's subscription login, else of its first
-    /// login, in one read of the part; `None` when the part reads no
-    /// limits.
-    fn limits(&self, profile: &Profile) -> Result<Option<Limits>, SourceError> {
-        let asked = part_profile(profile);
-
-        let read = |batch: &mut CallBatch<'_>| {
-            let mut calls = batch.agent()?;
-            let logins = calls.logins(&asked)?;
-            let Some(login) = limits_login(&logins) else {
-                return Ok(Err(SourceError::NotAvailable(
-                    Unavailable::NoLogin,
-                )));
-            };
-
-            let limits = match calls.read_limits(&asked, &login.place)? {
-                Ok(limits) => Ok(Some(limits_of(&limits))),
-                Err(ReadError::NotSupported) => Ok(None),
-                Err(error) => Err(read_error(
-                    &self.part,
-                    "read-limits",
-                    &error,
-                    no_limits(),
-                    Some(profile),
-                )),
-            };
-            Ok(limits)
-        };
-
-        if self.starts_programs {
-            self.part.read("read-limits", read)?
-        } else {
-            self.part.read_starting_nothing("read-limits", read)?
-        }
-    }
-}
-
 /// The error of `call` of `part` that answered `error`: `not_supported`
 /// when the part does not read this, a need of the part as the need the
 /// user is asked, about `profile` for a call of an agent part, a refused
@@ -227,19 +171,4 @@ fn found_session(session: Session) -> FoundSession {
     FoundSession::new(session.id, time_of(session.changed_ms))
         .with_folder(session.folder.map(PathBuf::from))
         .with_title(session.title)
-}
-
-/// The login whose limits the part reads: a subscription, else the first.
-fn limits_login(logins: &[Login]) -> Option<&Login> {
-    logins
-        .iter()
-        .find(|login| matches!(login.kind, LoginKind::Subscription))
-        .or_else(|| logins.first())
-}
-
-/// The error of "not supported" that [`read_error`] wants for the limits.
-/// It is never given: [`PluginLimits`] answers "not supported" as `None`,
-/// no limits, before it asks [`read_error`].
-fn no_limits() -> SourceError {
-    SourceError::NotAvailable(Unavailable::NoAccountSource)
 }

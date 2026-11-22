@@ -5,11 +5,12 @@
 //! `primary` and `secondary` windows, the `credits` and the `plan_type`.
 //! The numbers are as old as that record, so the limits carry its time.
 
-use otty_plugin_sdk::agents::{Limits, ReadError};
+use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::files::{self, FileInfo};
 use serde_json::Value;
 
 use crate::individual_limit::individual_limit_in;
+use crate::limits::Limits;
 use crate::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, millis_of_seconds,
 };
@@ -167,7 +168,7 @@ mod tests {
 
     use super::*;
     use crate::rate_limits::no_numbers;
-    use crate::testing::{as_part, file_info, host, path};
+    use crate::testing::{as_provider, file_info, host, path};
 
     /// 2026-11-16T10:00:00Z, the time of the made-up records.
     const NOW: i64 = 1_794_823_200_000;
@@ -201,7 +202,7 @@ mod tests {
     fn limits_in(found: Vec<FileInfo>) -> Result<Limits, ReadError> {
         let host = host();
 
-        as_part(&host, || newest_limits(found, last_record))
+        as_provider(&host, || newest_limits(found, last_record))
     }
 
     /// The made-up file `relative`, changed at `changed_ms`.
@@ -294,7 +295,7 @@ mod tests {
         let host = host();
         let empty = path(&host, ".codex-work-none");
 
-        let limits = as_part(&host, || read_limits(&empty));
+        let limits = as_provider(&host, || read_limits(&empty));
 
         assert_eq!(
             limits,
@@ -308,7 +309,7 @@ mod tests {
         let folder = path(&host, ".codex-limits");
 
         let limits =
-            as_part(&host, || read_limits(&folder)).expect("the limits");
+            as_provider(&host, || read_limits(&folder)).expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Plus"));
     }

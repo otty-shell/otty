@@ -72,6 +72,26 @@ pub(crate) fn providers_with_plugins(
     readers_of(home, &parts, "/no/such/shell").providers
 }
 
+/// The agent parts Claude Code and Codex and the provider parts Anthropic
+/// and OpenAI of the built plugins, loaded as the app loads them, whose
+/// programs and hidden terminals start through the shell `shell`. The
+/// plugins see `home` as the home folder and no variable.
+#[cfg(unix)]
+pub(crate) fn agents_and_providers_with_shell(
+    home: &std::path::Path,
+    shell: &str,
+) -> (AgentList, crate::plugin_parts::ProviderList) {
+    let parts = [
+        (ANTHROPIC_COPY, PartRef::agent("claude-code")),
+        (ANTHROPIC_COPY, PartRef::provider("anthropic")),
+        (OPENAI_COPY, PartRef::agent("codex")),
+        (OPENAI_COPY, PartRef::provider("openai")),
+    ];
+
+    let loaded = readers_of(home, &parts, shell);
+    (loaded.readers.agents, loaded.providers)
+}
+
 /// The agents with the agent parts of the built plugins: each
 /// `(copy, part)` names the folder of a copy and the part turned on in
 /// it. The plugins start their programs through `shell`.
@@ -102,13 +122,18 @@ fn readers_of(
         .expect("the folder of the test binary");
     let engine = crate::plugin_readers::plugin_engine(&compiled, shell)
         .expect("the engine");
-    let plugins: Vec<_> = parts
-        .iter()
-        .map(|(copy, part)| crate::plugin_parts::InstalledParts {
-            folder: std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(copy),
-            on: vec![part.clone()],
-        })
-        .collect();
+    let mut plugins: Vec<crate::plugin_parts::InstalledParts> = Vec::new();
+    for (copy, part) in parts {
+        let folder =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(copy);
+        match plugins.iter_mut().find(|plugin| plugin.folder == folder) {
+            Some(plugin) => plugin.on.push(part.clone()),
+            None => plugins.push(crate::plugin_parts::InstalledParts {
+                folder,
+                on: vec![part.clone()],
+            }),
+        }
+    }
 
     crate::plugin_readers::readers_now(
         &engine,

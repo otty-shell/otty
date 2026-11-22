@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    Billing as PartBilling, HostError, Login, LoginKind, ProfilePlace,
+    Billing as PartBilling, Login, LoginKind, ProfilePlace,
     ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{CalledPart, LoadedPlugin, PartHealth, PartRef};
@@ -19,16 +19,13 @@ use crate::account::{
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
-use crate::error::Unavailable;
-use crate::hidden_terminal::StartTerminal;
 use crate::key_fingerprint::KeyFingerprint;
-use crate::limits::{BillingKind, LimitSource};
+use crate::limits::BillingKind;
 use crate::part_need::{PartNeed, agent_command};
-use crate::plugin_sources::{PluginLimits, PluginSessions};
+use crate::plugin_sources::PluginSessions;
 use crate::plugin_spend::PluginSpend;
 use crate::plugin_values::{part_profile, provider_of};
 use crate::profile::{Profile, ProfileStatus};
-use crate::program::StartProgram;
 use crate::provider::ProviderRef;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -213,27 +210,14 @@ impl Agent for PluginAgent {
             .collect()
     }
 
-    /// The host reads the key of the login now, with the permissions of
-    /// this part, which declares its place: a provider part, maybe of
-    /// another plugin, may not. Only "no key there" keeps the login from
-    /// the provider part; a key OTTY may not or could not read is left to
-    /// the part's own read, which reports it.
     fn found_login(
         &self,
         profile: &Profile,
         account: &Account,
-    ) -> Result<Login, Unavailable> {
+    ) -> Option<Login> {
         let logins = self.logins(profile);
-        let login = self
-            .login_of(&logins, profile, account)
-            .ok_or(Unavailable::KeyGone)?;
 
-        let key = self.part.plugin().read_key(self.part.part(), &login.place);
-        if let Err(HostError::NotFound(_)) = key {
-            return Err(Unavailable::NoLoginKey);
-        }
-
-        Ok(login.clone())
+        self.login_of(&logins, profile, account).cloned()
     }
 
     /// The need the part gives for `login` of `profile` once a provider
@@ -295,21 +279,6 @@ impl Agent for PluginAgent {
 
     fn session_source_ids(&self) -> &'static [SourceId] {
         &PLUGIN_SOURCES
-    }
-
-    /// The limits the part reads from wherever it reads them, in one read.
-    /// The plugin engine starts the programs and hidden terminals of every
-    /// part, so `programs` only tells whether any may start now: while
-    /// Agents mode is away none does.
-    fn limit_source(
-        &self,
-        programs: Arc<dyn StartProgram>,
-        _terminals: Arc<dyn StartTerminal>,
-    ) -> Option<Box<dyn LimitSource>> {
-        let starts_programs = programs.starts_now();
-
-        let limits = PluginLimits::new(Arc::clone(&self.part), starts_programs);
-        Some(Box::new(limits))
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
@@ -427,9 +396,7 @@ mod tests {
     use super::*;
     use crate::profile_list::profiles;
     use crate::saved_profiles::SavedProfiles;
-    use crate::testing::{
-        NOW, TemplateHome, answer_line, meta_line, no_programs, no_terminals,
-    };
+    use crate::testing::{NOW, TemplateHome, answer_line, meta_line};
 
     const AGENT: &str = "example-agent";
 
@@ -452,21 +419,6 @@ mod tests {
         assert!(entry.keyring_services().is_empty());
         assert_eq!((part.plugin(), part.part()), ("example", AGENT));
         assert_eq!(agent.tested_version(), Some("1.4.2"));
-    }
-
-    /// The template's part reads no limits: its agent shows none, so the
-    /// mode draws no limits for its profiles.
-    #[test]
-    fn a_part_that_reads_no_limits_gives_none() {
-        let home = TemplateHome::new();
-        let agent = agent(&home);
-        let source = agent
-            .limit_source(no_programs(), no_terminals())
-            .expect("a plugin agent always asks its part");
-
-        let limits = source.limits(&home.profile());
-
-        assert_eq!(limits, Ok(None));
     }
 
     /// The default profile is the part's default folder; another folder
@@ -540,27 +492,7 @@ mod tests {
                 FoundIn::ProfileFolder(home.folder()),
             )]
         );
-        assert!(login.is_ok_and(|login| login.kind == LoginKind::ApiKey));
-    }
-
-    /// Issue 13: a login whose key is not at its place now, such as a
-    /// Claude Code profile whose credentials file is `{}`, is still an
-    /// account, but it gives no login for a provider part: OTTY gives no
-    /// part a handle to a key that is not there.
-    #[test]
-    fn a_login_whose_key_is_not_there_gives_no_login_for_a_provider_part() {
-        let home = TemplateHome::new();
-        crate::testing::write_file(
-            &home.folder().join("auth.json"),
-            r#"{"api_key": "", "email": "dev@example.com"}"#,
-        );
-        let agent = agent(&home);
-
-        let accounts = agent.accounts(&home.profile());
-        let login = agent.found_login(&home.profile(), &accounts[0]);
-
-        assert_eq!(accounts.len(), 1);
-        assert_eq!(login.map(|_| ()), Err(Unavailable::NoLoginKey));
+        assert!(login.is_some_and(|login| login.kind == LoginKind::ApiKey));
     }
 
     #[test]

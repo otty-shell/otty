@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallPlan, PendingUpdate};
 
 use crate::types::{ListedPlugin, RunningPlugin};
@@ -25,15 +24,11 @@ pub(crate) enum Screen {
     Install {
         /// What was found.
         plan: Box<InstallPlan>,
-        /// The new parts the user gave what another plugin serves.
-        use_new: Vec<PartRef>,
     },
     /// The update dialog of the plugin with this id.
     Update {
         /// The plugin id.
         plugin: String,
-        /// The new parts the user gave what another plugin serves.
-        use_new: Vec<PartRef>,
     },
     /// The permissions of the plugin with this id.
     Permissions(String),

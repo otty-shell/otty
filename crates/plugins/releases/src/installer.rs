@@ -17,10 +17,9 @@ use crate::error::InstallError;
 use crate::github::RepositoryUrl;
 use crate::http::HttpClient;
 use crate::package::{Package, hashes_of, sha256_hex};
-use crate::plan::{Conflict, InstallPlan};
+use crate::plan::InstallPlan;
 use crate::plugins_file::{
-    Choice, FileHashes, InstalledPart, InstalledPlugin, PluginsFile, Served,
-    Winner,
+    FileHashes, InstalledPart, InstalledPlugin, PluginsFile,
 };
 
 /// Where the installed plugins live on disk.
@@ -53,11 +52,6 @@ impl Installer {
     /// The installed plugin `id`.
     pub fn plugin(&self, id: &str) -> Option<&InstalledPlugin> {
         self.file.plugin(id)
-    }
-
-    /// The user's choice for each id or host two plugins serve.
-    pub fn choices(&self) -> &[Choice] {
-        &self.file.choices
     }
 
     /// The folder that holds the files of the installed version of
@@ -128,24 +122,18 @@ impl Installer {
     }
 
     /// Installs the plugin of `plan`: downloads or copies its files,
-    /// checks them, compiles it and records it. Each conflict whose id or
-    /// host is in `use_new_for` goes to the new plugin and the other
-    /// plugin's part serving it is turned off; every other conflict stays
-    /// with its current server and the new part is off.
-    pub fn install(
-        &mut self,
-        plan: &InstallPlan,
-        use_new_for: &[Served],
-    ) -> Result<(), InstallError> {
+    /// checks them, compiles it and records it with every part on. A part
+    /// whose id or host another plugin serves too is on as well: both
+    /// read (issue 29).
+    pub fn install(&mut self, plan: &InstallPlan) -> Result<(), InstallError> {
         let package = plan.package();
         self.check_id_is_free(package)?;
 
-        self.install_package(package, use_new_for)
+        self.install_package(package)
     }
 
-    /// Turns the part `part` of the plugin `plugin_id` on or off. Turning
-    /// it on makes it serve its ids and hosts: another plugin's part that
-    /// serves one of them is turned off, and the choice is recorded.
+    /// Turns the part `part` of the plugin `plugin_id` on or off; the
+    /// parts of other plugins stay as they are.
     pub fn set_part_on(
         &mut self,
         plugin_id: &str,
@@ -155,23 +143,13 @@ impl Installer {
         let Some(plugin) = self.file.plugin(plugin_id) else {
             return Err(InstallError::NotInstalled(plugin_id.to_string()));
         };
-        let Some(installed) = plugin.part(part) else {
+        if plugin.part(part).is_none() {
             return Err(InstallError::NoSuchPart {
                 plugin: plugin_id.to_string(),
                 part: part.clone(),
             });
-        };
-        let served = installed.served();
-
-        if on {
-            for served in served {
-                if self.current_server(&served, plugin_id).is_some() {
-                    self.turn_off_others(&served, plugin_id);
-                    self.file
-                        .choose(served, Winner::Plugin(plugin_id.to_string()));
-                }
-            }
         }
+
         if let Some(installed) = self
             .file
             .plugin_mut(plugin_id)
@@ -197,16 +175,6 @@ impl Installer {
         };
 
         let removed = self.file.plugins.remove(index);
-        let winner = Winner::Plugin(plugin_id.to_string());
-        let won: Vec<Served> = self
-            .file
-            .choices
-            .iter()
-            .filter(|choice| choice.winner == winner)
-            .map(|choice| choice.served.clone())
-            .collect();
-        self.file.choices.retain(|choice| choice.winner != winner);
-        self.turn_on_losers(&won);
         self.save()?;
 
         remove_folder(&self.places.plugins_folder.join(plugin_id));
@@ -221,9 +189,7 @@ impl Installer {
     fn plan_for(&self, package: Package) -> Result<InstallPlan, InstallError> {
         self.check_id_is_free(&package)?;
 
-        let conflicts = self.conflicts_of(package.manifest(), package.id());
-
-        Ok(InstallPlan::new(package, conflicts))
+        Ok(InstallPlan::new(package))
     }
 
     /// Refuses a plugin whose id is installed already.
@@ -243,34 +209,17 @@ impl Installer {
         })
     }
 
-    /// Installs `package` as a new plugin, settling its conflicts with
-    /// `use_new_for`.
+    /// Installs `package` as a new plugin, every part on.
     fn install_package(
         &mut self,
         package: &Package,
-        use_new_for: &[Served],
     ) -> Result<(), InstallError> {
         let files = package.fetch(self.http.as_ref())?;
         let hashes = hashes_of(&files);
         self.put_in_place(package, &files)?;
 
         let id = package.id();
-        let mut parts = parts_of(package.manifest());
-        for conflict in self.conflicts_of(package.manifest(), id) {
-            if use_new_for.contains(conflict.served()) {
-                self.turn_off_others(conflict.served(), id);
-                self.file.choose(
-                    conflict.served().clone(),
-                    Winner::Plugin(id.to_string()),
-                );
-            } else {
-                turn_off(&mut parts, conflict.part());
-                self.file.choose(
-                    conflict.served().clone(),
-                    conflict.current().clone(),
-                );
-            }
-        }
+        let parts = parts_of(package.manifest());
         self.file.plugins.push(InstalledPlugin {
             id: id.to_string(),
             name: package.manifest().plugin().name().to_string(),
@@ -335,102 +284,6 @@ impl Installer {
             .map_err(disk("move the plugin folder into place"))
     }
 
-    /// Each id or host of the parts of `manifest` that a part of another
-    /// plugin than `plugin_id` serves now.
-    fn conflicts_of(
-        &self,
-        manifest: &Manifest,
-        plugin_id: &str,
-    ) -> Vec<Conflict> {
-        let mut conflicts = Vec::new();
-
-        for part in parts_of(manifest) {
-            for served in part.served() {
-                if let Some(current) = self.current_server(&served, plugin_id) {
-                    conflicts.push(Conflict::new(part.part(), served, current));
-                }
-            }
-        }
-
-        conflicts
-    }
-
-    /// Who serves `served` now, other than the plugin `except`: a part
-    /// that is on.
-    fn current_server(&self, served: &Served, except: &str) -> Option<Winner> {
-        let plugin = self.file.plugins.iter().find(|plugin| {
-            plugin.id() != except
-                && plugin.parts().iter().any(|part| {
-                    part.is_on()
-                        && part
-                            .served()
-                            .iter()
-                            .any(|other| other.overlaps(served))
-                })
-        })?;
-
-        Some(Winner::Plugin(plugin.id().to_string()))
-    }
-
-    /// Turns back on each part that is off, serves one of `won` and whose
-    /// ids and hosts no part that is on serves now: the parts that had
-    /// lost them to a plugin just removed.
-    fn turn_on_losers(&mut self, won: &[Served]) {
-        let has_lost = |part: &InstalledPart| {
-            !part.on
-                && part
-                    .served()
-                    .iter()
-                    .any(|one| won.iter().any(|lost| lost.overlaps(one)))
-        };
-        let losers: Vec<(String, InstalledPart)> = self
-            .file
-            .plugins
-            .iter()
-            .flat_map(|plugin| {
-                plugin
-                    .parts
-                    .iter()
-                    .filter(|part| has_lost(part))
-                    .map(|part| (plugin.id.clone(), part.clone()))
-            })
-            .collect();
-
-        for (plugin_id, part) in losers {
-            let is_free = part
-                .served()
-                .iter()
-                .all(|one| self.current_server(one, &plugin_id).is_none());
-            if !is_free {
-                continue;
-            }
-            if let Some(installed) = self
-                .file
-                .plugin_mut(&plugin_id)
-                .and_then(|plugin| plugin.part_mut(&part.part()))
-            {
-                installed.on = true;
-            }
-        }
-    }
-
-    /// Turns off every part of a plugin other than `except` that serves
-    /// `served`.
-    fn turn_off_others(&mut self, served: &Served, except: &str) {
-        for plugin in self
-            .file
-            .plugins
-            .iter_mut()
-            .filter(|plugin| plugin.id != except)
-        {
-            for part in &mut plugin.parts {
-                if part.served().iter().any(|other| other.overlaps(served)) {
-                    part.on = false;
-                }
-            }
-        }
-    }
-
     /// Removes the compiled copy of a `.wasm`; a failure only leaves a
     /// file in the cache.
     fn forget_compiled(&self, wasm_sha256: &str) {
@@ -477,15 +330,6 @@ pub(crate) fn parts_of(manifest: &Manifest) -> Vec<InstalledPart> {
 /// `<plugins folder>/<id>/<version>/`.
 fn version_folder(plugins_folder: &Path, id: &str, version: &str) -> PathBuf {
     plugins_folder.join(id).join(version)
-}
-
-/// Turns the part `part` of `parts` off.
-fn turn_off(parts: &mut [InstalledPart], part: &PartRef) {
-    if let Some(installed) =
-        parts.iter_mut().find(|installed| installed.part() == *part)
-    {
-        installed.on = false;
-    }
 }
 
 /// Removes `folder` and what it holds; a failure only leaves files behind.

@@ -171,7 +171,8 @@ pub struct LoadedLimits {
 /// # Example
 ///
 /// A read that no part answered and no part failed: nothing reads the
-/// limits of the profile.
+/// limits of the profile, or the provider part that reads its account had
+/// no way to read them (spec 2026-11-19-agent-plugins, issue 29).
 ///
 /// ```
 /// use otty_app_agents::LimitsRead;
@@ -183,18 +184,19 @@ pub struct LoadedLimits {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum LimitsRead {
-    /// The limits with the part that answered, the provider part or the
-    /// agent part, and the failure of the provider part before it.
+    /// The limits with the part that answered: the provider part of the
+    /// account whose limits the profile shows.
     Answered(Answer<Limits>),
     /// Every part failed, each with why.
     Failed(Vec<SourceFailure>),
-    /// Neither a provider part nor the agent part reads the limits.
+    /// Nothing reads the limits: the profile has no subscription login,
+    /// no plugin reads it, or its part had no way to read them.
     NoSources,
 }
 
 impl LimitsRead {
-    /// What [`otty_agents::read_profile_limits`] gave, `walk`: no failures
-    /// at all means nothing reads the limits.
+    /// What a walk over the parts that read the limits gave, `walk`: no
+    /// failures at all means nothing reads the limits.
     pub fn from_walk(walk: Result<Answer<Limits>, Vec<SourceFailure>>) -> Self {
         match walk {
             Ok(answer) => Self::Answered(answer),

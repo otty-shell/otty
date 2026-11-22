@@ -1,7 +1,6 @@
 //! The official OpenAI plugin of OTTY. Its agent part `codex` reads
-//! Codex: its config folders (profiles), the login of each, its sessions,
-//! the tokens of its answers and the limits Codex tells
-//! (`codex app-server` and the records of its session files). Codex keeps
+//! Codex: its config folders (profiles), the login of each, its sessions
+//! and the tokens of its answers. Codex keeps
 //! everything in its config folder, `CODEX_HOME` or `~/.codex`: the login
 //! in `auth.json`, one file for each session in
 //! `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` (older ones compressed
@@ -12,10 +11,13 @@
 //! list of sessions: that request repairs Codex's own index of sessions
 //! and can delete from it (spec Decision 13).
 //!
-//! Its provider part `openai` reads the numbers of OpenAI accounts with
-//! the handles OTTY gives it: the limits and credits of a ChatGPT login
-//! from `chatgpt.com`, whichever agent keeps the login, and the costs of
-//! an organization with an admin key from `api.openai.com`. A ChatGPT
+//! Its provider part `openai` reads the numbers of OpenAI accounts any way
+//! it can (issue 29): the limits and credits of a ChatGPT login from
+//! `chatgpt.com` with its token, whichever agent keeps the login, else
+//! the limits Codex tells in a Codex profile the login was found in
+//! (`codex app-server` and the records of its session files); and the
+//! costs of an organization with an admin key from `api.openai.com`. With
+//! no way that works it reads nothing. A ChatGPT
 //! login it sees refused or expired it only reports as refused: OTTY asks
 //! the agent part that keeps it, Codex's or another plugin's, what the
 //! user must do.
@@ -35,9 +37,11 @@ mod base_url;
 mod bill_days;
 mod chatgpt_usage;
 mod codex;
+mod codex_limits;
 mod detect;
 mod glob;
 mod individual_limit;
+mod limits;
 mod needs;
 mod openai;
 mod organization_costs;

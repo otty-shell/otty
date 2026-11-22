@@ -2,11 +2,10 @@ use otty_app_domain::plugins::{PluginNotes, WaitingUpdate};
 use otty_plugin_host::fixtures::paused_health;
 use otty_plugin_host::{PartHealth, PluginLog};
 use otty_plugin_manifest::PluginVersion;
+use otty_plugin_releases::InstallPlan;
 use otty_plugin_releases::fixtures::{
-    conflict, example_manifest, install_plan, pending_update, report,
-    with_part_on,
+    example_manifest, install_plan, pending_update, report, with_part_on,
 };
-use otty_plugin_releases::{InstallPlan, Served, Winner};
 
 use super::*;
 use crate::model::{PageViewModel, PluginRowViewModel};
@@ -32,29 +31,11 @@ fn rows(state: &PluginsState) -> Vec<PluginRowViewModel> {
 
 fn fork_plan() -> InstallPlan {
     let fork = fork();
-    let example = Winner::Plugin(String::from("example"));
     install_plan(
         &example_manifest("0.1.0")
             .replace("id = \"example\"", "id = \"example-fork\"")
             .replace("name = \"Example\"", "name = \"Example Fork\""),
         fork.installed.source().clone(),
-        vec![
-            conflict(
-                agent(),
-                Served::Agent(String::from("example-agent")),
-                example.clone(),
-            ),
-            conflict(
-                provider(),
-                Served::Provider(String::from("example-cloud")),
-                example.clone(),
-            ),
-            conflict(
-                provider(),
-                Served::Host(String::from("example.com")),
-                example,
-            ),
-        ],
     )
 }
 
@@ -64,7 +45,7 @@ fn waiting_example() -> (ListedPlugin, otty_plugin_releases::PendingUpdate) {
         "http = [\"api.example.com\"]",
         "http = [\"api.example.com\", \"x.example.com\"]",
     );
-    let update = pending_update(&plugin.installed, &newer, Vec::new());
+    let update = pending_update(&plugin.installed, &newer);
 
     (plugin, update)
 }
@@ -185,27 +166,20 @@ fn a_release_that_needs_a_newer_otty_says_so() {
     assert!(matches!(state.screen(), Screen::AddUrl { .. }));
 }
 
-/// Issue 09: the install dialog asks for each id another plugin serves,
-/// and Install gives the parts the user chose to the new plugin.
+/// Issue 29: a plugin that serves what another plugin serves installs as
+/// it is: nothing is asked, and Install installs the plan.
 #[test]
-fn install_gives_the_chosen_parts_to_the_new_plugin() {
+fn install_installs_the_plan_with_nothing_asked() {
     let mut state = open_state(vec![official_example()]);
     let _ = reduce(&mut state, PluginsIntent::AddPlugin);
     let _ = reduce(&mut state, PluginsIntent::Found(Ok(Box::new(fork_plan()))));
 
-    let _ = reduce(&mut state, PluginsIntent::UseNew(provider(), true));
-    let _ = reduce(&mut state, PluginsIntent::UseNew(agent(), true));
-    let _ = reduce(&mut state, PluginsIntent::UseNew(agent(), false));
     let outcomes = reduce(&mut state, PluginsIntent::Install);
 
     assert_eq!(
         outcomes,
         [PluginsOutcome::Install {
             plan: Box::new(fork_plan()),
-            use_new_for: vec![
-                Served::Provider(String::from("example-cloud")),
-                Served::Host(String::from("example.com")),
-            ],
         }]
     );
 }
@@ -427,7 +401,7 @@ fn the_checks_note_updates_and_waiting_updates() {
 }
 
 /// Review of the need "Plugin update needs your OK" opens the update
-/// dialog; Update installs it with the choices for its new parts.
+/// dialog; Update installs it.
 #[test]
 fn review_opens_the_update_dialog_and_update_applies_it() {
     let (plugin, update) = waiting_example();
@@ -446,7 +420,6 @@ fn review_opens_the_update_dialog_and_update_applies_it() {
         applied,
         [PluginsOutcome::ApplyUpdate {
             update: Box::new(update),
-            use_new_for: Vec::new(),
         }]
     );
     assert_eq!(*state.screen(), Screen::List);

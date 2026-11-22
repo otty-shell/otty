@@ -5,10 +5,9 @@
 //! an installed plugin.
 
 use otty_app_i18n::{self as i18n, Key};
-use otty_plugin_manifest::{Manifest, PartRef};
+use otty_plugin_manifest::Manifest;
 use otty_plugin_releases::{InstallPlan, PartChange, PendingUpdate};
 
-use super::choices::{ChoiceViewModel, choices};
 use crate::state::PluginsState;
 use crate::types::{ListedPlugin, part_name};
 use crate::words::{granted_text, part_permissions, part_title, trust_note};
@@ -39,8 +38,6 @@ pub(crate) struct InstallDialogViewModel {
     pub(crate) trust: &'static str,
     /// Each part with its permissions.
     pub(crate) parts: Vec<PartPermissionsViewModel>,
-    /// The choice for each part whose ids another plugin serves.
-    pub(crate) choices: Vec<ChoiceViewModel>,
     /// Why the install failed.
     pub(crate) error: Option<String>,
     /// Whether the install runs.
@@ -54,8 +51,6 @@ pub(crate) struct UpdateDialogViewModel {
     pub(crate) title: String,
     /// The parts that changed.
     pub(crate) parts: Vec<PartPermissionsViewModel>,
-    /// The choice for each new part whose ids another plugin serves.
-    pub(crate) choices: Vec<ChoiceViewModel>,
     /// Why the update failed.
     pub(crate) error: Option<String>,
     /// Whether the update runs.
@@ -71,12 +66,10 @@ pub(crate) struct PermissionsViewModel {
     pub(crate) parts: Vec<PartPermissionsViewModel>,
 }
 
-/// The install dialog of `plan`; `use_new` lists the parts the user gave
-/// what another plugin serves.
+/// The install dialog of `plan`.
 pub(crate) fn install_dialog(
     state: &PluginsState,
     plan: &InstallPlan,
-    use_new: &[PartRef],
 ) -> InstallDialogViewModel {
     let manifest = plan.manifest();
     let plugin = manifest.plugin();
@@ -110,7 +103,6 @@ pub(crate) fn install_dialog(
         repository: plugin.repository().map(String::from),
         trust: trust_note(plan.trust()),
         parts,
-        choices: choices(state, manifest, plan.conflicts(), use_new),
         error: state.error().map(String::from),
         is_busy: state.is_busy(),
     }
@@ -121,7 +113,6 @@ pub(crate) fn update_dialog(
     state: &PluginsState,
     plugin: &ListedPlugin,
     update: &PendingUpdate,
-    use_new: &[PartRef],
 ) -> UpdateDialogViewModel {
     let new = update.manifest();
     let old = plugin.manifest.as_ref();
@@ -143,7 +134,6 @@ pub(crate) fn update_dialog(
             ],
         ),
         parts,
-        choices: choices(state, new, update.conflicts(), use_new),
         error: state.error().map(String::from),
         is_busy: state.is_busy(),
     }
@@ -249,10 +239,9 @@ mod tests {
             Source::Release {
                 url: String::from("https://github.com/someone/example"),
             },
-            Vec::new(),
         );
 
-        let dialog = install_dialog(&state, &plan, &[]);
+        let dialog = install_dialog(&state, &plan);
 
         assert_eq!(
             dialog.title,
@@ -284,7 +273,6 @@ mod tests {
                 .lines
                 .contains(&sends_requests("api.example.com"))
         );
-        assert!(dialog.choices.is_empty());
     }
 
     /// Issue 09: the update dialog shows the permission diff per part:
@@ -297,9 +285,9 @@ mod tests {
             "http = [\"api.example.com\"]",
             "http = [\"v2.example.com\"]",
         );
-        let update = pending_update(&plugin.installed, &newer, Vec::new());
+        let update = pending_update(&plugin.installed, &newer);
 
-        let dialog = update_dialog(&state, &plugin, &update, &[]);
+        let dialog = update_dialog(&state, &plugin, &update);
 
         assert_eq!(
             dialog.title,
@@ -333,13 +321,10 @@ mod tests {
             plugin.installed.source().clone(),
         );
         let state = PluginsState::new(vec![plugin.clone()]);
-        let update = pending_update(
-            &plugin.installed,
-            &example_manifest("0.2.0"),
-            Vec::new(),
-        );
+        let update =
+            pending_update(&plugin.installed, &example_manifest("0.2.0"));
 
-        let dialog = update_dialog(&state, &plugin, &update, &[]);
+        let dialog = update_dialog(&state, &plugin, &update);
 
         assert_eq!(dialog.parts.len(), 1);
         assert_eq!(dialog.parts[0].mark, Some(i18n::t(Key::PluginsNewPart)));

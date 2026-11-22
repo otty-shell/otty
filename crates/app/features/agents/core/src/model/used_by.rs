@@ -203,6 +203,7 @@ mod tests {
             AccountKind::Limits,
             FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
         )
+        .with_read_by(Some(String::from("openai")))
     }
 
     fn today(amount: &str) -> Option<String> {

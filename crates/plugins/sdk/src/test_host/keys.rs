@@ -48,6 +48,17 @@ pub(super) fn open(
         return Err(HostError::NotAllowed(format!("{place:?}")));
     }
 
+    let value = read_at(state, place)?;
+
+    Ok(state.add_key(value))
+}
+
+/// The key at `place` as the host reads it right now; a place with no key
+/// or a blank one is not found.
+pub(super) fn read_at(
+    state: &HostState,
+    place: &KeyPlace,
+) -> Result<String, HostError> {
     let value = match place {
         KeyPlace::JsonField(field) => {
             json_field(&PathBuf::from(&field.file), &field.pointer)?
@@ -59,11 +70,11 @@ pub(super) fn open(
         KeyPlace::Keyring(entry) => keyring::key_text(state, entry)?,
         KeyPlace::SqliteField(field) => sqlite::key_field(field)?,
     };
+
     if value.trim().is_empty() {
         return Err(HostError::NotFound(format!("{place:?}")));
     }
-
-    Ok(state.add_key(value))
+    Ok(value)
 }
 
 /// The text at `pointer` of the JSON file `file`.

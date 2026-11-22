@@ -9,7 +9,8 @@
 //! from text. A default profile is listed under its agent's id with only
 //! the parts the user changed; an added profile is a whole entry; an
 //! account is listed by its provider and its account id, organization id
-//! or email; a hidden profile by its agent and its config folder:
+//! or email, and the plugin that reads it; a hidden profile by its agent
+//! and its config folder:
 //!
 //! ```json
 //! {
@@ -36,7 +37,12 @@
 //!         { "slot": "admin", "file": "/home/user/.config/acme-key" }
 //!       ]
 //!     },
-//!     { "provider": "other-cloud", "account_id": "made-up-account", "hidden": true }
+//!     {
+//!       "provider": "other-cloud",
+//!       "account_id": "made-up-account",
+//!       "plugin": "other",
+//!       "hidden": true
+//!     }
 //!   ],
 //!   "hidden_profiles": [
 //!     { "agent": "coder", "config_dir": "/home/user/.coder-old" }
@@ -53,6 +59,13 @@
 //! written; once the user changes it, it is saved as an added profile. It
 //! can still be hidden: a hidden profile is kept by its folder, not by an
 //! entry.
+//!
+//! Two plugins that serve one provider each read its accounts, and each
+//! reading is an account of its own (spec 2026-11-19-agent-plugins, issue
+//! 29), so the choices for a found account are kept with `plugin`, the
+//! plugin that reads it; without it they are of the account no plugin
+//! reads. An account the user added is one entry for every plugin that
+//! reads it.
 //!
 //! An account may keep where the keys the user gave for it are, each under
 //! the slot of the plugin part that asked for it: a file or an
@@ -494,7 +507,7 @@ impl SavedProfiles {
             return self;
         }
 
-        self.accounts.retain(|saved| !saved.is_of(account));
+        self.accounts.retain(|saved| !saved.is_of_login(account));
         self
     }
 

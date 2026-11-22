@@ -17,12 +17,13 @@ use crate::plugin_parts::ProviderList;
 use crate::shell_variable::shell_variable;
 
 /// Read the numbers of `account` in the background, with its key read
-/// again from `place`: the files of a profile through its agent of
-/// `agents`, the system keyring, or the file or variable the user gave, a
-/// variable as the user's login shell at `shell` sees it. The provider
-/// part of `providers` that serves the account reads it with a handle to
-/// the key, else the reader built into OTTY. The key is used for this
-/// read only and never logged. The answer comes back as
+/// again from `place`: the files of the profiles it was found in through
+/// their agents of `agents`, the system keyring, or the file or variable
+/// the user gave, a variable as the user's login shell at `shell` sees it.
+/// The provider part of `providers` that reads the account reads it with a
+/// handle to the key, any way it can; its programs start only when
+/// `starts_programs`. The key is used for this read only and never
+/// logged. The answer comes back as
 /// [`AgentsIntent::AccountNumbersLoaded`].
 ///
 /// # Example
@@ -45,6 +46,7 @@ use crate::shell_variable::shell_variable;
 ///     account,
 ///     KeyPlace::Added,
 ///     Vec::new(),
+///     true,
 ///     "/bin/zsh",
 /// );
 ///
@@ -56,6 +58,7 @@ pub fn load_account_numbers(
     account: Account,
     place: KeyPlace,
     given: Vec<GivenKey>,
+    starts_programs: bool,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let task = format!(
@@ -77,6 +80,7 @@ pub fn load_account_numbers(
                 &place,
                 &given,
                 SystemTime::now(),
+                starts_programs,
                 |name| shell_variable(&shell, name),
             )
         },
@@ -90,8 +94,9 @@ pub fn load_account_numbers(
 }
 
 /// The numbers of `account` up to `now`, read with its key from `place`
-/// and the keys the user gave for it (`given`); `env_var` gives the value
-/// of an environment variable.
+/// and the keys the user gave for it (`given`), starting programs only
+/// when `starts_programs`; `env_var` gives the value of an environment
+/// variable.
 fn read_account_numbers(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
@@ -99,10 +104,18 @@ fn read_account_numbers(
     place: &KeyPlace,
     given: &[GivenKey],
     now: SystemTime,
+    starts_programs: bool,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedAccountNumbers {
     let numbers = otty_agents::read_account_numbers(
-        agents, providers, &account, place, given, now, env_var,
+        agents,
+        providers,
+        &account,
+        place,
+        given,
+        now,
+        starts_programs,
+        env_var,
     );
 
     LoadedAccountNumbers {
@@ -125,7 +138,8 @@ mod tests {
     fn missing_key(folder: &TempDir) -> (Account, KeyRef) {
         let key = KeyRef::File(folder.path().join("no-such-key"));
         let account =
-            Account::added(ProviderRef::of_id("anthropic"), key.clone());
+            Account::added(ProviderRef::of_id("anthropic"), key.clone())
+                .with_read_by(Some(String::from("anthropic")));
 
         (account, key)
     }
@@ -143,6 +157,7 @@ mod tests {
             &KeyPlace::Added,
             &[],
             SystemTime::now(),
+            true,
             |_| None,
         );
 
@@ -167,6 +182,7 @@ mod tests {
             account.clone(),
             KeyPlace::Added,
             Vec::new(),
+            true,
             "/no/such/shell",
         ));
 

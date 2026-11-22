@@ -9,7 +9,7 @@ use std::time::SystemTime;
 
 use otty_agents::{
     Account, AccountNumbers, Balance, Bill, KeyPlace, SourceError,
-    SourceFailure, SourceId, Unavailable,
+    SourceFailure, SourceId,
 };
 
 use super::freshness::{ReadState, Which};
@@ -59,7 +59,11 @@ impl OwnRead {
 
         if let Some((AccountNumbers::Limits(answer), read_at)) = &self.last_good
         {
-            let read = LimitsRead::Answered(answer.clone());
+            // A part with no way to read the limits answers nothing.
+            let read = match answer.value().is_nothing() {
+                true => LimitsRead::NoSources,
+                false => LimitsRead::Answered(answer.clone()),
+            };
             limits.apply(read, *read_at);
         }
         if let Some(failure) = &self.failure {
@@ -85,9 +89,7 @@ impl OwnRead {
     }
 
     /// Take the answer of a read that ended at `read_at`: numbers replace
-    /// the last good ones, a failure keeps them and says why. A login with
-    /// no key at its place now has no numbers and no failure (issue 13 of
-    /// spec 2026-11-19-agent-plugins).
+    /// the last good ones, a failure keeps them and says why.
     fn apply(
         &mut self,
         numbers: Result<AccountNumbers, SourceError>,
@@ -98,10 +100,6 @@ impl OwnRead {
         match numbers {
             Ok(numbers) => {
                 self.last_good = Some((numbers, read_at));
-                self.failure = None;
-            },
-            Err(SourceError::NotAvailable(Unavailable::NoLoginKey)) => {
-                self.last_good = None;
                 self.failure = None;
             },
             Err(failure) => self.failure = Some(failure),
@@ -170,10 +168,11 @@ impl OwnReads {
     }
 
     /// Forget what was read of `account`, so it is read again at once,
-    /// such as after the user gave a key a part asked for.
+    /// such as after the user gave a key a part asked for: of every copy
+    /// of its login, whichever plugin reads it.
     pub(crate) fn forget(&mut self, account: &Account) {
         self.reads
-            .retain(|read| !read.account.is_same_account(account));
+            .retain(|read| !read.account.is_same_login(account));
     }
 
     /// Take the answer of the read of one account; an answer of an account
@@ -260,30 +259,6 @@ mod tests {
         assert_eq!(read.reads().read_at(), Some(at(20)));
     }
 
-    /// Issue 13 of spec 2026-11-19-agent-plugins: a login whose key is not
-    /// at its place now, such as a Claude Code profile whose credentials
-    /// file is `{}`, has no numbers of its provider and no failure to
-    /// show; what its profile reads is what the user sees.
-    #[test]
-    fn a_login_without_its_key_has_no_numbers_and_no_failure() {
-        let account = crate::testing::chatgpt_login();
-        let place = KeyPlace::ProfileFiles(crate::testing::codex());
-        let no_key = Err(SourceError::NotAvailable(
-            otty_agents::Unavailable::NoLoginKey,
-        ));
-        let mut reads = OwnReads::default();
-        let _ = reads.start(vec![(account.clone(), place)], Which::Every);
-        reads.apply(loaded(account.clone(), Ok(left(110.0)), at(10)));
-        reads.apply(loaded(account.clone(), no_key, at(20)));
-
-        let read = reads.of(&account).expect("the account was read");
-
-        assert_eq!(read.failure(), None);
-        assert_eq!(read.balance(), None);
-        assert_eq!(read.limits(), None);
-        assert_eq!(read.reads().read_at(), Some(at(20)));
-    }
-
     /// A removed account is no longer read, and a late answer of it is
     /// dropped.
     #[test]
@@ -300,7 +275,7 @@ mod tests {
     #[test]
     fn the_limits_of_a_login_are_kept_as_the_limits_of_a_profile() {
         let mut reads = OwnReads::default();
-        let place = KeyPlace::ProfileFiles(crate::testing::codex());
+        let place = KeyPlace::ProfileFiles(vec![crate::testing::codex()]);
         let _ = reads.start(vec![(chatgpt_login(), place)], Which::Every);
         let answer = crate::testing::limits_answer(vec![(
             otty_agents::SourceId::ProviderPart,

@@ -1,7 +1,7 @@
 //! `plugins.json`: what is installed, from where, with which file hashes,
-//! the permissions the user granted to each part, which parts are on, and
-//! the user's choice for each id two plugins serve (spec
-//! 2026-11-19-agent-plugins, "Install and update flow", step 6). It is
+//! the permissions the user granted to each part, and which parts are on
+//! (spec 2026-11-19-agent-plugins, "Install and update flow", step 6). It
+//! is
 //! always written whole through a temporary file, so a crash leaves the
 //! old file or the new one, never half of one.
 
@@ -24,8 +24,6 @@ pub type FileHashes = BTreeMap<String, String>;
 pub(crate) struct PluginsFile {
     #[serde(default)]
     pub(crate) plugins: Vec<InstalledPlugin>,
-    #[serde(default)]
-    pub(crate) choices: Vec<Choice>,
     /// When the last daily update check ran, in seconds since 1970.
     #[serde(default)]
     pub(crate) last_update_check: Option<u64>,
@@ -91,13 +89,6 @@ impl PluginsFile {
         id: &str,
     ) -> Option<&mut InstalledPlugin> {
         self.plugins.iter_mut().find(|plugin| plugin.id == id)
-    }
-
-    /// Records that `winner` serves `served`, in place of an earlier
-    /// choice for it.
-    pub(crate) fn choose(&mut self, served: Served, winner: Winner) {
-        self.choices.retain(|choice| choice.served != served);
-        self.choices.push(Choice { served, winner });
     }
 }
 
@@ -224,17 +215,6 @@ impl InstalledPart {
     pub fn granted(&self) -> &[String] {
         &self.granted
     }
-
-    /// The ids and hosts this part serves.
-    pub fn served(&self) -> Vec<Served> {
-        let mut served = vec![match self.kind {
-            PartKind::Agent => Served::Agent(self.id.clone()),
-            PartKind::Provider => Served::Provider(self.id.clone()),
-        }];
-        served.extend(self.hosts.iter().cloned().map(Served::Host));
-
-        served
-    }
 }
 
 /// Where a plugin came from.
@@ -289,70 +269,6 @@ pub enum Trust {
     Community,
     /// Installed from a local folder.
     Local,
-}
-
-/// An id or a host a part serves. One of each is served by one part only.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Served {
-    /// An agent id.
-    Agent(String),
-    /// A provider id.
-    Provider(String),
-    /// A provider host; it serves the host and every host under it.
-    Host(String),
-}
-
-impl Served {
-    /// Whether one part serving `self` and another serving `other` would
-    /// serve the same thing: the same id, or hosts one under the other.
-    ///
-    /// ```
-    /// use otty_plugin_releases::Served;
-    ///
-    /// let host = |name: &str| Served::Host(name.to_string());
-    ///
-    /// assert!(host("openai.com").overlaps(&host("api.openai.com")));
-    /// assert!(!host("openai.com").overlaps(&host("notopenai.com")));
-    /// ```
-    pub fn overlaps(&self, other: &Served) -> bool {
-        match (self, other) {
-            (Served::Host(left), Served::Host(right)) => {
-                left == right
-                    || left.ends_with(&format!(".{right}"))
-                    || right.ends_with(&format!(".{left}"))
-            },
-            _ => self == other,
-        }
-    }
-}
-
-/// The user's answer for one id two plugins serve.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Choice {
-    pub(crate) served: Served,
-    pub(crate) winner: Winner,
-}
-
-impl Choice {
-    /// The id or host.
-    pub fn served(&self) -> &Served {
-        &self.served
-    }
-
-    /// Who serves it.
-    pub fn winner(&self) -> &Winner {
-        &self.winner
-    }
-}
-
-/// Who serves an id: an installed plugin. It is written in
-/// `plugins.json` as `{"plugin": "<id>"}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Winner {
-    /// The installed plugin with this id.
-    Plugin(String),
 }
 
 /// The temporary file `plugins.json` is written to before the rename.
@@ -443,10 +359,6 @@ mod tests {
                     ],
                 }],
             }],
-            choices: vec![Choice {
-                served: Served::Host("example.com".to_string()),
-                winner: Winner::Plugin("example".to_string()),
-            }],
             last_update_check: Some(1_763_600_000),
         }
     }
@@ -505,37 +417,6 @@ mod tests {
 
         assert!(matches!(failed, Err(InstallError::Disk(_))));
         assert_eq!(PluginsFile::load(&path), Ok(one_plugin()));
-    }
-
-    #[test]
-    fn a_new_choice_replaces_the_old_one_for_the_same_id() {
-        let mut file = one_plugin();
-
-        file.choose(
-            Served::Host("example.com".to_string()),
-            Winner::Plugin("other".to_string()),
-        );
-
-        assert_eq!(
-            file.choices,
-            [Choice {
-                served: Served::Host("example.com".to_string()),
-                winner: Winner::Plugin("other".to_string()),
-            }]
-        );
-    }
-
-    #[test]
-    fn hosts_overlap_when_one_is_under_the_other() {
-        let host = |name: &str| Served::Host(name.to_string());
-
-        assert!(host("openai.com").overlaps(&host("openai.com")));
-        assert!(host("api.openai.com").overlaps(&host("openai.com")));
-        assert!(!host("openai.com").overlaps(&host("xopenai.com")));
-        assert!(
-            !Served::Agent("codex".to_string())
-                .overlaps(&Served::Provider("codex".to_string()))
-        );
     }
 
     #[test]

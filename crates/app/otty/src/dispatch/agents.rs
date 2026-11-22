@@ -71,21 +71,27 @@ impl Delivery for AgentsIntent {
                 agents_io::load_sessions(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)
             },
-            AgentsOutcome::LoadLimits(profile) => agents_io::load_limits(
-                app.agents.known_agents(),
-                &app.plugin_providers,
-                profile,
-                app.shell_session.program(),
-                &app.cache_dir,
-            )
-            .map(AppEvent::Agents),
+            // The account the profile shows the limits of, and the
+            // profiles it was found in, which its provider part is told of.
+            AgentsOutcome::LoadLimits(profile) => {
+                let (account, found_in) = app.agents.limits_to_read(&profile);
+                agents_io::load_limits(
+                    app.agents.known_agents(),
+                    &app.plugin_providers,
+                    profile,
+                    account,
+                    found_in,
+                )
+                .map(AppEvent::Agents)
+            },
             AgentsOutcome::LoadLimitsInBackground(profile) => {
+                let (account, found_in) = app.agents.limits_to_read(&profile);
                 agents_io::load_limits_in_background(
                     app.agents.known_agents(),
                     &app.plugin_providers,
                     profile,
-                    app.shell_session.program(),
-                    &app.cache_dir,
+                    account,
+                    found_in,
                 )
                 .map(AppEvent::Agents)
             },
@@ -110,12 +116,14 @@ impl Delivery for AgentsIntent {
                 account,
                 place,
                 given,
+                may_start_programs,
             } => agents_io::load_account_numbers(
                 app.agents.known_agents(),
                 &app.plugin_providers,
                 account,
                 place,
                 given,
+                may_start_programs,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
@@ -449,6 +457,7 @@ mod tests {
                 account,
                 place: otty_agents::KeyPlace::Added,
                 given: Vec::new(),
+                may_start_programs: false,
             },
         );
 

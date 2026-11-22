@@ -11,12 +11,13 @@
 //! while it answers it, and on the owner's computer it deleted rows of
 //! that index (spec 2026-11-19-agent-plugins, Decision 13).
 
-use otty_plugin_sdk::agents::{Limits, ReadError};
+use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::programs::Talk;
 use otty_plugin_sdk::{HostError, clock};
 use serde_json::{Value, json};
 
 use crate::individual_limit::individual_limit_in;
+use crate::limits::Limits;
 use crate::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, millis_of_seconds,
 };
@@ -209,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::rate_limits::no_numbers;
-    use crate::testing::{as_part, host};
+    use crate::testing::{as_provider, host};
 
     /// The only methods the plugin may ever send to `codex app-server`.
     const ALLOWED_METHODS: [&str; 3] =
@@ -244,7 +245,7 @@ mod tests {
         let host = host();
         host.answer_talk(PROGRAM, &APP_SERVER_ARGS, lines);
 
-        let result = as_part(&host, || read_limits(&[]));
+        let result = as_provider(&host, || read_limits(&[]));
 
         asked(&host, result)
     }
@@ -314,7 +315,7 @@ mod tests {
             "/home/dev/.codex-work".to_string(),
         )];
 
-        let result = as_part(&host, || read_limits(&env));
+        let result = as_provider(&host, || read_limits(&env));
 
         assert!(result.is_ok(), "{result:?}");
         let started = host.started();
@@ -528,7 +529,7 @@ mod tests {
     fn a_program_that_can_not_start_fails_with_the_reason_of_the_host() {
         let host = host();
 
-        let result = as_part(&host, || read_limits(&[]));
+        let result = as_provider(&host, || read_limits(&[]));
 
         assert!(matches!(result, Err(ReadError::Host(_))), "{result:?}");
         assert!(host.sent().is_empty());
@@ -540,7 +541,7 @@ mod tests {
         host.answer_talk(PROGRAM, &APP_SERVER_ARGS, &[INITIALIZE_ANSWER]);
         let env = [("HOME".to_string(), "/elsewhere".to_string())];
 
-        let result = as_part(&host, || read_limits(&env));
+        let result = as_provider(&host, || read_limits(&env));
 
         assert!(
             matches!(result, Err(ReadError::Host(HostError::NotAllowed(_)))),

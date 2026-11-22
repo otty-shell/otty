@@ -9,7 +9,7 @@ use otty_plugin_sdk::agents::{
     Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, Key, Need};
+use otty_plugin_sdk::{GivenKey, HostError, Key, Need};
 use serde_json::Value;
 
 use crate::{OpenRouter, needs};
@@ -36,12 +36,21 @@ impl Provider for OpenRouter {
 
     /// The limit of `key` and what of it was used. The part asks for no
     /// other key.
+    ///
+    /// A key that is not at its place now is a normal case: the part has
+    /// no other way to read the account, so it answers nothing and sends
+    /// nothing (issue 29).
     fn numbers(
         _provider: &str,
+        _found: &LoginFacts,
         _account: &AccountFacts,
         key: &Key,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
+        if !is_there(key)? {
+            return Ok(no_numbers());
+        }
+
         let answer = get_json(KEY_URL, key)?;
 
         let data = answer.get("data");
@@ -66,7 +75,32 @@ impl Provider for OpenRouter {
             }),
             spent_this_month: None,
             plan: None,
+            recorded_at_ms: None,
         })
+    }
+}
+
+/// Whether the key of `key` is at its place now.
+fn is_there(key: &Key) -> Result<bool, ReadError> {
+    match key.fingerprint() {
+        Ok(_) => Ok(true),
+        Err(HostError::NotFound(_)) => Ok(false),
+        Err(error) => Err(ReadError::Host(error)),
+    }
+}
+
+/// Numbers with nothing in them: what the part answers when it has no way
+/// to read the account.
+fn no_numbers() -> AccountNumbers {
+    AccountNumbers {
+        windows: Vec::new(),
+        credits: None,
+        extra_usage: None,
+        left: None,
+        key_limit: None,
+        spent_this_month: None,
+        plan: None,
+        recorded_at_ms: None,
     }
 }
 
@@ -144,6 +178,33 @@ mod tests {
         }
     }
 
+    /// What OTTY found of an API key of an agent, found in no profile.
+    fn found() -> LoginFacts {
+        LoginFacts {
+            kind: otty_plugin_sdk::agents::LoginKind::ApiKey,
+            identity: Identity::default(),
+            plan: None,
+            found_in: Vec::new(),
+        }
+    }
+
+    /// Issue 29: a key that is not at its place now is nothing, not a
+    /// failure, and nothing is sent.
+    #[test]
+    fn a_key_that_is_not_there_reads_nothing() {
+        let host = host();
+        let key = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
+            "NO_SUCH_KEY".to_string(),
+        ));
+
+        let numbers = host.as_provider(PROVIDER, || {
+            OpenRouter::numbers(PROVIDER, &found(), &account(), &key, &[])
+        });
+
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty());
+    }
+
     /// The numbers the part reads when the key request answers `status`
     /// and `body`, with a key read from a place of an agent.
     fn numbers_on(
@@ -167,7 +228,7 @@ mod tests {
         host.answer("GET", KEY_URL, status, body.as_bytes());
 
         host.as_provider(PROVIDER, || {
-            OpenRouter::numbers(PROVIDER, &account(), key, &[])
+            OpenRouter::numbers(PROVIDER, &found(), &account(), key, &[])
         })
     }
 
@@ -398,11 +459,7 @@ mod tests {
     fn the_account_of_a_key_is_known_by_its_fingerprint_only() {
         let host = host();
         let key = host.key(MADE_UP_KEY);
-        let found = LoginFacts {
-            kind: otty_plugin_sdk::agents::LoginKind::ApiKey,
-            identity: Identity::default(),
-            plan: None,
-        };
+        let found = found();
 
         let facts = host
             .as_provider(PROVIDER, || {

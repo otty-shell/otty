@@ -1,6 +1,6 @@
 # 29 A provider reads its accounts every way it can; duplicates are fine
 
-Status: in progress
+Status: done
 Blocked by: 28
 
 ## Why
@@ -77,3 +77,64 @@ No backward compatibility: Agents mode was never released.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-22, done:
+
+1. The agent part's `read-limits` is gone, and so are OTTY's
+   `read_profile_limits`, `LimitSource` and the "provider first, then the
+   agent's limits" merge. `login-facts` gets `found-in: list<found-profile>`:
+   for every shown profile the account was found in, the plugin and the
+   agent part that found it, the folder, and `launch` (the command the
+   agent part gives for a new session there). `numbers` and `read-bill`
+   take `found` too, `account-numbers` gets `recorded-at-ms`, and the
+   provider world imports `files`, `programs` and `terminal`. A provider
+   part may declare `read`, `write`, `env`, `run` and `terminal` (not
+   `sqlite`, `keys`, `keyring`). The pace of a slow reading (5 minutes)
+   moved to `numbers`, kept per part and found folders. The Anthropic
+   part reads token → server; no token, or a failing server → `/usage`
+   in the first Claude Code profile of `found-in`; else nothing. The
+   OpenAI part reads token → `chatgpt.com`; no token or failing server →
+   `codex app-server`, then the session files, in the first Codex
+   profile; else nothing. Permissions moved in both manifests; the Codex
+   and Claude Code parts no longer run anything but `codex --version`.
+2. `TestHost::key_at(place)` makes a handle read at each use, so a
+   `{}` credentials file is a handle whose use is `not-found`. Every
+   official provider part (and the template) answers nothing for it; an
+   admin key given under `admin` still reads the bill.
+3. 93d8e65e is reverted (its own commit).
+4. The conflict choice, `Conflict`, `Served`, `Winner`, `Choice` and
+   `choices` in `plugins.json` are gone; every part installs on. The
+   registry keeps every provider part (one agent part per agent id, the
+   first). `merge_accounts` gives one copy of an account per plugin that
+   reads it (`Account::read_by`); added accounts only to parts that offer
+   Add account. Saved names, hidden and given keys of a found account
+   are kept with `"plugin"` in `agents.json`. While two plugins read a
+   provider, the name of each account says its plugin.
+5. An account no plugin reads keeps its row and the need "No provider
+   plugin", whose line now says no installed plugin reads it (all ten
+   languages).
+6. Hidden accounts: no read (also when every subscription copy of a
+   profile is hidden), not in the totals by account (their tokens go to
+   a shown copy of the same login, else to no account); a profile shows
+   the limits and the bill of its first shown copy.
+7. Spec (Decisions 4, 5, WIT sketch, install flow, UI table), public
+   docs (Plugins, Write a Plugin, Overview, What OTTY Reads and Sends,
+   Anthropic, OpenAI), plugin, template and SDK READMEs follow. All six
+   plugins are rebuilt into `assets/plugins/`, the host fixtures with
+   `scripts/build-test-plugins.sh`. `url` was updated to 2.5.9 for
+   RUSTSEC-2026-0592, which `cargo deny` reported.
+
+Left open for the owner:
+
+- The probe asks only the first Claude Code (or Codex) profile of
+  `found-in`; it does not try the next one when that fails.
+- The OpenAI part also falls back on `codex app-server` and the session
+  files when `chatgpt.com` fails with a token there, as the old order
+  did; the issue named only "no token".
+- A probe that can not start while Agents mode is away is a failure of
+  the read (as before), shown greyed until the read on screen.
+- Two agent parts with one agent id: first installed wins, no choice;
+  the user turns the other off. Hiding one copy of an added account
+  hides every copy (one entry).
+- A host two plugins serve under different provider ids becomes the id
+  of the first; the second does not read it.

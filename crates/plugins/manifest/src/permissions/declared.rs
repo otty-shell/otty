@@ -105,7 +105,9 @@ impl PartPermissions {
         })
     }
 
-    /// The checked permissions of the provider part `part`.
+    /// The checked permissions of the provider part `part`: its hosts,
+    /// and the files, variables, programs and hidden terminals of the
+    /// ways it asks the agent itself.
     pub(crate) fn of_provider(
         raw: &RawProviderPermissions,
         part: &PartRef,
@@ -113,8 +115,18 @@ impl PartPermissions {
         for host in &raw.http {
             check_host(host, part)?;
         }
+        for name in &raw.env {
+            check_variable(name, part)?;
+        }
+
+        let globs = |texts: &[String]| path_globs(texts, &raw.env, part);
 
         Ok(Self {
+            read: globs(&raw.read)?,
+            write: globs(&raw.write)?,
+            env: raw.env.clone(),
+            run: program_rules(&raw.run, part)?,
+            terminal: program_rules(&raw.terminal, part)?,
             http: raw.http.clone(),
             ..Self::default()
         })

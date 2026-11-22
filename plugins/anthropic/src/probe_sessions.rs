@@ -45,7 +45,7 @@ mod tests {
     use otty_plugin_sdk::HostError;
 
     use super::*;
-    use crate::testing::{as_part, host, path};
+    use crate::testing::{as_provider, host, path};
 
     const PROBE_FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
     const PROJECT: &str =
@@ -56,7 +56,7 @@ mod tests {
         let host = host();
         let folder = path(&host, ".claudeprobe");
 
-        as_part(&host, || {
+        as_provider(&host, || {
             remove_probe_sessions(&folder, &[PROBE_FOLDER.to_string()]);
         });
 
@@ -80,7 +80,7 @@ mod tests {
         let other =
             path(&host, ".claudeprobe/projects/-home-dev-shop/c3.jsonl");
 
-        let refused = as_part(&host, || {
+        let refused = as_provider(&host, || {
             remove_probe_sessions(&folder, &["/home/dev/shop".to_string()]);
             files::remove(&other)
         });
@@ -94,7 +94,7 @@ mod tests {
         let host = host();
         let folder = path(&host, ".claude-work");
 
-        as_part(&host, || {
+        as_provider(&host, || {
             remove_probe_sessions(&folder, &[PROBE_FOLDER.to_string()]);
         });
 

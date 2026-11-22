@@ -4,7 +4,7 @@
 //! on the Plugins page; the plugin with "(off)" when its part is off; or
 //! "no plugin".
 
-use otty_agents::{AgentId, ProviderRef};
+use otty_agents::{Account, AgentId, ProviderRef};
 use otty_app_domain::plugins::{OffPart, PartSide};
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_host::PluginPart;
@@ -12,14 +12,15 @@ use otty_plugin_host::PluginPart;
 use super::super::state::AgentsState;
 use super::FactViewModel;
 
-/// "Read by" of an account: the reader of its provider.
+/// "Read by" of an account: the provider part of the plugin that reads it
+/// (issue 29), else a part that would read it but is off, else no plugin.
 pub(crate) fn account_read_by(
     state: &AgentsState,
-    provider: &ProviderRef,
+    account: &Account,
 ) -> FactViewModel {
-    match state.registry().provider_of(provider) {
+    match state.registry().reader_of(account) {
         Some(entry) => read_by(entry.part()),
-        None => match off_provider_part(state, provider) {
+        None => match off_provider_part(state, account.provider()) {
             Some(off) => off_read_by(off),
             None => no_plugin(),
         },
@@ -158,6 +159,17 @@ mod tests {
         ProviderRef::Host(String::from("api.deepseek.com"))
     }
 
+    /// A DeepSeek key found for its host, as the accounts of `state`
+    /// list it: read by the DeepSeek plugin when it serves the host.
+    fn deepseek_key(state: &AgentsState) -> Account {
+        let found = otty_agents::merge_accounts(
+            vec![crate::testing::deepseek_key_by_host()],
+            state.registry(),
+        );
+
+        found[0].clone()
+    }
+
     /// Issue 09: "Read by" for a plugin, no plugin and off.
     #[test]
     fn read_by_names_the_plugin_no_plugin_or_off() {
@@ -174,7 +186,7 @@ mod tests {
         let label = i18n::t(Key::AgentsFieldReadBy);
 
         assert_eq!(
-            account_read_by(&plugin, &deepseek_host()),
+            account_read_by(&plugin, &deepseek_key(&plugin)),
             FactViewModel::linked(
                 label,
                 String::from("DeepSeek 0.2.0"),
@@ -182,14 +194,14 @@ mod tests {
             )
         );
         assert_eq!(
-            account_read_by(&none, &deepseek_host()),
+            account_read_by(&none, &deepseek_key(&none)),
             FactViewModel::new(
                 label,
                 i18n::t(Key::AgentsReadByNoPlugin).to_string()
             )
         );
         assert_eq!(
-            account_read_by(&off, &deepseek_host()),
+            account_read_by(&off, &deepseek_key(&off)),
             FactViewModel::linked(
                 label,
                 i18n::filled(

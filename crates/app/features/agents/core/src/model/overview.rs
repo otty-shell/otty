@@ -263,6 +263,56 @@ mod tests {
         );
     }
 
+    /// Issue 29: two plugins read one ChatGPT login; each reading is an
+    /// account row of its own, labelled with its plugin, so the user can
+    /// hide the one they do not want.
+    #[test]
+    fn a_login_two_plugins_read_is_two_rows_each_with_its_plugin() {
+        let fork = otty_agents::ProviderEntry::new(
+            otty_agents::ProviderId::new("openai"),
+            "OpenAI",
+            otty_plugin_host::PluginPart::new(
+                "openai-fork",
+                "OpenAI Fork",
+                "0.1.0",
+                "",
+                "openai",
+            ),
+        )
+        .with_hosts(["openai.com"]);
+        let registry = crate::testing::registry();
+        let mut providers = registry.providers().to_vec();
+        providers.push(fork);
+        let registry = std::sync::Arc::new(otty_agents::Registry::new(
+            registry.agents().to_vec(),
+            providers,
+        ));
+        let found = crate::testing::chatgpt_login().with_read_by(None);
+        let state = crate::testing::with_accounts_in(
+            registry,
+            &[(codex(), connected(), vec![found])],
+            SavedProfiles::default(),
+        );
+
+        let vm = AllAccountsViewModel::from_state(&state);
+
+        let rows: Vec<(Option<&str>, &str)> = vm
+            .rows
+            .iter()
+            .map(|row| (row.account.read_by(), row.name.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (Some("openai"), "OpenAI · you@example.com (OpenAI)"),
+                (
+                    Some("openai-fork"),
+                    "OpenAI · you@example.com (OpenAI Fork)"
+                ),
+            ]
+        );
+    }
+
     /// Spec Decision 6: All accounts lists the needs of the accounts only.
     #[test]
     fn all_accounts_lists_only_the_needs_of_the_accounts() {

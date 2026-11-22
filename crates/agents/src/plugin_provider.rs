@@ -6,7 +6,8 @@
 //! account it is and reads its numbers, once per account per refresh, and
 //! the bill of an organization. With each read it gets the keys the user
 //! gave for the account after a need of the part asked for them, each
-//! under its slot (issue 20). It never sees a key.
+//! under its slot (issue 20), and the profiles the account was found in,
+//! where it may ask the agent itself (issue 29). It never sees a key.
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -14,10 +15,11 @@ use std::time::SystemTime;
 use otty_plugin_host::agents::agent::{Identity, Login, LoginKind};
 use otty_plugin_host::agents::provider::{
     AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, DayRange,
-    LoginFacts, Money,
+    FoundProfile, LoginFacts, Money,
 };
 use otty_plugin_host::{
-    CalledPart, KeySource, KeyText, LoadedPlugin, PartHealth, PartRef,
+    CallBatch, CalledPart, KeySource, KeyText, LoadedPlugin, PartHealth,
+    PartRef,
 };
 
 use crate::account::{Account, AccountKind};
@@ -45,12 +47,15 @@ const READ_BILL: &str = "read-bill";
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ProviderPartCalls: Send + Sync {
     /// Whose account the key of `key` is, then its numbers, in one read
-    /// of the part, with the keys of `given` under their slots.
+    /// of the part, with the keys of `given` under their slots. The read
+    /// starts the programs and hidden terminals the part declares only
+    /// when `starts_programs`.
     fn read_numbers(
         &self,
         key: &KeySource,
         found: &LoginFacts,
         given: &[(String, KeySource)],
+        starts_programs: bool,
     ) -> Result<(AccountFacts, PartNumbers), SourceError>;
 
     /// Whose organization the key of `key` is, then its bill over `days`,
@@ -151,20 +156,32 @@ impl PluginProvider {
         }
     }
 
+    /// Whether the part reads `account`: it serves the account, which is
+    /// read by the part's plugin (issue 29).
+    pub fn reads(&self, account: &Account) -> bool {
+        self.serves(account)
+            && account.read_by() == Some(self.entry.part().plugin())
+    }
+
     /// The numbers of `account`, read once with the key of `login`, the
-    /// login an agent part found it by, and the keys the user gave for it
-    /// (`given`): the money of a key, or the limits of a subscription. An
-    /// account the part does not serve is not read, and the part gets no
-    /// key.
+    /// login an agent part found it by, the keys the user gave for it
+    /// (`given`) and the profiles it was found in (`found_in`): the money
+    /// of a key, or the limits of a subscription, which the part may read
+    /// any way it can. The part's programs and hidden terminals start only
+    /// when `starts_programs`. An account the part does not serve is not
+    /// read, and the part gets no key.
     pub(crate) fn read(
         &self,
         account: &Account,
         login: &Login,
+        found_in: Vec<FoundProfile>,
         given: &[GivenSecret],
+        starts_programs: bool,
     ) -> Result<AccountNumbers, SourceError> {
         let key = KeySource::Place(login.place.clone());
+        let found = login_facts(login, found_in);
 
-        self.read_with(account, &key, &login_facts(login), given)
+        self.read_with(account, &key, &found, given, starts_programs)
     }
 
     /// The numbers of `account`, read once with `key`, a key OTTY read
@@ -178,26 +195,30 @@ impl PluginProvider {
         account: &Account,
         key: &KeySecret,
         given: &[GivenSecret],
+        starts_programs: bool,
     ) -> Result<AccountNumbers, SourceError> {
         let key = given_source(key)?;
 
-        self.read_with(account, &key, &key_facts(), given)
+        self.read_with(account, &key, &key_facts(), given, starts_programs)
     }
 
     /// The bill up to `now` of the organization `account`, read once with
-    /// the key of `login`, the login an agent part found it by, and the
-    /// keys the user gave for it (`given`). An account the part does not
-    /// serve is not read, and the part gets no key.
+    /// the key of `login`, the login an agent part found it by in the
+    /// profiles `found_in`, and the keys the user gave for it (`given`).
+    /// An account the part does not serve is not read, and the part gets
+    /// no key.
     pub(crate) fn read_bill(
         &self,
         account: &Account,
         login: &Login,
+        found_in: Vec<FoundProfile>,
         given: &[GivenSecret],
         now: SystemTime,
     ) -> Result<Bill, SourceError> {
         let key = KeySource::Place(login.place.clone());
+        let found = login_facts(login, found_in);
 
-        self.read_bill_with(account, &key, &login_facts(login), given, now)
+        self.read_bill_with(account, &key, &found, given, now)
     }
 
     /// The bill up to `now` of `account`, an account the user added, read
@@ -241,13 +262,16 @@ impl PluginProvider {
     /// The numbers of `account`, read once with the key of `key`, which
     /// `found` tells of, and the keys of `given`; the part gets no key of
     /// an account it does not serve. What the user must do, such as log
-    /// in again, comes from the part as its need.
+    /// in again, comes from the part as its need. Numbers with nothing in
+    /// them are the part's "nothing": limits with no window and no
+    /// credits, or a balance with nothing in it.
     fn read_with(
         &self,
         account: &Account,
         key: &KeySource,
         found: &LoginFacts,
         given: &[GivenSecret],
+        starts_programs: bool,
     ) -> Result<AccountNumbers, SourceError> {
         if !self.serves(account) {
             return Err(SourceError::NotAvailable(
@@ -256,7 +280,9 @@ impl PluginProvider {
         }
 
         let given = given_sources(given)?;
-        let (facts, numbers) = self.calls.read_numbers(key, found, &given)?;
+        let (facts, numbers) =
+            self.calls
+                .read_numbers(key, found, &given, starts_programs)?;
 
         let plan = numbers.plan.clone().or(facts.plan);
         Ok(match account.kind() {
@@ -326,18 +352,23 @@ impl ProviderPartCalls for PartCalls {
         key: &KeySource,
         found: &LoginFacts,
         given: &[(String, KeySource)],
+        starts_programs: bool,
     ) -> Result<(AccountFacts, PartNumbers), SourceError> {
-        let answer = self.part.read(READ_NUMBERS, |batch| {
+        let read = |batch: &mut CallBatch<'_>| {
             let mut calls = batch.provider()?;
 
             let facts = match calls.account(key, found)? {
                 Ok(facts) => facts,
                 Err(error) => return Ok(Err(error)),
             };
-            let numbers = calls.numbers(&facts, key, given)?;
+            let numbers = calls.numbers(found, &facts, key, given)?;
 
             Ok(numbers.map(|numbers| (facts, numbers)))
-        })?;
+        };
+        let answer = match starts_programs {
+            true => self.part.read(READ_NUMBERS, read)?,
+            false => self.part.read_starting_nothing(READ_NUMBERS, read)?,
+        };
 
         answer.map_err(|error| {
             let not_supported =
@@ -362,7 +393,7 @@ impl ProviderPartCalls for PartCalls {
                 Err(error) => return Ok(Err(error)),
             };
 
-            calls.read_bill(&facts, key, given, days)
+            calls.read_bill(found, &facts, key, given, days)
         })?;
 
         answer.map_err(|error| {
@@ -393,21 +424,24 @@ fn given_sources(
         .collect()
 }
 
-/// What the agent part found of `login`.
-fn login_facts(login: &Login) -> LoginFacts {
+/// What the agent part found of `login`, in the profiles `found_in`.
+fn login_facts(login: &Login, found_in: Vec<FoundProfile>) -> LoginFacts {
     LoginFacts {
         kind: login.kind,
         identity: login.identity.clone(),
         plan: login.plan.clone(),
+        found_in,
     }
 }
 
-/// What OTTY knows of a key it read itself: an API key, known by the key.
+/// What OTTY knows of a key it read itself: an API key, known by the key
+/// and found in no profile.
 fn key_facts() -> LoginFacts {
     LoginFacts {
         kind: LoginKind::ApiKey,
         identity: no_identity(),
         plan: None,
+        found_in: Vec::new(),
     }
 }
 
@@ -439,15 +473,14 @@ fn balance_of(numbers: &PartNumbers) -> Balance {
 }
 
 /// The limits of a subscription in `numbers`: its windows with the extra
-/// usage it may buy, else its credits, with the plan `plan`.
+/// usage it may buy, else its credits, with the plan `plan` and the time
+/// the numbers were true.
 fn subscription_limits(numbers: &PartNumbers, plan: Option<String>) -> Limits {
-    let as_limits = otty_plugin_host::agents::agent::Limits {
-        windows: numbers.windows.clone(),
-        credits: numbers.credits,
+    let with_plan = PartNumbers {
         plan,
-        recorded_at_ms: None,
+        ..numbers.clone()
     };
-    let limits = limits_of(&as_limits);
+    let limits = limits_of(&with_plan);
 
     let (Some(extra), Billing::UsageWindows(usage)) =
         (&numbers.extra_usage, limits.billing())
@@ -460,10 +493,14 @@ fn subscription_limits(numbers: &PartNumbers, plan: Option<String>) -> Limits {
         extra.currency.clone(),
     );
     let usage = UsageWindows::new(usage.windows().to_vec(), Some(extra));
-    Limits::new(
+    let with_extra = Limits::new(
         Billing::UsageWindows(usage),
         limits.plan().map(String::from),
-    )
+    );
+    match limits.recorded_at() {
+        Some(time) => with_extra.with_recorded_at(time),
+        None => with_extra,
+    }
 }
 
 /// An amount of money the part read; `None` when it is not a number.
@@ -531,6 +568,7 @@ mod tests {
             key_limit: None,
             spent_this_month: None,
             plan: None,
+            recorded_at_ms: None,
         }
     }
 
@@ -553,11 +591,12 @@ mod tests {
         calls
             .expect_read_numbers()
             .times(1)
-            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login(), &[]);
+        let numbers =
+            provider.read(&account, &key_login(), Vec::new(), &[], true);
 
         assert_eq!(account.found_in().len(), 2);
         assert_eq!(
@@ -586,7 +625,8 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&other, &key_login(), &[]);
+        let numbers =
+            provider.read(&other, &key_login(), Vec::new(), &[], true);
 
         assert_eq!(
             numbers,
@@ -606,7 +646,7 @@ mod tests {
             FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
         );
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _| {
+        calls.expect_read_numbers().returning(|_, _, _, _| {
             let facts = AccountFacts {
                 identity: no_identity(),
                 plan: Some("Team".to_string()),
@@ -616,7 +656,8 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login(), &[]);
+        let numbers =
+            provider.read(&account, &key_login(), Vec::new(), &[], true);
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -641,7 +682,7 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|key, found, _| {
+            .withf(|key, found, _, _| {
                 let KeySource::Given(given) = key else {
                     return false;
                 };
@@ -649,11 +690,11 @@ mod tests {
                     && found.kind == LoginKind::ApiKey
             })
             .times(1)
-            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read_given(&account, &key, &[]);
+        let numbers = provider.read_given(&account, &key, &[], true);
 
         assert_eq!(
             numbers,
@@ -676,7 +717,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read_given(&account, &key, &[]);
+        let numbers = provider.read_given(&account, &key, &[], true);
 
         assert_eq!(
             numbers,
@@ -711,7 +752,7 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(move |key, _, _| {
+            .withf(move |key, _, _, _| {
                 let KeySource::Place(KeyPlace::JsonField(field)) = key else {
                     return false;
                 };
@@ -719,11 +760,11 @@ mod tests {
                     && field.pointer == "/env/ANTHROPIC_AUTH_TOKEN"
             })
             .times(1)
-            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
 
-        let numbers = provider.read(&account, &login, &[]);
+        let numbers = provider.read(&account, &login, Vec::new(), &[], true);
 
         assert!(provider.serves(&account));
         assert!(
@@ -751,6 +792,7 @@ mod tests {
             key_limit: None,
             spent_this_month: None,
             plan: None,
+            recorded_at_ms: None,
         }
     }
 
@@ -774,10 +816,9 @@ mod tests {
         };
         let asking = || {
             let mut calls = MockProviderPartCalls::new();
-            calls
-                .expect_read_numbers()
-                .times(1)
-                .returning(move |_, _, _| Err(SourceError::NeedsUser(need())));
+            calls.expect_read_numbers().times(1).returning(
+                move |_, _, _, _| Err(SourceError::NeedsUser(need())),
+            );
             PluginProvider::made_up("example-cloud", &["example.com"], calls)
         };
         let key = key_account(
@@ -785,9 +826,14 @@ mod tests {
             &["/home/dev/.example-agent"],
         );
 
-        let login =
-            asking().read(&subscription("example-cloud"), &key_login(), &[]);
-        let api_key = asking().read(&key, &key_login(), &[]);
+        let login = asking().read(
+            &subscription("example-cloud"),
+            &key_login(),
+            Vec::new(),
+            &[],
+            true,
+        );
+        let api_key = asking().read(&key, &key_login(), Vec::new(), &[], true);
 
         assert_eq!(login, Err(SourceError::NeedsUser(need())));
         assert_eq!(api_key, Err(SourceError::NeedsUser(need())));
@@ -804,17 +850,18 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|_, _, given| {
+            .withf(|_, _, given, _| {
                 matches!(given, [(slot, KeySource::Given(key))]
                     if slot == "admin" && key.as_str() == "sk-made-up-admin-1")
             })
             .times(1)
-            .returning(|_, _, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
         let given = [GivenSecret::made_up("admin", "sk-made-up-admin-1")];
 
-        let numbers = provider.read(&account, &key_login(), &given);
+        let numbers =
+            provider.read(&account, &key_login(), Vec::new(), &given, true);
 
         assert!(
             matches!(numbers, Ok(AccountNumbers::Balance(_))),
@@ -831,7 +878,7 @@ mod tests {
             &["/home/dev/.example-agent"],
         );
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _| {
+        calls.expect_read_numbers().returning(|_, _, _, _| {
             let numbers = PartNumbers {
                 spent_this_month: Some(usd(4.2)),
                 credits: Some(otty_plugin_host::agents::agent::Credits {
@@ -848,7 +895,8 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers = provider.read(&account, &key_login(), &[]);
+        let numbers =
+            provider.read(&account, &key_login(), Vec::new(), &[], true);
 
         let Ok(AccountNumbers::Balance(balance)) = numbers else {
             panic!("a balance: {numbers:?}");
@@ -868,7 +916,7 @@ mod tests {
     #[test]
     fn a_subscription_keeps_the_extra_usage_next_to_its_windows() {
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _| {
+        calls.expect_read_numbers().returning(|_, _, _, _| {
             let numbers = PartNumbers {
                 extra_usage: Some(
                     otty_plugin_host::agents::provider::ExtraUsage {
@@ -884,8 +932,13 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["example.com"], calls);
 
-        let numbers =
-            provider.read(&subscription("example-cloud"), &key_login(), &[]);
+        let numbers = provider.read(
+            &subscription("example-cloud"),
+            &key_login(),
+            Vec::new(),
+            &[],
+            true,
+        );
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -940,7 +993,7 @@ mod tests {
             let mut calls = MockProviderPartCalls::new();
             calls
                 .expect_read_numbers()
-                .withf(move |key, found, _| {
+                .withf(move |key, found, _, _| {
                     matches!(key, KeySource::Place(sent)
                         if crate::plugin_values::is_same_place(sent, &place))
                         && found.kind == LoginKind::Subscription
@@ -948,7 +1001,7 @@ mod tests {
                             == Some("made-up-account")
                 })
                 .times(1)
-                .returning(|_, found, _| {
+                .returning(|_, found, _, _| {
                     let facts = AccountFacts {
                         identity: found.identity.clone(),
                         plan: found.plan.clone(),
@@ -961,7 +1014,13 @@ mod tests {
                 calls,
             );
 
-            let numbers = provider.read(&subscription("openai"), &login, &[]);
+            let numbers = provider.read(
+                &subscription("openai"),
+                &login,
+                Vec::new(),
+                &[],
+                true,
+            );
 
             let Ok(AccountNumbers::Limits(limits)) = numbers else {
                 panic!("the limits: {numbers:?}");
@@ -990,7 +1049,8 @@ mod tests {
             FoundIn::ProfileFolder("/home/dev/.codex-gateway".into()),
         );
 
-        let numbers = provider.read(&gateway, &key_login(), &[]);
+        let numbers =
+            provider.read(&gateway, &key_login(), Vec::new(), &[], true);
 
         assert!(!provider.serves(&gateway));
         assert_eq!(

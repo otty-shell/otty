@@ -90,7 +90,7 @@ mod tests {
             "http = [\"api.example.com\"]",
             "http = [\"api.example.com\", \"x.example.com\"]",
         );
-        let update = pending_update(&plugin.installed, &newer, Vec::new());
+        let update = pending_update(&plugin.installed, &newer);
         let mut state = PluginsState::new(vec![plugin]);
         state.set_news("example", PluginNews::Waiting(Box::new(update)));
 

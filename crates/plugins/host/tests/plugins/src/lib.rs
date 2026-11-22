@@ -5,15 +5,16 @@
 //! Every one exports the agent contract through `otty-plugin-sdk`:
 //! `minimal` only that, `misbehave` also calls that never end or grab
 //! memory, `read-files` reads a file with the standard library, so it
-//! imports `wasi:filesystem`, and `programs` reads its limits by running,
+//! imports `wasi:filesystem`, and `programs` also exports the provider
+//! contract, whose parts read the numbers of an account by running,
 //! talking to or starting in a hidden terminal the program `stand-in`.
 
 // A `ReadError` may hold a need, a record the contract can not box.
 #![allow(clippy::result_large_err)]
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, Profile,
-    ProfilePlace, ProfileStatus, ReadError, Session,
+    Agent, Answers, Login, Place, PlaceItem, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session,
 };
 use otty_plugin_sdk::{Command, Need, NeedAction};
 
@@ -74,23 +75,13 @@ impl Agent for Plugin {
     fn launch(_profile: &Profile, _session: Option<&str>) -> Command {
         command()
     }
-
-    /// The limits read the way the variable name of `login` says, such as
-    /// `run`: the tests choose the way with the login they pass.
-    fn read_limits(
-        profile: &Profile,
-        login: &LoginRef,
-    ) -> Result<Limits, ReadError> {
-        let way = match login {
-            LoginRef::EnvVar(name) => name.as_str(),
-            _ => "none",
-        };
-
-        limits(profile, way)
-    }
 }
 
+#[cfg(not(feature = "programs"))]
 otty_plugin_sdk::export!(Plugin with agents::agent);
+
+#[cfg(feature = "programs")]
+otty_plugin_sdk::export!(Plugin with agents::agent, agents::provider);
 
 #[cfg(feature = "misbehave")]
 mod misbehave {
@@ -136,18 +127,58 @@ fn version() -> Option<String> {
     std::fs::read_to_string("/etc/hostname").ok()
 }
 
-#[cfg(not(feature = "programs"))]
-fn limits(_profile: &Profile, _way: &str) -> Result<Limits, ReadError> {
-    Err(ReadError::NotSupported)
+#[cfg(feature = "programs")]
+impl otty_plugin_sdk::agents::Provider for Plugin {
+    fn account(
+        _provider: &str,
+        _key: &otty_plugin_sdk::Key,
+        found: &otty_plugin_sdk::agents::LoginFacts,
+    ) -> Result<otty_plugin_sdk::agents::AccountFacts, ReadError> {
+        Ok(otty_plugin_sdk::agents::AccountFacts {
+            identity: found.identity.clone(),
+            plan: None,
+        })
+    }
+
+    /// The numbers read the way the account id says, such as `run`, in
+    /// the first profile the account was found in: the tests choose the
+    /// way with the account they pass.
+    fn numbers(
+        _provider: &str,
+        found: &otty_plugin_sdk::agents::LoginFacts,
+        account: &otty_plugin_sdk::agents::AccountFacts,
+        _key: &otty_plugin_sdk::Key,
+        _given: &[otty_plugin_sdk::GivenKey],
+    ) -> Result<otty_plugin_sdk::agents::AccountNumbers, ReadError> {
+        let way = account.identity.account_id.as_deref().unwrap_or("none");
+        let folder = found
+            .found_in
+            .first()
+            .map(|profile| profile.folder.clone())
+            .unwrap_or_default();
+
+        let plan = programs_plan(&folder, way)?;
+
+        Ok(otty_plugin_sdk::agents::AccountNumbers {
+            windows: Vec::new(),
+            credits: None,
+            extra_usage: None,
+            left: None,
+            key_limit: None,
+            spent_this_month: None,
+            plan: Some(plan),
+            recorded_at_ms: None,
+        })
+    }
 }
 
-/// The limits whose plan is what `stand-in` answered: its output for the
+/// What `stand-in` answered in the profile in `folder`: its output for the
 /// way `run`, its first line for `talk`, its screen after `/usage` and
 /// the working folder of hidden terminals for `terminal`. The talk and
 /// the terminal are kept, never dropped, so the host must stop them when
 /// the call ends; the way `keep-talk` only starts a talk and keeps it.
 #[cfg(feature = "programs")]
-fn limits(profile: &Profile, way: &str) -> Result<Limits, ReadError> {
+fn programs_plan(folder: &str, way: &str) -> Result<String, ReadError> {
     use std::cell::RefCell;
 
     use otty_plugin_sdk::programs::{self, Talk};
@@ -159,7 +190,7 @@ fn limits(profile: &Profile, way: &str) -> Result<Limits, ReadError> {
             const { RefCell::new(Vec::new()) };
     }
 
-    let env = vec![("STAND_IN_HOME".to_string(), profile.folder.clone())];
+    let env = vec![("STAND_IN_HOME".to_string(), folder.to_string())];
     let serve = ["serve", "--profile", "work"].map(String::from);
 
     let plan = match way {
@@ -219,12 +250,7 @@ fn limits(profile: &Profile, way: &str) -> Result<Limits, ReadError> {
         _ => "no program".to_string(),
     };
 
-    Ok(Limits {
-        windows: Vec::new(),
-        credits: None,
-        plan: Some(plan),
-        recorded_at_ms: None,
-    })
+    Ok(plan)
 }
 
 fn command() -> Command {

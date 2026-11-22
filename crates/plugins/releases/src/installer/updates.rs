@@ -13,9 +13,7 @@ use crate::installer::{
 };
 use crate::package::{Package, hashes_of};
 use crate::plan::{PendingUpdate, UpdateOutcome, UpdateReport};
-use crate::plugins_file::{
-    FileHashes, InstalledPlugin, Served, Source, Winner,
-};
+use crate::plugins_file::{FileHashes, InstalledPlugin, Source};
 
 /// How often the update check runs on its own.
 pub const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -73,16 +71,12 @@ impl Installer {
 
     /// Installs a waiting update the user agreed to: next to the old
     /// version, then switches to it and removes the old one. Parts keep
-    /// their on or off state and the user's choices. Each conflict of a
-    /// new part whose id or host is in `use_new_for` goes to this plugin
-    /// and the other plugin's part serving it is turned off; every other
-    /// conflict stays with its current server and the new part is off.
+    /// their on or off state, and a new part is on.
     pub fn apply_update(
         &mut self,
         update: &PendingUpdate,
-        use_new_for: &[Served],
     ) -> Result<(), InstallError> {
-        self.switch_to(update.package(), use_new_for)
+        self.switch_to(update.package())
     }
 
     /// Reload of a local plugin: copies and checks its folder again and
@@ -152,17 +146,11 @@ impl Installer {
 
         let diff =
             PermissionDiff::between(installed.parts(), package.manifest());
-        let conflicts = self
-            .conflicts_of(package.manifest(), package.id())
-            .into_iter()
-            .filter(|conflict| installed.part(conflict.part()).is_none())
-            .collect();
 
         Ok(PendingUpdate::new(
             installed.version().clone(),
             package,
             diff,
-            conflicts,
         ))
     }
 
@@ -176,7 +164,7 @@ impl Installer {
             return Ok(UpdateOutcome::Waiting(Box::new(pending)));
         }
 
-        self.switch_to(pending.package(), &[])?;
+        self.switch_to(pending.package())?;
 
         Ok(UpdateOutcome::Updated {
             from: pending.from().clone(),
@@ -186,14 +174,8 @@ impl Installer {
 
     /// Installs `package` next to the installed version of its plugin,
     /// switches the record to it, then removes the old folder and compiled
-    /// copy. Parts keep their on or off state; a new part is on unless
-    /// another plugin serves one of its ids or hosts that is not in
-    /// `use_new_for`.
-    fn switch_to(
-        &mut self,
-        package: &Package,
-        use_new_for: &[Served],
-    ) -> Result<(), InstallError> {
+    /// copy. Parts keep their on or off state; a new part is on.
+    fn switch_to(&mut self, package: &Package) -> Result<(), InstallError> {
         let id = package.id();
         let Some(old) = self.file.plugin(id).cloned() else {
             return Err(InstallError::NotInstalled(id.to_string()));
@@ -209,31 +191,8 @@ impl Installer {
         for part in &mut parts {
             if let Some(old_part) = old.part(&part.part()) {
                 part.on = old_part.is_on();
-                continue;
-            }
-            for served in part.served() {
-                let Some(current) = self.current_server(&served, id) else {
-                    continue;
-                };
-                if use_new_for.contains(&served) {
-                    self.turn_off_others(&served, id);
-                    self.file.choose(served, Winner::Plugin(id.to_string()));
-                } else {
-                    part.on = false;
-                    self.file.choose(served, current);
-                }
             }
         }
-        let gone: Vec<Served> = old
-            .parts()
-            .iter()
-            .filter(|old_part| !manifest.parts().contains(&old_part.part()))
-            .flat_map(|old_part| old_part.served())
-            .collect();
-        let winner = Winner::Plugin(id.to_string());
-        self.file.choices.retain(|choice| {
-            !(choice.winner == winner && gone.contains(&choice.served))
-        });
         if let Some(record) = self.file.plugin_mut(id) {
             record.name = manifest.plugin().name().to_string();
             record.version = manifest.plugin().version().clone();

@@ -2,7 +2,9 @@
 //! its sessions, its limits, the tokens it spent and its bill, and how it
 //! pays (spec Decisions 2, 5 and 9). The
 //! limits and the bill belong to an account: a profile of an account read
-//! through another profile takes a copy of that read.
+//! through another profile takes a copy of that read. A login two plugins
+//! read is two accounts (issue 29): the profile shows the limits and the
+//! bill of the first one the user did not hide.
 
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -24,6 +26,8 @@ pub(crate) struct ProfileState {
     profile: Profile,
     status: ProfileStatus,
     accounts: Vec<Account>,
+    limits_account: Option<Account>,
+    organization: Option<Account>,
     version: Option<String>,
     sessions: Option<Vec<AgentSession>>,
     failures: Option<Vec<SourceFailure>>,
@@ -56,21 +60,18 @@ impl ProfileState {
         self.version.as_deref()
     }
 
-    /// The account whose limits or credits the limit sources of the
-    /// profile read: its login with a subscription. `None` when none was
-    /// found: the profile's limits are then read for it alone.
+    /// The account whose limits or credits the profile shows: its first
+    /// login with a subscription the user did not hide. `None` when none
+    /// was found: the profile then has no limits to read.
     pub(crate) fn limits_account(&self) -> Option<&Account> {
-        self.accounts
-            .iter()
-            .find(|account| account.kind() != AccountKind::Money)
+        self.limits_account.as_ref()
     }
 
     /// The organization the profile pays through, whose admin key reads
-    /// its bill; `None` when none was found.
+    /// its bill: the first the user did not hide; `None` when none was
+    /// found.
     pub(crate) fn organization(&self) -> Option<&Account> {
-        self.accounts
-            .iter()
-            .find(|account| account.organization_id().is_some())
+        self.organization.as_ref()
     }
 
     /// The sessions of the profile, once they were read.
@@ -116,10 +117,12 @@ impl ProfileState {
         status: ProfileStatus,
         accounts: Vec<Account>,
     ) -> Self {
-        Self {
+        let mut state = Self {
             profile,
             status,
             accounts,
+            limits_account: None,
+            organization: None,
             version: None,
             sessions: None,
             failures: None,
@@ -128,7 +131,28 @@ impl ProfileState {
             limits: ProfileLimits::default(),
             spend: ProfileSpend::default(),
             bill: ProfileBill::default(),
-        }
+        };
+        state.choose_shown_accounts(|_| false);
+
+        state
+    }
+
+    /// Picks the account whose limits the profile shows and the
+    /// organization it pays through among the accounts `is_hidden` does
+    /// not say the user hid: the first of each.
+    pub(crate) fn choose_shown_accounts(
+        &mut self,
+        is_hidden: impl Fn(&Account) -> bool,
+    ) {
+        let mut shown =
+            self.accounts.iter().filter(|account| !is_hidden(account));
+        self.limits_account = shown
+            .clone()
+            .find(|account| account.kind() != AccountKind::Money)
+            .cloned();
+        self.organization = shown
+            .find(|account| account.organization_id().is_some())
+            .cloned();
     }
 
     /// The same profile with the version of its agent's program.
@@ -170,10 +194,11 @@ impl ProfileState {
             .is_some_and(|own| own.is_same_account(account))
     }
 
-    /// Whether the profile pays through the organization `organization`.
+    /// Whether the profile pays through the organization `organization`,
+    /// whichever plugin reads it.
     pub(crate) fn pays_through(&self, organization: &Account) -> bool {
         self.organization()
-            .is_some_and(|own| own.is_same_account(organization))
+            .is_some_and(|own| own.is_same_login(organization))
     }
 
     /// Whether the profile pays per token with an API key (spec Decision

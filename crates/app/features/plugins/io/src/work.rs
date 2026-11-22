@@ -10,7 +10,7 @@ use iced::futures::channel::oneshot;
 use otty_app_plugins::{ChangeAnswer, ListedPlugin, PluginsIntent};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{
-    InstallError, InstallPlan, Installer, PendingUpdate, Served, UpdateOutcome,
+    InstallError, InstallPlan, Installer, PendingUpdate, UpdateOutcome,
     UpdateReport,
 };
 
@@ -54,16 +54,12 @@ pub fn find_local(
     )
 }
 
-/// Installs the plugin of `plan`, giving the new plugin each id and host
-/// of `use_new_for`; answers [`PluginsIntent::Changed`].
+/// Installs the plugin of `plan`; answers [`PluginsIntent::Changed`].
 pub fn install(
     shared: &SharedInstaller,
     plan: InstallPlan,
-    use_new_for: Vec<Served>,
 ) -> Task<PluginsIntent> {
-    change(shared, move |installer| {
-        installer.install(&plan, &use_new_for)
-    })
+    change(shared, move |installer| installer.install(&plan))
 }
 
 /// Turns the part `part` of the plugin `plugin` on or off; answers
@@ -84,16 +80,13 @@ pub fn remove(shared: &SharedInstaller, plugin: String) -> Task<PluginsIntent> {
     change(shared, move |installer| installer.remove(&plugin))
 }
 
-/// Installs the waiting `update` the user agreed to, giving it each id
-/// and host of `use_new_for`; answers [`PluginsIntent::Changed`].
+/// Installs the waiting `update` the user agreed to; answers
+/// [`PluginsIntent::Changed`].
 pub fn apply_update(
     shared: &SharedInstaller,
     update: PendingUpdate,
-    use_new_for: Vec<Served>,
 ) -> Task<PluginsIntent> {
-    change(shared, move |installer| {
-        installer.apply_update(&update, &use_new_for)
-    })
+    change(shared, move |installer| installer.apply_update(&update))
 }
 
 /// Check for updates of the plugin `plugin`; answers
@@ -303,7 +296,7 @@ mod tests {
         else {
             panic!("the template is found");
         };
-        let installed = run(install(&shared, *plan, Vec::new()));
+        let installed = run(install(&shared, *plan));
         let off = run(set_part_on(
             &shared,
             String::from("example"),
@@ -347,7 +340,7 @@ mod tests {
         else {
             panic!("the template is found");
         };
-        let installed = run(install(&first_start, *plan, Vec::new()));
+        let installed = run(install(&first_start, *plan));
         drop(first_start);
         let next_start = shared_in(&folder).plugins();
 
@@ -382,7 +375,7 @@ mod tests {
             let PluginsIntent::Found(Ok(plan)) = found else {
                 panic!("{}: {found:?}", plugin_folder.display());
             };
-            let installed = run(install(&shared, *plan, Vec::new()));
+            let installed = run(install(&shared, *plan));
             assert!(
                 matches!(installed, PluginsIntent::Changed(Ok(_))),
                 "{}: {installed:?}",

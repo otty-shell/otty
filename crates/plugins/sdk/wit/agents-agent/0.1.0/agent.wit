@@ -8,7 +8,7 @@ interface agent {
   use otty:host/types@0.1.0.{command, need};
   use otty:host/keys@0.1.0.{key-place};
   use otty:host/files@0.1.0.{file-info};
-  use types.{read-error, identity, login-kind, limits};
+  use types.{read-error, identity, login-kind};
 
   /// A config folder of the agent found on this computer.
   record profile-place {
@@ -184,11 +184,6 @@ interface agent {
   read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
   /// The command that starts a new session, or continues `session`.
   launch: func(profile: profile, session: option<string>) -> command;
-  /// The limits the agent itself shows for `login`. The part tries its
-  /// own programs, files or servers in its own order and gives the first
-  /// limits it gets, or one error; `not-supported` when the agent shows
-  /// no limits.
-  read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;
   /// What the user must do now that a provider refused `login` of the
   /// profile, or it expired, such as run the agent so it renews the
   /// login. None: OTTY says the login was refused, with no button.

@@ -240,7 +240,7 @@ pub(crate) fn remove(
     let changed = saved.clone().without_added_account(account);
     let is_on_screen = state
         .selected_account()
-        .is_some_and(|selected| selected.is_same_account(account));
+        .is_some_and(|selected| selected.is_same_login(account));
 
     if is_on_screen {
         state.select_all_accounts();
@@ -346,12 +346,12 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let is_own_place = dialog
         .editing
         .as_ref()
-        .is_some_and(|editing| editing.is_same_account(&account));
+        .is_some_and(|editing| editing.is_same_login(&account));
     let is_taken = !is_own_place
         && saved
             .added_accounts()
             .iter()
-            .any(|added| added.is_same_account(&account));
+            .any(|added| added.is_same_login(&account));
     if is_taken {
         let text = i18n::t(Key::AgentsErrorAccountAdded).to_string();
         if let Some(dialog) = state.add_account_mut() {
@@ -424,7 +424,7 @@ mod tests {
     use crate::testing::{
         api_key, bill_key_needed, chatgpt_login, claude, codex, connected,
         key_ask, now, open_account_menu, organization,
-        profiles_with_accounts_loaded, with_accounts,
+        profiles_with_accounts_loaded, read_by_its_plugin, with_accounts,
     };
     use crate::types::{LoadedAccountNumbers, LoadedBill};
 
@@ -472,7 +472,7 @@ mod tests {
         let added =
             Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
         assert_eq!(saved.added_accounts(), std::slice::from_ref(&added));
-        assert_eq!(state.selected_account(), Some(added));
+        assert_eq!(state.selected_account(), Some(read_by_its_plugin(added)));
         assert!(state.add_account().is_some_and(AddAccountDialog::is_saving));
 
         let _ = reduce_all(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
@@ -590,7 +590,7 @@ mod tests {
         let saved = saved_of(&outcomes).expect("the key is saved");
         assert_eq!(saved.added_accounts(), std::slice::from_ref(&moved));
         assert_eq!(saved.account_name(&moved), Some("Mine"));
-        assert_eq!(state.selected_account(), Some(moved));
+        assert_eq!(state.selected_account(), Some(read_by_its_plugin(moved)));
     }
 
     #[test]
@@ -784,11 +784,17 @@ mod tests {
         );
         assert_eq!(saved.added_accounts(), std::slice::from_ref(&replaced));
         assert!(saved.given_keys_of(&replaced).is_empty(), "no slot key");
-        assert_eq!(state.selected_account(), Some(replaced.clone()));
+        assert_eq!(
+            state.selected_account(),
+            Some(read_by_its_plugin(replaced.clone()))
+        );
         assert_eq!(state.add_account(), None);
         assert_eq!(
             own_reads_of(&reloaded),
-            [(&replaced, &otty_agents::KeyPlace::Added)]
+            [(
+                &read_by_its_plugin(replaced.clone()),
+                &otty_agents::KeyPlace::Added
+            )]
         );
     }
 
@@ -814,7 +820,11 @@ mod tests {
         ask_for_new_key(&mut state, added.clone());
 
         let submitted = send(&mut state, AddAccountIntent::Submitted);
-        let need_after_save = state.profiles().own_reads().of(&added).cloned();
+        let need_after_save = state
+            .profiles()
+            .own_reads()
+            .of(&read_by_its_plugin(added.clone()))
+            .cloned();
         let saved = saved_of(&submitted).expect("the key is saved").clone();
         let _ = reduce_all(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
         let reloaded = reduce_all(
@@ -826,7 +836,10 @@ mod tests {
         assert_eq!(saved.added_accounts(), std::slice::from_ref(&added));
         assert_eq!(
             own_reads_of(&reloaded),
-            [(&added, &otty_agents::KeyPlace::Added)]
+            [(
+                &read_by_its_plugin(added.clone()),
+                &otty_agents::KeyPlace::Added
+            )]
         );
     }
 

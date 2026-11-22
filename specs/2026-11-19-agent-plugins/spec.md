@@ -167,10 +167,10 @@ OTTY release.
   sessions, tokens, projects and the agent's version, gives the launch
   and resume commands, and reports which logins and keys sit in a
   profile and where (file and field, environment variable, keyring entry,
-  database field), with the provider id or the host each is for. It may
-  also read limits the agent itself shows (Codex `app-server` and
-  session files, Claude Code `/usage`): where they come from, and in
-  which order, is the part's business (issue 19). A profile nobody is
+  database field), with the provider id or the host each is for. It reads
+  no numbers of an account (issue 29): the profile is the main thing,
+  and the agent part lists the accounts of a profile, whose they are,
+  where their key sits and what else the files tell. A profile nobody is
   logged in with is `not-logged-in(need)`: the need's `run` is the
   login command (issue 20).
 - **Provider part**: given a key handle, says whose account it is (account
@@ -181,10 +181,27 @@ OTTY release.
   as the admin key of an Anthropic or OpenAI bill, the part asks the user
   for with a need (`needs-user` with `ask-key`); OTTY then passes it to
   `numbers` and `read-bill` among the given keys, as a handle with the
-  part's slot (issue 20). OTTY asks it for the limits of a subscription
-  login before the agent part (issue 15); that order is the one rule OTTY
-  keeps, because the parts may come from different plugins, such as
-  OpenCode with DeepSeek (issue 19). It never sees when a login token
+  part's slot (issue 20). **It reads every way it can** (owner,
+  2026-11-22, issue 29): OTTY tells it, in `login-facts.found-in`, every
+  profile the account was found in, each with the plugin and the agent
+  part that found it, its config folder and the command that part's
+  `launch` gives for a new session there; the provider world imports
+  files, programs and hidden terminals for it, under the provider part's
+  own declared permissions. So the part reads the numbers from the
+  provider's server with the key, or by asking the agent itself, such as
+  `claude /usage` in a Claude Code profile (the Anthropic part) or the
+  limits Codex knows through `codex app-server` and its session files
+  (the OpenAI part). A key that is not at its place, such as a Claude
+  Code profile whose `.credentials.json` is `{}` while Claude Code still
+  works, is a normal case: using the handle fails with `not-found`, and
+  the part tries its other ways. When no way works it answers numbers
+  with nothing in them, not an error, and OTTY shows no limits. OTTY
+  never skips a provider part on its own: the part decides. A list of
+  found profiles was chosen over one profile because an account found
+  in OpenCode and in Claude Code can only be probed in the latter, and
+  the launch command over the folder alone because the agent part, not
+  the provider part, knows which variables point the agent at a folder.
+  It never sees when a login token
   expires or what it may read: it sends the request, and a refused or
   expired login that an agent keeps is `login-refused`; a part may read
   the expiry from the token's JWT claims and send nothing, as OpenAI's
@@ -223,13 +240,29 @@ OTTY release.
 - **Each part on its own.** The user turns each part on or off on the
   Plugins page. A failing part is paused alone (Decision 8). Remove
   deletes the whole plugin.
-- **Conflicts are per part.** When a part's agent id, provider id or
-  provider host is already served by another installed plugin, the
-  install is not refused: OTTY asks which plugin serves that id, and the
-  losing part is off (see "Links in the interface").
+- **No fight over names** (owner, 2026-11-22, issue 29). Nothing is
+  asked at install or later, and `plugins.json` keeps no choices. Every
+  provider part that serves an account reads it: when two plugins serve
+  one provider, both read its accounts, and each reading is an account of
+  its own (`Account::read_by`, the plugin id), named with its plugin
+  ("Anthropic · you@example.com (Anthropic Fork)") while two plugins
+  read the provider. The user hides the one they do not want; the choices
+  for a found account (name, hidden, given keys) are kept in
+  `agents.json` with its plugin. An account the user added is one entry
+  for every plugin that offers Add account for its provider. Two agent
+  parts with one agent id: the first installed reads it, and the user
+  turns the other off on the Plugins page.
 - **Accounts and profiles are not plugins.** OTTY joins one account found
   in several agents by account id, organization id, email, or SHA-256 key
-  fingerprint, as today (`merge_accounts`).
+  fingerprint, as today (`merge_accounts`), within one provider; with
+  another provider or another identity it is two accounts, and that is
+  fine (issue 29). An account no installed plugin reads is shown, with
+  the line that no installed plugin reads it; its sessions and their
+  estimated money still count.
+- **Hidden accounts are left out of every total** (issue 29): no read
+  starts for them, and their tokens go, in the totals by account, to
+  another copy of the same login the user did not hide, else to no
+  account.
 
 ### 5. Plugins never see a raw key
 
@@ -240,16 +273,6 @@ claims (the middle part) of a JWT. Files, variables and database columns
 that hold keys are readable by plugins only with the keys replaced by
 handles. The host reads the key right before each use and drops it right
 after, as today (`account_numbers/mod.rs`).
-
-OTTY gives a provider part a handle only to a key that is there now
-(2026-11-21, issue 13). Before it calls the part with the key of a login
-an agent part found, the host reads the key at that place, with the
-permissions of the agent part, which declares the place. When no key is
-there, such as a Claude Code profile whose `.credentials.json` is `{}`
-while the agent still works, the provider part is not called and no
-failure is shown: the account has no numbers from the provider, and the
-limits the agent part reads are what the user sees. A key OTTY may not
-read, or could not read, still goes to the part, which reports it.
 
 Of where a key came from, a handle tells one fact: whether the user gave
 it in OTTY (on Add account, or in the field of an `ask-key` need) or OTTY
@@ -669,12 +692,6 @@ pub trait Agent {
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&SessionId>) -> Command;
 
-    /// The limits the agent itself shows for `login`. The part tries its
-    /// own programs, files or servers in its own order and gives the first
-    /// limits it gets, or one error. Default: not supported.
-    fn read_limits(_profile: &Profile, _login: &LoginRef)
-        -> Result<Limits, ReadError> { Err(ReadError::NotSupported) }
-
     /// What the user must do now that a provider part refused `login` of
     /// the profile (`ReadError::LoginRefused`), such as run the agent so
     /// it renews the login. Default: none, and OTTY says the login was
@@ -1012,7 +1029,6 @@ interface agent {
   spend-places: func(profile: profile) -> list<place>;
   read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
   launch: func(profile: profile, session: option<string>) -> command;
-  read-limits: func(profile: profile, login: login-ref) -> result<limits, read-error>;   // the part picks its sources
   login-refused: func(profile: profile, login: login-ref) -> option<need>;
 }
 
@@ -1033,26 +1049,33 @@ world agent-part {
 package otty:agents-provider@0.1.0;
 
 interface provider {
+  use otty:host/types@0.1.0.{command};
   use otty:host/keys@0.1.0.{key, given-key};
   use otty:agents-agent/types@0.1.0.{read-error, identity, login-kind, limit-window, credits};
+  /* a profile an account was found in (issue 29) */
+  record found-profile { plugin: string, agent: string, folder: string, launch: command }
+  record login-facts { kind: login-kind, identity: identity, plan: option<string>,
+                       found-in: list<found-profile> }
   record extra-usage { used: option<f64>, monthly-limit: option<f64>, currency: option<string> }
   record account-numbers { windows: list<limit-window>, credits: option<credits>,
                            extra-usage: option<extra-usage>, left: option<money>,
                            key-limit: option<key-limit>, spent-this-month: option<money>,
-                           plan: option<string> }
+                           plan: option<string>, recorded-at-ms: option<s64> }
   record day-range { first: string, last: string }       // UTC days, YYYY-MM-DD
   account: func(provider: string, key: borrow<key>, found: login-facts) -> result<account-facts, read-error>;
-  numbers: func(provider: string, account: account-facts, key: borrow<key>,
-                given: list<given-key>) -> result<account-numbers, read-error>;
-  read-bill: func(provider: string, account: account-facts, key: borrow<key>,
+  numbers: func(provider: string, found: login-facts, account: account-facts, key: borrow<key>,
+                given: list<given-key>) -> result<account-numbers, read-error>;   // every way it can
+  read-bill: func(provider: string, found: login-facts, account: account-facts, key: borrow<key>,
                   given: list<given-key>, days: day-range) -> result<bill, read-error>;
 }
 
 /// What a component with provider parts imports and exports.
 world provider-part {
-  import otty:host/keys@0.1.0; import otty:host/http@0.1.0;
-  import otty:host/env@0.1.0;  import otty:host/clock@0.1.0;
-  import otty:host/log@0.1.0;  import otty:agents-agent/types@0.1.0;
+  import otty:host/keys@0.1.0;     import otty:host/files@0.1.0;
+  import otty:host/http@0.1.0;     import otty:host/programs@0.1.0;
+  import otty:host/terminal@0.1.0; import otty:host/env@0.1.0;
+  import otty:host/clock@0.1.0;    import otty:host/log@0.1.0;
+  import otty:agents-agent/types@0.1.0;
   export provider;
 }
 ```
@@ -1189,14 +1212,12 @@ reads each account once per refresh, not per profile.
 3. **Check the manifest.** Its plugin id is not taken by another installed
    plugin (refused: "A plugin `opencode` is already installed from
    <repository>"); globs are valid and inside home or listed variables;
-   icons exist; every part has its contract in `[api]`. OTTY notes each
-   part whose agent id, provider id or provider host another installed
-   plugin already serves.
+   icons exist; every part has its contract in `[api]`. A part whose ids
+   or hosts another installed plugin serves too is no conflict (issue
+   29).
 4. **Show.** A dialog with name, author, repository link, version,
    "Official" or "Community", and each part with its permissions in words.
-   For each part noted in step 3, a choice: "Anthropic is already served
-   by Anthropic (official). Use: [official] / [this plugin]". Buttons
-   **Install** and **Cancel**.
+   Buttons **Install** and **Cancel**.
 5. **Download.** The `.wasm` and the icons. OTTY computes SHA-256 of each
    asset and checks the `.wasm`: it exports exactly the contracts and
    versions of `[api]`, only allowed imports, at most 20 MiB; icons parse
@@ -1205,11 +1226,9 @@ reads each account once per refresh, not per profile.
    `~/.local/share/otty/plugins/<id>/<version>/`; the compiled copy to
    `~/.cache/otty/plugins/<sha256>-<engine hash>.cwasm`. `plugins.json` in
    `~/.config/otty/` records the URL, version, asset hashes, the granted
-   permissions of each part, each part on or off, and which plugin serves
-   each id the user chose for.
+   permissions of each part and each part on or off; every part is on.
 7. **Run.** The registry gets the agents and providers of the parts that
-   are on; the losing part of a choice is off. Agents mode reads again;
-   new profiles and accounts appear.
+   are on. Agents mode reads again; new profiles and accounts appear.
 
 **Updates.** Once a day and on **Check for updates**, OTTY lists the
 releases of each installed plugin and takes the newest one whose contract
@@ -1220,7 +1239,7 @@ the permission diff, and the installed version keeps running until the
 user agrees. A newer release that needs unknown contract versions is
 skipped, and the plugin's row says "0.6.0 needs a newer OTTY". The update
 installs next to the old version, switches, then removes the old folder;
-parts keep their on or off state and the user's choices. A tag whose
+parts keep their on or off state, and a new part is on. A tag whose
 assets now hash differently from what was recorded: the update is refused
 with "The release v1.2.0 of OpenCode changed after it was installed. OTTY
 keeps the installed copy."
@@ -1302,7 +1321,7 @@ token.
 | Instances per store | 4 | One component, a few inner instances |
 | Deadline, quick calls (`detect`, `version`, `logins`, `launch`, `profiles`) | 2 s | |
 | Deadline, `read-answers`, `read-sessions` | 120 s per call | One 1 GB file at 400 MB/s plus margin |
-| Deadline, `read-limits`, provider calls | 90 s | Host waits (HTTP, terminal) count |
+| Deadline, provider calls | 90 s | Host waits (HTTP, terminal) count |
 | Epoch tick | 10 ms (spike: 1.005 s for 1 s) | |
 | Plugin state between refreshes | none: a new instance per refresh of one profile or account (0.1 ms) | Nothing leaks between reads |
 | WASI | Empty context; stderr to the plugin log | |
@@ -1331,7 +1350,9 @@ table above.
 - **The registry** is one value in `otty-agents`, filled by the
   plugin engine at start and refilled when a plugin is installed,
   updated or removed, or a part is turned on or off. It holds only parts
-  that are on, and one part per agent id, provider id and provider host.
+  that are on: one part per agent id, and every provider part, so a
+  provider two plugins serve has two entries, each reading its own copy
+  of the provider's accounts (issue 29).
   The app gets it as an `Arc<Registry>` with the agents mode's context.
   App crates read names, icons, usage pages and hosts only through it.
   `otty-app-theme`'s `agent_icon` and `provider_icon` are removed; the kit
@@ -1367,7 +1388,7 @@ table above.
 | Plugin updated to a new version | Nothing moves: ids are stable, names and hidden items stay | Same | "Read by" shows the new version |
 | A part fails, traps or times out | Last good numbers greyed with their time | Same | Need "<Plugin> <version> could not read <what>" with **Copy report** (plugin id, version, repository, part id, the call, the error kind; no values). Three in a row pause that part only |
 | A part says format changed | Same as today, greyed | "format changed" | The need names the agent version and the plugin: "Codex 0.170.0 changed its session files. OpenAI plugin 0.4.0 reads them up to 0.169.0." and **Copy report**, **Open plugin repository** |
-| A part's agent id, provider id or provider host is already served by another plugin | Served by the chosen plugin | Same | At install OTTY asks: "Anthropic is already served by Anthropic (official). Use: [official] / [this plugin]". The losing part is off; the Plugins page can switch it later. Neither install is refused |
+| A part's provider id or provider host is served by another plugin too | One account per plugin that reads it, each named with its plugin; the user hides the one they do not want (issue 29) | Same | Nothing is asked. An agent id two plugins serve is read by the first installed; the other part can be turned off |
 | Plugin update with new permissions | — | — | Plugins page badge and the need "Plugin update needs your OK: OpenAI 0.4.0 → 0.5.0 asks for new permissions [Review]" |
 | Newest release needs a newer OTTY | Nothing moves; the installed version keeps running | Same | The plugin's row: "0.6.0 needs a newer OTTY". At install the whole plugin shows "Needs a newer OTTY" |
 
@@ -1423,11 +1444,12 @@ then the cleanup and the docs.
   pages show the time of their numbers, the last good ones greyed with
   why after a failed read, "Needs from you", the mark "estimate, list
   prices" (with a tooltip of the prices' time) under money estimated from
-  LiteLLM prices, and "Read by". The provider part is asked before the
-  agent part; neither is shown as a source.
+  LiteLLM prices, and "Read by". The provider part that reads the
+  account reads its numbers every way it can (issue 29); its ways are
+  not shown as sources.
 - **Plugins page, card of a part**: the last call that failed or that the
   host refused, with its time and kind ("Last failure 5 min ago:
-  read-limits, the plugin did not finish in time"), never a value, key or
+  numbers, the plugin did not finish in time"), never a value, key or
   session text, and **Copy report** (issue 19).
 - **Found by OTTY** and **All accounts → Needs you**: the new needs
   "no provider plugin", "part is off", "plugin update needs your OK",

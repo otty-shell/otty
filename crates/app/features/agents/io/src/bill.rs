@@ -156,7 +156,8 @@ mod tests {
         )
     }
 
-    /// A made-up organization at `provider`, found in `home`.
+    /// A made-up organization at `provider`, found in `home` and read by
+    /// the plugin of the same id.
     fn organization(home: &Path, provider: &str) -> Account {
         Account::new(
             ProviderRef::of_id(provider),
@@ -165,6 +166,7 @@ mod tests {
             AccountKind::Money,
             FoundIn::ProfileFolder(home.join(".claude-api")),
         )
+        .with_read_by(Some(provider.to_string()))
     }
 
     fn given(key: KeyRef) -> Vec<GivenKey> {

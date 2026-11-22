@@ -161,7 +161,7 @@ use model::{
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
 use new_session_dialog::NewSessionDialogViewModel;
-use otty_agents::{AgentEnv, Registry};
+use otty_agents::{Account, AgentEnv, Profile, Registry};
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
 };
@@ -261,6 +261,18 @@ impl Agents {
     /// `otty-app-agents-io`, so every read uses the same agents.
     pub fn known_agents(&self) -> &AgentList {
         self.state.agents()
+    }
+
+    /// Return what a read of the limits of the shown `profile` reads
+    /// ([`AgentsOutcome::LoadLimits`]): the account whose limits it
+    /// shows, `None` when it has none, and every shown profile the account
+    /// was found in, `profile` first, which the provider part is told of
+    /// (spec 2026-11-19-agent-plugins, issue 29).
+    pub fn limits_to_read(
+        &self,
+        profile: &Profile,
+    ) -> (Option<Account>, Vec<Profile>) {
+        self.state.profiles().limits_to_read(profile)
     }
 
     /// Return what the agents look at in the environment: the home folder

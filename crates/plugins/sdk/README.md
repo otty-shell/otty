@@ -11,7 +11,7 @@ each have a "provider". The `agents` domain, Agents mode, is
 `otty_plugin_sdk::agents`: the `Agent` and `Provider` traits and every
 type only they use, with the WIT packages `otty:agents-agent` (whose
 `types` interface holds the values both share, such as `ReadError` and
-`Limits`) and `otty:agents-provider`. The host operations, keys and
+`LimitWindow`) and `otty:agents-provider`. The host operations, keys and
 needs are at the crate root and in `otty:host`, since no domain owns
 them. The optional `Language` trait of the whole plugin belongs to no
 domain (`otty:language`). A plugin names what it exports as
@@ -23,13 +23,16 @@ It also holds a test host, so a plugin's tests run natively with plain
 against the permissions of the part being tested. The test host is never
 built for `wasm32-wasip2`.
 
-Where a number comes from is the plugin's business. An agent part that
-reads the limits its agent shows implements `Agent::read_limits(profile,
-login)`: it tries its own programs, files or servers in its own order and
-returns the first limits it gets, or one `ReadError` that says why.
-OTTY asks the provider part of the login first and the agent part only
-when that gives nothing. The default says "not supported", and OTTY
-shows no limits of the agent.
+Where a number comes from is the plugin's business. A provider part
+reads an account's numbers any way it can: from the provider's server
+with the key, or by asking the agent itself in a profile the account was
+found in, which `LoginFacts::found_in` lists with the command its agent
+part starts the agent with there; the provider world imports files,
+programs and hidden terminals for that, under the part's own
+permissions. A key that is not at its place is a normal case: using its
+handle fails with `HostError::NotFound`, and `TestHost::key_at` makes
+such a handle in tests. With no way that works the part answers numbers
+with nothing in them, not an error.
 
 What the user must do for an agent or a provider is the part's to say,
 as a `Need`: a stable id, a title, a text and one button, a `NeedAction`

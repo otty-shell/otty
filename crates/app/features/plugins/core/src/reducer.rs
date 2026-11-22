@@ -9,7 +9,7 @@ use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallError, UpdateOutcome, UpdateReport};
 
 use crate::event::{ChangeAnswer, PluginsIntent, PluginsOutcome};
-use crate::model::{failed, given_to_new};
+use crate::model::failed;
 use crate::notes::notes;
 use crate::state::{PluginNews, PluginsState, Screen};
 use crate::types::ListedPlugin;
@@ -62,16 +62,9 @@ pub(crate) fn reduce(
         PluginsIntent::Found(found) => {
             state.set_busy(false);
             match found {
-                Ok(plan) => state.show(Screen::Install {
-                    plan,
-                    use_new: Vec::new(),
-                }),
+                Ok(plan) => state.show(Screen::Install { plan }),
                 Err(error) => state.set_error(Some(error_text(&error))),
             }
-            Vec::new()
-        },
-        PluginsIntent::UseNew(part, use_new) => {
-            choose(state, part, use_new);
             Vec::new()
         },
         PluginsIntent::Install => install(state),
@@ -170,10 +163,7 @@ fn open(state: &mut PluginsState, place: PluginsPlace) -> Vec<PluginsOutcome> {
         },
         PluginsPlace::Review(plugin) => {
             if state.waiting_update(&plugin).is_some() {
-                state.show(Screen::Update {
-                    plugin,
-                    use_new: Vec::new(),
-                });
+                state.show(Screen::Update { plugin });
             } else {
                 state.show(Screen::List);
                 state.set_highlighted(Some(plugin));
@@ -218,34 +208,15 @@ fn find(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     vec![outcome]
 }
 
-/// Gives what another plugin serves to the new `part`, or keeps it with
-/// the plugin that serves it now.
-fn choose(state: &mut PluginsState, part: PartRef, give: bool) {
-    let use_new = match state.screen_mut() {
-        Screen::Install { use_new, .. } | Screen::Update { use_new, .. } => {
-            use_new
-        },
-        _ => return,
-    };
-
-    use_new.retain(|chosen| *chosen != part);
-    if give {
-        use_new.push(part);
-    }
-}
-
 fn install(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Screen::Install { plan, use_new } = state.screen() else {
+    let Screen::Install { plan } = state.screen() else {
         return Vec::new();
     };
 
-    let outcome = PluginsOutcome::Install {
-        use_new_for: given_to_new(plan.conflicts(), use_new),
-        plan: plan.clone(),
-    };
+    let outcome = PluginsOutcome::Install { plan: plan.clone() };
     state.set_error(None);
     state.set_busy(true);
 
@@ -305,7 +276,7 @@ fn apply_update(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Screen::Update { plugin, use_new } = state.screen() else {
+    let Screen::Update { plugin } = state.screen() else {
         return Vec::new();
     };
     let Some(update) = state.waiting_update(plugin) else {
@@ -313,7 +284,6 @@ fn apply_update(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     };
 
     let outcome = PluginsOutcome::ApplyUpdate {
-        use_new_for: given_to_new(update.conflicts(), use_new),
         update: Box::new(update.clone()),
     };
     state.set_error(None);

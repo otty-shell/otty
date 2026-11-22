@@ -140,10 +140,22 @@ pub(crate) struct RawProvider {
     pub(crate) permissions: RawProviderPermissions,
 }
 
-/// `[agents.provider.permissions]`.
+/// `[agents.provider.permissions]`. Files, variables, programs and hidden
+/// terminals serve the ways of reading that ask the agent itself (issue
+/// 29); keys, databases and the keyring are the agent parts'.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawProviderPermissions {
     #[serde(default)]
     pub(crate) http: Vec<String>,
+    #[serde(default)]
+    pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) write: Vec<String>,
+    #[serde(default)]
+    pub(crate) env: Vec<String>,
+    #[serde(default)]
+    pub(crate) run: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) terminal: Vec<RawProgram>,
 }

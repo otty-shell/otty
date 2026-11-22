@@ -130,12 +130,12 @@ may not call `api.example.com`.
 
 | Permission                       | Of     | Allows                                                                  |
 | -------------------------------- | ------ | ----------------------------------------------------------------------- |
-| `read`                           | agent  | Listing and reading files that match the globs.                         |
-| `write`                          | agent  | Deleting files that match the globs.                                    |
+| `read`                           | both   | Listing and reading files that match the globs.                         |
+| `write`                          | both   | Deleting files that match the globs.                                    |
 | `sqlite`                         | agent  | Read-only queries of the databases that match.                          |
-| `env`                            | agent  | Reading these environment variables, and using them in globs as `{NAME}`. |
-| `[[agents.agent.permissions.run]]`      | agent  | Running `program` with arguments that match `args`, once or line by line. |
-| `[[agents.agent.permissions.terminal]]` | agent  | Running `program` with `args` in a hidden terminal.                     |
+| `env`                            | both   | Reading these environment variables, and using them in globs as `{NAME}`. |
+| `[[agents.<kind>.permissions.run]]`      | both   | Running `program` with arguments that match `args`, once or line by line. |
+| `[[agents.<kind>.permissions.terminal]]` | both   | Running `program` with `args` in a hidden terminal.                     |
 | `[[agents.agent.permissions.keyring]]`  | agent  | Reading the keyring entry `service` / `user` once the user allows the keyring; `fields` are its key fields. |
 | `[[agents.agent.permissions.keys]]`     | agent  | Where keys are: JSON `fields` of `files`, a `column` of a `table` in `sqlite` databases (with `fields` for a JSON column), or `env` variables. |
 | `http`                           | provider | HTTPS requests to exactly these hosts.                                |
@@ -181,14 +181,31 @@ A plugin with only agent parts and texts only in English writes
 | `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
 | `read_answers(profile, item)`             | Every answer of one file, of the whole history, with its tokens, an identity, and the session and the project it was given in, and the records seen and understood. OTTY makes the statistics of a session and of a project from these answers, reading for them only the files your session places tie to that session or project. |
 | `launch(profile, session)`                | The commands for New session and Continue.                          |
-| `read_limits(profile, login)`             | Optional: the limits the agent itself shows for a login. Where they come from is the plugin's business: try your own program, files or servers in your order, and return the first limits or one error. OTTY asks the provider part of the login first, and this only when that gives nothing. |
 | `login_refused(profile, login)`           | Optional: the [need](#a-refused-login) to show when a provider part refused a login this profile keeps. |
 
 | `Provider`                        | Gives OTTY                                                               |
 | --------------------------------- | ------------------------------------------------------------------------ |
 | `account(provider, key, found)`   | Whose account the key is: account or organization id, email, plan.      |
-| `numbers(provider, account, key, given)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. |
-| `read_bill(provider, account, key, given, days)` | Optional: the bill of an organization per UTC day.        |
+| `numbers(provider, found, account, key, given)` | Limits, credits, extra usage, Left, Key limit, Spent this month; each optional. Read [any way you can](#numbers-any-way-you-can). |
+| `read_bill(provider, found, account, key, given, days)` | Optional: the bill of an organization per UTC day.        |
+
+### Numbers any way you can
+
+The provider part reads an account's numbers, however it can get them: from the provider's server
+with the key, or by asking the agent itself, such as `claude /usage` in a hidden terminal or the
+limits Codex writes in its session files. `found` tells what OTTY found about the login: its kind,
+its identity, and `found_in`, every profile the account was found in, each with the plugin and the
+agent part that found it, its config folder, and `launch`, the command that part starts the agent
+with there. Run that command with your own arguments, under the provider part's own `run` or
+`terminal` permissions; while Agents mode is not on screen no program starts, and the next read on
+screen asks again.
+
+A key that is not at its place is a normal case, such as a Claude Code profile whose
+`.credentials.json` is `{}` while Claude Code still works: using the handle fails with
+`HostError::NotFound`. Try your other ways then. When no way works, answer numbers with nothing in
+them, not an error; OTTY shows no limits. Every provider part that serves an account reads it:
+when two plugins serve one provider, each reading is an account of its own, named with its plugin,
+and the user hides the one they do not want.
 
 A place is a glob and its kind, files or a database. OTTY lists the files of the places, keeps
 what each file gave, and asks your part again only for a file that is new or whose size or change
@@ -280,11 +297,11 @@ once; OTTY keeps only where the user keeps it (a file or a variable) and from th
 `numbers` and `read_bill` in `given`, as a handle with its slot. `given_key(given, slot)` finds it:
 
 ```rust
-use otty_plugin_sdk::agents::{AccountFacts, Bill, DayRange, ReadError};
+use otty_plugin_sdk::agents::{AccountFacts, Bill, DayRange, LoginFacts, ReadError};
 use otty_plugin_sdk::{GivenKey, Key, given_key};
 
-fn read_bill(_provider: &str, _account: &AccountFacts, key: &Key, given: &[GivenKey],
-             days: &DayRange) -> Result<Bill, ReadError> {
+fn read_bill(_provider: &str, _found: &LoginFacts, _account: &AccountFacts, key: &Key,
+             given: &[GivenKey], days: &DayRange) -> Result<Bill, ReadError> {
     let bill_key = match key.has_prefix("ex-admin-").map_err(ReadError::Host)? {
         true => key,
         false => given_key(given, "admin")
@@ -322,7 +339,8 @@ fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
 A key the user gave under a slot is also given in OTTY: when it is refused, ask for it again under
 its slot, never with `slot: None`, which would replace the account's own key. `slot: None` replaces
 only the key of an account the user added; for an account an agent keeps, OTTY does not open the
-field. In tests, `TestHost::given_key` makes a key given in OTTY and `TestHost::key` one read from
+field. In tests, `TestHost::given_key` makes a key given in OTTY, `TestHost::key_at` a handle to the
+key at a place, read at each use as OTTY reads it, which may be not there, and `TestHost::key` one read from
 an agent's place.
 
 ### A refused login
@@ -340,8 +358,9 @@ fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
 ```
 
 The login is passed too, so a part that keeps several logins can tell which one. The default gives
-`None`; OTTY then shows its own need "The login was refused", with no button. Give the agent part's
-own read of the limits the same need id for the same login, so the profile shows it once.
+`None`; OTTY then shows its own need "The login was refused", with no button. When the provider
+part asks the agent itself and its login expired there, give that need the same id, so the profile
+shows it once.
 
 ### The language
 

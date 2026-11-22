@@ -508,6 +508,59 @@ mod tests {
         );
     }
 
+    /// Issue 29: a provider part reads an account any way it can, also by
+    /// asking the agent in a profile the account was found in, so it may
+    /// declare files, variables, programs and hidden terminals; keys,
+    /// databases and the keyring stay the agent parts'.
+    #[test]
+    fn a_provider_part_may_declare_files_programs_and_terminals() {
+        let with_ways = edited(
+            OPENAI_MANIFEST,
+            r#"http = ["chatgpt.com", "api.openai.com"]"#,
+            r#"http = ["chatgpt.com", "api.openai.com"]
+read = ["~/.codex*/sessions/**"]
+write = ["~/.codex*/probe/*.jsonl"]
+env = ["CODEX_HOME"]
+
+[[agents.provider.permissions.run]]
+program = "codex"
+args = ["app-server"]
+
+[[agents.provider.permissions.terminal]]
+program = "codex"
+args = ["--usage"]"#,
+        );
+        let with_keys = edited(
+            OPENAI_MANIFEST,
+            r#"http = ["chatgpt.com", "api.openai.com"]"#,
+            r#"http = ["chatgpt.com"]
+sqlite = ["~/.codex/state.db"]"#,
+        );
+
+        let manifest = Manifest::parse(&with_ways).expect("valid");
+        let refused = refusal(&with_keys);
+
+        let provider = manifest.providers()[0].permissions();
+        let lines: Vec<String> =
+            provider.lines().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            lines,
+            [
+                "Reads files in `~/.codex*/sessions/**`",
+                "Writes and deletes files in `~/.codex*/probe/*.jsonl`",
+                "Reads the environment variable `CODEX_HOME`",
+                "Runs `codex app-server`",
+                "Runs `codex --usage` in a hidden terminal",
+                "Sends requests to `chatgpt.com`",
+                "Sends requests to `api.openai.com`",
+            ]
+        );
+        assert!(
+            matches!(&refused, ManifestError::Shape(text) if text.contains("unknown field")),
+            "{refused:?}"
+        );
+    }
+
     /// Issue 21: the parts belong to the `agents` domain, so a part
     /// table at the top level is an unknown key.
     #[test]

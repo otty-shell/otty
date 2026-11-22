@@ -6,9 +6,10 @@
 //! ([`Installer::find_release`]) or from a local folder that holds a built
 //! copy ([`Installer::find_local`]); OTTY carries no plugin of its own. An
 //! [`InstallPlan`] holds what the
-//! install dialog shows: the manifest, "Official", "Community" or "Local",
-//! and each id or host another plugin already serves, which the user
-//! settles per part. [`Installer::install`] downloads or copies the files,
+//! install dialog shows: the manifest and "Official", "Community" or
+//! "Local". Two plugins may serve one id or host: every part that is on
+//! reads (issue 29), so nothing is asked. [`Installer::install`] downloads
+//! or copies the files,
 //! checks their size, the icons and the `.wasm`, keeps them in
 //! `<plugins folder>/<id>/<version>/`, compiles the plugin into the cache
 //! and records it in `plugins.json`.
@@ -47,9 +48,8 @@ pub use crate::installer::updates::UPDATE_CHECK_EVERY;
 pub use crate::installer::{Installer, Places};
 pub use crate::package::{MANIFEST_FILE, MAX_WASM_BYTES};
 pub use crate::plan::{
-    Conflict, InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
+    InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
 };
 pub use crate::plugins_file::{
-    Choice, FileHashes, InstalledPart, InstalledPlugin, Served, Source, Trust,
-    Winner,
+    FileHashes, InstalledPart, InstalledPlugin, Source, Trust,
 };

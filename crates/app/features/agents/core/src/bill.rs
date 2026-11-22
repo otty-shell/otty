@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{Bill, SourceError, Unavailable};
+use otty_agents::{Bill, SourceError};
 
 use super::freshness::ReadState;
 
@@ -38,19 +38,14 @@ impl ProfileBill {
     }
 
     /// Take the answer of a read that ended at `read_at`, which replaces
-    /// the one before. A login with no key at its place now has no bill
-    /// and no failure (issue 13 of spec 2026-11-19-agent-plugins).
+    /// the one before.
     pub(crate) fn apply(
         &mut self,
         bill: Result<Bill, SourceError>,
         read_at: SystemTime,
     ) {
         self.reads.end_at(read_at);
-
-        self.latest = match bill {
-            Err(SourceError::NotAvailable(Unavailable::NoLoginKey)) => None,
-            bill => Some(bill),
-        };
+        self.latest = Some(bill);
     }
 }
 
@@ -70,24 +65,6 @@ mod tests {
         assert_eq!(answered, Some(bill_of(1, 2)));
         assert_eq!(bill.answer(), None);
         assert_eq!(bill.failure(), Some(&crate::testing::refused_key_need()));
-        assert_eq!(bill.reads().read_at(), Some(at(20)));
-    }
-
-    /// Issue 13 of spec 2026-11-19-agent-plugins: a login whose key is not
-    /// at its place now reads no bill and has no failure to show; the
-    /// estimate answers.
-    #[test]
-    fn a_login_without_its_key_has_no_bill_and_no_failure() {
-        let mut bill = ProfileBill::default();
-        let no_key = Err(SourceError::NotAvailable(
-            otty_agents::Unavailable::NoLoginKey,
-        ));
-
-        bill.apply(Ok(bill_of(1, 2)), at(10));
-        bill.apply(no_key, at(20));
-
-        assert_eq!(bill.answer(), None);
-        assert_eq!(bill.failure(), None);
         assert_eq!(bill.reads().read_at(), Some(at(20)));
     }
 

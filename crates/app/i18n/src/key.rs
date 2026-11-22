@@ -1447,6 +1447,9 @@ pub enum Key {
     AgentsReadsMoney,
     /// A key shown by its last characters. Placeholder: `{last}`.
     TplAgentsAccountKey,
+    /// An account one of two plugins reads, with the plugin's name.
+    /// Placeholders: `{name}`, `{plugin}`.
+    TplAgentsAccountOfPlugin,
     /// A key too short to show any of it.
     AgentsAccountKey,
     /// A login whose files name no email.
@@ -1826,14 +1829,6 @@ pub enum Key {
     PluginsLocalNote,
     /// Line of a part that asks for no permissions.
     PluginsNoPermissions,
-    /// Choice of the install dialog: {thing} is a part, {current} the plugin that serves it now.
-    TplPluginsAlreadyServed,
-    /// Label before the two buttons of a choice.
-    PluginsUse,
-    /// Button of a choice that gives the part to the new plugin.
-    PluginsThisPlugin,
-    /// An official plugin in a choice: {name}.
-    TplPluginsOfficialName,
     /// Button of the install dialog.
     PluginsInstall,
     /// Title of the update dialog: {name}, {from}, {to}.
@@ -1980,7 +1975,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 926] = [
+    pub(super) const ALL: [Self; 923] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2645,6 +2640,7 @@ impl Key {
         Self::AgentsReadsCredits,
         Self::AgentsReadsMoney,
         Self::TplAgentsAccountKey,
+        Self::TplAgentsAccountOfPlugin,
         Self::AgentsAccountKey,
         Self::AgentsAccountLogin,
         Self::AgentsFoundInUser,
@@ -2833,10 +2829,6 @@ impl Key {
         Self::PluginsCommunityNote,
         Self::PluginsLocalNote,
         Self::PluginsNoPermissions,
-        Self::TplPluginsAlreadyServed,
-        Self::PluginsUse,
-        Self::PluginsThisPlugin,
-        Self::TplPluginsOfficialName,
         Self::PluginsInstall,
         Self::TplPluginsUpdateTitle,
         Self::PluginsUpdateAsks,

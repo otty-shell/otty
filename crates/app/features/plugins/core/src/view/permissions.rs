@@ -1,12 +1,11 @@
 //! The dialogs that show permissions: the install dialog, the update
 //! dialog with what changed, and the permissions of an installed plugin.
-//! Each part is a title and its lines; a choice under the parts asks which
-//! plugin serves what two of them serve.
+//! Each part is a title and its lines.
 
+use iced::Element;
 use iced::widget::{Column, column, row, text};
-use iced::{Alignment, Element};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
@@ -15,12 +14,12 @@ use otty_ui_kit::{fonts, size, spacing};
 use super::forms::back;
 use crate::event::PluginsIntent;
 use crate::model::{
-    ChoiceViewModel, InstallDialogViewModel, PartPermissionsViewModel,
-    PermissionsViewModel, UpdateDialogViewModel,
+    InstallDialogViewModel, PartPermissionsViewModel, PermissionsViewModel,
+    UpdateDialogViewModel,
 };
 
 /// The install dialog: who made the plugin and who reviewed it, each part
-/// with its permissions, the choices, then Cancel and Install.
+/// with its permissions, then Cancel and Install.
 pub(super) fn install<'a>(
     dialog: InstallDialogViewModel,
     palette: &UiPalette,
@@ -36,7 +35,6 @@ pub(super) fn install<'a>(
     }
     body = body.push(about);
     body = body.push(parts(dialog.parts, false, palette));
-    body = body.push(choices(dialog.choices, palette));
     if let Some(error) = dialog.error {
         body = body.push(small_text(error, palette.status_error()));
     }
@@ -58,8 +56,8 @@ pub(super) fn install<'a>(
         .into()
 }
 
-/// The update dialog: what changed part by part, the choices for the new
-/// parts, then Not now and Update.
+/// The update dialog: what changed part by part, then Not now and
+/// Update.
 pub(super) fn update<'a>(
     dialog: UpdateDialogViewModel,
     palette: &UiPalette,
@@ -67,7 +65,6 @@ pub(super) fn update<'a>(
     let body = column![
         small_text(i18n::t(Key::PluginsUpdateAsks), palette.text_body()),
         parts(dialog.parts, true, palette),
-        choices(dialog.choices, palette),
     ]
     .spacing(spacing::SPACE_4);
     let body = match dialog.error {
@@ -157,58 +154,14 @@ fn parts<'a>(
     list.into()
 }
 
-/// The choice for each part whose ids another plugin serves: its line and
-/// "Use: [the plugin that serves it now] / [this plugin]".
-fn choices<'a>(
-    choices: Vec<ChoiceViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, PluginsIntent> {
-    let mut list = Column::new().spacing(spacing::SPACE_3);
-
-    for choice in choices {
-        let pick = |label: String, is_picked: bool, use_new: bool| {
-            let kind = if is_picked {
-                ButtonKind::Primary
-            } else {
-                ButtonKind::Secondary
-            };
-            Button::new(label, palette)
-                .kind(kind)
-                .size(ButtonSize::Small)
-                .on_press(PluginsIntent::UseNew(choice.part.clone(), use_new))
-        };
-
-        list = list.push(
-            column![
-                small_text(choice.line.clone(), palette.text_body()),
-                row![
-                    small_text(i18n::t(Key::PluginsUse), palette.text_muted()),
-                    pick(choice.current.clone(), !choice.use_new, false),
-                    pick(
-                        i18n::t(Key::PluginsThisPlugin).to_string(),
-                        choice.use_new,
-                        true
-                    ),
-                ]
-                .spacing(spacing::SPACE_2)
-                .align_y(Alignment::Center),
-            ]
-            .spacing(spacing::SPACE_1),
-        );
-    }
-
-    list.into()
-}
-
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
-    use otty_plugin_manifest::PartRef;
 
     use super::*;
 
     #[test]
-    fn this_plugin_of_a_choice_gives_the_part_to_the_new_plugin() {
+    fn install_of_the_install_dialog_installs() {
         let palette = UiPalette::otty_dark();
         let dialog = InstallDialogViewModel {
             title: String::from("Install Example Fork 0.1.0"),
@@ -216,27 +169,14 @@ mod tests {
             repository: None,
             trust: "Community plugin: reviewed by its author only",
             parts: Vec::new(),
-            choices: vec![ChoiceViewModel {
-                part: PartRef::agent("example-agent"),
-                line: String::from(
-                    "Example Agent is already served by Example.",
-                ),
-                current: String::from("Example"),
-                use_new: false,
-            }],
             error: None,
             is_busy: false,
         };
         let mut ui = simulator(install(dialog, &palette));
 
-        let _ = ui.click(i18n::t(Key::PluginsThisPlugin));
         let _ = ui.click(i18n::t(Key::PluginsInstall));
 
         let sent: Vec<PluginsIntent> = ui.into_messages().collect();
-        assert!(matches!(
-            sent.as_slice(),
-            [PluginsIntent::UseNew(part, true), PluginsIntent::Install]
-                if *part == PartRef::agent("example-agent")
-        ));
+        assert!(matches!(sent.as_slice(), [PluginsIntent::Install]));
     }
 }

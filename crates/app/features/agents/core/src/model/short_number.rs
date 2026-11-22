@@ -606,7 +606,10 @@ mod tests {
     fn a_key_shows_the_money_left_or_what_it_used() {
         let number = |provider: ProviderRef, numbers| {
             let key = otty_agents::KeyRef::EnvVar(String::from("KEY"));
-            let account = Account::added(provider.clone(), key.clone());
+            let account = crate::testing::read_by_its_plugin(Account::added(
+                provider.clone(),
+                key.clone(),
+            ));
             let mut state = with_accounts(
                 &[(codex(), connected(), vec![chatgpt_login()])],
                 SavedProfiles::default().with_account_added(provider, key),

@@ -288,14 +288,15 @@ pub enum AgentsOutcome {
     /// ask the user to unlock it. Asked once Agents mode is on screen. No
     /// answer: the next profiles read finds the keys there.
     AllowPluginKeyring,
-    /// Read the limits of this profile while Agents mode is on screen; a
-    /// source may start the agent's program, as is or in a hidden
-    /// terminal. The read stands for every profile of the same
-    /// account, which is read once (spec Decision 5). Answer
-    /// [`AgentsIntent::LimitsLoaded`].
+    /// Read the limits of this profile while Agents mode is on screen:
+    /// the provider part of the account whose limits it shows reads them,
+    /// and may start the agent's program, as is or in a hidden terminal.
+    /// The read stands for every profile of the same account, which is
+    /// read once (spec Decision 5); [`Agents::limits_to_read`] tells the
+    /// account and its profiles. Answer [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),
     /// Read the limits of this profile while Agents mode is away: no
-    /// source starts the agent's program. Answer
+    /// part starts the agent's program. Answer
     /// [`AgentsIntent::LimitsLoaded`].
     LoadLimitsInBackground(Profile),
     /// Count the tokens this profile spent; answer
@@ -321,10 +322,14 @@ pub enum AgentsOutcome {
     LoadAccountNumbers {
         /// The account to read.
         account: Account,
-        /// Where its key is read again from.
+        /// Where its key is read again from, with the profiles it was
+        /// found in.
         place: KeyPlace,
         /// The keys the user gave for it, each under its slot.
         given: Vec<GivenKey>,
+        /// Whether its provider part may start the agent's program, while
+        /// Agents mode is on screen.
+        may_start_programs: bool,
     },
     /// Read the list prices of the money estimate: the LiteLLM price
     /// table, fetched at most once a day, or its kept copy. With

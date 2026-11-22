@@ -13,12 +13,14 @@ repository will be `github.com/otty-shell/otty-plugin-openai`
 
 | Part                       | Kind     | Gives                                                                         |
 | -------------------------- | -------- | ----------------------------------------------------------------------------- |
-| [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens, logins, and the limits Codex reports. |
-| [OpenAI](#openai-provider) | provider | The limits and credits of a ChatGPT login and the bill of an organization.    |
+| [Codex](#codex-agent)      | agent    | Profiles, sessions, tokens and logins.                                        |
+| [OpenAI](#openai-provider) | provider | The limits and credits of a ChatGPT login, from OpenAI or from Codex, and the bill of an organization. |
 
-The limits of a Codex profile come from the [OpenAI part](#openai-provider) first. When it gives
-nothing, the Codex part reads them: from [`codex app-server`](#codex-app-server), else from the last
-limits Codex wrote in its 10 newest session files.
+The limits of a ChatGPT login come from the [OpenAI part](#openai-provider): from `chatgpt.com`
+with the login's token; with no token at its place, or when the server gives no answer, from what
+Codex knows in a Codex profile the login was found in: [`codex app-server`](#codex-app-server),
+else the last limits Codex wrote in its 10 newest session files; else there are none, and no
+failure is shown.
 
 The tokens come from the session files; the money is the bill of the organization when you gave an
 admin key, else an [estimate](../../overview/#the-money).
@@ -28,10 +30,10 @@ admin key, else an [estimate](../../overview/#the-money).
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profiles       | `CODEX_HOME` or `~/.codex`, and the folders `~/.codex-<name>` and `~/.codex_<name>` that hold a login or sessions. |
-| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, the tokens of each answer with its session and project, the agent's version, the last limits); `session_index.jsonl` (session names); `config.toml` (`chatgpt_base_url`, `model_provider` and `[model_providers.*]`, to tell whom a login is for). |
+| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, the tokens of each answer with its session and project, the agent's version); `session_index.jsonl` (session names); `config.toml` (`chatgpt_base_url`, `model_provider` and `[model_providers.*]`, to tell whom a login is for). |
 | Logins, as handles | `auth.json`: `OPENAI_API_KEY`, `tokens.access_token`, `tokens.id_token`, `tokens.refresh_token`. The part reads the claims of the id token (account, email, plan), never a token. |
 | Variables      | `CODEX_HOME`.                                                                                          |
-| Runs           | `codex -s read-only -a never app-server`, see below. `codex --version` is listed too; OTTY runs it only for a profile whose session files name no version. |
+| Runs           | `codex --version`; OTTY runs it only for a profile whose session files name no version. |
 | Writes         | Nothing.                                                                                               |
 | Sends          | Nothing.                                                                                              |
 | Commands       | New session `codex`, continue `codex resume <id>`, Log in `codex login`.                               |
@@ -43,8 +45,9 @@ another provider of `config.toml` is a key for that provider's host: neither goe
 
 <Badge text="runs the agent" variant="note" />
 
-When the usage request gives no answer, and only while Agents mode is on screen, the part starts
-`codex -s read-only -a never app-server` with the profile's folder and talks to it line by line. It
+When the login's token is not at its place or the usage request gives no answer, and only while
+Agents mode is on screen, the OpenAI part starts `codex -s read-only -a never app-server` with the
+folder of a Codex profile the login was found in and talks to it line by line. It
 sends only `initialize`, `initialized` and `account/rateLimits/read`; never the request for the list
 of sessions, which makes Codex rewrite its own index of sessions. With an expired login token it is
 not started, since Codex would renew the token, and the need **The login expired** shows instead. It runs at most once in about 5 minutes per profile
@@ -69,8 +72,16 @@ and gives up after 10 seconds.
   renewed.
 - An API key has no numbers OpenAI tells: nothing is sent for it.
 - Admin keys come from **Add account** → OpenAI, or **Admin key…** on the need **The real bill
-  needs an admin key** of the organization's account.
-- While it runs, the files of the Codex part are refused to it.
+  needs an admin key** of the organization's account. An admin key you gave reads the bill even
+  when the login's token is not at its place.
+- While it runs, the files of the Codex part are refused to it, but for the session files, where
+  Codex writes the limits it was last told.
+
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Reads          | The session files `sessions/**` and `archived_sessions/**` of a Codex profile the login was found in: the last limits. |
+| Variables      | `CODEX_HOME`.                                                                                          |
+| Runs           | [`codex -s read-only -a never app-server`](#codex-app-server).                                         |
 
 **Open usage page** opens `chatgpt.com/codex/settings/usage` for a login,
 `platform.openai.com/usage` for a key or an organization.
@@ -82,7 +93,7 @@ Each need carries the label "OpenAI plugin". Its texts come in all ten languages
 | Need                             | Part   | When                                                                 | Button |
 | -------------------------------- | ------ | -------------------------------------------------------------------- | ------ |
 | Needs login                      | Codex  | Nobody is logged in with the profile's folder.                       | **Run codex login**, with the profile's folder. |
-| The login expired                | Codex  | The ChatGPT login of the profile expired or OpenAI refused it, wherever it was read. | **Run codex**: Codex renews the login or asks you to log in again. |
+| The login expired                | Codex, OpenAI | The ChatGPT login of the profile expired or OpenAI refused it, wherever it was read (Codex), or its token expired before `codex app-server` could ask (OpenAI). | **Run codex**: Codex renews the login or asks you to log in again. |
 | The real bill needs an admin key | OpenAI | The organization's money is only an estimate, and no agent keeps an admin key. | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
 | The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. When the refused key is the key of an account you added with **Add account**, the new one takes its place; otherwise the next bill reads with the new one. |
 

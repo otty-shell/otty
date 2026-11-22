@@ -115,7 +115,9 @@ pub(crate) fn point_count(
 /// `input`, in its project, each with its value at each point in
 /// `measure`, the largest first; rows with as much by their name. A row
 /// with nothing in the period is left out, and so is the money of a
-/// source that is not priced.
+/// source that is not priced. A hidden account is left out of the rows by
+/// account (issue 29): its tokens go to another account that paid them,
+/// else to no account.
 pub(crate) fn group_usage(
     input: &UsageInput<'_>,
     period: UsagePeriod,
@@ -129,6 +131,7 @@ pub(crate) fn group_usage(
         let points = period_points(source.spend, period);
         let prices = input.prices.filter(|_| source.is_priced);
         let offset = count - points.len();
+        let accounts = shown_accounts(source.accounts, input.saved);
 
         for (index, point) in points.iter().enumerate() {
             for part in point.iter() {
@@ -141,7 +144,7 @@ pub(crate) fn group_usage(
                     continue;
                 }
 
-                let name = name_of(part, tab, source, input);
+                let name = name_of(part, tab, source, &accounts, input);
                 add_to(&mut groups, name, offset + index, value, count);
             }
         }
@@ -205,14 +208,29 @@ fn is_in_project(part: &ProjectModelTokens, project: Option<&Path>) -> bool {
     project.is_none_or(|project| part.project() == Some(project))
 }
 
+/// The accounts of `accounts` the user did not hide, as `saved` holds it.
+fn shown_accounts(
+    accounts: &[Account],
+    saved: Option<&SavedProfiles>,
+) -> Vec<Account> {
+    accounts
+        .iter()
+        .filter(|account| {
+            !saved.is_some_and(|saved| saved.is_account_hidden(account))
+        })
+        .cloned()
+        .collect()
+}
+
 /// The name of the row of `tab` that `part` of `source` counts in: its
-/// project folder, its profile, its model, or the account that paid for
-/// it, else "no account". A project or a model the files did not name is
-/// "—".
+/// project folder, its profile, its model, or the account of `accounts`,
+/// those of the source the user did not hide, that paid for it, else "no
+/// account". A project or a model the files did not name is "—".
 fn name_of(
     part: &ProjectModelTokens,
     tab: UsageTab,
     source: &UsageSource<'_>,
+    accounts: &[Account],
     input: &UsageInput<'_>,
 ) -> String {
     match tab {
@@ -224,11 +242,10 @@ fn name_of(
         UsageTab::ByModel => {
             part.tokens().model().unwrap_or(UNKNOWN).to_string()
         },
-        UsageTab::ByAccount => source
-            .accounts
+        UsageTab::ByAccount => accounts
             .iter()
             .find(|account| {
-                account.pays_for(part.tokens(), source.accounts, input.registry)
+                account.pays_for(part.tokens(), accounts, input.registry)
             })
             .map_or_else(
                 || i18n::t(Key::AgentsNoAccount).to_string(),
@@ -589,6 +606,49 @@ mod tests {
                 ("OpenAI · me@example.org", 7_000),
                 ("Anthropic · you@example.com", 91),
             ]
+        );
+    }
+
+    /// Issue 29: a hidden account is left out of the totals by account:
+    /// its tokens go to the copy of the same login another plugin reads,
+    /// and with no other, to no account.
+    #[test]
+    fn by_account_leaves_out_a_hidden_account() {
+        let codex = codex_spend();
+        let read_by =
+            |plugin: &str| chatgpt().with_read_by(Some(String::from(plugin)));
+        let both = [read_by("openai"), read_by("openai-fork")];
+        let alone = [read_by("openai")];
+        let saved = SavedProfiles::default()
+            .with_account_hidden(&read_by("openai"), true);
+        let totals = |accounts: &[Account]| {
+            let sources = [source("Codex", &codex, accounts)];
+            let hidden = UsageInput {
+                saved: Some(&saved),
+                ..input(&sources)
+            };
+
+            group_usage(
+                &hidden,
+                UsagePeriod::SevenDays,
+                UsageTab::ByAccount,
+                UsageMeasure::Tokens,
+            )
+            .iter()
+            .map(|group| (group.name.clone(), group.total()))
+            .collect::<Vec<_>>()
+        };
+
+        let with_other_copy = totals(&both);
+        let with_none = totals(&alone);
+
+        assert_eq!(
+            with_other_copy,
+            [(String::from("OpenAI · me@example.org"), 7_350)]
+        );
+        assert_eq!(
+            with_none,
+            [(i18n::t(Key::AgentsNoAccount).to_string(), 7_350)]
         );
     }
 

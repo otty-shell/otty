@@ -3,10 +3,11 @@
 //! records turn them into [`Limits`] by the same rule: windows when there
 //! are any, else the credits, else the answer has no limits.
 
-use otty_plugin_sdk::agents::{Credits, LimitWindow, Limits, ReadError};
+use otty_plugin_sdk::agents::{Credits, LimitWindow, ReadError};
 use serde_json::Value;
 
 use crate::individual_limit::pool_credits;
+use crate::limits::Limits;
 
 /// One usage window as a source tells it. A plain parameter bag.
 #[derive(Debug, Clone, PartialEq)]

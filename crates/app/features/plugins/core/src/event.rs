@@ -4,8 +4,7 @@ use iced::widget::Id;
 use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{
-    InstallError, InstallPlan, PendingUpdate, Served, UpdateOutcome,
-    UpdateReport,
+    InstallError, InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
 };
 
 use crate::types::{ListedPlugin, PartsToLoad, RunningPlugin};
@@ -39,10 +38,6 @@ pub enum PluginsIntent {
     Find,
     /// The plugin was found and checked, or why not.
     Found(Result<Box<InstallPlan>, InstallError>),
-    /// In the install or update dialog, the part `PartRef` serves what
-    /// another plugin serves: `true` for this plugin, `false` for the one
-    /// that serves it now.
-    UseNew(PartRef, bool),
     /// Install of the install dialog.
     Install,
     /// The switch of a part was flipped.
@@ -132,8 +127,6 @@ pub enum PluginsOutcome {
     Install {
         /// What the install dialog showed.
         plan: Box<InstallPlan>,
-        /// The ids and hosts the user gave to the new plugin.
-        use_new_for: Vec<Served>,
     },
     /// Turn a part on or off; answer [`PluginsIntent::Changed`].
     SetPartOn {
@@ -159,8 +152,6 @@ pub enum PluginsOutcome {
     ApplyUpdate {
         /// The update.
         update: Box<PendingUpdate>,
-        /// The ids and hosts of its new parts the user gave to it.
-        use_new_for: Vec<Served>,
     },
     /// Open this page in the user's browser, such as a repository.
     OpenPage(String),

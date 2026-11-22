@@ -12,6 +12,13 @@
 //! Decision 7): a hidden profile is kept apart from the shown ones with
 //! nothing read of it, and no limits or bill are asked for a hidden
 //! account.
+//!
+//! Every provider part that serves an account reads it, so a login two
+//! plugins read is two accounts (spec 2026-11-19-agent-plugins, issue
+//! 29). A profile shows the limits of the first of them the user did not
+//! hide, read through it; the others are read by themselves, as the
+//! accounts that tell their own numbers. Each read tells the provider
+//! part every shown profile the account was found in.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -302,18 +309,17 @@ impl Profiles {
     }
 
     /// The organization whose bill is read through `shown`, an API key
-    /// profile: the one it pays through, when a provider part serves it
-    /// (spec Decision 9; issue 20 of spec 2026-11-19-agent-plugins).
-    /// Which key reads the bill is the part's business.
+    /// profile: the one it pays through, when a provider part reads it
+    /// (spec Decision 9; issues 20 and 29 of spec
+    /// 2026-11-19-agent-plugins). Which key reads the bill is the part's
+    /// business.
     pub(crate) fn bill_organization<'a>(
         &self,
         shown: &'a ProfileState,
     ) -> Option<&'a Account> {
         let organization = shown.organization()?;
 
-        self.registry
-            .provider_of(organization.provider())
-            .map(|_| organization)
+        self.registry.reader_of(organization).map(|_| organization)
     }
 
     /// The keys the user gave for `account` after needs of plugin parts
@@ -432,6 +438,11 @@ impl Profiles {
             let accounts = merge_accounts(accounts, &self.registry);
             let mut shown = ProfileState::new(profile, status, accounts)
                 .with_version(version);
+            shown.choose_shown_accounts(|account| {
+                self.saved
+                    .as_ref()
+                    .is_some_and(|saved| saved.is_account_hidden(account))
+            });
             let position = earlier.iter().position(|old| {
                 is_same_profile(old.profile(), shown.profile())
             });
@@ -511,10 +522,38 @@ impl Profiles {
             .partition(|shown| saved.is_profile_hidden(shown.profile()));
 
         self.shown = shown;
+        for shown in &mut self.shown {
+            shown.choose_shown_accounts(|account| {
+                saved.is_account_hidden(account)
+            });
+        }
         self.hidden
             .extend(hidden.into_iter().map(|state| state.profile().clone()));
         self.saved = Some(saved);
         self.rebuild_projects();
+    }
+
+    /// What a read of the limits of the shown `profile` reads: the account
+    /// whose limits it shows, `None` when it has none, and every shown
+    /// profile that account was found in, `profile` first, which its
+    /// provider part is told of (issue 29).
+    pub(crate) fn limits_to_read(
+        &self,
+        profile: &Profile,
+    ) -> (Option<Account>, Vec<Profile>) {
+        let Some(account) =
+            self.get(profile).and_then(ProfileState::limits_account)
+        else {
+            return (None, vec![profile.clone()]);
+        };
+
+        let mut found_in = vec![profile.clone()];
+        found_in.extend(
+            self.found_with(account)
+                .map(|shown| shown.profile().clone())
+                .filter(|found| !is_same_profile(found, profile)),
+        );
+        (Some(account.clone()), found_in)
     }
 
     /// Remember in what `agents.json` holds that the Found by OTTY report
@@ -584,9 +623,13 @@ impl Profiles {
 
         for index in 0..self.shown.len() {
             let shown = &self.shown[index];
-            let is_hidden = shown
-                .limits_account()
-                .is_some_and(|account| self.is_account_hidden(account));
+            let has_subscription = shown
+                .accounts()
+                .iter()
+                .any(|account| account.kind() != AccountKind::Money);
+            // Every subscription login of the profile is hidden.
+            let is_hidden =
+                has_subscription && shown.limits_account().is_none();
             let is_wanted = !is_hidden
                 && shown.reads_limits()
                 && shown.limits().is_wanted(which);
@@ -752,7 +795,7 @@ impl Profiles {
     /// Start a read of the numbers of each listed account that tells its
     /// own (spec 2026-11-19, Decision 5) that `which` picks and that has
     /// none on its way, and return those accounts with the place their key
-    /// is read again from.
+    /// is read again from and the profiles they were found in.
     pub(crate) fn start_own_reads(
         &mut self,
         which: Which,
@@ -782,10 +825,10 @@ impl Profiles {
 
     /// The accounts not hidden whose own numbers OTTY reads, each with the
     /// place its key is read again from: an account the user added, from
-    /// the place they gave; a key or a login, from the files of the first
-    /// profile it was found in. A subscription login whose limits a
-    /// profile of it reads already is left out: that profile asks its
-    /// provider part first.
+    /// the place they gave; a key or a login, from the files of the shown
+    /// profiles it was found in, the first of which names the place of its
+    /// key. A subscription login whose limits a profile of it reads
+    /// already is left out: that profile reads them.
     fn own_read_places(&self) -> Vec<(Account, KeyPlace)> {
         self.accounts()
             .into_iter()
@@ -804,24 +847,24 @@ impl Profiles {
             return Some(KeyPlace::Added);
         }
 
-        let mut profiles = self.found_with(account);
+        let profiles: Vec<&ProfileState> = self.found_with(account).collect();
         if account.kind() != AccountKind::Money {
-            let profiles: Vec<_> = profiles.collect();
             let is_read_by_a_profile = profiles.iter().any(|shown| {
                 let agent = shown.profile().agent();
-                self.registry.agent(agent).is_some() && shown.reads_limits()
+                self.registry.agent(agent).is_some()
+                    && shown.reads_limits()
+                    && shown.has_limits_of(account)
             });
             if is_read_by_a_profile {
                 return None;
             }
-            return profiles
-                .first()
-                .map(|shown| KeyPlace::ProfileFiles(shown.profile().clone()));
         }
 
-        profiles
-            .next()
-            .map(|shown| KeyPlace::ProfileFiles(shown.profile().clone()))
+        let found_in: Vec<Profile> = profiles
+            .iter()
+            .map(|shown| shown.profile().clone())
+            .collect();
+        (!found_in.is_empty()).then_some(KeyPlace::ProfileFiles(found_in))
     }
 
     /// Make the projects again from the sessions of every profile.

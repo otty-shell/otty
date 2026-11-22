@@ -2,15 +2,17 @@
 //! the agents and providers OTTY knows right now. The app takes names,
 //! icons, usage pages and hosts only from it, and an account whose
 //! provider no entry serves stays known by the host of its key. The parts
-//! of the installed plugins that are on fill it.
+//! of the installed plugins that are on fill it. Two plugins may serve one
+//! provider: both read its accounts (issue 29).
 
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
 use crate::plugin_provider::PluginProvider;
 use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 
-/// The agents and providers OTTY knows right now, with one entry per agent
-/// id, provider id and provider host (spec Decision 4).
+/// The agents and providers OTTY knows right now: one entry per agent id,
+/// and one per provider part, so a provider two plugins serve has two
+/// entries (issue 29).
 ///
 /// ```
 /// use otty_agents::{ProviderEntry, ProviderId, ProviderRef, Registry};
@@ -51,9 +53,32 @@ impl Registry {
         self.agents.iter().find(|entry| entry.id() == id)
     }
 
-    /// The provider with the id `id`.
+    /// The provider with the id `id`: the first part that serves it.
     pub fn provider(&self, id: &ProviderId) -> Option<&ProviderEntry> {
         self.providers.iter().find(|entry| entry.id() == id)
+    }
+
+    /// Every provider part that serves `reference`, in the order of the
+    /// registry: the parts with its id, or that serve its host.
+    pub fn readers_of(&self, reference: &ProviderRef) -> Vec<&ProviderEntry> {
+        self.providers
+            .iter()
+            .filter(|entry| match reference {
+                ProviderRef::Id(id) => entry.id() == id,
+                ProviderRef::Host(host) => entry.serves_host(host),
+            })
+            .collect()
+    }
+
+    /// The provider part that reads `account`: the part of the plugin it
+    /// is read by that serves its provider; `None` for an account no
+    /// plugin reads.
+    pub fn reader_of(&self, account: &Account) -> Option<&ProviderEntry> {
+        let plugin = account.read_by()?;
+
+        self.readers_of(account.provider())
+            .into_iter()
+            .find(|entry| entry.part().plugin() == plugin)
     }
 
     /// The provider whose servers are at `host`: `host` is one of its
@@ -112,19 +137,28 @@ impl Registry {
         one == other || self.resolve(one) == self.resolve(other)
     }
 
-    /// The providers Add account offers, in the order of the registry.
+    /// The providers Add account offers, in the order of the registry,
+    /// each id once: the account the user adds is read by every part that
+    /// offers it.
     pub fn addable_providers(&self) -> Vec<&ProviderEntry> {
-        self.providers
-            .iter()
-            .filter(|entry| entry.can_add_by_hand())
-            .collect()
+        let mut offered: Vec<&ProviderEntry> = Vec::new();
+
+        for entry in &self.providers {
+            let is_listed = offered.iter().any(|kept| kept.id() == entry.id());
+            if entry.can_add_by_hand() && !is_listed {
+                offered.push(entry);
+            }
+        }
+
+        offered
     }
 
     /// The page where the user sees the use of `account`, from the entry
-    /// of its provider; `None` when no entry serves the provider or names
-    /// a page.
+    /// of the part that reads it, else of its provider; `None` when no
+    /// entry serves the provider or names a page.
     pub fn usage_page(&self, account: &Account) -> Option<&str> {
-        self.provider_of(account.provider())?
+        self.reader_of(account)
+            .or_else(|| self.provider_of(account.provider()))?
             .usage_page(account.kind())
     }
 
@@ -143,9 +177,9 @@ impl Registry {
             .collect()
     }
 
-    /// A registry of `agents` and `providers`. An entry whose agent id,
-    /// provider id or one of whose hosts an earlier entry already has is
-    /// left out, so each is served once.
+    /// A registry of `agents` and `providers`. An agent whose id an
+    /// earlier agent has is left out, so each agent is read once; every
+    /// provider part stays, except one the same plugin lists twice.
     pub fn new(agents: Vec<AgentEntry>, providers: Vec<ProviderEntry>) -> Self {
         let mut registry = Self::default();
 
@@ -156,12 +190,11 @@ impl Registry {
         }
 
         for provider in providers {
-            let is_taken = registry.provider(provider.id()).is_some()
-                || provider
-                    .hosts()
-                    .iter()
-                    .any(|host| registry.provider_of_host(host).is_some());
-            if !is_taken {
+            let is_listed = registry.providers.iter().any(|kept| {
+                kept.id() == provider.id()
+                    && kept.part().plugin() == provider.part().plugin()
+            });
+            if !is_listed {
                 registry.providers.push(provider);
             }
         }
@@ -189,8 +222,8 @@ impl Registry {
         self
     }
 
-    /// The same registry without the provider `id`, as when its part is
-    /// off.
+    /// The same registry without the provider `id`, as when its parts
+    /// are off.
     pub fn without_provider(mut self, id: &ProviderId) -> Self {
         self.providers.retain(|entry| entry.id() != id);
         self
@@ -200,6 +233,8 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use otty_plugin_host::PluginPart;
 
     use super::*;
     use crate::env::AgentEnv;
@@ -330,29 +365,48 @@ mod tests {
         );
     }
 
-    /// Spec Decision 4: one entry per agent id, provider id and provider
-    /// host; the first one stays.
+    /// One agent entry per agent id, the first one; issue 29: every
+    /// provider part stays, so two plugins that serve one provider both
+    /// read it, and the account each reads is found by its plugin.
     #[test]
-    fn each_id_and_host_is_served_once_by_the_first_entry() {
+    fn an_agent_is_read_once_and_every_provider_part_stays() {
+        let fork = |id: &str, hosts: &[&str]| {
+            let part = PluginPart::new("fork", "Fork", "0.1.0", "", id);
+            ProviderEntry::new(ProviderId::new(id), id, part)
+                .with_hosts(hosts.iter().copied())
+        };
         let registry = Registry::new(
             vec![agent("coder", "Coder"), agent("coder", "Other Coder")],
             vec![
                 provider("example-cloud", &["example.com"]),
-                provider("example-cloud", &["other.example.org"]),
-                provider("example-mirror", &["example.com"]),
+                provider("example-cloud", &["example.com"]),
+                fork("example-cloud", &["example.com"]),
                 provider("other-cloud", &["example.net"]),
             ],
+        );
+        let login = crate::testing::key_account(
+            ProviderRef::of_id("example-cloud"),
+            "sk-made-up",
         );
 
         let names: Vec<_> =
             registry.agents().iter().map(AgentEntry::name).collect();
-        let ids: Vec<_> = registry
-            .providers()
+        let readers: Vec<_> = registry
+            .readers_of(&ProviderRef::Host("api.example.com".to_string()))
             .iter()
-            .map(|entry| entry.id().as_str())
+            .map(|entry| entry.part().plugin())
             .collect();
+        let read_by_fork = login.clone().with_read_by(Some("fork".into()));
         assert_eq!(names, ["Coder"]);
-        assert_eq!(ids, ["example-cloud", "other-cloud"]);
+        assert_eq!(registry.providers().len(), 3);
+        assert_eq!(readers, ["example", "fork"]);
+        assert_eq!(
+            registry
+                .reader_of(&read_by_fork)
+                .map(|entry| entry.part().plugin()),
+            Some("fork")
+        );
+        assert!(registry.reader_of(&login).is_none());
     }
 
     /// Spec 2026-11-19, Decision 7: Add account lists the providers whose

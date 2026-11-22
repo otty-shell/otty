@@ -143,8 +143,9 @@ impl AddedEntry {
 
 /// One account in the text, by its provider and one of its account id,
 /// organization id, email or, for an account the user added, the place of
-/// its key, with the user's name for it, whether it is hidden and where
-/// the keys the user gave for it are kept, each under its slot.
+/// its key, and the plugin that reads a found one, with the user's name
+/// for it, whether it is hidden and where the keys the user gave for it
+/// are kept, each under its slot.
 #[derive(Debug, Serialize, Deserialize)]
 struct AccountEntry {
     provider: String,
@@ -156,6 +157,8 @@ struct AccountEntry {
     email: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     key: Option<KeyEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plugin: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -172,6 +175,7 @@ impl AccountEntry {
             organization_id: None,
             email: None,
             key: None,
+            plugin: saved.plugin.clone(),
             name: saved.name.clone(),
             hidden: saved.is_hidden,
             given_keys: saved
@@ -217,9 +221,14 @@ impl AccountEntry {
             .filter_map(GivenKeyEntry::into_given)
             .collect();
 
+        let plugin = match identity {
+            AccountIdentity::AddedKey(_) => None,
+            _ => self.plugin,
+        };
         let saved = SavedAccount {
             provider,
             identity,
+            plugin,
             name: self.name,
             is_hidden: self.hidden,
             given_keys,

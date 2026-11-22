@@ -6,7 +6,7 @@ use otty_plugin_sdk::agents::{
     LoginFacts, Money, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, Key, Need, given_key};
+use otty_plugin_sdk::{GivenKey, HostError, Key, Need, given_key};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -59,11 +59,20 @@ struct BillDay {
 }
 
 impl Provider for Example {
+    /// Whose account the key is, asked of the provider. With no key at its
+    /// place now, the account is what the agent part found of it.
     fn account(
         _provider: &str,
         key: &Key,
-        _found: &LoginFacts,
+        found: &LoginFacts,
     ) -> Result<AccountFacts, ReadError> {
+        if !is_there(key)? {
+            return Ok(AccountFacts {
+                identity: found.identity.clone(),
+                plan: found.plan.clone(),
+            });
+        }
+
         let me: Me =
             get_json(&format!("{API}/me"), key, || refused_key_need(key))?;
 
@@ -77,26 +86,30 @@ impl Provider for Example {
         })
     }
 
+    /// The money left on the key. A key that is not at its place now,
+    /// such as a variable the user unset, is a normal case: the part has
+    /// no other way to read the account, so it answers nothing, and sends
+    /// nothing.
     fn numbers(
         _provider: &str,
+        _found: &LoginFacts,
         _account: &AccountFacts,
         key: &Key,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
+        if !is_there(key)? {
+            return Ok(no_numbers());
+        }
+
         let url = format!("{API}/balance");
         let balance: Balance = get_json(&url, key, || refused_key_need(key))?;
 
         Ok(AccountNumbers {
-            windows: Vec::new(),
-            credits: None,
-            extra_usage: None,
             left: Some(Money {
                 amount: balance.balance,
                 currency: balance.currency,
             }),
-            key_limit: None,
-            spent_this_month: None,
-            plan: None,
+            ..no_numbers()
         })
     }
 
@@ -107,6 +120,7 @@ impl Provider for Example {
     /// given one under its slot.
     fn read_bill(
         _provider: &str,
+        _found: &LoginFacts,
         _account: &AccountFacts,
         key: &Key,
         given: &[GivenKey],
@@ -138,6 +152,31 @@ impl Provider for Example {
             })
             .collect();
         Ok(Bill { days })
+    }
+}
+
+/// Whether the key of `key` is at its place now. A key that is not is a
+/// normal case, such as a variable the user unset, not a failure.
+fn is_there(key: &Key) -> Result<bool, ReadError> {
+    match key.fingerprint() {
+        Ok(_) => Ok(true),
+        Err(HostError::NotFound(_)) => Ok(false),
+        Err(error) => Err(ReadError::Host(error)),
+    }
+}
+
+/// Numbers with nothing in them: what the part answers when it has no way
+/// to read the account.
+fn no_numbers() -> AccountNumbers {
+    AccountNumbers {
+        windows: Vec::new(),
+        credits: None,
+        extra_usage: None,
+        left: None,
+        key_limit: None,
+        spent_this_month: None,
+        plan: None,
+        recorded_at_ms: None,
     }
 }
 
@@ -205,6 +244,33 @@ mod tests {
         }
     }
 
+    /// What OTTY found of an API key of an agent, found in no profile.
+    fn found() -> LoginFacts {
+        LoginFacts {
+            kind: LoginKind::ApiKey,
+            identity: Identity::default(),
+            plan: None,
+            found_in: Vec::new(),
+        }
+    }
+
+    /// Issue 29: a key that is not at its place now is no failure: the
+    /// part answers nothing and sends nothing.
+    #[test]
+    fn a_key_that_is_not_there_reads_nothing() {
+        let host = host();
+        let key = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
+            "EXAMPLE_CLOUD_KEY".to_string(),
+        ));
+
+        let numbers = host.as_provider(PROVIDER, || {
+            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
+        });
+
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty(), "nothing is sent");
+    }
+
     #[test]
     fn numbers_read_the_balance_with_the_key_in_the_header() {
         let host = host();
@@ -218,7 +284,7 @@ mod tests {
 
         let numbers = host
             .as_provider(PROVIDER, || {
-                Example::numbers(PROVIDER, &account(), &key, &[])
+                Example::numbers(PROVIDER, &found(), &account(), &key, &[])
             })
             .expect("the numbers");
 
@@ -247,11 +313,7 @@ mod tests {
             br#"{"account_id": "acct_1", "email": "dev@example.com", "plan": "Pay as you go"}"#,
         );
         let key = host.key(KEY);
-        let found = LoginFacts {
-            kind: LoginKind::ApiKey,
-            identity: Identity::default(),
-            plan: None,
-        };
+        let found = found();
 
         let facts = host
             .as_provider(PROVIDER, || Example::account(PROVIDER, &key, &found))
@@ -276,7 +338,14 @@ mod tests {
         let key = host.key(KEY);
 
         let bill = host.as_provider(PROVIDER, || {
-            Example::read_bill(PROVIDER, &account(), &key, &[], &days())
+            Example::read_bill(
+                PROVIDER,
+                &found(),
+                &account(),
+                &key,
+                &[],
+                &days(),
+            )
         });
 
         let Err(ReadError::NeedsUser(need)) = bill else {
@@ -307,7 +376,14 @@ mod tests {
 
         let bill = host
             .as_provider(PROVIDER, || {
-                Example::read_bill(PROVIDER, &account(), &key, &given, &days())
+                Example::read_bill(
+                    PROVIDER,
+                    &found(),
+                    &account(),
+                    &key,
+                    &given,
+                    &days(),
+                )
             })
             .expect("the bill");
 
@@ -334,7 +410,14 @@ mod tests {
         );
 
         let bill = host.as_provider(PROVIDER, || {
-            Example::read_bill(PROVIDER, &account(), own, given, &days())
+            Example::read_bill(
+                PROVIDER,
+                &found(),
+                &account(),
+                own,
+                given,
+                &days(),
+            )
         });
 
         match bill {
@@ -353,7 +436,7 @@ mod tests {
         let key = host.given_key(KEY);
 
         let numbers = host.as_provider(PROVIDER, || {
-            Example::numbers(PROVIDER, &account(), &key, &[])
+            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
         });
 
         let Err(ReadError::NeedsUser(need)) = numbers else {
@@ -419,7 +502,7 @@ mod tests {
         let key = host.key(KEY);
 
         let numbers = host.as_provider(PROVIDER, || {
-            Example::numbers(PROVIDER, &account(), &key, &[])
+            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
         });
 
         let Err(ReadError::NeedsUser(need)) = numbers else {

@@ -633,12 +633,12 @@ mod tests {
     }
 
     /// A made-up account the user added at `provider`, its key in a
-    /// variable.
+    /// variable, read by the plugin of its provider.
     fn added(provider: ProviderRef) -> Account {
-        Account::added(
+        crate::testing::read_by_its_plugin(Account::added(
             provider,
             otty_agents::KeyRef::EnvVar(String::from("MADE_UP_KEY")),
-        )
+        ))
     }
 
     /// Codex with its login, and `account` added by hand, whose own read

@@ -73,15 +73,4 @@ interface types {
     renews-at-ms: option<s64>,
     is-unlimited: bool,
   }
-
-  /// What an account may still use.
-  record limits {
-    windows: list<limit-window>,
-    credits: option<credits>,
-    /// The name of the account's plan, when known.
-    plan: option<string>,
-    /// When the numbers were true, for numbers read from an older record
-    /// such as a session file; none when they are true now.
-    recorded-at-ms: option<s64>,
-  }
 }

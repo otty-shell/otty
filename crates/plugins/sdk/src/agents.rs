@@ -5,7 +5,7 @@
 //!
 //! Each trait maps to its own versioned WIT contract:
 //! `otty:agents-agent@0.1.0` and `otty:agents-provider@0.1.0`. The values
-//! both share, such as [`ReadError`], [`Identity`] and [`Limits`], are
+//! both share, such as [`ReadError`], [`Identity`] and [`LimitWindow`], are
 //! `otty:agents-agent/types`. A part names them in the manifest as
 //! `[[agents.agent]]` and `[[agents.provider]]`, with
 //! `[api] agents.agent = "0.1"` and `agents.provider = "0.1"`, and the
@@ -33,12 +33,13 @@ pub use crate::bindings::agents_agent::exports::otty::agents_agent::agent::{
     RecordCounts, Session, TokenCount,
 };
 /// The values the agent and provider contracts share: whom a login is
-/// for, what an account may still use, and why a part could not read.
+/// for, the windows and credits of an account, and why a part could not
+/// read.
 pub use crate::bindings::agents_agent::otty::agents_agent::types::{
-    Credits, Identity, LimitWindow, Limits, LoginKind, ReadError,
+    Credits, Identity, LimitWindow, LoginKind, ReadError,
 };
 /// The types of the provider contract.
 pub use crate::bindings::agents_provider::exports::otty::agents_provider::provider::{
     AccountFacts, AccountNumbers, Bill, DayCost, DayRange, ExtraUsage,
-    KeyLimit, LoginFacts, Money,
+    FoundProfile, KeyLimit, LoginFacts, Money,
 };

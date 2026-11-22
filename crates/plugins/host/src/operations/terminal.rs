@@ -107,13 +107,17 @@ mod tests {
 
     use otty_plugin_manifest::PartRef;
 
-    use crate::agents::agent::{LoginRef, Profile};
     use crate::engine::PluginEngine;
     use crate::terminal::{
         MockRunningTerminal, MockStartTerminal, ScreenOutput,
     };
-    use crate::testing::{TempDir, load_programs_plugin};
+    use crate::testing::{TempDir, load_programs_plugin, plan_of, read_by_way};
 
+    /// The folder of the profile the account of the tests was found in.
+    const FOLDER: &str = "/home/test-user/.test-agent";
+
+    /// Issue 29: a provider part reads the numbers of an account from the
+    /// screen of the agent's program in a hidden terminal.
     #[test]
     fn a_hidden_terminals_screen_text_and_folder_reach_the_plugin() {
         let cache = TempDir::new();
@@ -150,23 +154,13 @@ mod tests {
             .with_terminals(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
         let mut batch = plugin
-            .start_calls(&PartRef::agent("test-agent"))
+            .start_calls(&PartRef::provider("test-provider"))
             .expect("a listed part");
-        let profile = Profile {
-            agent: "test-agent".to_string(),
-            folder: "/home/test-user/.test-agent".to_string(),
-            is_default: true,
-        };
 
-        let limits = batch
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile, &LoginRef::EnvVar("terminal".to_string()))
-            .expect("the call");
+        let numbers = read_by_way(&mut batch, FOLDER, "terminal");
 
-        let plan = limits.ok().and_then(|limits| limits.plan);
         assert_eq!(
-            plan.as_deref(),
+            plan_of(numbers).ok().as_deref(),
             Some("Current session 29% used in /no/such/otty/agent-probe")
         );
         assert!(stopped.load(Ordering::SeqCst), "stopped with the call");
@@ -195,29 +189,15 @@ mod tests {
             .expect("engine")
             .with_terminals(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
-        let part = PartRef::agent("test-agent");
-        let profile = Profile {
-            agent: "test-agent".to_string(),
-            folder: "/home/test-user/.test-agent".to_string(),
-            is_default: true,
-        };
-        let login = LoginRef::EnvVar("terminal".to_string());
+        let part = PartRef::provider("test-provider");
 
-        let away = plugin
+        let mut away = plugin
             .start_calls(&part)
             .expect("a listed part")
-            .without_programs()
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile, &login)
-            .expect("the call");
-        let on_screen = plugin
-            .start_calls(&part)
-            .expect("a listed part")
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile, &login)
-            .expect("the call");
+            .without_programs();
+        let away = read_by_way(&mut away, FOLDER, "terminal");
+        let mut on_screen = plugin.start_calls(&part).expect("a listed part");
+        let on_screen = read_by_way(&mut on_screen, FOLDER, "terminal");
 
         assert!(away.is_err(), "{away:?}");
         assert!(on_screen.is_ok(), "{on_screen:?}");

@@ -2,8 +2,8 @@
 //! and the commands that start it.
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Limits, Login, LoginRef, Place, PlaceItem, PlaceKind,
-    Profile, ProfilePlace, ProfileStatus, ReadError, Session,
+    Agent, Answers, Login, LoginRef, Place, PlaceItem, PlaceKind, Profile,
+    ProfilePlace, ProfileStatus, ReadError, Session,
 };
 use otty_plugin_sdk::{Command, Need};
 
@@ -11,10 +11,7 @@ use crate::glob::escaped;
 use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::project_folder::projects_folder;
 use crate::provider::profile_provider;
-use crate::{
-    Anthropic, detect, logins, needs, sessions, spend_file, usage_probe,
-    version,
-};
+use crate::{Anthropic, detect, logins, needs, sessions, spend_file, version};
 
 /// The program, looked up on `PATH`.
 pub(crate) const PROGRAM: &str = "claude";
@@ -88,19 +85,10 @@ impl Agent for Anthropic {
         start_command(profile, args)
     }
 
-    /// The `/usage` panel of `claude`, for any login of the profile: it
-    /// shows the limits of the login Claude Code runs with.
-    fn read_limits(
-        profile: &Profile,
-        _login: &LoginRef,
-    ) -> Result<Limits, ReadError> {
-        usage_probe::read_limits(profile)
-    }
-
     /// A provider part refused the Claude login of the profile, wherever
     /// it read it: Claude Code itself renews it in the profile's config
-    /// folder, or asks to log in again. The same need as this part's own
-    /// read of the limits gives, so it shows once.
+    /// folder, or asks to log in again. The same need as the `/usage`
+    /// panel of the provider part `anthropic` gives, so it shows once.
     fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
         let claude = start_command(profile, Vec::new());
 

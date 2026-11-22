@@ -1,8 +1,9 @@
-//! The pace of the slow readings of limits: a reading that ran a program
-//! or a hidden terminal, such as `codex app-server` or Claude Code's
-//! `/usage` screen, runs at most once in the five minutes of the limits
-//! read, per part and profile. Within that time the answer of the last
-//! reading is given again, for any plugin.
+//! The pace of the slow readings of an account's numbers: a reading that
+//! ran a program or a hidden terminal, such as `codex app-server` or
+//! Claude Code's `/usage` screen, runs at most once in the five minutes
+//! of the limits read, per provider part and the profiles the account was
+//! found in. Within that time the answer of the last reading is given
+//! again, for any plugin.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -10,7 +11,8 @@ use std::time::{Duration, Instant};
 
 use otty_plugin_manifest::PartRef;
 
-use crate::agents::agent::{Limits, ReadError};
+use crate::agents::agent::ReadError;
+use crate::agents::provider::AccountNumbers;
 
 /// How long the answer of a reading is given again instead of starting
 /// the program anew. The app reads the limits every five minutes; a
@@ -20,11 +22,11 @@ use crate::agents::agent::{Limits, ReadError};
 /// a return to Agents mode in between gets the remembered answer.
 pub(crate) const PACE_GAP: Duration = Duration::from_secs(4 * 60 + 30);
 
-/// What a reading of limits gave: the limits, or why the part could not
-/// read them.
-pub(crate) type LimitsAnswer = Result<Limits, ReadError>;
+/// What a reading of an account's numbers gave: the numbers, or why the
+/// part could not read them.
+pub(crate) type NumbersAnswer = Result<AccountNumbers, ReadError>;
 
-/// The last slow reading of each part and profile of one plugin.
+/// The last slow reading of each part and profiles of one plugin.
 #[derive(Default)]
 pub(crate) struct LimitPacing {
     readings: Mutex<HashMap<PaceKey, Reading>>,
@@ -39,7 +41,7 @@ impl LimitPacing {
         &self,
         key: &PaceKey,
         now: Instant,
-    ) -> Option<LimitsAnswer> {
+    ) -> Option<NumbersAnswer> {
         let readings =
             self.readings.lock().unwrap_or_else(PoisonError::into_inner);
 
@@ -56,7 +58,7 @@ impl LimitPacing {
         &self,
         key: PaceKey,
         started_at: Instant,
-        answer: LimitsAnswer,
+        answer: NumbersAnswer,
     ) {
         let mut readings =
             self.readings.lock().unwrap_or_else(PoisonError::into_inner);
@@ -65,7 +67,8 @@ impl LimitPacing {
     }
 }
 
-/// Which reading is paced: the part and the profile's folder.
+/// Which reading is paced: the part and the folders of the profiles it
+/// read in.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PaceKey {
     part: PartRef,
@@ -73,7 +76,8 @@ pub(crate) struct PaceKey {
 }
 
 impl PaceKey {
-    /// The reading of the profile in `folder` by `part`.
+    /// The reading by `part` in the profiles of `folder`: one folder, or
+    /// several, one per line.
     pub(crate) fn new(part: &PartRef, folder: &str) -> Self {
         Self {
             part: part.clone(),
@@ -85,7 +89,7 @@ impl PaceKey {
 /// One slow reading: when it started and what it answered.
 struct Reading {
     started_at: Instant,
-    answer: LimitsAnswer,
+    answer: NumbersAnswer,
 }
 
 #[cfg(test)]
@@ -93,8 +97,8 @@ mod tests {
     use super::*;
     use crate::agents::agent::LimitWindow;
 
-    fn limits(percent_used: f64) -> Limits {
-        Limits {
+    fn limits(percent_used: f64) -> AccountNumbers {
+        AccountNumbers {
             windows: vec![LimitWindow {
                 length_minutes: Some(300),
                 model: None,
@@ -103,16 +107,20 @@ mod tests {
                 reset_text: None,
             }],
             credits: None,
+            extra_usage: None,
+            left: None,
+            key_limit: None,
+            spent_this_month: None,
             plan: None,
             recorded_at_ms: None,
         }
     }
 
     fn key(folder: &str) -> PaceKey {
-        PaceKey::new(&PartRef::agent("test-agent"), folder)
+        PaceKey::new(&PartRef::provider("test-provider"), folder)
     }
 
-    fn percent(answer: Option<LimitsAnswer>) -> Option<f64> {
+    fn percent(answer: Option<NumbersAnswer>) -> Option<f64> {
         answer?.ok().map(|limits| limits.windows[0].percent_used)
     }
 

@@ -3,9 +3,10 @@
 //! over every mode, opened from Settings and from the links and needs of
 //! Agents mode, with the installed plugins and a switch for each of their
 //! parts, Add plugin… by a GitHub link, Add plugin from folder…, the
-//! install dialog with the permissions of each part and the choice for
-//! each id another plugin serves, the update dialog with the permission
-//! changes, and the daily update check.
+//! install dialog with the permissions of each part, the update dialog
+//! with the permission changes, and the daily update check. Two plugins
+//! may serve one id: every part that is on reads, and nothing is asked
+//! (issue 29).
 //!
 //! The page touches no network and no disk. It reports what it needs as a
 //! [`PluginsOutcome`]; `otty-app-plugins-io` does it and answers with a

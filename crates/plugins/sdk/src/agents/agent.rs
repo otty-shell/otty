@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use crate::agents::{
-    Answers, Limits, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
+    Answers, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
     ProfileStatus, ReadError, Session,
 };
 use crate::bindings::agents_agent::exports::otty::agents_agent::agent::Guest;
@@ -67,18 +67,6 @@ pub trait Agent {
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&str>) -> Command;
 
-    /// The limits the agent itself shows for `login` of the profile. Where
-    /// they come from is the plugin's business: it tries its own programs,
-    /// files or servers in its own order and gives the first limits it
-    /// gets, or one error. Default: not supported, and OTTY shows no
-    /// limits of the agent.
-    fn read_limits(
-        _profile: &Profile,
-        _login: &LoginRef,
-    ) -> Result<Limits, ReadError> {
-        Err(ReadError::NotSupported)
-    }
-
     /// What the user must do now that a provider part refused `login` of
     /// the profile, or saw it expired
     /// ([`ReadError::LoginRefused`]): the provider part does not know
@@ -137,13 +125,6 @@ impl<T: Agent> Guest for AgentExport<T> {
 
     fn launch(profile: Profile, session: Option<String>) -> Command {
         T::launch(&profile, session.as_deref())
-    }
-
-    fn read_limits(
-        profile: Profile,
-        login: LoginRef,
-    ) -> Result<Limits, ReadError> {
-        T::read_limits(&profile, &login)
     }
 
     fn login_refused(profile: Profile, login: LoginRef) -> Option<Need> {

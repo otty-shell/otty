@@ -7,6 +7,8 @@
 
 pub mod v0_1;
 
+use std::time::Instant;
+
 use wasmtime::Store;
 use wasmtime::component::{InstancePre, Resource};
 
@@ -17,12 +19,13 @@ use crate::agents::agent::ReadError;
 /// The newest provider contract's types, which the rest of OTTY uses.
 pub use crate::agents::provider::v0_1::exports::otty::agents_provider::provider::{
     AccountFacts, AccountNumbers, Bill, DayCost, DayRange, ExtraUsage,
-    KeyLimit, LoginFacts, Money,
+    FoundProfile, KeyLimit, LoginFacts, Money,
 };
 use crate::agents::provider::v0_1::exports::otty::agents_provider::provider::{
     Guest, GuestIndices,
 };
 use crate::operations::v0_1::otty::host::keys::GivenKey;
+use crate::pacing::PaceKey;
 
 /// The provider contract of one loaded plugin, in the version its `[api]`
 /// names.
@@ -79,25 +82,54 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         })
     }
 
-    /// The numbers of `account` right now, read with the key of `key` and
-    /// the keys of `given`, each with its slot.
+    /// The numbers of `account` right now, read any way the part can:
+    /// with the key of `key` and the keys of `given`, each with its slot,
+    /// or by asking the agent in a profile of `found`. A reading that ran
+    /// a program or a hidden terminal is slow: it runs at most once in
+    /// the five minutes of the limits read per part and the profiles of
+    /// `found`, and the answer of the last reading is given within that
+    /// time.
     pub fn numbers(
         &mut self,
+        found: &LoginFacts,
         account: &AccountFacts,
         key: &KeySource,
         given: &[(String, KeySource)],
     ) -> Result<Result<AccountNumbers, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
+        let plugin = self.batch.plugin();
+        let pace = PaceKey::new(self.batch.part(), &found_folders(found));
+        let started_at = Instant::now();
+        if let Some(answer) = plugin.pacing().recent(&pace, started_at) {
+            return Ok(answer);
+        }
 
-        self.call_with_keys(key, given, |guest, store, key, given| {
-            guest.call_numbers(store, &provider, account, key, &given)
-        })
+        let (answer, is_slow) =
+            self.call_with_keys(key, given, |guest, store, key, given| {
+                let answer = guest.call_numbers(
+                    &mut *store,
+                    &provider,
+                    found,
+                    account,
+                    key,
+                    &given,
+                )?;
+
+                Ok((answer, store.data().has_started_programs()))
+            })?;
+
+        if is_slow {
+            plugin.pacing().remember(pace, started_at, answer.clone());
+        }
+        Ok(answer)
     }
 
     /// The bill of `account` over `days`, read with the key of `key` and
-    /// the keys of `given`, each with its slot.
+    /// the keys of `given`, each with its slot; `found` tells where the
+    /// account was found.
     pub fn read_bill(
         &mut self,
+        found: &LoginFacts,
         account: &AccountFacts,
         key: &KeySource,
         given: &[(String, KeySource)],
@@ -106,7 +138,9 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         let provider = self.batch.part().id().to_string();
 
         self.call_with_keys(key, given, |guest, store, key, given| {
-            guest.call_read_bill(store, &provider, account, key, &given, days)
+            guest.call_read_bill(
+                store, &provider, found, account, key, &given, days,
+            )
         })
     }
 
@@ -152,6 +186,18 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     }
 }
 
+/// The folders of the profiles of `found`, one per line: what the pace
+/// of a slow reading is kept by.
+fn found_folders(found: &LoginFacts) -> String {
+    let folders: Vec<&str> = found
+        .found_in
+        .iter()
+        .map(|profile| profile.folder.as_str())
+        .collect();
+
+    folders.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use otty_plugin_manifest::{Environment, PartRef};
@@ -167,6 +213,21 @@ mod tests {
     use crate::testing::{TempDir, engine_with, load_template, template_env};
 
     const KEY: &str = "ex-made-up-key-0001";
+
+    /// What OTTY knows of a key it read itself: an API key, found in no
+    /// profile.
+    fn key_facts() -> LoginFacts {
+        LoginFacts {
+            kind: crate::agents::agent::LoginKind::ApiKey,
+            identity: Identity {
+                account_id: None,
+                organization_id: None,
+                email: None,
+            },
+            plan: None,
+            found_in: Vec::new(),
+        }
+    }
 
     /// The money left the template's provider part reads with the key of
     /// `key`, the plugin's variables from `env`; the one request it sends
@@ -206,6 +267,7 @@ mod tests {
         };
 
         let numbers = batch.provider().expect("a provider part").numbers(
+            &key_facts(),
             &account,
             key,
             &[],
@@ -274,6 +336,7 @@ mod tests {
         };
 
         let bill = batch.provider().expect("a provider part").read_bill(
+            &key_facts(),
             &account,
             &key,
             &[("admin".to_string(), KeySource::Given(admin))],
@@ -312,6 +375,7 @@ mod tests {
         };
 
         let bill = batch.provider().expect("a provider part").read_bill(
+            &key_facts(),
             &account,
             &key,
             &[],

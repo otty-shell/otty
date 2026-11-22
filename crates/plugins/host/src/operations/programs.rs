@@ -107,35 +107,19 @@ mod tests {
 
     use otty_plugin_manifest::PartRef;
 
-    use crate::agents::agent::{Limits, LoginRef, Profile, ReadError};
     use crate::engine::PluginEngine;
     use crate::programs::{
         LineOutput, MockRunningProgram, MockStartProgram, RunOutput,
     };
-    use crate::testing::{TempDir, assert_same, load_programs_plugin};
+    use crate::testing::{
+        TempDir, assert_same, load_programs_plugin, plan_of, read_by_way,
+    };
 
-    fn profile() -> Profile {
-        Profile {
-            agent: "test-agent".to_string(),
-            folder: "/home/test-user/.test-agent".to_string(),
-            is_default: true,
-        }
-    }
+    /// The folder of the profile the account of the tests was found in.
+    const FOLDER: &str = "/home/test-user/.test-agent";
 
-    /// The login whose variable names the way the test plugin reads the
-    /// limits, such as `run`.
-    fn way(name: &str) -> LoginRef {
-        LoginRef::EnvVar(name.to_string())
-    }
-
-    /// The plan of `limits`, where the test plugin puts what the program
-    /// answered.
-    fn plan(limits: Result<Limits, ReadError>) -> Result<String, String> {
-        limits
-            .map(|limits| limits.plan.unwrap_or_default())
-            .map_err(|error| format!("{error:?}"))
-    }
-
+    /// Issue 29: a provider part reads the numbers of an account by
+    /// running the agent's program, under its own permissions.
     #[test]
     fn what_a_program_wrote_reaches_the_plugin() {
         let cache = TempDir::new();
@@ -146,10 +130,7 @@ mod tests {
                 command.program() == "stand-in"
                     && command.args() == ["--version"]
                     && command.env()
-                        == [(
-                            "STAND_IN_HOME".to_string(),
-                            "/home/test-user/.test-agent".to_string(),
-                        )]
+                        == [("STAND_IN_HOME".to_string(), FOLDER.to_string())]
             })
             .times(1)
             .returning(|_, _, _| {
@@ -160,16 +141,12 @@ mod tests {
             .with_programs(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
         let mut batch = plugin
-            .start_calls(&PartRef::agent("test-agent"))
+            .start_calls(&PartRef::provider("test-provider"))
             .expect("a listed part");
 
-        let limits = batch
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile(), &way("run"))
-            .expect("the call");
+        let numbers = read_by_way(&mut batch, FOLDER, "run");
 
-        assert_same(plan(limits), Ok("stand-in 1.2.3".to_string()));
+        assert_same(plan_of(numbers), Ok("stand-in 1.2.3".to_string()));
     }
 
     #[test]
@@ -182,17 +159,13 @@ mod tests {
             .with_programs(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
         let mut batch = plugin
-            .start_calls(&PartRef::agent("other-agent"))
+            .start_calls(&PartRef::provider("other-provider"))
             .expect("a listed part");
 
-        let limits = batch
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile(), &way("run"))
-            .expect("the call");
+        let numbers = read_by_way(&mut batch, FOLDER, "run");
 
         assert_same(
-            plan(limits),
+            plan_of(numbers),
             Err("ReadError::Host(HostError::NotAllowed(\"stand-in\"))"
                 .to_string()),
         );
@@ -226,36 +199,69 @@ mod tests {
             .with_programs(Arc::new(starter));
         let plugin = load_programs_plugin(&engine);
         let mut batch = plugin
-            .start_calls(&PartRef::agent("test-agent"))
+            .start_calls(&PartRef::provider("test-provider"))
             .expect("a listed part");
 
-        let talked = batch
-            .agent()
-            .expect("an agent part")
-            .read_limits(&profile(), &way("talk"))
-            .expect("the call");
+        let talked = read_by_way(&mut batch, FOLDER, "talk");
         let stopped_with_the_call = stopped.load(Ordering::SeqCst);
         // Another profile, so the paced answer of the talk is not given.
-        let other = Profile {
-            folder: "/home/test-user/.test-agent-work".to_string(),
-            is_default: false,
-            ..profile()
-        };
-        let used_later = batch
-            .agent()
-            .expect("an agent part")
-            .read_limits(&other, &way("used-talk"))
-            .expect("the call");
+        let used_later = read_by_way(
+            &mut batch,
+            "/home/test-user/.test-agent-work",
+            "used-talk",
+        );
 
-        assert_same(plan(talked), Ok("pong".to_string()));
+        assert_same(plan_of(talked), Ok("pong".to_string()));
         assert!(stopped_with_the_call);
         assert_same(
-            plan(used_later),
+            plan_of(used_later),
             Err(
                 "ReadError::Host(HostError::Failed(\"the talk ended with the \
                  call that started it\"))"
                     .to_string(),
             ),
+        );
+    }
+
+    /// A reading that ran a program runs once in five minutes per part
+    /// and profile; another profile, and a reading that ran no program,
+    /// read again.
+    #[test]
+    fn pacing_skips_a_second_reading_of_a_profile_within_five_minutes() {
+        let cache = TempDir::new();
+        let mut starter = MockStartProgram::new();
+        starter.expect_run().times(2).returning(|command, _, _| {
+            let folder = command.env()[0].1.clone();
+            Ok(RunOutput::new(Some(0), folder.into_bytes(), Vec::new()))
+        });
+        let engine = PluginEngine::new(cache.path().to_path_buf())
+            .expect("engine")
+            .with_programs(Arc::new(starter));
+        let plugin = load_programs_plugin(&engine);
+        let read = |folder: &str, way: &str| {
+            let mut batch = plugin
+                .start_calls(&PartRef::provider("test-provider"))
+                .expect("a listed part");
+
+            plan_of(read_by_way(&mut batch, folder, way)).ok()
+        };
+        let work = "/home/test-user/.test-agent-work";
+        let quick = "/home/test-user/.test-agent-quick";
+
+        let first = read(work, "run");
+        let second = read(work, "run");
+        let other_profile = read(FOLDER, "run");
+        let no_program = [read(quick, "none"), read(quick, "none")];
+
+        assert_eq!(first.as_deref(), Some(work));
+        assert_eq!(second, first);
+        assert_eq!(other_profile.as_deref(), Some(FOLDER));
+        assert_eq!(
+            no_program,
+            [
+                Some("no program".to_string()),
+                Some("no program".to_string())
+            ]
         );
     }
 }

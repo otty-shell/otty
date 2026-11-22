@@ -5,11 +5,16 @@
 use std::time::{Duration, SystemTime};
 
 use otty_plugin_host::agents::agent::{
-    Credits as PartCredits, KeyPlace, Limits as PartLimits,
+    Command as PartCommand, Credits as PartCredits, KeyPlace,
     Profile as PartProfile, ProviderRef as PartProviderRef,
     TokenCount as PartTokenCount,
 };
+use otty_plugin_host::agents::provider::{
+    AccountNumbers as PartNumbers, FoundProfile,
+};
 
+use crate::agent::Agent;
+use crate::command::AgentCommand;
 use crate::limits::{
     Billing, Credits, LimitWindow, Limits, UsageWindows, WindowId,
 };
@@ -25,6 +30,32 @@ pub(crate) fn part_profile(profile: &Profile) -> PartProfile {
         agent: profile.agent().as_str().to_string(),
         folder: profile.config_dir().display().to_string(),
         is_default: profile.is_in_default_config_dir(),
+    }
+}
+
+/// `profile` as a provider part is told an account was found in it (issue
+/// 29): the plugin and the agent part `agent` that found it, the folder,
+/// and the command the part starts a new session with there.
+pub(crate) fn found_profile(
+    agent: &dyn Agent,
+    profile: &Profile,
+) -> FoundProfile {
+    let part = agent.entry().part();
+
+    FoundProfile {
+        plugin: part.plugin().to_string(),
+        agent: part.part().to_string(),
+        folder: profile.config_dir().display().to_string(),
+        launch: part_command(&agent.launch(profile, None)),
+    }
+}
+
+/// `command` as a part is given it.
+fn part_command(command: &AgentCommand) -> PartCommand {
+    PartCommand {
+        program: command.program().to_string(),
+        args: command.args().to_vec(),
+        env: command.env().to_vec(),
     }
 }
 
@@ -52,9 +83,10 @@ pub(crate) fn provider_of(provider: &PartProviderRef) -> ProviderRef {
     }
 }
 
-/// The limits a part read: its usage windows, else its credits; a plan
-/// and the time the numbers were true, when the part tells.
-pub(crate) fn limits_of(limits: &PartLimits) -> Limits {
+/// The limits in the numbers a provider part read: its usage windows,
+/// else its credits; a plan and the time the numbers were true, when the
+/// part tells.
+pub(crate) fn limits_of(limits: &PartNumbers) -> Limits {
     let windows: Vec<LimitWindow> = limits
         .windows
         .iter()
@@ -136,13 +168,47 @@ mod tests {
     fn part_limits(
         windows: Vec<PartWindow>,
         credits: Option<PartCredits>,
-    ) -> PartLimits {
-        PartLimits {
+    ) -> PartNumbers {
+        PartNumbers {
             windows,
             credits,
+            extra_usage: None,
+            left: None,
+            key_limit: None,
+            spent_this_month: None,
             plan: Some("Pro".to_string()),
             recorded_at_ms: None,
         }
+    }
+
+    /// Issue 29: a provider part is told the profiles an account was
+    /// found in, each with the command its agent part starts there.
+    #[test]
+    fn a_found_profile_names_its_part_and_the_command_of_its_agent() {
+        let mut agent = crate::testing::MockAgent::new();
+        agent
+            .expect_entry()
+            .return_const(crate::testing::mock_entry("coder", "coder"));
+        agent.expect_launch().returning(|_, _| {
+            AgentCommand::new("coder")
+                .with_env("CODER_HOME", "/home/u/.coder-w")
+        });
+        let profile = Profile::added(
+            crate::agent::AgentId::new("coder"),
+            "Coder · Work",
+            std::path::PathBuf::from("/home/u/.coder-w"),
+        );
+
+        let found = found_profile(&agent, &profile);
+
+        assert_eq!(found.plugin, "example");
+        assert_eq!(found.agent, "coder");
+        assert_eq!(found.folder, "/home/u/.coder-w");
+        assert_eq!(found.launch.program, "coder");
+        assert_eq!(
+            found.launch.env,
+            [("CODER_HOME".to_string(), "/home/u/.coder-w".to_string())]
+        );
     }
 
     #[test]

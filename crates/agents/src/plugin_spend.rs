@@ -313,7 +313,6 @@ impl StatsSource for Arc<PluginSpend> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::PluginFailure;
 
     use super::*;
     use crate::account::{Account, AccountKind, AccountLogin, FoundIn};
@@ -542,8 +541,13 @@ mod tests {
                 other => panic!("a failed read: {other:?}"),
             })
             .collect();
-        let other_part =
-            provider.read(&cloud_account(&home), &missing_key(), &[]);
+        let other_part = provider.read(
+            &cloud_account(&home),
+            &missing_key(),
+            Vec::new(),
+            &[],
+            true,
+        );
 
         assert_eq!(
             failures,
@@ -556,16 +560,15 @@ mod tests {
         );
         assert!(agent.health().is_paused());
         assert!(!provider.health().is_paused());
-        let Err(SourceError::PluginFailed(failure)) = other_part else {
-            panic!("the provider part read and found no key: {other_part:?}");
-        };
-        assert_eq!(
-            *failure,
-            PluginFailure::new(
-                failure.part().clone(),
-                "numbers",
-                PluginFailureKind::CouldNotRead("host error: not found"),
-            )
+        // Issue 29: the part found no key at its place and answered
+        // nothing, which is no failure.
+        assert!(
+            matches!(
+                &other_part,
+                Ok(crate::account_numbers::AccountNumbers::Balance(balance))
+                    if balance.left().is_none()
+            ),
+            "the provider part read and found no key: {other_part:?}"
         );
     }
 
@@ -579,7 +582,7 @@ mod tests {
         )
     }
 
-    /// A login whose key file is not there: the host finds no key, so
+    /// A login whose key file is not there: the part finds no key, so
     /// nothing is sent.
     fn missing_key() -> otty_plugin_host::agents::agent::Login {
         use otty_plugin_host::agents::agent::{JsonField, Login, LoginKind};

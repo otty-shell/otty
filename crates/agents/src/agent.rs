@@ -2,7 +2,6 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use otty_plugin_host::PluginPart;
 use otty_plugin_host::agents::agent::Login;
@@ -10,13 +9,9 @@ use otty_plugin_host::agents::agent::Login;
 use crate::account::Account;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
-use crate::error::Unavailable;
-use crate::hidden_terminal::StartTerminal;
-use crate::limits::LimitSource;
 use crate::part_need::PartNeed;
 use crate::profile::{Profile, ProfileStatus};
 use crate::profile_list::found_in_home;
-use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -268,18 +263,6 @@ pub trait Agent: Send + Sync {
     /// same order, known without making the sources.
     fn session_source_ids(&self) -> &'static [SourceId];
 
-    /// The read of the limits the agent itself shows. `None`: the agent
-    /// shows none.
-    ///
-    /// A read that asks the agent's own program starts it with
-    /// `programs`, and one that reads the program's screen starts it in a
-    /// hidden terminal with `terminals`.
-    fn limit_source(
-        &self,
-        programs: Arc<dyn StartProgram>,
-        terminals: Arc<dyn StartTerminal>,
-    ) -> Option<Box<dyn LimitSource>>;
-
     /// Counts the tokens spent from local files. `None`: not supported.
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
 
@@ -299,20 +282,14 @@ pub trait Agent: Send + Sync {
 
     /// The login of `account` as the plugin part that found it in
     /// `profile` names it, with the place its key sits, so that a
-    /// provider part can be given a handle to it.
-    ///
-    /// # Errors
-    ///
-    /// [`Unavailable::KeyGone`] when the part no longer finds the login
-    /// there, and [`Unavailable::NoLoginKey`] when it does but no key is
-    /// at the login's place now: a provider part gets a handle only to a
-    /// key that is there (spec 2026-11-19-agent-plugins, issue 13).
+    /// provider part can be given a handle to it. `None` when the part no
+    /// longer finds it there.
     fn found_login(
         &self,
         _profile: &Profile,
         _account: &Account,
-    ) -> Result<Login, Unavailable> {
-        Err(Unavailable::KeyGone)
+    ) -> Option<Login> {
+        None
     }
 
     /// What the user must do now that a provider refused `login`, which

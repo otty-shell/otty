@@ -1,17 +1,28 @@
 //! The provider part `openai`: whose account a ChatGPT login or an OpenAI
 //! key is, the limits and credits of a ChatGPT login, and the bill of an
-//! OpenAI organization read with an admin key the part asks the user for. OTTY gives the part a
-//! handle to the login token or the key, never the key, and only of
-//! accounts of OpenAI: a login behind a gateway is not one.
+//! OpenAI organization read with an admin key the part asks the user for.
+//! OTTY gives the part a handle to the login token or the key, never the
+//! key, and only of accounts of OpenAI: a login behind a gateway is not
+//! one.
+//!
+//! The limits are read any way the part can (issue 29): from
+//! `chatgpt.com` with the login token; else, with no token at its place or
+//! when the server fails, from what Codex knows in a Codex profile the
+//! login was found in (`codex_limits.rs`); else nothing.
 
 use otty_plugin_sdk::agents::{
-    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, Provider,
-    ReadError,
+    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, LoginKind,
+    Provider, ReadError,
 };
-use otty_plugin_sdk::{GivenKey, Key, given_key};
+use otty_plugin_sdk::{GivenKey, HostError, Key, given_key};
 
+use crate::codex_limits::read_codex_limits;
+use crate::limits::Limits;
 use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{OpenAi, chatgpt_usage, organization_costs};
+
+/// The agent part whose profiles know the limits of a ChatGPT login.
+const CODEX: &str = "codex";
 
 impl Provider for OpenAi {
     /// The account the agent part found: a ChatGPT login names its account
@@ -28,27 +39,41 @@ impl Provider for OpenAi {
         })
     }
 
-    /// The limits and credits of a ChatGPT login, told by its account id.
-    /// OpenAI tells nothing of the money of one API key, so a key has no
-    /// numbers and nothing is sent.
+    /// The limits and credits of a ChatGPT login: from `chatgpt.com`,
+    /// told by its account id, with its token; else what Codex knows in a
+    /// Codex profile of `found`; else nothing. OpenAI tells nothing of the
+    /// money of one API key, so a key has no numbers and nothing is sent.
     fn numbers(
         _provider: &str,
+        found: &LoginFacts,
         account: &AccountFacts,
         key: &Key,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
-        let Some(account_id) = account.identity.account_id.as_deref() else {
+        if found.kind != LoginKind::Subscription {
             return Ok(no_numbers());
+        }
+
+        let account_id = account.identity.account_id.as_deref();
+        let server = match account_id {
+            Some(account_id) if is_there(key)? => {
+                Some(chatgpt_usage::chatgpt_limits(key, account_id))
+            },
+            _ => None,
         };
 
-        let limits = chatgpt_usage::chatgpt_limits(key, account_id)?;
-
-        Ok(AccountNumbers {
-            windows: limits.windows,
-            credits: limits.credits,
-            plan: limits.plan,
-            ..no_numbers()
-        })
+        let limits = match server {
+            Some(Ok(limits)) => Ok(limits),
+            Some(Err(error)) => match codex_limits(found, key) {
+                Some(Ok(limits)) => Ok(limits),
+                _ => Err(error),
+            },
+            None => match codex_limits(found, key) {
+                Some(read) => read,
+                None => return Ok(no_numbers()),
+            },
+        };
+        limits.map(Limits::into_numbers)
     }
 
     /// The costs of the organization over `days`, read with an admin
@@ -59,6 +84,7 @@ impl Provider for OpenAi {
     /// under [`ADMIN_SLOT`], which the next read takes first.
     fn read_bill(
         _provider: &str,
+        _found: &LoginFacts,
         _account: &AccountFacts,
         key: &Key,
         given: &[GivenKey],
@@ -84,7 +110,32 @@ impl Provider for OpenAi {
     }
 }
 
-/// Numbers with nothing in them.
+/// Whether the key of `key` is at its place now. A key that is not is a
+/// normal case, such as a login another agent keeps elsewhere.
+fn is_there(key: &Key) -> Result<bool, ReadError> {
+    match key.fingerprint() {
+        Ok(_) => Ok(true),
+        Err(HostError::NotFound(_)) => Ok(false),
+        Err(error) => Err(ReadError::Host(error)),
+    }
+}
+
+/// The limits Codex knows of the login of `key` in the first Codex
+/// profile of `found`; `None` when it was found in none.
+fn codex_limits(
+    found: &LoginFacts,
+    key: &Key,
+) -> Option<Result<Limits, ReadError>> {
+    let profile = found
+        .found_in
+        .iter()
+        .find(|profile| profile.agent == CODEX)?;
+
+    Some(read_codex_limits(profile, key))
+}
+
+/// Numbers with nothing in them: what the part answers when it has no way
+/// to read the account.
 fn no_numbers() -> AccountNumbers {
     AccountNumbers {
         windows: Vec::new(),
@@ -94,6 +145,7 @@ fn no_numbers() -> AccountNumbers {
         key_limit: None,
         spent_this_month: None,
         plan: None,
+        recorded_at_ms: None,
     }
 }
 
@@ -101,14 +153,14 @@ fn no_numbers() -> AccountNumbers {
 mod tests {
     use otty_plugin_sdk::agents::{Identity, LoginKind};
     use otty_plugin_sdk::http::{self, Request};
+    use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{
         GivenKey, HostError, JsonField, KeyPlace, NeedAction, files, keys,
     };
 
     use super::*;
-    use crate::testing::{ACCOUNT, TEN, host, path};
+    use crate::testing::{ACCOUNT, PROVIDER, TEN, found_profile, host, path};
 
-    const PROVIDER: &str = "openai";
     /// A made-up token that expires in 2100.
     const TOKEN: &str =
         "e30.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6Im1hZGUtdXAtYWNjZXNzIn0.c2ln";
@@ -144,6 +196,7 @@ mod tests {
                 email: Some("dev@example.com".to_string()),
             },
             plan: Some("Plus".to_string()),
+            found_in: Vec::new(),
         }
     }
 
@@ -152,7 +205,113 @@ mod tests {
             kind: LoginKind::ApiKey,
             identity: Identity::default(),
             plan: None,
+            found_in: Vec::new(),
         }
+    }
+
+    /// A handle to the access token of the login of the config folder
+    /// `name`, read at each use.
+    fn token_at(host: &TestHost, name: &str) -> Key {
+        host.key_at(&KeyPlace::JsonField(JsonField {
+            file: path(host, &format!("{name}/auth.json")),
+            pointer: "/tokens/access_token".to_string(),
+        }))
+    }
+
+    /// The ChatGPT login found in the Codex profile `name`.
+    fn login_in(host: &TestHost, name: &str) -> LoginFacts {
+        LoginFacts {
+            found_in: vec![found_profile(host, name, false)],
+            ..chatgpt_login()
+        }
+    }
+
+    /// Issue 29: no token at its place, so the part reads the limits Codex
+    /// wrote in the session files of the profile the login was found in;
+    /// nothing is sent and nothing fails.
+    #[test]
+    fn a_login_with_no_token_reads_the_limits_codex_wrote() {
+        let host = host();
+        let key = token_at(&host, ".codex-empty");
+        let found = login_in(&host, ".codex-limits");
+
+        let numbers = host.as_provider(PROVIDER, || {
+            let facts = OpenAi::account(PROVIDER, &key, &found)?;
+            OpenAi::numbers(PROVIDER, &found, &facts, &key, &[])
+        });
+
+        let numbers = numbers.expect("the numbers");
+        assert_eq!(numbers.plan.as_deref(), Some("Plus"));
+        assert!(numbers.recorded_at_ms.is_some());
+        assert!(host.requests().is_empty());
+    }
+
+    /// Issue 29: no token and no Codex profile is nothing, not a failure.
+    #[test]
+    fn a_login_with_no_token_and_no_profile_reads_nothing() {
+        let host = host();
+        let key = token_at(&host, ".codex-empty");
+
+        let numbers = host.as_provider(PROVIDER, || {
+            let facts = OpenAi::account(PROVIDER, &key, &chatgpt_login())?;
+            OpenAi::numbers(PROVIDER, &chatgpt_login(), &facts, &key, &[])
+        });
+
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty());
+        assert!(host.started().is_empty());
+    }
+
+    /// Issue 29: the server failed, so the part reads what Codex knows in
+    /// the profile the login was found in.
+    #[test]
+    fn a_failed_server_falls_back_on_what_codex_knows() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 500, b"{}");
+        let key = host.key(TOKEN);
+        let found = login_in(&host, ".codex-limits");
+
+        let numbers = host.as_provider(PROVIDER, || {
+            let facts = OpenAi::account(PROVIDER, &key, &found)?;
+            OpenAi::numbers(PROVIDER, &found, &facts, &key, &[])
+        });
+
+        assert_eq!(
+            numbers.map(|numbers| numbers.plan),
+            Ok(Some("Plus".to_string()))
+        );
+    }
+
+    /// Issue 29: with no login token at its place, an admin key the user
+    /// gave under `admin` still reads the bill.
+    #[test]
+    fn an_admin_key_given_reads_the_bill_without_the_token() {
+        let host = host();
+        host.answer(
+            "GET",
+            COSTS_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let key = token_at(&host, ".codex-empty");
+        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+
+        let bill = host.as_provider(PROVIDER, || {
+            OpenAi::read_bill(
+                PROVIDER,
+                &chatgpt_login(),
+                &organization(),
+                &key,
+                &given,
+                &one_day(),
+            )
+        });
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some(format!("Bearer {MADE_UP_ADMIN}").as_str())
+        );
     }
 
     #[test]
@@ -187,7 +346,7 @@ mod tests {
 
         let numbers = host.as_provider(PROVIDER, || {
             let facts = OpenAi::account(PROVIDER, &key, &chatgpt_login())?;
-            OpenAi::numbers(PROVIDER, &facts, &key, &[])
+            OpenAi::numbers(PROVIDER, &chatgpt_login(), &facts, &key, &[])
         });
 
         let numbers = numbers.expect("the numbers");
@@ -207,7 +366,7 @@ mod tests {
 
         let numbers = host.as_provider(PROVIDER, || {
             let facts = OpenAi::account(PROVIDER, &key, &api_key())?;
-            OpenAi::numbers(PROVIDER, &facts, &key, &[])
+            OpenAi::numbers(PROVIDER, &api_key(), &facts, &key, &[])
         });
 
         assert_eq!(numbers, Ok(no_numbers()));
@@ -223,7 +382,14 @@ mod tests {
         let key = host.key("sk-proj-made-up-openai-key");
 
         let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(PROVIDER, &organization(), &key, &[], &one_day())
+            OpenAi::read_bill(
+                PROVIDER,
+                &chatgpt_login(),
+                &organization(),
+                &key,
+                &[],
+                &one_day(),
+            )
         });
 
         let Err(ReadError::NeedsUser(need)) = bill else {
@@ -262,6 +428,7 @@ mod tests {
         let bill = host.as_provider(PROVIDER, || {
             OpenAi::read_bill(
                 PROVIDER,
+                &chatgpt_login(),
                 &organization(),
                 &key,
                 &given,
@@ -289,7 +456,14 @@ mod tests {
         let key = host.key(MADE_UP_ADMIN);
 
         let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(PROVIDER, &organization(), &key, &[], &one_day())
+            OpenAi::read_bill(
+                PROVIDER,
+                &chatgpt_login(),
+                &organization(),
+                &key,
+                &[],
+                &one_day(),
+            )
         });
 
         assert!(bill.is_ok(), "{bill:?}");
@@ -306,7 +480,14 @@ mod tests {
         host.answer("GET", COSTS_URL, 401, b"{}");
 
         let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(PROVIDER, &organization(), key, given, &one_day())
+            OpenAi::read_bill(
+                PROVIDER,
+                &chatgpt_login(),
+                &organization(),
+                key,
+                given,
+                &one_day(),
+            )
         });
 
         match bill {
@@ -378,6 +559,7 @@ mod tests {
         let bill = host.as_provider(PROVIDER, || {
             OpenAi::read_bill(
                 PROVIDER,
+                &chatgpt_login(),
                 &organization(),
                 &key,
                 &given,

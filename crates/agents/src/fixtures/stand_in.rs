@@ -5,7 +5,6 @@
 //! OTTY knows these names; they are test data only.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use otty_plugin_host::PluginPart;
 
@@ -14,12 +13,9 @@ use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::error::{SourceError, Unavailable};
-use crate::hidden_terminal::StartTerminal;
-use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
 use crate::part_need::{PartNeed, PartNeedAction};
 use crate::profile::{Profile, ProfileStatus};
-use crate::program::StartProgram;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -127,14 +123,6 @@ impl Agent for StandIn {
 
     fn session_source_ids(&self) -> &'static [SourceId] {
         &SESSION_SOURCES
-    }
-
-    fn limit_source(
-        &self,
-        _programs: Arc<dyn StartProgram>,
-        _terminals: Arc<dyn StartTerminal>,
-    ) -> Option<Box<dyn LimitSource>> {
-        None
     }
 
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {

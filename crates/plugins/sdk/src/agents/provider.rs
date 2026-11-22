@@ -18,6 +18,14 @@ use crate::{GivenKey, Key};
 /// the part asked for them; a part that needs a key it has not got
 /// answers [`ReadError::NeedsUser`] with an
 /// [`AskKey`](crate::NeedAction::AskKey) need.
+///
+/// `found` tells what OTTY found about the login, with every profile the
+/// account was found in ([`LoginFacts::found_in`]): a part may read the
+/// numbers by asking the agent there, such as with a program or a hidden
+/// terminal its manifest declares, when the key does not do. A key that
+/// is not at its place is a normal case: using its handle fails with
+/// [`HostError::NotFound`](crate::HostError::NotFound). When no way
+/// works, the part answers numbers with nothing in them, not an error.
 pub trait Provider {
     /// Whose account `key` is: account or organization id, email, plan.
     /// `found` is what OTTY found about the login in the agents' files.
@@ -27,9 +35,11 @@ pub trait Provider {
         found: &LoginFacts,
     ) -> Result<AccountFacts, ReadError>;
 
-    /// The account's numbers right now. Each of them is optional.
+    /// The account's numbers right now, read any way the part can. Each
+    /// of them is optional.
     fn numbers(
         provider: &str,
+        found: &LoginFacts,
         account: &AccountFacts,
         key: &Key,
         given: &[GivenKey],
@@ -39,6 +49,7 @@ pub trait Provider {
     /// `key` or a key the user gave. Default: not supported.
     fn read_bill(
         _provider: &str,
+        _found: &LoginFacts,
         _account: &AccountFacts,
         _key: &Key,
         _given: &[GivenKey],
@@ -77,15 +88,23 @@ mod wasm {
 
         fn numbers(
             provider: String,
+            found: LoginFacts,
             account: AccountFacts,
             key: &WitKey,
             given: Vec<WitGivenKey>,
         ) -> Result<AccountNumbers, ReadError> {
-            T::numbers(&provider, &account, &Key::lent(key), &given_keys(given))
+            T::numbers(
+                &provider,
+                &found,
+                &account,
+                &Key::lent(key),
+                &given_keys(given),
+            )
         }
 
         fn read_bill(
             provider: String,
+            found: LoginFacts,
             account: AccountFacts,
             key: &WitKey,
             given: Vec<WitGivenKey>,
@@ -93,6 +112,7 @@ mod wasm {
         ) -> Result<Bill, ReadError> {
             T::read_bill(
                 &provider,
+                &found,
                 &account,
                 &Key::lent(key),
                 &given_keys(given),

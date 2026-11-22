@@ -1,21 +1,19 @@
 //! What the install and update dialogs show before the user agrees, and
 //! what an update check reports.
 
-use otty_plugin_manifest::{Manifest, PartRef, PluginVersion};
+use otty_plugin_manifest::{Manifest, PluginVersion};
 
 use crate::choose::SkippedRelease;
 use crate::diff::PermissionDiff;
 use crate::error::InstallError;
 use crate::package::Package;
-use crate::plugins_file::{Served, Source, Trust, Winner};
+use crate::plugins_file::{Source, Trust};
 
 /// A plugin found and checked, waiting for the install dialog: its
-/// manifest with each part's permissions, how far it is trusted, and each
-/// id or host another plugin already serves.
+/// manifest with each part's permissions and how far it is trusted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallPlan {
     package: Package,
-    conflicts: Vec<Conflict>,
 }
 
 impl InstallPlan {
@@ -39,51 +37,12 @@ impl InstallPlan {
         self.package.source().trust()
     }
 
-    /// The ids and hosts of its parts another plugin already serves: the
-    /// dialog asks which one serves each.
-    pub fn conflicts(&self) -> &[Conflict] {
-        &self.conflicts
-    }
-
     pub(crate) fn package(&self) -> &Package {
         &self.package
     }
 
-    pub(crate) fn new(package: Package, conflicts: Vec<Conflict>) -> Self {
-        Self { package, conflicts }
-    }
-}
-
-/// One id or host of a new part that is already served.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Conflict {
-    part: PartRef,
-    served: Served,
-    current: Winner,
-}
-
-impl Conflict {
-    /// The new part.
-    pub fn part(&self) -> &PartRef {
-        &self.part
-    }
-
-    /// The id or host both would serve.
-    pub fn served(&self) -> &Served {
-        &self.served
-    }
-
-    /// Who serves it now.
-    pub fn current(&self) -> &Winner {
-        &self.current
-    }
-
-    pub(crate) fn new(part: PartRef, served: Served, current: Winner) -> Self {
-        Self {
-            part,
-            served,
-            current,
-        }
+    pub(crate) fn new(package: Package) -> Self {
+        Self { package }
     }
 }
 
@@ -94,7 +53,6 @@ pub struct PendingUpdate {
     from: PluginVersion,
     package: Package,
     diff: PermissionDiff,
-    conflicts: Vec<Conflict>,
 }
 
 impl PendingUpdate {
@@ -123,13 +81,6 @@ impl PendingUpdate {
         &self.diff
     }
 
-    /// The ids and hosts of its new parts another plugin already serves:
-    /// the update dialog asks which one serves each, as the install dialog
-    /// does.
-    pub fn conflicts(&self) -> &[Conflict] {
-        &self.conflicts
-    }
-
     pub(crate) fn package(&self) -> &Package {
         &self.package
     }
@@ -138,13 +89,11 @@ impl PendingUpdate {
         from: PluginVersion,
         package: Package,
         diff: PermissionDiff,
-        conflicts: Vec<Conflict>,
     ) -> Self {
         Self {
             from,
             package,
             diff,
-            conflicts,
         }
     }
 }

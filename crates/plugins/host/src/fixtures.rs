@@ -30,7 +30,7 @@ pub fn paused_health() -> crate::part_health::PartHealth {
 ///
 /// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
 /// let failure =
-///     PluginFailure::new(part, "read-limits", PluginFailureKind::TooSlow);
+///     PluginFailure::new(part, "numbers", PluginFailureKind::TooSlow);
 ///
 /// let health = failed_health(&failure, SystemTime::UNIX_EPOCH);
 ///

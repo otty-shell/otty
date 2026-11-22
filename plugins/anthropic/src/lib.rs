@@ -1,18 +1,21 @@
 //! The official Anthropic plugin of OTTY. Its agent part `claude-code`
 //! reads Claude Code: its config folders (profiles), its sessions, the
-//! tokens of its answers, its logins and the limits its
-//! `/usage` panel shows, read in a hidden terminal. Claude Code
-//! keeps everything in its config folder, `CLAUDE_CONFIG_DIR` or
-//! `~/.claude`: the login in `.credentials.json` (the account in the
-//! global config file `.claude.json`), keys in `settings.json`, and one
-//! file for each session in `projects/<folder name>/<session id>.jsonl`.
+//! tokens of its answers and its logins. Claude Code keeps everything in
+//! its config folder, `CLAUDE_CONFIG_DIR` or `~/.claude`: the login in
+//! `.credentials.json` (the account in the global config file
+//! `.claude.json`), keys in `settings.json`, and one file for each session
+//! in `projects/<folder name>/<session id>.jsonl`.
 //!
 //! Its provider part `anthropic` reads the numbers of Anthropic accounts
-//! with the handles OTTY gives it: the limits of a Claude login, whichever
-//! agent keeps the login, and the bill of an organization with an admin
-//! key, both from `api.anthropic.com`. A Claude login it sees refused it
-//! only reports as refused: OTTY asks the agent part that keeps it what
-//! the user must do.
+//! any way it can (issue 29): the limits of a Claude login from
+//! `api.anthropic.com` with its token, whichever agent keeps the login,
+//! else from the `/usage` panel of `claude` in a hidden terminal, in a
+//! Claude Code profile the login was found in, such as a profile whose
+//! `.credentials.json` holds no token while Claude Code still works; and
+//! the bill of an organization with an admin key. With no way that works
+//! it reads nothing. A Claude login it sees refused it only reports as
+//! refused: OTTY asks the agent part that keeps it what the user must
+//! do.
 //!
 //! What only the user can do, the parts give as needs (`needs.rs`): log
 //! in to Claude Code, run Claude Code so it renews an expired login, and

@@ -1,5 +1,9 @@
 //! An account: one login or key at a provider, which owns the limits, the
-//! credits, the money left and the bills (spec "Words", Decisions 2 and 5).
+//! credits, the money left and the bills (spec "Words", Decisions 2 and 5),
+//! as one plugin reads it. Every provider part that serves the account
+//! reads it, so a login two plugins serve is two accounts, one per plugin,
+//! and the user hides the one they do not want (spec
+//! 2026-11-19-agent-plugins, issue 29).
 
 use std::path::PathBuf;
 
@@ -66,7 +70,7 @@ pub enum FoundIn {
     AddedByUser,
 }
 
-/// One login or key at a provider.
+/// One login or key at a provider, as one plugin reads it.
 ///
 /// The key or the token of the account is never part of it: a key is known
 /// only by its [`KeyFingerprint`], and the token stays in the agent's file.
@@ -74,6 +78,7 @@ pub enum FoundIn {
 pub struct Account {
     provider: ProviderRef,
     identity: AccountIdentity,
+    read_by: Option<String>,
     login: AccountLogin,
     plan: Option<String>,
     kind: AccountKind,
@@ -90,6 +95,13 @@ impl Account {
     /// What tells the account from the others of its provider.
     pub fn identity(&self) -> &AccountIdentity {
         &self.identity
+    }
+
+    /// The id of the plugin whose provider part reads the account, such as
+    /// `example`; `None` when no installed plugin reads it. Its sessions
+    /// and their estimated money still count.
+    pub fn read_by(&self) -> Option<&str> {
+        self.read_by.as_deref()
     }
 
     /// How the account is shown.
@@ -173,6 +185,7 @@ impl Account {
         Self {
             provider,
             identity,
+            read_by: None,
             login,
             plan: None,
             kind,
@@ -212,19 +225,49 @@ impl Account {
         self
     }
 
+    /// The same account read by the provider part of the plugin `plugin`,
+    /// or by none.
+    ///
+    /// ```
+    /// use otty_agents::{Account, KeyRef, ProviderRef};
+    ///
+    /// let added = Account::added(
+    ///     ProviderRef::of_id("example-cloud"),
+    ///     KeyRef::EnvVar("EXAMPLE_API_KEY".into()),
+    /// );
+    ///
+    /// assert_eq!(added.read_by(), None);
+    /// assert_eq!(
+    ///     added.with_read_by(Some("example".into())).read_by(),
+    ///     Some("example")
+    /// );
+    /// ```
+    pub fn with_read_by(mut self, plugin: Option<String>) -> Self {
+        self.read_by = plugin;
+        self
+    }
+
     /// Whether `other` is this account, found in the same or another
-    /// place: the same provider and the same identity (spec Decision 2).
+    /// place: the same provider and the same identity (spec Decision 2),
+    /// read by the same plugin (issue 29).
     pub fn is_same_account(&self, other: &Account) -> bool {
+        self.is_same_login(other) && self.read_by == other.read_by
+    }
+
+    /// Whether `other` is the same login or key as this account, whichever
+    /// plugin reads each: the same provider and the same identity.
+    pub fn is_same_login(&self, other: &Account) -> bool {
         self.provider == other.provider && self.identity == other.identity
     }
 
     /// Whether this account paid `tokens` of a profile with the accounts
     /// `profile_accounts` (spec Decision 4): the agent wrote so for the
     /// session, or the tokens went to its provider and the profile
-    /// has no other account there. The tokens of a profile with several
-    /// accounts of one provider that does not write which one paid are not
-    /// split between them, and count for none. A provider named by its host
-    /// is the one of `registry` that serves the host.
+    /// has no other login there. The tokens of a profile with several
+    /// logins of one provider that does not write which one paid are not
+    /// split between them, and count for none. The copies of one login
+    /// that several plugins read each paid them (issue 29). A provider
+    /// named by its host is the one of `registry` that serves the host.
     ///
     /// ```
     /// use std::path::PathBuf;
@@ -275,10 +318,11 @@ impl Account {
             registry.is_same_provider(&found.provider, &self.provider)
         });
 
-        match (of_provider.next(), of_provider.next()) {
-            (Some(only), None) => only.is_same_account(self),
-            _ => false,
-        }
+        let Some(first) = of_provider.next() else {
+            return false;
+        };
+        first.is_same_login(self)
+            && of_provider.all(|other| other.is_same_login(first))
     }
 
     /// The same account with its provider named as `registry` names it: a
@@ -286,6 +330,33 @@ impl Account {
     fn with_provider_resolved(mut self, registry: &Registry) -> Self {
         self.provider = registry.resolve(&self.provider);
         self
+    }
+
+    /// One copy of the account for each plugin of `registry` whose
+    /// provider part reads it: every part that serves its provider, and
+    /// for an account the user added only those that offer Add account.
+    /// An account already read by a plugin, or one no part reads, stays
+    /// as it is.
+    fn read_by_each(self, registry: &Registry) -> Vec<Account> {
+        if self.read_by.is_some() {
+            return vec![self];
+        }
+
+        let is_added = self.added_key().is_some();
+        let readers: Vec<String> = registry
+            .readers_of(&self.provider)
+            .into_iter()
+            .filter(|entry| !is_added || entry.can_add_by_hand())
+            .map(|entry| entry.part().plugin().to_string())
+            .collect();
+
+        if readers.is_empty() {
+            return vec![self];
+        }
+        readers
+            .into_iter()
+            .map(|plugin| self.clone().with_read_by(Some(plugin)))
+            .collect()
     }
 
     /// Takes in `copy`, another copy of this account found elsewhere: its
@@ -309,12 +380,15 @@ impl Account {
 
 /// The accounts of all profiles with each account once (spec Decision 2):
 /// the accounts at the same provider with the same identity are one, found
-/// in every place of them. A provider named by the host of its server is
+/// in every place of them, for each plugin of `registry` that reads it
+/// (issue 29). A provider named by the host of its server is
 /// first named as `registry` names it, so a key found for a host is one
 /// account with the same key found for the id of the provider that serves
-/// the host; with no such provider it stays known by its host.
+/// the host; with no such provider it stays known by its host, read by no
+/// plugin.
 ///
-/// The accounts keep the order they come in. A merged account keeps what
+/// The accounts keep the order they come in, the copies of one login side
+/// by side in the order of the registry. A merged account keeps what
 /// the first of its copies tells, with the plan and the email filled in
 /// from the others when the first has none.
 ///
@@ -346,12 +420,13 @@ pub fn merge_accounts(
     accounts: Vec<Account>,
     registry: &Registry,
 ) -> Vec<Account> {
-    let resolved = accounts
+    let read = accounts
         .into_iter()
         .map(|account| account.with_provider_resolved(registry))
+        .flat_map(|account| account.read_by_each(registry))
         .collect();
 
-    join_copies(resolved)
+    join_copies(read)
 }
 
 /// `accounts` with the copies of each account made one, as
@@ -705,6 +780,111 @@ mod tests {
         assert_eq!(without_entry.len(), 1);
         assert_eq!(without_entry[0].provider(), &deepseek_host());
         assert_eq!(without_entry[0].found_in().len(), 2);
+    }
+
+    /// A registry with two plugins that both serve the provider
+    /// `anthropic`, and one that offers Add account for it.
+    fn two_anthropic_readers() -> Registry {
+        let entry = |plugin: &str, add_by_hand: bool| {
+            let part = otty_plugin_host::PluginPart::new(
+                plugin,
+                plugin,
+                "0.1.0",
+                "",
+                "anthropic",
+            );
+            let entry = crate::provider::ProviderEntry::new(
+                crate::provider::ProviderId::new("anthropic"),
+                "Anthropic",
+                part,
+            )
+            .with_hosts(["anthropic.com"]);
+            match add_by_hand {
+                true => entry.with_add_by_hand(),
+                false => entry,
+            }
+        };
+
+        Registry::new(
+            Vec::new(),
+            vec![entry("anthropic", true), entry("anthropic-fork", false)],
+        )
+    }
+
+    fn claude_login(folder: &str) -> Account {
+        Account::new(
+            ProviderRef::of_id("anthropic"),
+            AccountIdentity::AccountId("made-up-account".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Limits,
+            FoundIn::ProfileFolder(folder.into()),
+        )
+    }
+
+    /// Issue 29: two plugins that serve one provider each read its
+    /// accounts, so one login found in two profiles is two accounts, one
+    /// per plugin, each found in both profiles; an account the user added
+    /// is read by each plugin that offers Add account for its provider.
+    #[test]
+    fn each_plugin_that_serves_an_account_reads_its_own_copy() {
+        let added = Account::added(
+            ProviderRef::of_id("anthropic"),
+            KeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".into()),
+        );
+
+        let accounts = merge_accounts(
+            vec![
+                claude_login("/home/user/.claude"),
+                claude_login("/home/user/.claude-work"),
+                added,
+            ],
+            &two_anthropic_readers(),
+        );
+
+        let readers: Vec<Option<&str>> =
+            accounts.iter().map(Account::read_by).collect();
+        assert_eq!(
+            readers,
+            [Some("anthropic"), Some("anthropic-fork"), Some("anthropic")]
+        );
+        assert_eq!(accounts[0].found_in().len(), 2);
+        assert_eq!(accounts[1].found_in().len(), 2);
+        assert!(!accounts[0].is_same_account(&accounts[1]));
+        assert!(accounts[0].is_same_login(&accounts[1]));
+    }
+
+    /// Issue 29: an account no installed plugin reads is still one
+    /// account, read by none; merged again it stays as it is.
+    #[test]
+    fn an_account_no_plugin_reads_is_read_by_none() {
+        let accounts = merge_accounts(
+            vec![claude_login("/home/user/.claude")],
+            &Registry::default(),
+        );
+        let again = merge_accounts(accounts.clone(), &Registry::default());
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].read_by(), None);
+        assert_eq!(again, accounts);
+    }
+
+    /// Issue 29: the tokens of a profile go to the login that paid them
+    /// whichever plugin reads it: each copy of one login pays for them.
+    #[test]
+    fn each_copy_of_the_only_login_of_a_profile_pays_for_its_tokens() {
+        let registry = two_anthropic_readers();
+        let accounts =
+            merge_accounts(vec![claude_login("/home/user/.claude")], &registry);
+        let tokens = ModelTokens::new(
+            Some("claude-sonnet-4-5"),
+            crate::token_count::TokenCount::new(10, 0, 0),
+            1,
+        )
+        .with_provider(Some(ProviderRef::of_id("anthropic")));
+
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts[0].pays_for(&tokens, &accounts, &registry));
+        assert!(accounts[1].pays_for(&tokens, &accounts, &registry));
     }
 
     /// The tokens of a profile whose server is named by its host are paid

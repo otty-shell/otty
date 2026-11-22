@@ -95,8 +95,10 @@ from its releases.
 ## Permissions
 
 Permissions are listed per part, and **apply per part**: while OTTY asks one part for something,
-only that part's permissions count. The OpenAI provider part may not read `~/.codex`, though the
-Codex part of the same plugin may. They are shown like this:
+only that part's permissions count. The OpenAI provider part may read the session files of Codex,
+where Codex writes the limits it was last told, but not the rest of `~/.codex`, which the Codex
+part of the same plugin reads. A provider part that reads limits by asking the agent itself lists
+the program and the files it needs, under its own name. They are shown like this:
 
 - "Reads files in `~/.codex*/**`"
 - "Reads your login in `~/.codex*/auth.json` (OTTY gives it only as a handle)"
@@ -113,10 +115,11 @@ the list at any time.
 
 ## When two plugins serve the same thing
 
-Only one part serves each agent, each provider and each provider host. When a new plugin has a part
-for something another plugin already serves, the install dialog asks, for that part: "Anthropic is
-already served by Anthropic (official). Use: [official] / [this plugin]". The part that loses is
-turned off. Turning it on later makes it serve again and turns the other one off.
+Nothing is asked. When two plugins both have a provider part for one provider, both read its
+accounts: one login is then two accounts in Agents mode, each named with its plugin, such as
+"Anthropic · you@example.com (Anthropic Fork)". Hide the one you do not want; a hidden account
+is read by nobody and left out of every total. When two plugins have an agent part for the same
+agent, the one installed first reads it; turn the other part off on this page.
 
 ## Turn parts on and off
 
@@ -128,7 +131,7 @@ A part whose reads fail three times in a row is **Paused after three failures**;
 parts keep working. **Try again** starts it again, as does the next start of OTTY.
 
 Under a part, its card shows the last call that failed or that OTTY refused, with its time and
-kind: "Last failure 5 min ago: read-limits, the plugin did not finish in time". It never shows a
+kind: "Last failure 5 min ago: numbers, the plugin did not finish in time". It never shows a
 value, a key or session text. **Copy report** copies the report for the plugin's author. This is the
 place to look when a plugin gives no numbers.
 
@@ -144,7 +147,7 @@ added from GitHub and takes the newest one it can run:
 | Needs a newer OTTY                       | Skipped. The row says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
 | Changed its files after you installed it | Refused: "The release v1.2.0 of OpenCode changed after it was installed. OTTY keeps the installed copy." |
 
-Parts keep their on or off state and your choices across updates. Local plugins are never checked;
+Parts keep their on or off state across updates, and a new part is on. Local plugins are never checked;
 **Reload** reads their folder again and shows the same dialog when the new copy asks for more.
 
 ## Remove
@@ -159,7 +162,7 @@ itself.
 
 | Situation                         | What you see                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------------- |
-| No plugin serves a key's provider | The account is listed by its host with a letter icon, with its tokens and an estimate, but no limits or balance. Account info: "Read by: no plugin". Need **No provider plugin** → **Add plugin…**. |
+| No plugin reads an account        | The account is listed by its provider or the host of its key, with a letter icon, its tokens and an estimate, but no limits or balance. Account info: "Read by: no plugin". The need **No provider plugin** says no installed plugin reads it → **Add plugin…**. |
 | A provider part is off            | The same, "Read by: DeepSeek 0.1.0 (off)", need **Plugin part is off** → **Turn on**. |
 | An agent part is off, or its plugin removed | Its profiles leave the lists; accounts found only there leave too. Names and hidden items are kept. |
 | A plugin is updated               | Nothing moves. "Read by" shows the new version.                                       |

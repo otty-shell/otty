@@ -271,6 +271,28 @@ impl TestHost {
         self.state.borrow_mut().add_given_key(value.to_string())
     }
 
+    /// A handle to the key at `place`, as OTTY gives a provider part the
+    /// login an agent part found: the host reads the key again at each use
+    /// of the handle, and a place with no key there now, such as a
+    /// credentials file that is `{}`, is a handle whose every use fails
+    /// with [`HostError::NotFound`] (issue 29). The provider part needs no
+    /// permission for the place: OTTY reads it for the part.
+    ///
+    /// ```no_run
+    /// use otty_plugin_sdk::test_host::TestHost;
+    /// use otty_plugin_sdk::{HostError, KeyPlace};
+    ///
+    /// let host = TestHost::new(env!("CARGO_MANIFEST_DIR"));
+    /// let key = host.key_at(&KeyPlace::EnvVar("NO_SUCH_KEY".into()));
+    ///
+    /// let prefix = host.as_provider("example", || key.has_prefix("sk-"));
+    ///
+    /// assert!(matches!(prefix, Err(HostError::NotFound(_))));
+    /// ```
+    pub fn key_at(&self, place: &KeyPlace) -> Key {
+        self.state.borrow_mut().add_key_at(place.clone())
+    }
+
     /// Runs `run` as the agent part `id`: its host operations get only
     /// that part's permissions.
     ///
@@ -400,14 +422,21 @@ struct HostState {
 }
 
 impl HostState {
-    /// The made-up key of the handle `id`. A blank key is no key, as OTTY
-    /// reads it.
-    fn key_text(&self, id: usize) -> Result<&str, HostError> {
-        self.keys
-            .get(id)
-            .map(|key| key.text.as_str())
-            .filter(|key| !key.trim().is_empty())
-            .ok_or_else(|| HostError::NotFound(format!("key handle {id}")))
+    /// The made-up key of the handle `id`, read again from its place for
+    /// a handle to a place. A blank key is no key, as OTTY reads it.
+    fn key_text(&self, id: usize) -> Result<String, HostError> {
+        let not_found = || HostError::NotFound(format!("key handle {id}"));
+        let key = self.keys.get(id).ok_or_else(not_found)?;
+
+        let text = match &key.source {
+            HeldSource::Text(text) => text.clone(),
+            HeldSource::Place(place) => keys::read_at(self, place)?,
+        };
+
+        match text.trim().is_empty() {
+            true => Err(not_found()),
+            false => Ok(text),
+        }
     }
 
     /// The home folder and the variables, as OTTY gives them.
@@ -470,9 +499,22 @@ impl HostState {
         self.hold_key(value, true)
     }
 
+    /// A handle to the key at `place`, read at each use.
+    fn add_key_at(&mut self, place: KeyPlace) -> Key {
+        self.keys.push(HeldKey {
+            source: HeldSource::Place(place),
+            is_given: false,
+        });
+
+        Key::from_test_host(self.keys.len() - 1)
+    }
+
     /// A handle to `value`, given in OTTY or not.
     fn hold_key(&mut self, text: String, is_given: bool) -> Key {
-        self.keys.push(HeldKey { text, is_given });
+        self.keys.push(HeldKey {
+            source: HeldSource::Text(text),
+            is_given,
+        });
 
         Key::from_test_host(self.keys.len() - 1)
     }
@@ -481,8 +523,17 @@ impl HostState {
 /// A made-up key the host holds for a handle, and where it came from.
 #[derive(Debug)]
 struct HeldKey {
-    text: String,
+    source: HeldSource,
     is_given: bool,
+}
+
+/// Where the host reads the key of a handle.
+#[derive(Debug)]
+enum HeldSource {
+    /// A made-up key, held as it is.
+    Text(String),
+    /// The key at a place of an agent, read again at each use.
+    Place(KeyPlace),
 }
 
 /// An answer to every request of one method to one URL.
@@ -510,7 +561,7 @@ impl Drop for Restore {
 }
 
 pub(crate) fn key_fingerprint(id: usize) -> Result<String, HostError> {
-    with_host(|state, _| Ok(keys::fingerprint(state.key_text(id)?)))
+    with_host(|state, _| Ok(keys::fingerprint(&state.key_text(id)?)))
 }
 
 pub(crate) fn key_has_prefix(id: usize, text: &str) -> Result<bool, HostError> {
@@ -522,7 +573,7 @@ pub(crate) fn key_is_given_in_otty(id: usize) -> Result<bool, HostError> {
 }
 
 pub(crate) fn key_jwt_claims(id: usize) -> Result<Option<String>, HostError> {
-    with_host(|state, _| Ok(keys::jwt_claims(state.key_text(id)?)))
+    with_host(|state, _| Ok(keys::jwt_claims(&state.key_text(id)?)))
 }
 
 pub(crate) fn open_key(place: &KeyPlace) -> Result<Key, HostError> {
@@ -1014,6 +1065,28 @@ mod tests {
         assert!(matches!(fingerprint, Err(HostError::NotFound(_))));
         assert!(matches!(prefix, Err(HostError::NotFound(_))));
         assert!(matches!(opened, Err(HostError::NotFound(_))));
+    }
+
+    /// Issue 29: OTTY gives a provider part a handle to the login an agent
+    /// part found and reads the key at each use, so a login whose file
+    /// holds no token now is a handle every use of which is not found,
+    /// and one whose token comes back is read again.
+    #[test]
+    fn a_handle_to_a_place_reads_the_key_at_each_use() {
+        let plugin = MadeUpPlugin::new();
+        let auth = plugin.write(".made-up/auth.json", b"{}");
+        let host = TestHost::new(plugin.folder());
+        let key = host.key_at(&KeyPlace::JsonField(JsonField {
+            file: text(&auth),
+            pointer: "/token".to_string(),
+        }));
+
+        let missing = host.as_provider(PROVIDER, || key.has_prefix("sk-"));
+        plugin.write(".made-up/auth.json", br#"{"token": "sk-made-up"}"#);
+        let back = host.as_provider(PROVIDER, || key.has_prefix("sk-"));
+
+        assert!(matches!(missing, Err(HostError::NotFound(_))));
+        assert_eq!(back, Ok(true));
     }
 
     #[test]

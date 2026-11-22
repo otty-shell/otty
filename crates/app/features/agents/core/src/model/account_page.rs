@@ -125,7 +125,7 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
         };
         list.push(FactViewModel::new(label, found_in_text(place, home)));
     }
-    list.push(account_read_by(state, account.provider()));
+    list.push(account_read_by(state, account));
 
     list
 }
@@ -214,7 +214,7 @@ mod tests {
             .profiles()
             .accounts()
             .into_iter()
-            .find(|found| found.is_same_account(&account))
+            .find(|found| found.is_same_login(&account))
             .expect("the account is found");
 
         AccountPageViewModel::of(state, found, now())

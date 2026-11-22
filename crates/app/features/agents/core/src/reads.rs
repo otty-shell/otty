@@ -132,6 +132,8 @@ pub(crate) fn load_account_numbers(
     state: &mut AgentsState,
     which: Which,
 ) -> Vec<AgentsOutcome> {
+    let may_start_programs = state.is_active();
+
     state
         .profiles_mut()
         .start_own_reads(which)
@@ -141,6 +143,7 @@ pub(crate) fn load_account_numbers(
                 account,
                 place,
                 given,
+                may_start_programs,
             },
         )
         .collect()
@@ -859,21 +862,13 @@ mod tests {
         assert_eq!(opened, vec![AgentsOutcome::LoadLimits(claude())]);
     }
 
-    /// The provider part failed at the start and `codex app-server` did
-    /// not start, so the agent part answered from its session files: on
-    /// screen the limits are read again with the program.
+    /// Issue 29: at the start `claude /usage` did not start, so the
+    /// provider part of a login with no token read nothing: on screen the
+    /// limits are read again with the program.
     #[test]
-    fn limits_the_agent_part_gave_at_the_start_are_read_again_on_screen() {
+    fn limits_read_as_nothing_at_the_start_are_read_again_on_screen() {
         let mut state = started(true, |profile, read_at| {
-            let answer = limits_answer(vec![
-                (
-                    SourceId::ProviderPart,
-                    Err(SourceError::Network(String::from("down"))),
-                ),
-                (SourceId::AgentPart, Ok(five_hour_limits(10.0))),
-            ]);
-
-            limits_loaded(profile, answer, read_at)
+            limits_loaded(profile, crate::types::LimitsRead::NoSources, read_at)
         });
 
         let opened = reduce(&mut state, AgentsIntent::Enter);
@@ -927,6 +922,7 @@ mod tests {
                 coder.config_dir().to_path_buf(),
             ),
         )
+        .with_read_by(Some(String::from("openai")))
     }
 
     fn coder() -> otty_agents::Profile {
@@ -986,9 +982,12 @@ mod tests {
             [
                 (
                     coder_login(&coder()),
-                    otty_agents::KeyPlace::ProfileFiles(coder())
+                    otty_agents::KeyPlace::ProfileFiles(vec![coder()])
                 ),
-                (added, otty_agents::KeyPlace::Added),
+                (
+                    crate::testing::read_by_its_plugin(added),
+                    otty_agents::KeyPlace::Added
+                ),
             ]
         );
         assert!(own_reads(again).is_empty(), "the reads are on their way");

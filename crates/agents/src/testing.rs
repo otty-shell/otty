@@ -19,16 +19,12 @@ use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
-use crate::error::Unavailable;
 use crate::fixtures::stand_in::{default_config_dir, profile_command};
-use crate::hidden_terminal::{MockStartTerminal, StartTerminal};
 use crate::key_fingerprint::KeyFingerprint;
-use crate::limits::LimitSource;
 use crate::local_time::LocalNow;
 use crate::part_need::PartNeed;
 use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
-use crate::program::{MockStartProgram, StartProgram};
 use crate::provider::ProviderRef;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -69,18 +65,13 @@ mock! {
         ) -> AgentCommand;
         fn session_sources(&self) -> Vec<Box<dyn SessionSource>>;
         fn session_source_ids(&self) -> &'static [SourceId];
-        fn limit_source(
-            &self,
-            programs: Arc<dyn StartProgram>,
-            terminals: Arc<dyn StartTerminal>,
-        ) -> Option<Box<dyn LimitSource>>;
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
         fn found_login(
             &self,
             profile: &Profile,
             account: &Account,
-        ) -> Result<Login, Unavailable>;
+        ) -> Option<Login>;
         fn login_refused(
             &self,
             profile: &Profile,
@@ -282,14 +273,6 @@ impl Agent for Coder {
         &[]
     }
 
-    fn limit_source(
-        &self,
-        _programs: Arc<dyn StartProgram>,
-        _terminals: Arc<dyn StartTerminal>,
-    ) -> Option<Box<dyn LimitSource>> {
-        None
-    }
-
     fn spend_counter(&self) -> Option<Box<dyn SpendCounter>> {
         None
     }
@@ -336,24 +319,6 @@ pub(crate) fn answer_line(id: &str, seconds: u64, output: u64) -> String {
     format!(
         r#"{{"type":"answer","id":"{id}","at_ms":{at_ms},"model":"example-large","tokens":{{"input":100,"cached":0,"output":{output}}}}}"#
     )
-}
-
-/// A program starter that starts nothing now, as while Agents mode is
-/// away.
-pub(crate) fn no_programs() -> Arc<dyn StartProgram> {
-    let mut programs = MockStartProgram::new();
-    programs.expect_start().never();
-    programs.expect_starts_now().return_const(false);
-
-    Arc::new(programs)
-}
-
-/// A terminal starter that must never start anything.
-pub(crate) fn no_terminals() -> Arc<dyn StartTerminal> {
-    let mut terminals = MockStartTerminal::new();
-    terminals.expect_start().never();
-
-    Arc::new(terminals)
 }
 
 /// `amount` whole dollars.
@@ -482,6 +447,12 @@ pub(crate) fn key_account(provider: ProviderRef, key: &str) -> Account {
         AccountKind::Money,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
     )
+}
+
+/// `account` read by the made-up plugin `example` of the tests, the one
+/// [`made_up_part`] and `PluginProvider::made_up` belong to (issue 29).
+pub(crate) fn read_by_example(account: Account) -> Account {
+    account.with_read_by(Some(String::from("example")))
 }
 
 /// What a plugin part tells of whom a login is for when its files say

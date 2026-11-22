@@ -26,7 +26,9 @@ pub(crate) fn account_name(
 /// added, "Example Cloud · $EXAMPLE_API_KEY"; a login with no email shows its
 /// plan when the files name one. The provider is named as the entry of
 /// `registry` that serves it names it, else by its id or host, such as
-/// "api.example.com · key ••••a1f3".
+/// "api.example.com · key ••••a1f3". When two plugins read the provider,
+/// the plugin that reads the account follows, such as "Example Cloud ·
+/// you@example.com (Example Fork)".
 pub(crate) fn own_account_name(
     registry: &Registry,
     account: &Account,
@@ -45,6 +47,16 @@ pub(crate) fn own_account_name(
     };
 
     let provider = provider_name(registry, account.provider());
+    let name = format!("{provider} · {login}");
 
-    format!("{provider} · {login}")
+    // A login two plugins read is two accounts: each says its plugin
+    // (issue 29).
+    let is_read_by_several = registry.readers_of(account.provider()).len() > 1;
+    match registry.reader_of(account) {
+        Some(reader) if is_read_by_several => i18n::filled(
+            Key::TplAgentsAccountOfPlugin,
+            &[("name", &name), ("plugin", reader.part().name())],
+        ),
+        _ => name,
+    }
 }

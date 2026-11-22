@@ -22,12 +22,16 @@
 //! The session files the run left are removed in every case. OTTY runs
 //! the reading at most once in five minutes per profile and gives the last
 //! answer in between.
+//!
+//! The provider part `anthropic` reads the panel (issue 29): in a Claude
+//! Code profile the account was found in, with the command the agent part
+//! `claude-code` starts Claude Code with there, under the provider part's
+//! own permissions.
 
-use otty_plugin_sdk::agents::{LimitWindow, Limits, Profile, ReadError};
+use otty_plugin_sdk::agents::{FoundProfile, LimitWindow, ReadError};
 use otty_plugin_sdk::terminal::{self, HiddenTerminal};
 use otty_plugin_sdk::{Command, HostError, clock};
 
-use crate::claude_code::start_command;
 use crate::needs;
 use crate::probe_sessions::remove_probe_sessions;
 use crate::trust_question::{TrustAnswer, answer_trust};
@@ -111,11 +115,14 @@ struct Timing {
     look_ms: u32,
 }
 
-/// The limits of `profile` from the `/usage` panel of `claude`. The
-/// panel tells no plan: OTTY takes it from the login.
-pub(crate) fn read_limits(profile: &Profile) -> Result<Limits, ReadError> {
+/// The windows of the `/usage` panel of `claude` in the Claude Code
+/// profile `profile` an account was found in. The panel tells no plan:
+/// OTTY takes it from the login.
+pub(crate) fn read_windows(
+    profile: &FoundProfile,
+) -> Result<Vec<LimitWindow>, ReadError> {
     let folders = terminal::working_folders().map_err(ReadError::Host)?;
-    let command = probe_command(profile);
+    let command = probe_command(&profile.launch);
 
     // The terminal is dropped at the end of the block, which stops
     // `claude` before its files are removed.
@@ -128,23 +135,18 @@ pub(crate) fn read_limits(profile: &Profile) -> Result<Limits, ReadError> {
             ROWS,
         )
         .map_err(ReadError::Host)?;
-        let renew = start_command(profile, Vec::new());
-        read_panel(&terminal, &folders, &renew, TIMING)
+        read_panel(&terminal, &folders, &profile.launch, TIMING)
     };
 
     remove_probe_sessions(&profile.folder, &folders);
 
-    answer.map(|windows| Limits {
-        windows,
-        credits: None,
-        plan: None,
-        recorded_at_ms: None,
-    })
+    answer
 }
 
-/// `claude` of `profile` that can run nothing: no tools, no MCP servers of
-/// the user, no hooks, no remote control and no update of itself.
-fn probe_command(profile: &Profile) -> Command {
+/// `launch`, the command that starts Claude Code in a profile, as a
+/// `claude` that can run nothing: no tools, no MCP servers of the user, no
+/// hooks, no remote control and no update of itself.
+fn probe_command(launch: &Command) -> Command {
     let args = [
         "--allowed-tools",
         "",
@@ -155,11 +157,15 @@ fn probe_command(profile: &Profile) -> Command {
     .map(String::from)
     .to_vec();
 
-    let mut command = start_command(profile, args);
+    let mut env = launch.env.clone();
     let (name, value) = NO_UPDATES;
-    command.env.push((name.to_string(), value.to_string()));
+    env.push((name.to_string(), value.to_string()));
 
-    command
+    Command {
+        program: launch.program.clone(),
+        args,
+        env,
+    }
 }
 
 /// The windows of the panel `terminal` shows, read in OTTY's working
@@ -336,7 +342,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::testing::{as_part, host, path};
+    use crate::testing::{as_provider, found_profile, host, path};
 
     const FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
     const PROJECT: &str =
@@ -763,23 +769,20 @@ mod tests {
         );
     }
 
-    /// Through the test host: `claude` starts with the arguments and the
-    /// variables the manifest declares, and the session files of the run
-    /// are removed.
+    /// Through the test host: the provider part starts `claude` with the
+    /// arguments and the variables its manifest declares, in the profile
+    /// the account was found in, and the session files of the run are
+    /// removed.
     #[test]
     fn claude_starts_as_declared_and_its_session_files_are_removed() {
         let host = host().with_terminal_folder(FOLDER);
         host.answer_terminal("claude", &ARGS, &[PROMPT, PANEL]);
-        let profile = Profile {
-            agent: crate::testing::AGENT.to_string(),
-            folder: path(&host, ".claudeprobe"),
-            is_default: false,
-        };
+        let profile = found_profile(&host, ".claudeprobe", false);
 
-        let limits = as_part(&host, || read_limits(&profile));
+        let windows = as_provider(&host, || read_windows(&profile));
 
         let started = host.started();
-        assert_eq!(limits.map(|limits| limits.windows), Ok(panel_windows()));
+        assert_eq!(windows, Ok(panel_windows()));
         assert_eq!(started.len(), 1);
         assert_eq!(started[0].program(), "claude");
         assert_eq!(started[0].args(), ARGS);
@@ -810,13 +813,13 @@ mod tests {
     /// A profile in the default folder sets no config folder variable.
     #[test]
     fn the_default_profile_sets_only_the_update_variable() {
-        let profile = Profile {
-            agent: crate::testing::AGENT.to_string(),
-            folder: "/home/dev/.claude".to_string(),
-            is_default: true,
+        let launch = Command {
+            program: "claude".to_string(),
+            args: Vec::new(),
+            env: Vec::new(),
         };
 
-        let command = probe_command(&profile);
+        let command = probe_command(&launch);
 
         assert_eq!(command.program, "claude");
         assert_eq!(command.args, ARGS);

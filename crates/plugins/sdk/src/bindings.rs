@@ -26,6 +26,9 @@ pub mod agents_agent {
     wit_bindgen::generate!({
         path: ["wit/host/0.1.0", "wit/agents-agent/0.1.0"],
         world: "otty:agents-agent/agent-part@0.1.0",
+        // The provider contract uses values of `types`, such as the
+        // limit windows, no agent function uses.
+        generate_unused_types: true,
         with: {
             "otty:host/types@0.1.0": crate::bindings::host::otty::host::types,
             "otty:host/keys@0.1.0": crate::bindings::host::otty::host::keys,
@@ -55,7 +58,10 @@ pub mod agents_provider {
         with: {
             "otty:host/types@0.1.0": crate::bindings::host::otty::host::types,
             "otty:host/keys@0.1.0": crate::bindings::host::otty::host::keys,
+            "otty:host/files@0.1.0": crate::bindings::host::otty::host::files,
             "otty:host/http@0.1.0": crate::bindings::host::otty::host::http,
+            "otty:host/programs@0.1.0": crate::bindings::host::otty::host::programs,
+            "otty:host/terminal@0.1.0": crate::bindings::host::otty::host::terminal,
             "otty:host/env@0.1.0": crate::bindings::host::otty::host::env,
             "otty:host/clock@0.1.0": crate::bindings::host::otty::host::clock,
             "otty:host/log@0.1.0": crate::bindings::host::otty::host::log,

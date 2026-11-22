@@ -4,9 +4,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use crate::error::SourceError;
 use crate::percent::Percent;
-use crate::profile::Profile;
 
 /// Seconds in an hour.
 const SECONDS_IN_HOUR: u64 = 60 * 60;
@@ -58,6 +56,24 @@ impl Limits {
             plan,
             recorded_at: None,
         }
+    }
+
+    /// Whether the limits hold nothing to show: usage windows with no
+    /// window and no extra usage, what a provider part answers when it
+    /// has no way to read them (spec 2026-11-19-agent-plugins, issue 29).
+    ///
+    /// ```
+    /// use otty_agents::{Billing, Limits, UsageWindows};
+    ///
+    /// let nothing =
+    ///     Limits::new(Billing::UsageWindows(UsageWindows::default()), None);
+    ///
+    /// assert!(nothing.is_nothing());
+    /// assert!(!Limits::new(Billing::ApiKey, None).is_nothing());
+    /// ```
+    pub fn is_nothing(&self) -> bool {
+        matches!(&self.billing, Billing::UsageWindows(usage)
+            if usage.windows().is_empty() && usage.extra_usage().is_none())
     }
 
     /// The same limits, recorded at `time` rather than told now.
@@ -465,18 +481,6 @@ impl Credits {
             && self.pool.is_none()
             && !self.is_unlimited
     }
-}
-
-/// The limits an agent itself shows for the login of a profile, read the
-/// agent's own way: its plugin part tries its programs, files or servers
-/// in its own order (issue 19 of spec 2026-11-19-agent-plugins).
-///
-/// It is a trait because the read crosses into a plugin, which may start
-/// the agent's program, and the tests give made-up reads in its place.
-#[cfg_attr(test, mockall::automock)]
-pub trait LimitSource: Send {
-    /// The limits of the profile; `None` when the agent shows no limits.
-    fn limits(&self, profile: &Profile) -> Result<Option<Limits>, SourceError>;
 }
 
 #[cfg(test)]

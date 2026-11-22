@@ -5,16 +5,12 @@
 //! Each agent implements [`Agent`]: it says how to find its default
 //! [`Profile`], whether a profile is connected, and how to start or continue
 //! a session. The data an agent can read comes from small sources:
-//! [`SessionSource`], [`LimitSource`] and [`SpendCounter`]. An agent gives
-//! its sources of sessions best first, and [`read_sessions`] tries them in
-//! order until one answers. [`read_profile_limits`] asks the provider part
-//! of the profile's subscription login first, then the agent's own
-//! [`LimitSource`]; where each part reads its numbers from is its own
-//! business. A source that asks the agent's own program
-//! starts it with the [`StartProgram`] the app gives, and a source that
-//! reads the program's screen starts it with the [`StartTerminal`] the app
-//! gives. [`projects`] groups the sessions of all
-//! profiles by their folder.
+//! [`SessionSource`] and [`SpendCounter`]. An agent gives its sources of
+//! sessions best first, and [`read_sessions`] tries them in order until
+//! one answers. A source that asks the agent's own program starts it with
+//! the [`StartProgram`] the app gives, and a source that reads the
+//! program's screen starts it with the [`StartTerminal`] the app gives.
+//! [`projects`] groups the sessions of all profiles by their folder.
 //!
 //! [`profiles`] gives the list of profiles to show, from the default
 //! profile of each agent, the [`SavedProfiles`] of `agents.json` and the
@@ -53,12 +49,16 @@
 //! of an account: its bill, else an estimate over the tokens of the
 //! profiles that pay through it.
 //!
-//! Some accounts tell their own numbers with their own key:
-//! [`read_account_numbers`] reads, through the provider part of a plugin
-//! that serves the account, the [`Balance`] of a key, the [`Limits`] of a
-//! subscription login or the [`Bill`] of an account the user added, with
-//! a key the user added read again from its [`KeyPlace`] and dropped right
-//! after the request. An account the user added by hand is an
+//! Every account is read by the provider part of each plugin that serves
+//! it, and each plugin's reading is an account of its own
+//! ([`Account::read_by`]; issue 29): [`read_account_numbers`] reads the
+//! [`Balance`] of a key, the [`Limits`] of a subscription login or the
+//! [`Bill`] of an account the user added, with a key the user added read
+//! again from its [`KeyPlace`] and dropped right after the request, or
+//! the key of a login an agent part found, and tells the part every
+//! profile the account was found in, so it may also ask the agent there.
+//! Where a part reads the numbers from is its business; with no way that
+//! works it answers nothing. An account the user added by hand is an
 //! [`Account::added`], saved in [`SavedProfiles`] by the file or the
 //! variable of its key only; with no part that serves its provider it is
 //! listed and not read.
@@ -143,7 +143,6 @@ mod program;
 mod program_version;
 mod project;
 mod provider;
-mod provider_limits;
 mod read_failure;
 mod record_format;
 mod refused_login;
@@ -187,8 +186,8 @@ pub use crate::hidden_terminal::{
 };
 pub use crate::key_fingerprint::KeyFingerprint;
 pub use crate::limits::{
-    Billing, BillingKind, Credits, ExtraUsage, LimitSource, LimitWindow,
-    Limits, UsageWindows, WindowId,
+    Billing, BillingKind, Credits, ExtraUsage, LimitWindow, Limits,
+    UsageWindows, WindowId,
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
@@ -209,7 +208,6 @@ pub use crate::program::{
 pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
-pub use crate::provider_limits::read_profile_limits;
 pub use crate::record_format::FormatChange;
 pub use crate::refused_login::RefusedLogin;
 pub use crate::registry::Registry;

@@ -4,7 +4,7 @@
 id = "openai"
 name = "OpenAI"
 version = "0.2.0"
-description = "Codex profiles, logins, sessions, tokens and limits; ChatGPT limits and credits; OpenAI organization costs."
+description = "Codex profiles, logins, sessions and tokens; ChatGPT limits and credits, from OpenAI or from Codex; OpenAI organization costs."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -35,12 +35,6 @@ env = ["CODEX_HOME"]
 program = "codex"
 args = ["--version"]
 
-# Talked to line by line for the limits of the login; only `initialize`,
-# `initialized` and `account/rateLimits/read` are ever sent.
-[[agents.agent.permissions.run]]
-program = "codex"
-args = ["-s", "read-only", "-a", "never", "app-server"]
-
 # Where the keys are: readable only with the keys replaced by handles.
 # The login of `codex login`, a ChatGPT login or an API key. The plugin
 # reads whether a key is there and the claims of the tokens, never a key.
@@ -50,9 +44,10 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
           "/tokens/refresh_token"]
 
 # The numbers of OpenAI accounts: the limits and credits of a ChatGPT
-# login (also one only OpenCode keeps) and the costs of an organization
-# read with an admin key added by hand. A login behind a gateway is for
-# the gateway's host and is not read here.
+# login (also one only OpenCode keeps), else what Codex knows of them in a
+# profile the login was found in, and the costs of an organization read
+# with an admin key added by hand. A login behind a gateway is for the
+# gateway's host and is not read here.
 [[agents.provider]]
 id = "openai"
 name = "OpenAI"
@@ -63,6 +58,21 @@ plan_usage_page = "https://chatgpt.com/codex/settings/usage"
 add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the `codex`
-# part are refused then.
+# part are refused then, but for the session files, where Codex writes the
+# limits it was last told. `CODEX_HOME` moves the default config folder.
 [agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
+read = [
+  "~/.codex*/sessions/**",
+  "~/.codex*/archived_sessions/**",
+  "{CODEX_HOME}/sessions/**",
+  "{CODEX_HOME}/archived_sessions/**",
+]
+env = ["CODEX_HOME"]
+
+# Talked to line by line for the limits of the login, in a Codex profile
+# it was found in; only `initialize`, `initialized` and
+# `account/rateLimits/read` are ever sent.
+[[agents.provider.permissions.run]]
+program = "codex"
+args = ["-s", "read-only", "-a", "never", "app-server"]

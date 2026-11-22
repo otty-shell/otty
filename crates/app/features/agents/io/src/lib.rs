@@ -8,8 +8,10 @@
 //! looked up through the user's login shell, the way the agent tab starts
 //! it. [`load_sessions`] reads the sessions of one profile and finds the
 //! project folders that no longer exist. [`load_limits`] reads the limits
-//! of one profile, which may ask the agent's server, or start the agent's
-//! program and read its screen in a hidden terminal;
+//! of one profile through the provider part of the account whose limits
+//! it shows, told of every profile the account was found in, which may
+//! ask the provider's server, or start the agent's program and read its
+//! screen in a hidden terminal;
 //! [`load_limits_in_background`] does the same while Agents mode is away,
 //! without starting the agent's program. [`load_spend`] counts
 //! the tokens one profile spent from its session files, by the days of the

@@ -115,24 +115,14 @@ impl ProfileLimits {
 
     /// Take the result of a read that ended at `read_at`. An answer
     /// replaces the last good one. A failure keeps it and says why. A read
-    /// that could not start the agent's program waits for it unless the
-    /// provider part answered: the agent part, which may read the
-    /// program, may answer better with it, or answer at all.
+    /// that could not start the agent's program and gave no limits waits
+    /// for it: the provider part may read them by asking the agent, such
+    /// as with `claude /usage`, once the program may start (issue 29).
     pub(crate) fn apply(&mut self, limits: LimitsRead, read_at: SystemTime) {
-        let is_provider_answer = matches!(
-            &limits,
-            LimitsRead::Answered(answer)
-                if answer.source() == SourceId::ProviderPart
-        );
-        let agent_part_was_asked = match &limits {
-            LimitsRead::Answered(_) => !is_provider_answer,
-            LimitsRead::Failed(_) => true,
-            LimitsRead::NoSources => false,
-        };
+        let is_answer = matches!(&limits, LimitsRead::Answered(_));
 
         self.reads.end_at(read_at);
-        self.waits_for_programs =
-            agent_part_was_asked && !self.may_start_programs;
+        self.waits_for_programs = !is_answer && !self.may_start_programs;
 
         match limits {
             LimitsRead::Answered(answer) => {
@@ -231,7 +221,7 @@ mod tests {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
         let failed = limits_answer(vec![(
-            SourceId::AgentPart,
+            SourceId::ProviderPart,
             Err(SourceError::NotAvailable(Unavailable::ReadStopped)),
         )]);
 
@@ -252,24 +242,20 @@ mod tests {
         assert!(!limits.is_wanted(Which::Stale(now)));
     }
 
-    /// Codex: the provider part failed and `codex app-server` did not
-    /// start while Agents mode was away, so the agent part answered from
-    /// its session files. On screen `app-server` may give fresher numbers,
-    /// so the limits wait for it.
+    /// Issue 29: Claude Code keeps no token in its files, so the provider
+    /// part reads the limits with `claude /usage`, which does not start
+    /// while Agents mode is away: the part answers nothing then, and the
+    /// limits wait for the program on screen.
     #[test]
-    fn an_agent_part_answer_without_programs_waits_for_them() {
+    fn nothing_read_without_programs_waits_for_them() {
         let mut limits = ProfileLimits::default();
         let now = at(10_000);
-        let fallback = limits_answer(vec![
-            (SourceId::ProviderPart, Err(crate::testing::login_expired())),
-            (SourceId::AgentPart, Ok(five_hour_limits(42.0))),
-        ]);
 
         let _ = limits.start_reading(false);
-        limits.apply(fallback.clone(), now);
+        limits.apply(LimitsRead::NoSources, now);
         let waits = limits.is_wanted(Which::WaitingForPrograms);
         let _ = limits.start_reading(true);
-        limits.apply(fallback, now);
+        limits.apply(LimitsRead::NoSources, now);
 
         assert!(waits);
         assert!(

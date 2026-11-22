@@ -14,6 +14,7 @@ use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenKey, read_given_keys};
 use crate::local_time::{is_in_last_days, is_in_month_of};
 use crate::plugin_provider::PluginProvider;
+use crate::plugin_values::found_profile;
 use crate::profile::Profile;
 use crate::refused_login::to_holding_agent;
 
@@ -118,12 +119,11 @@ impl DayCost {
 
 /// The bill up to `now` of `organization`, read once for it (spec
 /// Decision 9) through `profile`, which pays through it: by the provider
-/// part of `providers` that serves it, with the key of the login the
+/// part of `providers` that reads it, with the key of the login the
 /// agent part of `agents` found it by and the keys the user gave for it
 /// (`given`); `env_var` gives the value of an environment variable, for a
 /// key kept in one. With no such part there is no bill: "not available",
-/// and nothing is sent. Nothing is sent either for a login with no key at
-/// its place now, [`Unavailable::NoLoginKey`] (issue 13).
+/// and nothing is sent.
 ///
 /// Each given key is read from its file or its variable, used for this
 /// read only and never kept: the part gets only a handle to it.
@@ -138,16 +138,15 @@ pub fn read_bill(
 ) -> Result<Bill, SourceError> {
     let part = providers
         .iter()
-        .find(|part| part.serves(organization))
+        .find(|part| part.reads(organization))
         .ok_or(SourceError::NotAvailable(Unavailable::NoBill))?;
-    let gone = SourceError::NotAvailable(Unavailable::KeyGone);
-    let agent = agent_of(agents, profile.agent()).ok_or(gone)?;
-    let login = agent
-        .found_login(profile, organization)
-        .map_err(SourceError::NotAvailable)?;
+    let gone = || SourceError::NotAvailable(Unavailable::KeyGone);
+    let agent = agent_of(agents, profile.agent()).ok_or_else(gone)?;
+    let login = agent.found_login(profile, organization).ok_or_else(gone)?;
+    let found_in = vec![found_profile(agent, profile)];
 
     let given = read_given_keys(given, &env_var)?;
-    part.read_bill(organization, &login, &given, now)
+    part.read_bill(organization, &login, found_in, &given, now)
         .map_err(|error| to_holding_agent(error, agent, profile, &login))
 }
 
@@ -164,6 +163,7 @@ mod tests {
     use crate::provider::ProviderRef;
     use crate::testing::{
         MockAgent, NOW, at, dollars, mock_entry, organization, profile,
+        read_by_example,
     };
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
@@ -225,26 +225,16 @@ mod tests {
     /// The agent of the profile, which finds the login of the
     /// organization when `finds`.
     fn agents(finds: bool) -> Vec<Box<dyn Agent>> {
-        let found = match finds {
-            true => Ok(api_key_login()),
-            false => Err(Unavailable::KeyGone),
-        };
-
-        agents_answering(found)
-    }
-
-    /// The agent of the profile, whose part answers `found` when asked
-    /// for the login of the organization.
-    fn agents_answering(
-        found: Result<otty_plugin_host::agents::agent::Login, Unavailable>,
-    ) -> Vec<Box<dyn Agent>> {
         let mut agent = MockAgent::new();
         agent
             .expect_entry()
             .return_const(mock_entry("test-agent", "test-agent"));
         agent
+            .expect_launch()
+            .returning(|_, _| crate::AgentCommand::new("test-agent"));
+        agent
             .expect_found_login()
-            .returning(move |_, _| found.clone());
+            .returning(move |_, _| finds.then(api_key_login));
 
         vec![Box::new(agent)]
     }
@@ -293,7 +283,7 @@ mod tests {
         let no_part = read_bill(
             &agents(true),
             &[],
-            &organization("made-up-org"),
+            &read_by_example(organization("made-up-org")),
             &profile("Work"),
             &given_admin(),
             at(NOW),
@@ -325,7 +315,7 @@ mod tests {
         let read = read_bill(
             &agents(true),
             &[anthropic_part(1)],
-            &organization("made-up-org"),
+            &read_by_example(organization("made-up-org")),
             &profile("Work"),
             &given_admin(),
             at(NOW),
@@ -334,7 +324,7 @@ mod tests {
         let unset = read_bill(
             &agents(true),
             &[anthropic_part(0)],
-            &organization("made-up-org"),
+            &read_by_example(organization("made-up-org")),
             &profile("Work"),
             &given_admin(),
             at(NOW),
@@ -343,7 +333,7 @@ mod tests {
         let gone = read_bill(
             &agents(false),
             &[anthropic_part(0)],
-            &organization("made-up-org"),
+            &read_by_example(organization("made-up-org")),
             &profile("Work"),
             &given_admin(),
             at(NOW),
@@ -356,26 +346,5 @@ mod tests {
             Err(SourceError::NotAvailable(Unavailable::KeyMissing(_)))
         ));
         assert_eq!(gone, Err(SourceError::NotAvailable(Unavailable::KeyGone)));
-    }
-
-    /// Issue 13: a login whose key is not at its place now reads no bill:
-    /// the provider part is not asked, and the answer is the quiet "no
-    /// key of the login".
-    #[test]
-    fn a_login_without_its_key_reads_no_bill() {
-        let read = read_bill(
-            &agents_answering(Err(Unavailable::NoLoginKey)),
-            &[anthropic_part(0)],
-            &organization("made-up-org"),
-            &profile("Work"),
-            &given_admin(),
-            at(NOW),
-            org_key,
-        );
-
-        assert_eq!(
-            read,
-            Err(SourceError::NotAvailable(Unavailable::NoLoginKey))
-        );
     }
 }

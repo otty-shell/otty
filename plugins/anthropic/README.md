@@ -10,14 +10,6 @@ which logins and keys a profile holds and whom each is for. A key in
 a key for that server's host. The plugin never sees a key or a token:
 OTTY hands it handles in their place.
 
-The part also reads the limits Claude Code itself shows: it starts
-`claude`, unable to run anything, in a terminal nobody sees, types
-`/usage` and reads the panel from the screen. It answers Claude Code's
-question whether to trust a folder only for OTTY's own probe folder, and
-afterwards deletes the session files that run left in
-`projects/<probe folder>/`; its manifest allows it to delete nothing else.
-OTTY runs this at most once in five minutes per profile.
-
 What only the user can do, the parts ask for themselves, in OTTY's
 language, which they follow when the user picks another: `claude` for a
 profile nobody is logged in with or whose login expired or a provider
@@ -26,15 +18,25 @@ admin key (`sk-ant-admin…`) when the bill of an organization needs one or
 Anthropic refused the one given.
 
 Its provider part `anthropic` reads the numbers of Anthropic accounts
-with the handles OTTY gives it: the limits of a Claude login (and its
-extra usage) from Anthropic's usage request, whichever agent keeps the
-login, and the cost report of an organization with an admin key added by
-hand, both from `api.anthropic.com`. It never sees when a token expires
-and renews nothing: a refused token it only reports as refused, and OTTY
-asks the agent part that keeps the login, such as `claude-code`, what to
-do. While it
-runs, the files of the `claude-code` part are refused to it. OTTY asks
-it for a profile's limits before the `/usage` panel.
+any way it can, with the handles OTTY gives it: the limits of a Claude
+login (and its extra usage) from Anthropic's usage request, whichever
+agent keeps the login, and the cost report of an organization with an
+admin key added by hand, both from `api.anthropic.com`. When the
+login's token is not at its place, as when Claude Code keeps it
+elsewhere, or the server gives no answer, it reads the limits Claude
+Code itself shows, in a Claude Code profile OTTY found the login in: it
+starts `claude` there, unable to run anything, in a terminal nobody
+sees, types `/usage` and reads the panel from the screen. It answers
+Claude Code's question whether to trust a folder only for OTTY's own
+probe folder, and afterwards deletes the session files that run left in
+`projects/<probe folder>/`; its manifest allows it to delete nothing
+else. OTTY runs this at most once in five minutes per profile. With no
+way that works it reads nothing, which is no failure. It never sees
+when a token expires and renews nothing: a refused token it only reports
+as refused, and OTTY asks the agent part that keeps the login, such as
+`claude-code`, what to do. While it runs, the files of the
+`claude-code` part are refused to it, but for the session files of its
+own `/usage` run.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over

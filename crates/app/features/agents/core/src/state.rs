@@ -356,10 +356,20 @@ impl AgentsState {
             return None;
         };
 
-        self.profiles
-            .all_accounts()
-            .into_iter()
-            .find(|account| account.is_same_account(selected))
+        let accounts = self.profiles.all_accounts();
+        let exact = accounts
+            .iter()
+            .position(|account| account.is_same_account(selected));
+        // The same login read by another plugin, or by none: an account
+        // the user just added, or one whose plugin left (issue 29).
+        let same_login = || {
+            accounts
+                .iter()
+                .position(|account| account.is_same_login(selected))
+        };
+
+        let position = exact.or_else(same_login)?;
+        accounts.into_iter().nth(position)
     }
 
     /// The accounts the lists show: those not hidden, and the hidden ones

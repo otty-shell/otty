@@ -12,10 +12,8 @@ use crate::diff::PermissionDiff;
 use crate::error::InstallError;
 use crate::installer::parts_of;
 use crate::package::{MANIFEST_FILE, Package};
-use crate::plan::{
-    Conflict, InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
-};
-use crate::plugins_file::{InstalledPlugin, Served, Source, Winner};
+use crate::plan::{InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport};
+use crate::plugins_file::{InstalledPlugin, Source};
 
 /// The manifest of the template plugin, `assets/plugins/example/`, at
 /// `version`: an agent part `example-agent` and a provider part
@@ -74,34 +72,21 @@ pub fn with_part_on(
     plugin
 }
 
-/// The install plan of the plugin of `manifest` from `source`, with the
-/// ids and hosts other plugins already serve.
-pub fn install_plan(
-    manifest: &str,
-    source: Source,
-    conflicts: Vec<Conflict>,
-) -> InstallPlan {
-    InstallPlan::new(package(manifest, source), conflicts)
-}
-
-/// The id or host `served` of the new part `part`, served now by
-/// `current`.
-pub fn conflict(part: PartRef, served: Served, current: Winner) -> Conflict {
-    Conflict::new(part, served, current)
+/// The install plan of the plugin of `manifest` from `source`.
+pub fn install_plan(manifest: &str, source: Source) -> InstallPlan {
+    InstallPlan::new(package(manifest, source))
 }
 
 /// The version of `manifest` as a waiting update of `installed`, with the
-/// permission diff and the ids and hosts of its new parts other plugins
-/// serve, `conflicts`.
+/// permission diff.
 pub fn pending_update(
     installed: &InstalledPlugin,
     manifest: &str,
-    conflicts: Vec<Conflict>,
 ) -> PendingUpdate {
     let package = package(manifest, installed.source().clone());
     let diff = PermissionDiff::between(installed.parts(), package.manifest());
 
-    PendingUpdate::new(installed.version().clone(), package, diff, conflicts)
+    PendingUpdate::new(installed.version().clone(), package, diff)
 }
 
 /// What a check of `plugin_id` did, with the newest release skipped for

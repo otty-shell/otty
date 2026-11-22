@@ -65,7 +65,7 @@ pub(crate) struct PartRowViewModel {
 /// error, never a value, a key or session text, and its report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LastFailureViewModel {
-    /// "Last failure 5 min ago: read-limits, the plugin did not finish in
+    /// "Last failure 5 min ago: numbers, the plugin did not finish in
     /// time".
     pub(crate) text: String,
     /// The report Copy report puts on the clipboard.
@@ -345,7 +345,7 @@ mod tests {
         );
         let failure = PluginFailure::new(
             part,
-            "read-limits",
+            "numbers",
             PluginFailureKind::CouldNotRead("host error: not allowed"),
         );
         let mut state = PluginsState::new(vec![official_example()]);
@@ -371,7 +371,7 @@ mod tests {
                     Key::TplPluginsLastFailure,
                     &[
                         ("time", &i18n::time_ago(Duration::from_secs(300))),
-                        ("call", "read-limits"),
+                        ("call", "numbers"),
                         ("kind", &kind),
                     ],
                 ),

@@ -97,11 +97,7 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
         Unavailable::NoAccountSource => {
             i18n::t(Key::AgentsNoAccountSource).to_string()
         },
-        // A login with no key is no failure, so the mode shows no text of
-        // it; the text of a key no longer there is the closest one.
-        Unavailable::KeyGone | Unavailable::NoLoginKey => {
-            i18n::t(Key::AgentsKeyGone).to_string()
-        },
+        Unavailable::KeyGone => i18n::t(Key::AgentsKeyGone).to_string(),
         Unavailable::NoKeptPriceFile => {
             i18n::t(Key::AgentsNoKeptPriceFile).to_string()
         },

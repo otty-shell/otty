@@ -316,17 +316,17 @@ fn need_in(failure: Option<&SourceError>) -> Option<&PartNeed> {
     }
 }
 
-/// The need of an account whose provider no entry of the registry serves
-/// (spec 2026-11-19-agent-plugins, "What the UI shows"): OTTY lists it by
-/// its host with its tokens and estimate, but reads none of its own
-/// numbers. Add plugin… opens the Plugins page with the URL field empty.
+/// The need of an account no installed plugin reads (spec
+/// 2026-11-19-agent-plugins, "What the UI shows"; issue 29): OTTY lists it
+/// by its provider or host with its tokens and estimate, but reads none
+/// of its own numbers. Add plugin… opens the Plugins page with the URL field empty.
 /// An installed part that is off and would serve it asks to be turned on
 /// instead.
 fn no_provider_need(
     state: &AgentsState,
     account: &Account,
 ) -> Option<NeedViewModel> {
-    if state.registry().provider_of(account.provider()).is_some()
+    if account.read_by().is_some()
         || off_provider_part(state, account.provider()).is_some()
     {
         return None;
@@ -364,7 +364,7 @@ fn part_off_need(
     state: &AgentsState,
     account: &Account,
 ) -> Option<NeedViewModel> {
-    if state.registry().provider_of(account.provider()).is_some() {
+    if account.read_by().is_some() {
         return None;
     }
     let off = off_provider_part(state, account.provider())?;
@@ -1074,6 +1074,40 @@ mod tests {
                 }),
                 extra: None,
             }]
+        );
+    }
+
+    /// Issue 29: a login no installed plugin reads is still an account,
+    /// with one line that says so; its tokens and their estimate still
+    /// count.
+    #[test]
+    fn a_login_no_plugin_reads_is_shown_with_a_line_that_says_so() {
+        let registry = std::sync::Arc::new(
+            crate::testing::registry()
+                .as_ref()
+                .clone()
+                .without_provider(&otty_agents::ProviderId::new("openai")),
+        );
+        let found = crate::testing::chatgpt_login().with_read_by(None);
+        let state = with_accounts_in(
+            registry,
+            &[(codex(), connected(), vec![found.clone()])],
+            SavedProfiles::default(),
+        );
+
+        let accounts = state.profiles().accounts();
+        let needs = account_needs(&state);
+
+        assert_eq!(accounts, [found]);
+        let lines: Vec<&str> =
+            needs.iter().map(|need| need.line.as_str()).collect();
+        assert_eq!(
+            lines,
+            [i18n::filled(
+                Key::TplAgentsNeedNoProviderText,
+                &[("host", "openai"), ("agent", "Codex")]
+            )
+            .as_str()]
         );
     }
 

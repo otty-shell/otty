@@ -31,12 +31,15 @@ the folder into a new repository and replace what the parts read.
   must name the same contracts. A plugin with only agent parts and texts
   in English only writes `export!(Example with agents::agent)` and only
   `agents.agent` in `[api]`.
-- An agent part that reads the limits its agent shows implements
-  `read_limits(profile, login)`. Where a number comes from is the
-  plugin's business: try your sources in your own order and return the
-  first limits you get, or one error that says why. OTTY asks the
-  provider part of the login first, and the agent part only when that
-  gives nothing. The template keeps the default, "not supported".
+- A provider part reads an account's numbers any way it can: from the
+  provider's server with the key, or by asking the agent in a profile
+  the account was found in (`found.found_in`, each with the command its
+  agent part starts the agent with there), under the provider part's
+  own permissions. A key that is not at its place is a normal case:
+  using its handle fails with `HostError::NotFound`. With no way that
+  works, answer numbers with nothing in them, not an error. The
+  template's provider part has only its server, so a key that is not
+  there reads nothing.
 - What the user must do for the agent or the provider, the part says
   itself as a need: an id, a title, a text and one button
   (`src/needs.rs`). The agent part gives one when nobody is logged in

@@ -176,7 +176,7 @@ mod tests {
         let page = health.clone();
         let first = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
         let second = SystemTime::UNIX_EPOCH + Duration::from_secs(20);
-        let late = failure("read-limits", PluginFailureKind::TooSlow);
+        let late = failure("numbers", PluginFailureKind::TooSlow);
 
         health.remember_failure(
             &failure("sessions", PluginFailureKind::Stopped),

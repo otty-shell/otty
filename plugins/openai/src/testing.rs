@@ -2,12 +2,17 @@
 //! `fixtures/`, which stands for the home folder, and the profiles of its
 //! made-up config folders.
 
-use otty_plugin_sdk::agents::Profile;
+use otty_plugin_sdk::agents::{FoundProfile, Profile};
 use otty_plugin_sdk::files::FileInfo;
 use otty_plugin_sdk::test_host::TestHost;
 
+use crate::OpenAi;
+
 /// The agent part the tests call.
 pub(crate) const AGENT: &str = "codex";
+
+/// The provider part the tests call.
+pub(crate) const PROVIDER: &str = "openai";
 
 /// 2026-11-16T10:00:00Z, in milliseconds since the Unix epoch.
 pub(crate) const TEN: i64 = 1_794_823_200_000;
@@ -49,6 +54,31 @@ pub(crate) fn profile(
 /// Runs `run` as the part `codex` of `host`.
 pub(crate) fn as_part<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
     host.as_agent(AGENT, run)
+}
+
+/// Runs `run` as the part `openai` of `host`.
+pub(crate) fn as_provider<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
+    host.as_provider(PROVIDER, run)
+}
+
+/// The config folder `name` of `host` as the provider part is told an
+/// account was found in it: by the agent part `codex`, with the command
+/// it starts Codex with there.
+pub(crate) fn found_profile(
+    host: &TestHost,
+    name: &str,
+    is_default: bool,
+) -> FoundProfile {
+    use otty_plugin_sdk::agents::Agent;
+
+    let profile = profile(host, name, is_default);
+
+    FoundProfile {
+        plugin: String::from("openai"),
+        agent: AGENT.to_string(),
+        launch: OpenAi::launch(&profile, None),
+        folder: profile.folder,
+    }
 }
 
 /// A file a listing found at `path`, changed at `changed_ms`.

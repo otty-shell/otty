@@ -231,7 +231,8 @@ pub(crate) fn api_key() -> ProfileStatus {
 }
 
 /// A key of OpenAI OTTY found in a profile, known only by its
-/// fingerprint: `agents.json` can keep nothing of it.
+/// fingerprint: `agents.json` can keep nothing of it. The OpenAI plugin
+/// reads it.
 pub(crate) fn key_account() -> Account {
     Account::new(
         ProviderRef::of_id("openai"),
@@ -242,6 +243,7 @@ pub(crate) fn key_account() -> Account {
         AccountKind::Money,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
     )
+    .with_read_by(Some(String::from("openai")))
 }
 
 /// The admin key the provider part of Anthropic asks for under the slot
@@ -509,7 +511,7 @@ pub(crate) fn spend_loaded(
 }
 
 /// A made-up Anthropic Console organization, paid per token, found in
-/// the default Claude Code folder.
+/// the default Claude Code folder and read by the Anthropic plugin.
 pub(crate) fn organization() -> Account {
     Account::new(
         ProviderRef::of_id("anthropic"),
@@ -518,6 +520,7 @@ pub(crate) fn organization() -> Account {
         AccountKind::Money,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
     )
+    .with_read_by(Some(String::from("anthropic")))
 }
 
 /// The icon the built-in registry gives the agent `id`, such as `codex`.
@@ -558,8 +561,16 @@ pub(crate) fn deepseek_key_by_host() -> Account {
     )
 }
 
+/// `account` read by the plugin the registry of the tests reads its
+/// provider with: the plugin whose id is the provider's (issue 29).
+pub(crate) fn read_by_its_plugin(account: Account) -> Account {
+    let plugin = account.provider().as_str().to_string();
+
+    account.with_read_by(Some(plugin))
+}
+
 /// A made-up ChatGPT login with a subscription, found in the Codex
-/// folders.
+/// folders and read by the OpenAI plugin.
 pub(crate) fn chatgpt_login() -> Account {
     Account::new(
         ProviderRef::of_id("openai"),
@@ -568,6 +579,7 @@ pub(crate) fn chatgpt_login() -> Account {
         AccountKind::Limits,
         FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
     )
+    .with_read_by(Some(String::from("openai")))
 }
 
 /// The [`chatgpt_login`] as found in the Codex folder `folder`.
@@ -581,6 +593,7 @@ pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
         login.kind(),
         FoundIn::ProfileFolder(PathBuf::from(folder)),
     )
+    .with_read_by(login.read_by().map(String::from))
 }
 
 /// The key the user gave for [`organization`] under the slot `admin`,

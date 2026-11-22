@@ -13,12 +13,13 @@
 //! gateway's host, not for OpenAI: this part does not serve it, and its
 //! token never goes to `chatgpt.com`.
 
-use otty_plugin_sdk::agents::{Limits, ReadError};
+use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::http::Request;
 use otty_plugin_sdk::{Key, clock};
 use serde_json::Value;
 
 use crate::individual_limit::individual_limit_in;
+use crate::limits::Limits;
 use crate::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, millis_of_seconds, no_numbers,
 };

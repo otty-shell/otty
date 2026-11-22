@@ -1,21 +1,20 @@
-//! The read of the limits of one profile. Its parts may ask a server over
-//! the network or start the agent's program, so it runs on a thread of its
-//! own.
+//! The read of the limits of one profile: the provider part of the plugin
+//! that reads the account whose limits the profile shows reads them, any
+//! way it can (spec 2026-11-19-agent-plugins, issue 29). It may ask a
+//! server over the network or start the agent's program, so it runs on a
+//! thread of its own.
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{
-    Agent, AgentCommand, PluginProvider, Profile, ProgramError, RunningProgram,
-    RunningTerminal, SourceFailure, SourceId, StartProgram, StartTerminal,
+    Account, AccountNumbers, Agent, KeyPlace, PluginProvider, Profile,
+    SourceError, SourceFailure, SourceId, Unavailable,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
-use crate::agent_program::LoginShellPrograms;
 use crate::background::{on_own_thread, read_stopped};
-use crate::hidden_terminal::LoginShellTerminals;
 use crate::plugin_parts::ProviderList;
 
 /// The folder in OTTY's cache folder that an agent's program started in a
@@ -23,61 +22,22 @@ use crate::plugin_parts::ProviderList;
 /// project.
 pub(crate) const PROBE_FOLDER: &str = "agent-probe";
 
-/// Whether a read of the limits may start the agent's program: `codex
-/// app-server`, or `claude` in a hidden terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProgramStarts {
-    /// Agents mode is on screen: the program may start.
-    Allowed,
-    /// Agents mode is away: the program does not start.
-    NotNow,
-}
-
-/// The programs of a read while Agents mode is away: none starts.
-struct NoPrograms;
-
-impl StartProgram for NoPrograms {
-    fn start(
-        &self,
-        _command: &AgentCommand,
-    ) -> Result<Box<dyn RunningProgram>, ProgramError> {
-        Err(ProgramError::NotNow)
-    }
-
-    /// No: the plugin parts start nothing either.
-    fn starts_now(&self) -> bool {
-        false
-    }
-}
-
-/// The hidden terminals of a read while Agents mode is away: none starts.
-struct NoTerminals {
-    probe_dir: PathBuf,
-}
-
-impl StartTerminal for NoTerminals {
-    fn working_dir(&self) -> PathBuf {
-        self.probe_dir.clone()
-    }
-
-    fn start(
-        &self,
-        _command: &AgentCommand,
-        _columns: u16,
-        _rows: u16,
-    ) -> Result<Box<dyn RunningTerminal>, ProgramError> {
-        Err(ProgramError::NotNow)
-    }
+/// What one read of limits reads: the profile it is read through, the
+/// account whose limits it shows, and every profile the account was found
+/// in, the profile first.
+struct LimitsToRead {
+    profile: Profile,
+    account: Option<Account>,
+    found_in: Vec<Profile>,
 }
 
 /// Read the limits of `profile` in the background: the provider part of
-/// `providers` that serves the profile's subscription login first, then
-/// the agent part of the agent of `agents` it belongs to, which reads them
-/// from wherever it reads them. A read that asks the agent's program
-/// starts it through the user's shell at `shell`, the way the agent tab
-/// does; one that reads the program's screen starts it in a hidden
-/// terminal in a folder of its own inside OTTY's cache folder
-/// `cache_dir`. The answer comes back as [`AgentsIntent::LimitsLoaded`].
+/// `providers` that reads `account`, the account whose limits the profile
+/// shows, reads them, told of every profile of `found_in` it was found in,
+/// with the agent parts of `agents` that found it. It may start the
+/// agent's program, as is or in a hidden terminal. With no account there
+/// is nothing to read. The answer comes back as
+/// [`AgentsIntent::LimitsLoaded`].
 ///
 /// # Example
 ///
@@ -98,9 +58,9 @@ impl StartTerminal for NoTerminals {
 /// let read = otty_app_agents_io::load_limits(
 ///     &agents,
 ///     &providers,
-///     profile,
-///     "/bin/zsh",
-///     &PathBuf::from("/home/user/.cache/otty"),
+///     profile.clone(),
+///     None,
+///     vec![profile],
 /// );
 ///
 /// assert_eq!(read.units(), 1);
@@ -109,120 +69,135 @@ pub fn load_limits(
     agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
-    shell: &str,
-    cache_dir: &Path,
+    account: Option<Account>,
+    found_in: Vec<Profile>,
 ) -> Task<AgentsIntent> {
-    let readers = (agents, providers);
+    let asked = LimitsToRead {
+        profile,
+        account,
+        found_in,
+    };
 
-    read_task(readers, profile, shell, cache_dir, ProgramStarts::Allowed)
+    read_task(agents, providers, asked, true)
 }
 
 /// Read the limits of `profile` in the background while Agents mode is not
-/// on screen, as [`load_limits`] does, except that the agent part starts
-/// no program, neither `codex app-server` nor `claude` in a hidden
+/// on screen, as [`load_limits`] does, except that the provider part
+/// starts no program, neither `codex app-server` nor `claude` in a hidden
 /// terminal, and a read on screen starts it (spec Decision 10).
 pub fn load_limits_in_background(
     agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
-    shell: &str,
-    cache_dir: &Path,
+    account: Option<Account>,
+    found_in: Vec<Profile>,
 ) -> Task<AgentsIntent> {
-    let readers = (agents, providers);
+    let asked = LimitsToRead {
+        profile,
+        account,
+        found_in,
+    };
 
-    read_task(readers, profile, shell, cache_dir, ProgramStarts::NotNow)
+    read_task(agents, providers, asked, false)
 }
 
-/// The read of the limits of `profile` with the agents and the provider
-/// parts of `readers` on a thread of its own, which may start the agent's
-/// program as `starts` says.
+/// The read of `asked` with the agents and the provider parts on a thread
+/// of its own, which may start the agent's program when
+/// `starts_programs`.
 fn read_task(
-    (agents, providers): (&AgentList, &ProviderList),
-    profile: Profile,
-    shell: &str,
-    cache_dir: &Path,
-    starts: ProgramStarts,
+    agents: &AgentList,
+    providers: &ProviderList,
+    asked: LimitsToRead,
+    starts_programs: bool,
 ) -> Task<AgentsIntent> {
-    let is_known = otty_agents::agent_of(agents, profile.agent()).is_some();
-    let task = format!("reading the limits of {}", profile.name());
+    let task = format!("reading the limits of {}", asked.profile.name());
     let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
-    let shell = shell.to_string();
-    let probe_dir = cache_dir.join(PROBE_FOLDER);
-    let fallback = profile.clone();
+    let fallback = asked.profile.clone();
+    let has_account = asked.account.is_some();
 
     on_own_thread(
         task,
-        move || {
-            let readers = (agents.as_ref(), providers.as_ref());
-            read_limits(readers, profile, &shell, probe_dir, starts)
-        },
-        move || stopped_read(fallback, is_known),
+        move || read_limits(&agents, &providers, asked, starts_programs),
+        move || stopped_read(fallback, has_account),
         AgentsIntent::LimitsLoaded,
     )
 }
 
-/// The limits of `profile` from the first part that answers, the provider
-/// part of the profile's subscription login first, then the agent part,
-/// with the time the read ended. The agent's program starts only as
-/// `starts` says; in a hidden terminal it runs in `probe_dir`. Nothing
-/// reads the limits of an agent OTTY does not know.
+/// The limits of `asked`, with the time the read ended: what the provider
+/// part that reads its account answered. The part's programs start only
+/// when `starts_programs`.
 fn read_limits(
-    (agents, providers): (&[Box<dyn Agent>], &[PluginProvider]),
-    profile: Profile,
-    shell: &str,
-    probe_dir: PathBuf,
-    starts: ProgramStarts,
+    agents: &[Box<dyn Agent>],
+    providers: &[PluginProvider],
+    asked: LimitsToRead,
+    starts_programs: bool,
 ) -> LoadedLimits {
-    let agent = otty_agents::agent_of(agents, profile.agent());
-    let (programs, terminals): (Arc<dyn StartProgram>, Arc<dyn StartTerminal>) =
-        match starts {
-            ProgramStarts::Allowed => (
-                Arc::new(LoginShellPrograms::new(shell)),
-                Arc::new(LoginShellTerminals::new(shell, &probe_dir)),
-            ),
-            ProgramStarts::NotNow => {
-                (Arc::new(NoPrograms), Arc::new(NoTerminals { probe_dir }))
-            },
-        };
+    let LimitsToRead {
+        profile,
+        account,
+        found_in,
+    } = asked;
 
-    let Some(agent) = agent else {
-        return LoadedLimits {
-            profile,
-            limits: LimitsRead::from_walk(Err(Vec::new())),
-            read_at: SystemTime::now(),
-        };
+    let limits = match account {
+        Some(account) => {
+            let numbers = otty_agents::read_account_numbers(
+                agents,
+                providers,
+                &account,
+                &KeyPlace::ProfileFiles(found_in),
+                &[],
+                SystemTime::now(),
+                starts_programs,
+                |_| None,
+            );
+            limits_read(numbers)
+        },
+        None => LimitsRead::NoSources,
     };
-
-    let agent_limits = agent.limit_source(programs, terminals);
-    let walked = otty_agents::read_profile_limits(
-        agent,
-        providers,
-        agent_limits.as_deref(),
-        &profile,
-    );
 
     LoadedLimits {
         profile,
-        limits: LimitsRead::from_walk(walked),
+        limits,
         read_at: SystemTime::now(),
     }
 }
 
+/// What a read of the numbers of a subscription login tells of its
+/// limits. Nothing in them, or no part that reads the account, is
+/// nothing to show; any other failure is the failure of the provider part.
+fn limits_read(numbers: Result<AccountNumbers, SourceError>) -> LimitsRead {
+    match numbers {
+        Ok(AccountNumbers::Limits(answer)) if !answer.value().is_nothing() => {
+            LimitsRead::Answered(answer)
+        },
+        Ok(_) => LimitsRead::NoSources,
+        Err(SourceError::NotAvailable(Unavailable::NoAccountSource)) => {
+            LimitsRead::NoSources
+        },
+        Err(error) => LimitsRead::Failed(vec![SourceFailure::new(
+            SourceId::ProviderPart,
+            error,
+        )]),
+    }
+}
+
 /// What a read of the limits of `profile` that stopped before it answered
-/// gives: the agent part failed because the read stopped, so the last good
-/// answer stays, greyed, and the user sees why. Nothing reads the limits
-/// of an agent OTTY does not know, `is_known` false.
-fn stopped_read(profile: Profile, is_known: bool) -> LoadedLimits {
-    let failures = if is_known {
-        vec![SourceFailure::new(SourceId::AgentPart, read_stopped())]
-    } else {
-        Vec::new()
+/// gives: the provider part failed because the read stopped, so the last
+/// good answer stays, greyed, and the user sees why. A profile with no
+/// account, `has_account` false, has nothing to read.
+fn stopped_read(profile: Profile, has_account: bool) -> LoadedLimits {
+    let limits = match has_account {
+        true => LimitsRead::Failed(vec![SourceFailure::new(
+            SourceId::ProviderPart,
+            read_stopped(),
+        )]),
+        false => LimitsRead::NoSources,
     };
 
     LoadedLimits {
         profile,
-        limits: LimitsRead::from_walk(Err(failures)),
+        limits,
         read_at: SystemTime::now(),
     }
 }
@@ -231,47 +206,32 @@ fn stopped_read(profile: Profile, is_known: bool) -> LoadedLimits {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::AgentId;
+    use otty_agents::{
+        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+        ProviderRef,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::background::read_stopped;
     use crate::testing::{
-        agents_with_plugins, agents_with_plugins_and_shell, executable_script,
-        run, write,
+        agents_and_providers_with_shell, executable_script, run, write,
     };
 
-    /// A shell that does not exist: no test starts a real agent.
-    const NO_SHELL: &str = "/no/such/shell";
+    /// The made-up id of the Claude account of the tests.
+    const ACCOUNT_ID: &str = "00000000-0000-4000-8000-0000000000a1";
 
-    /// No provider part: no test sends a request to a provider.
-    const NO_PROVIDERS: &[PluginProvider] = &[];
-
-    /// No provider part, shared by the background reads.
-    fn no_providers() -> ProviderList {
-        Arc::from(Vec::new())
-    }
-
-    /// A Coder profile in a made-up folder with no login: the
-    /// Anthropic plugin reads no limits for it and starts nothing.
-    fn logged_out_claude(home: &TempDir) -> Profile {
+    /// A Claude Code profile in a made-up folder whose `.credentials.json`
+    /// holds no token while `.claude.json` names its account: Claude Code
+    /// still works with it (the owner's Semrush profile, issue 29).
+    fn claude_without_token(home: &TempDir) -> Profile {
         let config_dir = home.path().join(".claude-test");
-        write(&config_dir.join("settings.json"), "{}");
-
-        Profile::added(
-            AgentId::new("claude-code"),
-            "Claude Code · Test",
-            config_dir,
-        )
-    }
-
-    /// A Coder profile in a made-up folder with a made-up login
-    /// token, whose limits the plugin reads from the `/usage` panel.
-    fn logged_in_claude(home: &TempDir) -> Profile {
-        let config_dir = home.path().join(".claude-test");
+        write(&config_dir.join(".credentials.json"), "{}");
         write(
-            &config_dir.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up-token"}}"#,
+            &config_dir.join(".claude.json"),
+            &format!(
+                r#"{{"oauthAccount":{{"accountUuid":"{ACCOUNT_ID}","emailAddress":"dev@example.com"}}}}"#
+            ),
         );
 
         Profile::added(
@@ -281,195 +241,176 @@ mod tests {
         )
     }
 
-    #[test]
-    fn a_profile_with_no_login_has_the_failure_of_its_agent_part_and_time() {
-        let home = TempDir::new("agents-limits");
-        let profile = logged_out_claude(&home);
-        let probe_dir = home.path().join("agent-probe");
-        let before = SystemTime::now();
-
-        let loaded = read_limits(
-            (&agents_with_plugins(home.path()), NO_PROVIDERS),
-            profile.clone(),
-            NO_SHELL,
-            probe_dir,
-            ProgramStarts::Allowed,
-        );
-
-        assert_eq!(loaded.profile, profile);
-        assert_eq!(
-            loaded.limits,
-            LimitsRead::Failed(vec![SourceFailure::new(
-                SourceId::AgentPart,
-                otty_agents::SourceError::NotAvailable(
-                    otty_agents::Unavailable::NoLogin
-                )
-            )])
-        );
-        assert!(loaded.read_at >= before);
+    /// The Claude login of [`claude_without_token`], found in `profile`
+    /// and read by the Anthropic plugin.
+    fn claude_login(profile: &Profile) -> Account {
+        Account::new(
+            ProviderRef::of_id("anthropic"),
+            AccountIdentity::AccountId(ACCOUNT_ID.to_string()),
+            AccountLogin::Email(String::from("dev@example.com")),
+            AccountKind::Limits,
+            FoundIn::ProfileFolder(profile.config_dir().to_path_buf()),
+        )
+        .with_read_by(Some(String::from("anthropic")))
     }
 
-    /// While Agents mode is away the plugin's hidden terminal is not
-    /// started: the plugin engine starts nothing for the read, and the
-    /// next read on screen starts it. The shell here only counts its
-    /// starts, so no real `claude` ever runs.
+    /// A shell in `home` that only counts its starts, so no real `claude`
+    /// ever runs.
+    fn counting_shell(home: &TempDir) -> String {
+        let starts = home.path().join("starts");
+
+        executable_script(
+            home.path(),
+            "counting-shell",
+            &format!("echo started >> '{}'\nexit 1", starts.display()),
+        )
+        .display()
+        .to_string()
+    }
+
+    fn started(home: &TempDir) -> bool {
+        home.path().join("starts").exists()
+    }
+
+    /// Issue 29, the owner's case: no token in the profile's files, so
+    /// the Anthropic provider part reads the limits with `claude /usage`
+    /// in the Claude Code profile the login was found in. The shell here
+    /// only counts its starts, so the made-up `claude` never shows its
+    /// panel; the plugin's own tests read the panel.
+    #[test]
+    fn a_login_with_no_token_is_read_with_usage_in_its_profile() {
+        let home = TempDir::new("agents-limits-semrush");
+        let profile = claude_without_token(&home);
+        let shell = counting_shell(&home);
+        let (agents, providers) =
+            agents_and_providers_with_shell(home.path(), &shell);
+        let asked = LimitsToRead {
+            account: Some(claude_login(&profile)),
+            found_in: vec![profile.clone()],
+            profile: profile.clone(),
+        };
+
+        let loaded = read_limits(&agents, &providers, asked, true);
+
+        assert!(started(&home), "`claude /usage` was not started");
+        assert_eq!(loaded.profile, profile);
+    }
+
+    /// While Agents mode is away the provider part starts no hidden
+    /// terminal: the read gives nothing, and the next read on screen
+    /// starts it.
     #[test]
     fn a_read_in_the_background_starts_no_hidden_terminal() {
         let home = TempDir::new("agents-limits-background");
-        let profile = logged_in_claude(&home);
-        let starts = home.path().join("starts");
-        let shell = executable_script(
-            home.path(),
-            "counting-shell",
-            &format!("echo started >> '{}'\nexit 1", starts.display()),
-        );
-        let agents = agents_with_plugins_and_shell(
-            home.path(),
-            &shell.display().to_string(),
-        );
-
-        let loaded = read_limits(
-            (&agents, NO_PROVIDERS),
+        let profile = claude_without_token(&home);
+        let shell = counting_shell(&home);
+        let (agents, providers) =
+            agents_and_providers_with_shell(home.path(), &shell);
+        let asked = LimitsToRead {
+            account: Some(claude_login(&profile)),
+            found_in: vec![profile.clone()],
             profile,
-            NO_SHELL,
-            home.path().join("agent-probe"),
-            ProgramStarts::NotNow,
-        );
+        };
 
-        assert!(matches!(loaded.limits, LimitsRead::Failed(_)));
-        assert!(!starts.exists(), "the shell was started");
+        let loaded = read_limits(&agents, &providers, asked, false);
+
+        assert!(!started(&home), "the shell was started");
+        assert!(
+            !matches!(loaded.limits, LimitsRead::Answered(_)),
+            "{:?}",
+            loaded.limits
+        );
     }
 
-    /// While Agents mode is away `codex app-server` is not started either:
-    /// the OpenAI plugin starts nothing for the read, falls back on its
-    /// session files, and they hold no record of the limits. The shell
-    /// here only counts its starts, so no real `codex` ever runs.
+    /// A profile with no subscription login has no limits to read.
     #[test]
-    fn a_read_in_the_background_starts_no_codex_app_server() {
-        let home = TempDir::new("agents-limits-background-codex");
-        let config_dir = home.path().join(".codex-test");
-        write(
-            &config_dir.join("auth.json"),
-            r#"{"auth_mode":"chatgpt","tokens":{"access_token":"made-up-token","account_id":"00000000-0000-4000-8000-0000000000c1"}}"#,
-        );
-        let profile =
-            Profile::added(AgentId::new("codex"), "Codex · Test", config_dir);
-        let starts = home.path().join("starts");
-        let shell = executable_script(
-            home.path(),
-            "counting-shell",
-            &format!("echo started >> '{}'\nexit 1", starts.display()),
-        );
-        let agents = agents_with_plugins_and_shell(
-            home.path(),
-            &shell.display().to_string(),
-        );
-
-        let loaded = read_limits(
-            (&agents, NO_PROVIDERS),
-            profile,
-            NO_SHELL,
-            home.path().join("agent-probe"),
-            ProgramStarts::NotNow,
-        );
-
-        assert!(matches!(loaded.limits, LimitsRead::Failed(_)));
-        assert!(!starts.exists(), "the shell was started");
-    }
-
-    #[test]
-    fn a_profile_of_an_unknown_agent_has_no_way_to_read_limits() {
+    fn a_profile_with_no_account_has_nothing_to_read() {
         let profile = Profile::added(
             AgentId::new("stranger"),
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
+        let asked = LimitsToRead {
+            profile: profile.clone(),
+            account: None,
+            found_in: vec![profile],
+        };
 
-        let loaded = read_limits(
-            (&[], NO_PROVIDERS),
+        let loaded = read_limits(&[], &[], asked, true);
+
+        assert_eq!(loaded.limits, LimitsRead::NoSources);
+    }
+
+    /// An account no installed plugin reads has nothing to show.
+    #[test]
+    fn an_account_no_plugin_reads_has_nothing_to_read() {
+        let home = TempDir::new("agents-limits-no-plugin");
+        let profile = claude_without_token(&home);
+        let asked = LimitsToRead {
+            account: Some(claude_login(&profile)),
+            found_in: vec![profile.clone()],
             profile,
-            NO_SHELL,
-            PathBuf::from("/no/such/cache/agent-probe"),
-            ProgramStarts::Allowed,
-        );
+        };
+
+        let loaded = read_limits(&[], &[], asked, true);
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
     }
 
     #[test]
-    fn the_read_runs_in_the_background_and_answers_with_an_intent() {
-        let home = TempDir::new("agents-limits-task");
-        let profile = logged_out_claude(&home);
-        let agents = agents_with_plugins(home.path());
+    fn the_reads_run_in_the_background_and_answer_with_an_intent() {
+        let profile = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+        let agents: AgentList = Arc::from(Vec::new());
+        let providers: ProviderList = Arc::from(Vec::new());
 
-        let answers = run(load_limits(
+        let on_screen = run(load_limits(
             &agents,
-            &no_providers(),
+            &providers,
             profile.clone(),
-            NO_SHELL,
-            home.path(),
+            None,
+            vec![profile.clone()],
+        ));
+        let away = run(load_limits_in_background(
+            &agents,
+            &providers,
+            profile.clone(),
+            None,
+            vec![profile.clone()],
         ));
 
-        assert!(matches!(
-            answers.as_slice(),
-            [AgentsIntent::LimitsLoaded(loaded)]
-                if loaded.profile == profile
-                    && matches!(loaded.limits, LimitsRead::Failed(_))
-        ));
+        for answers in [on_screen, away] {
+            assert!(matches!(
+                answers.as_slice(),
+                [AgentsIntent::LimitsLoaded(loaded)]
+                    if loaded.profile == profile
+                        && loaded.limits == LimitsRead::NoSources
+            ));
+        }
     }
 
+    /// A read that stopped before it answered fails at the provider part
+    /// with why, so the last good limits stay, greyed, and the user is
+    /// told; it never says nothing reads the limits.
     #[test]
-    fn the_read_in_the_background_answers_with_an_intent() {
-        let home = TempDir::new("agents-limits-background-task");
-        let profile = logged_out_claude(&home);
-        let agents = agents_with_plugins(home.path());
-
-        let answers = run(load_limits_in_background(
-            &agents,
-            &no_providers(),
-            profile.clone(),
-            NO_SHELL,
-            home.path(),
-        ));
-
-        assert!(matches!(
-            answers.as_slice(),
-            [AgentsIntent::LimitsLoaded(loaded)]
-                if loaded.profile == profile
-                    && matches!(loaded.limits, LimitsRead::Failed(_))
-        ));
-    }
-
-    /// A read that stopped before it answered fails at the agent part with
-    /// why, so the last good limits stay, greyed, and the user is told; it
-    /// never says nothing reads the limits.
-    #[test]
-    fn a_read_that_stopped_fails_at_the_agent_part_because_it_stopped() {
+    fn a_read_that_stopped_fails_at_the_provider_part_because_it_stopped() {
         let home = TempDir::new("agents-limits-stopped");
-        let profile = logged_out_claude(&home);
+        let profile = claude_without_token(&home);
 
         let loaded = stopped_read(profile.clone(), true);
+        let no_account = stopped_read(profile.clone(), false);
 
         assert_eq!(loaded.profile, profile);
         assert_eq!(
             loaded.limits,
             LimitsRead::Failed(vec![SourceFailure::new(
-                SourceId::AgentPart,
+                SourceId::ProviderPart,
                 read_stopped()
             )])
         );
-    }
-
-    #[test]
-    fn a_stopped_read_of_an_unknown_agent_has_no_way_to_read() {
-        let profile = Profile::added(
-            AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/home/user/.stranger"),
-        );
-
-        let loaded = stopped_read(profile, false);
-
-        assert_eq!(loaded.limits, LimitsRead::NoSources);
+        assert_eq!(no_account.limits, LimitsRead::NoSources);
     }
 }

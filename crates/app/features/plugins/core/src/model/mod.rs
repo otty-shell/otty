@@ -1,13 +1,11 @@
 //! What the page shows, built from its state: the list of the installed
 //! plugins or the dialog open over it.
 
-mod choices;
 mod dialogs;
 mod list;
 
 use std::time::SystemTime;
 
-pub(crate) use choices::{ChoiceViewModel, given_to_new};
 pub(crate) use dialogs::{
     InstallDialogViewModel, PartPermissionsViewModel, PermissionsViewModel,
     UpdateDialogViewModel,
@@ -99,15 +97,13 @@ impl<'a> PageViewModel<'a> {
                 error,
                 is_busy,
             },
-            Screen::Install { plan, use_new } => {
-                Self::Install(dialogs::install_dialog(state, plan, use_new))
+            Screen::Install { plan } => {
+                Self::Install(dialogs::install_dialog(state, plan))
             },
-            Screen::Update { plugin, use_new } => {
+            Screen::Update { plugin } => {
                 let listed = state.plugin(plugin)?;
                 let update = state.waiting_update(plugin)?;
-                Self::Update(dialogs::update_dialog(
-                    state, listed, update, use_new,
-                ))
+                Self::Update(dialogs::update_dialog(state, listed, update))
             },
             Screen::Permissions(plugin) => {
                 Self::Permissions(dialogs::permissions(state.plugin(plugin)?))
