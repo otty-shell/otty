@@ -1753,14 +1753,9 @@ pub enum Key {
     /// Button of the keyring dialog that allows the read.
     AgentsAllow,
 
-    // Plugins mode and the plugins in Agents mode and Settings.
-    /// Title of the Plugins section of Settings.
-    SectionPlugins,
-    /// Row of the Plugins section of Settings.
-    FieldInstalledPlugins,
-    /// Description of the plugins row of Settings.
-    DescPlugins,
-    /// Button of Settings that opens Plugins mode.
+    // Plugins mode and the plugins in Agents mode.
+    /// Button of the "No agent plugin" card of Agents mode that opens
+    /// Plugins mode.
     ButtonManagePlugins,
     /// Button of Plugins mode that adds a plugin by its GitHub link.
     PluginsAddPlugin,
@@ -2016,7 +2011,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 943] = [
+    pub(super) const ALL: [Self; 940] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2833,9 +2828,6 @@ impl Key {
         Self::TplAgentsKeyringService,
         Self::AgentsNotNow,
         Self::AgentsAllow,
-        Self::SectionPlugins,
-        Self::FieldInstalledPlugins,
-        Self::DescPlugins,
         Self::ButtonManagePlugins,
         Self::PluginsAddPlugin,
         Self::PluginsAddFromFolder,

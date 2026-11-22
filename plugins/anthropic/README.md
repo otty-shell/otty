@@ -42,8 +42,10 @@ The native installer of Claude Code puts the program at
 `~/.local/bin/claude`, a folder the login shell may not have on its
 `PATH`: the manifest lists it in `program_places`, so OTTY finds the
 program there and starts it by that path, also for `/usage`. When
-Claude Code is nowhere, the manifest's `install` gives its setup page,
-`https://docs.anthropic.com/en/docs/claude-code/setup`.
+Claude Code is nowhere, the manifest's `install` gives its native
+installer, `curl -fsSL https://claude.ai/install.sh | bash`, which OTTY
+runs in a terminal tab for **Install Claude Code**, and its setup page,
+`https://code.claude.com/docs/en/setup`.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over

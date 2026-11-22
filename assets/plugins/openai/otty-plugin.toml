@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.2"
+version = "0.2.3"
 description = "Codex profiles, logins, sessions and tokens; ChatGPT limits and credits, from OpenAI or from Codex; OpenAI organization costs."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -25,9 +25,11 @@ icon = "codex.svg"
 program = "codex"
 tested_version = "0.169.0"
 
-# Offered when OTTY finds the program nowhere: the repository of Codex,
-# which says how to install it.
+# Offered when OTTY finds the program nowhere: the install script of
+# Codex, as its repository gives it, and that repository. It names no
+# folder for the program, so the part has no program place.
 [agents.agent.install]
+command = ["sh", "-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"]
 page = "https://github.com/openai/codex"
 
 # Apply only while a function of this part runs. `CODEX_HOME` moves the

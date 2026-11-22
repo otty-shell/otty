@@ -23,6 +23,8 @@ OpenCode's installer puts the program at `~/.opencode/bin/opencode`, a
 folder the login shell may not have on its `PATH`: the manifest lists it
 in `program_places`, so OTTY finds the program there and starts it by
 that path. When OpenCode is nowhere, the manifest's `install` gives
+OpenCode's install script, `curl -fsSL https://opencode.ai/v2/install |
+bash`, which OTTY runs in a terminal tab for **Install OpenCode**, and
 OpenCode's page, `https://opencode.ai/docs`.
 
 It is its own cargo workspace, outside the OTTY build, and uses the SDK

@@ -53,10 +53,10 @@ fn waiting_example() -> (ListedPlugin, otty_plugin_releases::PendingUpdate) {
     (plugin, update)
 }
 
-/// Issue 30: Manage plugins… of Settings opens the mode with nothing
+/// Issue 30: Manage plugins… of Agents mode opens the mode with nothing
 /// selected and no dialog, whatever was selected before.
 #[test]
-fn open_from_settings_selects_nothing() {
+fn open_at_the_list_selects_nothing() {
     let mut state = open_state(vec![official_example()]);
     let _ = reduce(&mut state, PluginsIntent::AddPlugin);
 

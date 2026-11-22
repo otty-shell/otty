@@ -329,7 +329,7 @@ mod tests {
     use super::*;
     use crate::frame::title_bar::TitleBarIntent;
     use crate::message::Message;
-    use crate::testing::frames::{Frames, scroll_main_area};
+    use crate::testing::frames::{Frames, LOW_WINDOW, scroll_dialog_body};
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
         open_secret_prompt, open_settings, show_toast,
@@ -1062,22 +1062,22 @@ mod tests {
         assert_eq!(resizes(&menu), 0);
     }
 
-    /// A dialog opened again starts at its top left, whatever it was
+    /// A dialog opened again starts at its top, whatever its body was
     /// scrolled to before it closed.
     #[test]
     fn settings_opened_again_starts_at_its_top() {
         let mut app = app();
-        let mut frames = Frames::new();
+        let mut frames = Frames::in_window(LOW_WINDOW);
         open_settings(&mut app);
 
         let _ = frames.dialog_frame(&app, None);
-        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        let scrolled = frames.dialog_frame(&app, scroll_dialog_body());
         let _ = app.settings.reduce(SettingsIntent::Close, ());
-        let _ = frames.frame(&app, None);
+        frames.build(&app);
         open_settings(&mut app);
         let opened_again = frames.dialog_frame(&app, None);
 
-        assert!(scrolled.x > 0.0 && scrolled.y > 0.0, "{scrolled:?}");
+        assert!(scrolled.y > 0.0, "{scrolled:?}");
         assert_eq!(opened_again, iced::Vector::new(0.0, 0.0));
     }
 
@@ -1118,11 +1118,11 @@ mod tests {
     #[test]
     fn settings_built_again_keeps_its_scrolling() {
         let mut app = app();
-        let mut frames = Frames::new();
+        let mut frames = Frames::in_window(LOW_WINDOW);
         open_settings(&mut app);
 
         let _ = frames.dialog_frame(&app, None);
-        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        let scrolled = frames.dialog_frame(&app, scroll_dialog_body());
         edit_the_shell(&mut app, "/bin/z");
         let after_typing = frames.dialog_frame(&app, None);
         let _ = app
@@ -1130,7 +1130,7 @@ mod tests {
             .reduce(SettingsIntent::EqualizePanesToggled(false), ());
         let after_switch = frames.dialog_frame(&app, None);
 
-        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(scrolled, iced::Vector::new(0.0, 50.0));
         assert_eq!(after_typing, scrolled);
         assert_eq!(after_switch, scrolled);
     }

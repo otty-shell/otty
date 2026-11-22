@@ -87,7 +87,7 @@ impl Delivery for PluginsIntent {
     }
 }
 
-/// Show Plugins mode at `place`: Manage plugins… of Settings, "Read by",
+/// Show Plugins mode at `place`: Manage plugins…, "Read by",
 /// Add plugin… and Review of Agents mode (issue 30).
 pub(crate) fn open_plugins_mode(
     app: &mut App,
@@ -134,30 +134,6 @@ pub(crate) fn running_plugins(
 mod tests {
     use super::*;
     use crate::testing::window::app;
-
-    /// Issue 30: Manage plugins… of Settings closes Settings and shows
-    /// Plugins mode with nothing selected.
-    #[test]
-    fn manage_plugins_of_settings_shows_plugins_mode() {
-        use otty_app_settings::SettingsIntent;
-
-        use crate::guards::top_overlay;
-        use crate::testing::window::{edit_the_shell, open_settings};
-        use crate::update::update_input;
-
-        let mut app = app();
-        open_settings(&mut app);
-        edit_the_shell(&mut app, "/bin/edited");
-
-        let _ = update_input(
-            &mut app,
-            AppEvent::Settings(SettingsIntent::OpenPlugins),
-        );
-
-        assert_eq!(app.modes.active(), Mode::Plugins);
-        assert!(!app.settings.is_open());
-        assert_eq!(top_overlay(&app), None);
-    }
 
     /// Issue 30: "Read by" of Agents mode shows Plugins mode; Esc in a
     /// dialog of the mode closes the dialog and stays in the mode.

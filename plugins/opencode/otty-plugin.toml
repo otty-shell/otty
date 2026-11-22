@@ -5,7 +5,7 @@
 [plugin]
 id = "opencode"
 name = "OpenCode"
-version = "0.1.1"
+version = "0.1.2"
 description = "Sessions and tokens of OpenCode."
 repository = "https://github.com/otty-shell/otty-plugin-opencode"
 license = "Apache-2.0"
@@ -29,9 +29,11 @@ program = "opencode"
 program_places = ["~/.opencode/bin/opencode"]
 tested_version = "2.3.2"
 
-# Offered when OTTY finds the program nowhere: OpenCode's page on how
-# to install it.
+# Offered when OTTY finds the program nowhere: OpenCode's install
+# script, as its page gives it (it puts the program in
+# `~/.opencode/bin`), and that page.
 [agents.agent.install]
+command = ["sh", "-c", "curl -fsSL https://opencode.ai/v2/install | bash"]
 page = "https://opencode.ai/docs"
 
 # Apply only while a function of this part runs. The database is opened

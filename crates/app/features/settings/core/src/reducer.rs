@@ -62,10 +62,6 @@ pub(super) fn reduce(
             state.set_theme(theme);
             Vec::new()
         },
-        SettingsIntent::OpenPlugins => {
-            state.close();
-            vec![SettingsOutcome::OpenPlugins]
-        },
     }
 }
 
@@ -142,21 +138,6 @@ mod tests {
     use otty_app_theme::theme::BuiltinTheme;
 
     use super::*;
-
-    /// Issue 30: Manage plugins… closes Settings, as Close does, and asks
-    /// for Plugins mode.
-    #[test]
-    fn manage_plugins_closes_the_dialog_and_opens_plugins_mode() {
-        let mut state = SettingsState::default();
-        let _ = reduce(&mut state, SettingsIntent::Open);
-        let _ = reduce(&mut state, SettingsIntent::EditorChanged("vim".into()));
-
-        let outcomes = reduce(&mut state, SettingsIntent::OpenPlugins);
-
-        assert_eq!(outcomes, vec![SettingsOutcome::OpenPlugins]);
-        assert!(!state.is_open());
-        assert!(!state.is_dirty());
-    }
     use crate::types::{LanguageSetting, SettingsData};
 
     fn default_state() -> SettingsState {

@@ -31,9 +31,9 @@ pub(crate) struct StatsDialogProps<'a> {
     pub(crate) theme: ThemeProps<'a>,
 }
 
-/// Render the modal statistics dialog, as wide as a form; it scrolls when
-/// it is taller than the window. Close and its cross close it; the frame
-/// closes it on Esc.
+/// Render the modal statistics dialog, as wide as a form; its body scrolls
+/// when it is taller than the window. Close and its cross close it; the
+/// frame closes it on Esc.
 pub(crate) fn view(props: StatsDialogProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;

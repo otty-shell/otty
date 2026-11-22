@@ -1,6 +1,6 @@
 # 33 A dialog scrolls inside its card; Settings has no Plugins section
 
-Status: open
+Status: done
 Blocked by: 32
 
 ## Why
@@ -45,3 +45,34 @@ Owner, 2026-11-22:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-22, issue 33, done. The kit's `Dialog` lays its card out with
+  `DialogColumn` (`crates/ui/kit/src/components/dialog_column.rs`): the
+  title and the actions are measured first, the body gets the height
+  they leave and scrolls up and down in it, with the kit's thin bar
+  beside the body, `space-2` from it, inside the card; the bar takes its
+  room only while it shows. The area around the card no longer scrolls:
+  the card keeps 48 px from each edge of the window and, in a window
+  narrower than it, shrinks to it (the simpler choice; below about
+  300 px a row of two buttons may not fit). The log of a plugin was the
+  only dialog with a `scrollable` of its own; it is now plain text in
+  the body. The tables of the found report are as tall as their rows and
+  only scroll sideways, so nothing scrolls twice. Settings has no Plugins
+  section: `plugins_section`, `SettingsIntent::OpenPlugins`,
+  `SettingsOutcome::OpenPlugins`, their dispatch and guard, and the keys
+  `SectionPlugins`, `FieldInstalledPlugins`, `DescPlugins` in all ten
+  locales are gone; `ButtonManagePlugins` stays for the "No agent plugin"
+  card of Agents mode. Plugins, Write a Plugin and the spec say Plugins
+  mode. Tests: a long body keeps the title and the action in the window
+  and scrolls inside the card, a short body shows no bar, only the body
+  scrolls, a narrow window shrinks the card (kit); Settings has no
+  Plugins section, its fields scroll while Save stays (settings); a long
+  plugin log scrolls once (plugins); the app's Settings scrolling tests
+  now wheel its body. Follow-up of issue 32: the official plugins give
+  an install command, `sh -c` with the vendors' commands confirmed on
+  2026-11-22: OpenCode 0.1.2 `curl -fsSL https://opencode.ai/v2/install
+  | bash`, Anthropic 0.2.3 `curl -fsSL https://claude.ai/install.sh |
+  bash` with the page `https://code.claude.com/docs/en/setup`, OpenAI
+  0.2.3 `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (still no
+  program place: its README names no folder); rebuilt with
+  `plugins/build.sh`; plugin pages and READMEs follow.

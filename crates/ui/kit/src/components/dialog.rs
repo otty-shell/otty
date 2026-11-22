@@ -1,29 +1,33 @@
 //! `Dialog`: a modal card centered over a dimmed window.
 
 use iced::widget::{
-    Space, column, container, mouse_area, opaque, row, scrollable, text,
+    Space, container, mouse_area, opaque, row, scrollable, text,
 };
 use iced::{Alignment, Element, Length, alignment};
 
+use super::dialog_column::DialogColumn;
 use super::field_focus::FieldFocus;
 use super::icon_button::IconButton;
 use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
-/// Room around the card inside the area that scrolls, so that the scrolling
+/// Room between the card and each edge of the window, so that the window
 /// does not cut the card's shadow (`0 14px 34px`: the blur reaches 34 + 14 px
 /// below it).
-const SHADOW_ROOM: f32 = 48.0;
+const WINDOW_MARGIN: f32 = 48.0;
 
 /// Modal dialog: a title, an optional body and a row of actions, `space-5`
 /// apart, on a `surface_overlay` card `size::DIALOG` wide by default. The
 /// title can end with a close cross. The card sits in the middle of a
 /// full-window `scrim`. Clicks never reach the UI behind it, and a press on the
 /// scrim does nothing unless the dialog asks for it with `on_backdrop_press`.
-/// In a window too small for it, the card keeps its width and scrolls both
-/// ways. Tab and Shift+Tab walk the dialog's fields, round from the last to
-/// the first, and never reach a field behind it.
+/// The card is never taller than the window less a margin: a body that does
+/// not fit scrolls inside the card, with its bar along the card's right
+/// side, while the title and the actions stay. A body that fits shows no
+/// bar. In a window narrower than the card, the card shrinks to it. Tab and
+/// Shift+Tab walk the dialog's fields, round from the last to the first,
+/// and never reach a field behind it.
 ///
 /// # Example
 ///
@@ -144,23 +148,23 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
 
         let title = title_row(value.title, value.close, &palette);
 
-        let mut content =
-            column![title].spacing(spacing::SPACE_5).width(Length::Fill);
+        let mut content = DialogColumn::new(title, spacing::SPACE_5);
         if let Some(body) = value.body {
-            content = content.push(body);
+            content = content.body(scrolling_body(body, &palette));
         }
         if !value.actions.is_empty() {
             let actions = row![Space::new().width(Length::Fill)]
                 .extend(value.actions)
                 .spacing(spacing::SPACE_3)
                 .width(Length::Fill);
-            content = content.push(actions);
+            content = content.actions(actions.into());
         }
 
         let card_background = palette.surface_overlay();
         let card_shadow = palette.shadow_popover();
         let card = container(content)
-            .width(value.width)
+            .width(Length::Fill)
+            .max_width(value.width)
             .padding(spacing::SPACE_5)
             .style(move |_| container::Style {
                 background: Some(card_background.into()),
@@ -176,10 +180,8 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
         let card = opaque(card);
 
         let scrim = palette.scrim();
-        let card = scrollable(container(card).padding(SHADOW_ROOM))
-            .direction(scrollbar::both())
-            .style(scrollbar::style(&palette));
         let backdrop = container(card)
+            .padding(WINDOW_MARGIN)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(alignment::Horizontal::Center)
@@ -202,6 +204,21 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
         // Tab walks only the dialog's own fields.
         FieldFocus::modal(opaque(backdrop)).into()
     }
+}
+
+/// The body in an area that scrolls up and down when the card has no room
+/// for all of it. The bar then sits beside the body, `space-2` from it, and
+/// takes its room from the body; while the body fits there is no bar.
+fn scrolling_body<'a, Message: 'a>(
+    body: Element<'a, Message>,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    scrollable(body)
+        .direction(scrollbar::vertical())
+        .spacing(spacing::SPACE_2)
+        .width(Length::Fill)
+        .style(scrollbar::style(palette))
+        .into()
 }
 
 /// The title, and the close cross at the right end of its row when there is
@@ -232,9 +249,10 @@ fn title_row<'a, Message: Clone + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use iced::widget::button;
-    use iced::{Event, Point, mouse};
+    use iced::widget::{Column, button};
+    use iced::{Event, Point, Rectangle, mouse};
     use iced_test::Simulator;
+    use iced_test::selector::Candidate;
 
     use super::*;
     use crate::testing::events::named_input;
@@ -257,6 +275,9 @@ mod tests {
     /// Options of the list in [`dialog_with_a_list`]: enough of them for the
     /// open list to reach past the card, over the scrim.
     const OPTIONS: [&str; 6] = ["one", "two", "three", "four", "five", "six"];
+
+    /// How many lines the body of [`long_dialog`] has.
+    const LONG_BODY_LINES: usize = 60;
 
     fn dialog() -> Element<'static, Message> {
         let palette = UiPalette::otty_dark();
@@ -343,6 +364,58 @@ mod tests {
             (width, height),
             dialog(),
         )
+    }
+
+    /// A dialog whose body, `line 0` to the last of [`LONG_BODY_LINES`], is
+    /// taller than the window.
+    fn long_dialog(width: f32, height: f32) -> Simulator<'static, Message> {
+        let palette = UiPalette::otty_dark();
+        let lines = (0..LONG_BODY_LINES)
+            .map(|line| Element::from(text(format!("line {line}"))));
+        let dialog = Dialog::new("Delete session", &palette)
+            .body(Column::with_children(lines).width(Length::Fill))
+            .action(button(text("Delete")).on_press(Message::Deleted));
+
+        Simulator::with_size(
+            iced::Settings::default(),
+            (width, height),
+            Element::from(dialog),
+        )
+    }
+
+    /// The bounds of the scrolling body and of its content.
+    fn body_scroll(ui: &mut Simulator<'_, Message>) -> (Rectangle, Rectangle) {
+        ui.find(|candidate: Candidate<'_>| match candidate {
+            Candidate::Scrollable {
+                bounds,
+                content_bounds,
+                ..
+            } => Some((bounds, content_bounds)),
+            _ => None,
+        })
+        .expect("the body should scroll")
+    }
+
+    /// The card around a `title` and an `action` at the end of its row:
+    /// their bounds with the padding of the card.
+    fn card_around(title: Rectangle, action: Rectangle) -> Rectangle {
+        let left = title.x - spacing::SPACE_5;
+        let top = title.y - spacing::SPACE_5;
+
+        Rectangle {
+            x: left,
+            y: top,
+            width: action.x + action.width + spacing::SPACE_5 - left,
+            height: action.y + action.height + spacing::SPACE_5 - top,
+        }
+    }
+
+    /// Return whether `inner` lies inside `outer`.
+    fn is_inside(inner: Rectangle, outer: Rectangle) -> bool {
+        inner.x >= outer.x
+            && inner.y >= outer.y
+            && inner.x + inner.width <= outer.x + outer.width
+            && inner.y + inner.height <= outer.y + outer.height
     }
 
     /// The dialog of [`dialog`] that also sends `Backdrop` on a scrim press.
@@ -433,24 +506,95 @@ mod tests {
         );
     }
 
+    /// The card shrinks to a window narrower than it, less the margin, so
+    /// its body and its bar stay on the card and its action in reach.
     #[test]
-    fn given_a_window_smaller_than_the_dialog_when_scrolled_then_it_keeps_its_width_and_its_action_can_be_pressed()
+    fn given_a_window_narrower_than_the_card_then_the_card_shrinks_to_it_and_its_action_can_be_pressed()
      {
-        let mut ui = in_window(260.0, 80.0);
+        let width = 300.0;
+        let mut ui = in_window(width, 400.0);
 
         let body = ui.find("body").expect("body should exist").bounds();
-        ui.point_at(Point::new(100.0, 40.0));
-        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
-            delta: mouse::ScrollDelta::Pixels {
-                x: -10_000.0,
-                y: -10_000.0,
-            },
-        })]);
         ui.click("Delete").expect("the action should be in reach");
 
         let pressed: Vec<Message> = ui.into_messages().collect();
-        assert_eq!(body.width, size::DIALOG - 2.0 * spacing::SPACE_5);
+        assert_eq!(
+            body.width,
+            width - 2.0 * WINDOW_MARGIN - 2.0 * spacing::SPACE_5
+        );
+        assert_eq!(body.x, WINDOW_MARGIN + spacing::SPACE_5);
         assert_eq!(pressed, vec![Message::Deleted]);
+    }
+
+    /// Issue 33: the title and the action stay in the window, the card is
+    /// no taller than the window less the margin, and only the body
+    /// scrolls, with its bar inside the card.
+    #[test]
+    fn given_a_body_taller_than_the_window_then_the_title_and_the_action_stay_and_the_body_scrolls_inside_the_card()
+     {
+        let height = 400.0;
+        let mut ui = long_dialog(1024.0, height);
+
+        let title = ui.find("Delete session").expect("title").bounds();
+        let action = ui.find("Delete").expect("action").bounds();
+        let card = card_around(title, action);
+        let (body, content) = body_scroll(&mut ui);
+        ui.point_at(body.center());
+        let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+            delta: mouse::ScrollDelta::Pixels {
+                x: 0.0,
+                y: -10_000.0,
+            },
+        })]);
+        let title_after = ui.find("Delete session").expect("title").bounds();
+        let action_after = ui.find("Delete").expect("action").bounds();
+        let first = ui.find("line 0").expect("first line").visible_bounds();
+        let last_line = format!("line {}", LONG_BODY_LINES - 1);
+        let last = ui
+            .find(last_line.as_str())
+            .expect("last line")
+            .visible_bounds();
+
+        assert!(card.y >= WINDOW_MARGIN - 0.5, "{card:?}");
+        assert!(card.y + card.height <= height - WINDOW_MARGIN + 0.5);
+        assert!(is_inside(body, card), "{body:?} should be in {card:?}");
+        assert!(content.height > body.height, "the body should overflow");
+        assert!(
+            content.width < body.width,
+            "the bar should take its room beside the body"
+        );
+        assert_eq!(title_after, title, "the title should stay");
+        assert_eq!(action_after, action, "the action should stay");
+        assert_eq!(first, None, "the first line should scroll away");
+        assert!(last.is_some(), "the last line should come into view");
+    }
+
+    /// Issue 33: a body that fits shows no bar, so it keeps all its width.
+    #[test]
+    fn given_a_body_that_fits_then_it_shows_no_bar() {
+        let mut ui = in_window(1024.0, 768.0);
+
+        let (body, content) = body_scroll(&mut ui);
+
+        assert!(content.height <= body.height, "{content:?} in {body:?}");
+        assert_eq!(content.width, body.width);
+    }
+
+    /// Nothing around the card scrolls: the body is the only area that
+    /// does.
+    #[test]
+    fn given_a_small_window_then_only_the_body_scrolls() {
+        let mut ui = long_dialog(300.0, 200.0);
+
+        let mut count = 0;
+        let _ = ui.find(|candidate: Candidate<'_>| {
+            if matches!(candidate, Candidate::Scrollable { .. }) {
+                count += 1;
+            }
+            None::<()>
+        });
+
+        assert_eq!(count, 1);
     }
 
     /// The scrim takes a press of any button, so none reaches the UI behind

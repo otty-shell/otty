@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use iced::Task;
 use otty_app_agents::AgentsIntent;
-use otty_app_domain::plugins::PluginsPlace;
 use otty_app_i18n as i18n;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_settings::{
@@ -50,10 +49,6 @@ impl Delivery for SettingsIntent {
             // Applied settings come first, so the text is in their language.
             SettingsOutcome::Failed(problem) => {
                 deliver(app, NotificationsIntent::Push(problem.text()))
-            },
-            // Settings closed: Plugins mode shows, nothing selected.
-            SettingsOutcome::OpenPlugins => {
-                super::open_plugins_mode(app, PluginsPlace::List)
             },
         }
     }

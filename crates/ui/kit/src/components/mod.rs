@@ -26,6 +26,7 @@ pub mod data_table;
 pub mod data_tree;
 pub mod day_bars;
 pub mod dialog;
+mod dialog_column;
 pub mod divider;
 pub mod ellipsis_text;
 pub mod empty_card;

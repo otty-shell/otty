@@ -411,10 +411,10 @@ mod tests {
         assert!(ui.find(i18n::t(Key::FieldName)).is_ok());
     }
 
-    /// In a window smaller than the dialog it keeps its width and scrolls
-    /// both ways, so Add can still be reached and pressed.
+    /// In a window smaller than the dialog it shrinks to the window and
+    /// keeps its buttons in view, so Add can be pressed without scrolling.
     #[test]
-    fn in_a_window_smaller_than_the_dialog_it_scrolls_to_its_buttons() {
+    fn in_a_window_smaller_than_the_dialog_its_buttons_stay_in_reach() {
         let themes = ThemeManager::new();
         let content = view(ProfileDialogProps {
             vm: add_dialog(true),
@@ -430,19 +430,13 @@ mod tests {
             .expect("the name field should show")
             .bounds();
 
-        ui.point_at(iced::Point::new(180.0, 120.0));
-        let _ = ui.simulate([iced::Event::Mouse(
-            iced::mouse::Event::WheelScrolled {
-                delta: iced::mouse::ScrollDelta::Pixels {
-                    x: -10_000.0,
-                    y: -10_000.0,
-                },
-            },
-        )]);
         ui.click(i18n::t(Key::ButtonAdd))
             .expect("Add should be in reach");
 
-        assert!(name.width > 360.0, "the dialog keeps its width: {name:?}");
+        assert!(
+            name.x >= 0.0 && name.x + name.width <= 360.0,
+            "the dialog shrinks to the window: {name:?}"
+        );
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![dialog(ProfileDialogIntent::Submitted)]);
     }

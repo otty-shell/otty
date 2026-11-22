@@ -474,8 +474,8 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
   the main
   area shows the selected plugin with its parts, a switch per part, their
   permissions and health, updates with the permission changes, Reload
-  and Remove. Settings' Manage plugins… and the links and needs of
-  Agents mode open it.
+  and Remove. Manage plugins… and the links and needs of Agents mode
+  open it (Settings has no Plugins section since issue 33).
 - Account info and Profile info get a row "Read by: <plugin> <version>".
 - No table of sources (owner, 2026-11-20, issue 19): where a number comes
   from is the plugin's business. A page tells how old its numbers are,
@@ -1496,8 +1496,8 @@ then the cleanup and the docs.
   selected a card says what to do and offers both ways to add a plugin.
   Dialogs over the window: the install dialog with permissions per part,
   the update dialog with the permission diff per part, the log, the
-  question before Remove; errors in plain words. Settings' **Manage
-  plugins…** closes Settings and opens the mode with nothing selected;
+  question before Remove; errors in plain words. **Manage plugins…** of
+  Agents mode opens the mode with nothing selected;
   "Read by" selects its plugin; Add plugin… of a need opens the URL
   field; Review selects the plugin and opens its update dialog. A plugin
   removed while selected leaves nothing selected; a plugin just

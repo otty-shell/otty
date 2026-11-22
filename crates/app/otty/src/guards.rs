@@ -559,7 +559,6 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::Save
                     | SettingsIntent::Reset
                     | SettingsIntent::Close
-                    | SettingsIntent::OpenPlugins
             )
         ),
         // Every field and button of the dialogs of Plugins mode; the

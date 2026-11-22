@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside } from '@astrojs/starlight/components';
 
-Official · version 0.1.1 · install it from `assets/plugins/opencode/` of the OTTY repository with
+Official · version 0.1.2 · install it from `assets/plugins/opencode/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)); its own
 repository will be `github.com/otty-shell/otty-plugin-opencode`
 
@@ -29,7 +29,7 @@ providers.
 | Runs           | Nothing. OTTY runs `opencode --version` itself only when the database names no version.                 |
 | Writes         | Nothing. The database is opened read-only, so the plugin never locks it or changes it.                |
 | Sends          | Nothing.                                                                                              |
-| Program        | `opencode`, found on the `PATH` of your login shell or where OpenCode's installer puts it, `~/.opencode/bin/opencode`; OTTY then starts it by that path. Found nowhere, the profile shows "program not found" with **Open opencode.ai**, OpenCode's install page. |
+| Program        | `opencode`, found on the `PATH` of your login shell or where OpenCode's installer puts it, `~/.opencode/bin/opencode`; OTTY then starts it by that path. Found nowhere, the profile shows "program not found" with **Install OpenCode**, which runs OpenCode's install script, `curl -fsSL https://opencode.ai/v2/install \| bash`, in a terminal tab you see, and **Open opencode.ai**, OpenCode's install page. |
 | Commands       | New session `opencode`, continue `opencode -s <id>`, Log in `opencode auth login`.                     |
 
 ## Logins found here

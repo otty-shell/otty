@@ -2,7 +2,7 @@
 //! folder of Add plugin from folder…, the log of a plugin and the
 //! question before Remove.
 
-use iced::widget::{Id, column, container, scrollable, text};
+use iced::widget::{Id, column, text};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind};
@@ -18,8 +18,6 @@ use crate::event::PluginsIntent;
 pub(crate) const URL_FIELD: Id = Id::new("plugins_url");
 /// Widget id of the folder field.
 pub(crate) const FOLDER_FIELD: Id = Id::new("plugins_folder");
-/// Height of the log of a plugin.
-const LOG_HEIGHT: f32 = 320.0;
 
 /// Add plugin…: the GitHub link, Next and Cancel.
 pub(super) fn add_url<'a>(
@@ -76,7 +74,8 @@ pub(super) fn add_folder<'a>(
     )
 }
 
-/// The log of a plugin, as it wrote it, and Back.
+/// The log of a plugin, as it wrote it, and Back. A long log scrolls in
+/// the body of the dialog.
 pub(super) fn log<'a>(
     title: String,
     log: String,
@@ -85,15 +84,13 @@ pub(super) fn log<'a>(
     let lines = text(log)
         .font(fonts::MONO)
         .size(12.0)
-        .color(palette.text_body());
-    let body = container(scrollable(lines).width(Length::Fill))
-        .height(LOG_HEIGHT)
+        .color(palette.text_body())
         .width(Length::Fill);
 
     Dialog::new(title, palette)
         .width(size::DIALOG_WIDE)
         .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
-        .body(body)
+        .body(lines)
         .action(back(palette))
         .into()
 }
@@ -176,7 +173,8 @@ fn find_dialog<'a>(
 
 #[cfg(test)]
 mod tests {
-    use iced_test::simulator;
+    use iced_test::selector::Candidate;
+    use iced_test::{Simulator, simulator};
 
     use super::*;
 
@@ -207,5 +205,33 @@ mod tests {
         ));
 
         assert!(ui.find("The plugin has no file `otty-plugin.toml`").is_ok());
+    }
+
+    /// Issue 33: a long log scrolls in the body of the dialog, the only
+    /// area that scrolls, and Back stays in view.
+    #[test]
+    fn a_long_log_scrolls_once_and_back_stays_in_view() {
+        let palette = UiPalette::otty_dark();
+        let log_text: String =
+            (0..200).map(|line| format!("line {line}\n")).collect();
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            (1024.0, 600.0),
+            log(String::from("Log of Example"), log_text, &palette),
+        );
+
+        let mut scrollers = 0;
+        let _ = ui.find(|candidate: Candidate<'_>| {
+            if matches!(candidate, Candidate::Scrollable { .. }) {
+                scrollers += 1;
+            }
+            None::<()>
+        });
+        ui.click(i18n::t(Key::PluginsBack))
+            .expect("Back should be in view");
+
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert_eq!(scrollers, 1);
+        assert!(matches!(sent.as_slice(), [PluginsIntent::Back]));
     }
 }
