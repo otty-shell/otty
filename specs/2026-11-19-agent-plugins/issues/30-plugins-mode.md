@@ -90,3 +90,24 @@ plugins feature crates.
   link on the page, and the permissions show on the page in place of the
   Show permissions dialog; the status bar of the mode has nothing of its
   own on the left; both new icons (puzzle, folder) are drawn for OTTY.
+
+- 2026-11-22, follow-up: the owner asked for one add button "like
+  everywhere else". The header of Installed now has the split button
+  Add plugin (`otty_ui_kit` `SplitButton`, as Sessions and Launches): the
+  `+` opens Add plugin… (the URL dialog), the chevron opens a menu with
+  Add plugin… and Add plugin from folder…. The folder button, the
+  `icons::FOLDER` constant and `assets/svg/folder.svg` are gone; the
+  empty-state card keeps its two buttons. The menu is a header menu of
+  the frame, as in Terminal mode: `HeaderMenu::AddPlugin`, drawn by
+  `screens::header_menu` (moved there from `screens/terminal.rs`) with
+  the ui kit `Menu` and `context_menu` at the pointer; Esc, a press away
+  and a shortcut close it, and a choice closes it and runs
+  (`is_header_menu_choice`). `Plugins::left_panel` takes a
+  `SectionState` and sends `SectionMessage`; `Plugins::add_menu` gives
+  the items. One new word in all ten locales, `plugins_add_menu` ("More
+  ways to add a plugin"), for the tooltip of the chevron. Tests: the plus
+  and the chevron of the panel, the menu items, the open state of the
+  split button, each item closing the menu and opening its dialog, Esc
+  and a press away closing it, the menu drawn in Plugins mode. Docs
+  (Plugins, Write a Plugin) and the spec (Decision 12, the UI list)
+  follow.

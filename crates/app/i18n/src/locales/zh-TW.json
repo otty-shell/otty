@@ -834,6 +834,7 @@
     "button_manage_plugins": "管理外掛程式…",
     "plugins_add_plugin": "新增外掛程式…",
     "plugins_add_from_folder": "從資料夾新增外掛程式…",
+    "plugins_add_menu": "更多新增外掛程式的方式",
     "plugins_empty": "尚未安裝外掛程式",
     "plugins_empty_hint": "外掛程式讓 OTTY 能讀取代理程式或供應商。從其 GitHub 存放庫或資料夾新增。",
     "plugins_section_installed": "已安裝",

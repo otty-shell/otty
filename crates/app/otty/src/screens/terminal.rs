@@ -3,10 +3,10 @@
 //! the active tab in the main area (the panes of the terminal, or the launch
 //! editor of quick launch), the Files section of the explorer in the right
 //! panel, the status bar, the context menu of the launches, the pane menu
-//! of the terminal and the menus of the section headers.
+//! of the terminal and the items of the menus of the section headers.
 
 use iced::Element;
-use iced::widget::{mouse_area, pane_grid};
+use iced::widget::pane_grid;
 use otty_app_domain::commands::AppCommand;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::{
@@ -16,12 +16,11 @@ use otty_app_slots::{
 use otty_app_tabs::{TabContent, TabsIntent};
 use otty_app_terminal::TerminalIntent;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::Menu;
 
 use super::{over_main_area, start_card};
 use crate::app::App;
-use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
+use crate::frame::sidebar::types::HeaderMenu;
 use crate::frame::sidebar::view::{left_panel, new_session_menu};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::status_bar::{
@@ -162,42 +161,15 @@ pub(crate) fn overlays<'a>(
     layers
 }
 
-/// The open menu of a section header, at the point where it was opened
-/// and kept inside the main area. A press away from it closes it.
-pub(crate) fn header_menu<'a>(
-    app: &'a App,
-    open: OpenHeaderMenu,
-    theme: ThemeProps<'a>,
-) -> Option<Element<'a, AppEvent>> {
-    let layer = context_menu(
-        header_menu_items(app, open.menu(), theme),
-        MenuPlace::new(open.cursor(), app.screen_size),
-        AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
-    );
-
-    // The layer covers the main area, so it reports where the pointer is
-    // in place of the main area: the next menu opens at the right spot.
-    let layer = mouse_area(layer).on_move(|position| {
-        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { position })
-    });
-
-    Some(layer.into())
-}
-
-/// The items of a section header menu: the New session menu of the frame,
-/// or the Launches menu of quick launch.
-fn header_menu_items(
+/// The Launches menu under the chevron of the Launches header: New launch
+/// and New folder of quick launch.
+pub(crate) fn launches_menu(
     app: &App,
-    menu: HeaderMenu,
     theme: ThemeProps<'_>,
 ) -> Menu<AppEvent> {
-    match menu {
-        HeaderMenu::Sessions => new_session_menu(app, theme),
-        HeaderMenu::Launches => app
-            .quick_launch
-            .launches_menu(theme)
-            .map(AppEvent::QuickLaunch),
-    }
+    app.quick_launch
+        .launches_menu(theme)
+        .map(AppEvent::QuickLaunch)
 }
 
 /// Turn a press in the Launches section into an app event: the title and
@@ -231,7 +203,10 @@ fn sessions_event(message: SectionMessage<TabsIntent>) -> AppEvent {
 /// The New session menu: Split right and Split down split the focused pane
 /// of a terminal tab, and are off without one; the launches at the top of
 /// the launch tree each run as a click on them does.
-fn new_session_menu(app: &App, theme: ThemeProps<'_>) -> Menu<AppEvent> {
+pub(crate) fn new_session_menu(
+    app: &App,
+    theme: ThemeProps<'_>,
+) -> Menu<AppEvent> {
     let launches: Vec<(&str, AppEvent)> = app
         .quick_launch
         .top_level_launches()

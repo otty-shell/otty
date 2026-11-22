@@ -13,7 +13,9 @@ use crate::frame::sidebar::view::{focus_note, panels};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
-use crate::screens::{agents, containers, over_main_area, plugins, terminal};
+use crate::screens::{
+    agents, containers, header_menu, over_main_area, plugins, terminal,
+};
 
 /// Render the window: the window content and the overlays over it, in one
 /// order for every mode.
@@ -61,8 +63,8 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let secret_prompt = view_secret_prompt(app, theme);
     let resize_grips = view_resize_grips(app);
 
-    // The header menus of the Sessions and Launches sections lie under the
-    // modes menu, anchored where they were opened. The SSH secret prompt
+    // The header menus of the Sessions, Launches and Installed sections lie
+    // under the modes menu, anchored where they were opened. The SSH secret prompt
     // follows Settings, on top of everything. All of them lie in the main
     // area, between the header and the status bar, so the window buttons
     // stay usable under them.
@@ -189,7 +191,7 @@ fn view_left_panel<'a>(
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
         Mode::Containers => containers::left_panel(app, theme),
         Mode::Agents => agents::left_panel(app, theme),
-        Mode::Plugins => plugins::left_panel(app, theme),
+        Mode::Plugins => plugins::left_panel(app, sidebar_vm, theme),
     };
 
     column![switcher, content]
@@ -198,8 +200,8 @@ fn view_left_panel<'a>(
         .into()
 }
 
-/// The open menu of a section header, in Terminal mode, where the section
-/// headers are.
+/// The open menu of a section header, in Terminal and Plugins mode, where
+/// the section headers with a split button are.
 fn view_header_menu<'a>(
     app: &'a App,
     mode: Mode,
@@ -209,8 +211,8 @@ fn view_header_menu<'a>(
     let open = sidebar_vm.open_header_menu?;
 
     match mode {
-        Mode::Terminal => terminal::header_menu(app, open, theme),
-        Mode::Containers | Mode::Agents | Mode::Plugins => None,
+        Mode::Terminal | Mode::Plugins => Some(header_menu(app, open, theme)),
+        _ => None,
     }
 }
 
@@ -1077,6 +1079,38 @@ mod tests {
 
         assert!(scrolled.x > 0.0 && scrolled.y > 0.0, "{scrolled:?}");
         assert_eq!(opened_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// The owner, 2026-11-22: in Plugins mode the menu of Add plugin is
+    /// drawn over the window, as the header menus of Terminal mode.
+    #[test]
+    fn the_add_plugin_menu_is_drawn_in_plugins_mode() {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Plugins), ());
+        let closed = view_header_menu(
+            &app,
+            Mode::Plugins,
+            app.sidebar.vm(),
+            ThemeProps::new(app.theme_manager.current()),
+        )
+        .is_none();
+        let _ = app.sidebar.reduce(
+            SidebarIntent::HeaderMenuOpen(
+                crate::frame::sidebar::types::HeaderMenu::AddPlugin,
+            ),
+            (),
+        );
+
+        let open = view_header_menu(
+            &app,
+            Mode::Plugins,
+            app.sidebar.vm(),
+            ThemeProps::new(app.theme_manager.current()),
+        )
+        .is_some();
+
+        assert!(closed);
+        assert!(open);
     }
 
     /// Typing and switching rebuild the dialog; it stays where it was

@@ -418,8 +418,9 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
 }
 
 /// Return `true` when the event is one of the header menu items: New
-/// terminal, Split and the launches of the New session menu, and New launch
-/// and New folder of the Launches menu. New launch of the New session menu
+/// terminal, Split and the launches of the New session menu, New launch
+/// and New folder of the Launches menu, and Add plugin… and Add plugin
+/// from folder… of the Add plugin menu. New launch of the New session menu
 /// is a command, which closes the menus and runs anyway.
 ///
 /// The frame closes the header menu and runs these instead of asking
@@ -434,6 +435,9 @@ pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
                 QuickLaunchIntent::LaunchNode { .. }
                     | QuickLaunchIntent::HeaderCreateCommand
                     | QuickLaunchIntent::HeaderCreateFolder
+            )
+            | AppEvent::Plugins(
+                PluginsIntent::AddPlugin | PluginsIntent::AddFromFolder
             )
     )
 }
@@ -1833,8 +1837,18 @@ mod tests {
             AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateCommand);
         let new_folder =
             AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder);
+        let add_plugin = AppEvent::Plugins(PluginsIntent::AddPlugin);
+        let add_from_folder = AppEvent::Plugins(PluginsIntent::AddFromFolder);
 
-        for choice in [open_terminal, split, launch, new_launch, new_folder] {
+        for choice in [
+            open_terminal,
+            split,
+            launch,
+            new_launch,
+            new_folder,
+            add_plugin,
+            add_from_folder,
+        ] {
             assert!(is_header_menu_choice(&choice), "{choice:?}");
         }
     }

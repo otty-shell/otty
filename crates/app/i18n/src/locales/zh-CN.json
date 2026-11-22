@@ -834,6 +834,7 @@
     "button_manage_plugins": "管理插件…",
     "plugins_add_plugin": "添加插件…",
     "plugins_add_from_folder": "从文件夹添加插件…",
+    "plugins_add_menu": "更多添加插件的方式",
     "plugins_empty": "尚未安装插件",
     "plugins_empty_hint": "插件让 OTTY 能读取代理或提供商。从其 GitHub 仓库或文件夹添加。",
     "plugins_section_installed": "已安装",

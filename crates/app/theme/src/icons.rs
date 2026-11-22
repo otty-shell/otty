@@ -64,8 +64,6 @@ pub const MODE_AGENTS: &[u8] =
 /// piece. Also the icon of its card when nothing is selected.
 pub const MODE_PLUGINS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-plugins.svg");
-/// A folder: Add plugin from folder… in Plugins mode.
-pub const FOLDER: &[u8] = include_bytes!("../../../../assets/svg/folder.svg");
 /// All accounts in Agents mode: two cards, one behind the other.
 pub const ALL_ACCOUNTS: &[u8] =
     include_bytes!("../../../../assets/svg/all-accounts.svg");

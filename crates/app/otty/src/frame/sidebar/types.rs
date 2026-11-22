@@ -6,13 +6,16 @@ pub(crate) enum SidebarPane {
     Right,
 }
 
-/// The two left panel headers that have a split button with a menu.
+/// The left panel headers that have a split button with a menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HeaderMenu {
     /// The New session menu under the Sessions header.
     Sessions,
     /// The New launch / New folder menu under the Launches header.
     Launches,
+    /// The Add plugin… / Add plugin from folder… menu under the Installed
+    /// header of Plugins mode.
+    AddPlugin,
 }
 
 /// A header menu that is open, with the point where it was opened.

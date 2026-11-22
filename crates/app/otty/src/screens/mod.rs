@@ -11,15 +11,20 @@ pub(crate) mod plugins;
 pub(crate) mod start_card;
 pub(crate) mod terminal;
 
-use iced::widget::{container, responsive};
+use iced::widget::{container, mouse_area, responsive};
 use iced::{Element, Length};
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
 use otty_app_modes::ModesIntent;
+use otty_app_theme::theme::ThemeProps;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::size;
 
+use crate::app::App;
+use crate::frame::sidebar::SidebarIntent;
+use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 use crate::layout;
 use crate::message::AppEvent;
 
@@ -33,6 +38,36 @@ pub(crate) fn over_main_area(
         .padding(layout::main_area_padding())
         .width(Length::Fill)
         .height(Length::Fill)
+        .into()
+}
+
+/// The open menu of a section header, at the point where it was opened
+/// and kept inside the main area: the New session and Launches menus of
+/// Terminal mode, or the Add plugin menu of Plugins mode. A press away
+/// from it closes it.
+pub(crate) fn header_menu<'a>(
+    app: &'a App,
+    open: OpenHeaderMenu,
+    theme: ThemeProps<'a>,
+) -> Element<'a, AppEvent> {
+    let items = match open.menu() {
+        HeaderMenu::Sessions => terminal::new_session_menu(app, theme),
+        HeaderMenu::Launches => terminal::launches_menu(app, theme),
+        HeaderMenu::AddPlugin => plugins::add_menu(app, theme),
+    };
+
+    let layer = context_menu(
+        items,
+        MenuPlace::new(open.cursor(), app.screen_size),
+        AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
+    );
+
+    // The layer covers the main area, so it reports where the pointer is
+    // in place of the main area: the next menu opens at the right spot.
+    mouse_area(layer)
+        .on_move(|position| {
+            AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { position })
+        })
         .into()
 }
 

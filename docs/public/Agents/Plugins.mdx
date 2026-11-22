@@ -25,8 +25,10 @@ switcher. **Settings** → **Plugins** → **Manage plugins…** closes Settings
 do "Read by" and the needs of Agents mode, with their plugin selected.
 
 - **On the left**, the installed plugins under **Installed**, each with its icon, name and mark, a
-  search field that keeps the plugins whose names hold what you type, and two buttons in the
-  header: `+` for **Add plugin…** and the folder for **Add plugin from folder…**.
+  search field that keeps the plugins whose names hold what you type, and **Add plugin** in the
+  header, a `+` with a chevron like the New session and New launch buttons of Terminal mode: `+`
+  opens **Add plugin…**, and the chevron opens a menu with **Add plugin…** (from a repository) and
+  **Add plugin from folder…**.
 - **In the main area**, the page of the selected plugin: its version, authors, repository and
   source, who reviewed it, its parts with their switches, permissions and health, and **Check for
   updates** (or **Reload** for a local plugin), **Show log** (what the plugin wrote to its log) and
@@ -80,8 +82,9 @@ After the mark, a sign says when a plugin needs a look:
 
 ## Add a plugin
 
-1. **Add plugin…** (`+` on the left) → paste the link of the plugin's GitHub repository, such as
-   `https://github.com/owner/otty-plugin-name` → **Next**. Only GitHub links work.
+1. **Add plugin…** (`+` on the left, or **Add plugin…** in the menu of its chevron) → paste the
+   link of the plugin's GitHub repository, such as `https://github.com/owner/otty-plugin-name` →
+   **Next**. Only GitHub links work.
 2. OTTY takes the newest release with a semver tag (`v1.2.0` or `1.2.0`) that this OTTY can run;
    pre-releases are skipped. A repository with no such release is refused.
 3. The install dialog shows the name, version and authors, how far the plugin is trusted, and each
@@ -92,9 +95,9 @@ at most 20 MiB), the icons (SVG, at most 16 KiB, no scripts, links or embedded i
 `.wasm` uses nothing but what OTTY gives plugins. A check that fails says why, and nothing is
 installed.
 
-**Add plugin from folder…** (the folder button on the left) installs a plugin built on this
-computer: type the folder that holds its `otty-plugin.toml`, its `.wasm` and its icons, then
-**Next** and **Install**. For a plugin of your own, see [Write a plugin](../write-a-plugin/#try-it-in-otty).
+**Add plugin from folder…** (in the menu of the chevron next to `+` on the left) installs a plugin
+built on this computer: type the folder that holds its `otty-plugin.toml`, its `.wasm` and its
+icons, then **Next** and **Install**. For a plugin of your own, see [Write a plugin](../write-a-plugin/#try-it-in-otty).
 
 ## Install the official plugins
 

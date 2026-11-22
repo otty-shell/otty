@@ -468,7 +468,10 @@ not cover it. Kilo, Goose and Moonshot have no plugin and are deleted.
   Settings until then): a mode of its own, like Agents mode, in the mode
   switcher and All modes and not pinned by default (plugins will not
   only be for agents). The left panel lists the installed plugins with a
-  search by name, Add by git URL and Add from a local folder; the main
+  search by name and Add plugin, a `+` with a chevron as the other
+  section headers (owner, 2026-11-22): the `+` adds by git URL, the
+  chevron opens a menu with Add by git URL and Add from a local folder;
+  the main
   area shows the selected plugin with its parts, a switch per part, their
   permissions and health, updates with the permission changes, Reload
   and Remove. Settings' Manage plugins… and the links and needs of
@@ -1449,9 +1452,11 @@ then the cleanup and the docs.
   "Community" / "Local", and a sign "failed" when a part is paused or
   the latest check or change failed, "update" when an update waits,
   "off" when every part is off), a search field that keeps the plugins
-  whose names hold the text, letter case aside, and in the header `+`
-  (**Add plugin…** with the URL field) and a folder (**Add plugin from
-  folder…**). Main area: the page of the selected plugin: name, version,
+  whose names hold the text, letter case aside, and in the header the
+  split button Add plugin, as the New session and New launch buttons of
+  Terminal mode: `+` opens **Add plugin…** with the URL field, the
+  chevron opens a menu of **Add plugin…** and **Add plugin from
+  folder…**. Main area: the page of the selected plugin: name, version,
   description, who reviewed it, authors, repository (a link that opens
   it), source; its parts, each with its kind, an on/off switch, its
   health ("Working", "Off", "Paused after three failures" with Try

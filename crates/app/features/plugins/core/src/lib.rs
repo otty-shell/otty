@@ -1,7 +1,8 @@
 //! Plugins mode of the OTTY app (spec 2026-11-19-agent-plugins,
 //! Decision 12, "Install and update flow", "UI changes"; issue 30): the
 //! installed plugins in the left panel with a search by name, Add
-//! plugin… by a GitHub link and Add plugin from folder…; the page of the
+//! plugin… by a GitHub link and, in the menu under its chevron, Add
+//! plugin from folder…; the page of the
 //! selected plugin in the main area with a switch for each of its parts,
 //! their permissions and health; the install dialog with the permissions
 //! of each part, the update dialog with the permission changes, and the
@@ -69,8 +70,12 @@ use iced::widget::Id;
 use iced::{Element, Subscription};
 use model::{DialogViewModel, MainViewModel, SidePanelViewModel};
 use otty_app_domain::plugins::PluginNotes;
-use otty_app_slots::{Component, MainArea, MainContent, Overlay, Overlays};
+use otty_app_slots::{
+    Component, MainArea, MainContent, Overlay, Overlays, SectionMessage,
+    SectionState,
+};
 use otty_app_theme::theme::ThemeProps;
+use otty_ui_kit::components::menu::Menu;
 use state::PluginsState;
 pub use types::{ListedPlugin, PartsToLoad, RunningPlugin};
 
@@ -112,14 +117,25 @@ impl Plugins {
     }
 
     /// Left panel of the mode under the switcher: the installed plugins,
-    /// the search and the two ways to add one.
+    /// the search and the Add plugin split button. Its plus sends
+    /// [`PluginsIntent::AddPlugin`]; its chevron sends
+    /// [`SectionMessage::OpenMenu`], and the frame opens
+    /// [`Plugins::add_menu`] and keeps whether it is open in `section`.
     pub fn left_panel<'a>(
         &'a self,
         theme: ThemeProps<'a>,
-    ) -> Element<'a, PluginsIntent> {
+        section: SectionState,
+    ) -> Element<'a, SectionMessage<PluginsIntent>> {
         let vm = SidePanelViewModel::from_state(&self.state);
 
-        view::side_panel::view(vm, theme.theme.ui())
+        view::side_panel::view(vm, section, theme.theme.ui())
+    }
+
+    /// The menu under the chevron of Add plugin: Add plugin… by a GitHub
+    /// link and Add plugin from folder…. The frame opens, places and
+    /// closes it, as the menus of the other section headers.
+    pub fn add_menu(&self, theme: ThemeProps<'_>) -> Menu<PluginsIntent> {
+        view::add_menu::menu(theme.theme.ui())
     }
 
     /// No dialog and nothing selected, with the installed plugins
@@ -222,7 +238,9 @@ mod tests {
             (),
         );
 
-        let mut panel = simulator(plugins.left_panel(theme));
+        let mut panel = simulator(
+            plugins.left_panel(theme, SectionState::new(true, false)),
+        );
         let mut main = simulator(plugins.main_area(theme).into_element(theme));
 
         assert!(panel.find("Example").is_ok());

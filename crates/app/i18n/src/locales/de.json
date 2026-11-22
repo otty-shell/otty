@@ -834,6 +834,7 @@
     "button_manage_plugins": "Plugins verwalten…",
     "plugins_add_plugin": "Plugin hinzufügen…",
     "plugins_add_from_folder": "Plugin aus Ordner hinzufügen…",
+    "plugins_add_menu": "Weitere Möglichkeiten, ein Plugin hinzuzufügen",
     "plugins_empty": "Keine Plugins installiert",
     "plugins_empty_hint": "Ein Plugin bringt OTTY bei, einen Agenten oder Anbieter zu lesen. Fügen Sie es aus seinem GitHub-Repository oder aus einem Ordner hinzu.",
     "plugins_section_installed": "Installiert",

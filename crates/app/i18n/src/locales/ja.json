@@ -834,6 +834,7 @@
     "button_manage_plugins": "プラグインを管理…",
     "plugins_add_plugin": "プラグインを追加…",
     "plugins_add_from_folder": "フォルダーからプラグインを追加…",
+    "plugins_add_menu": "プラグインのその他の追加方法",
     "plugins_empty": "インストール済みのプラグインはありません",
     "plugins_empty_hint": "プラグインは OTTY にエージェントやプロバイダーの読み方を教えます。GitHub リポジトリまたはフォルダーから追加してください。",
     "plugins_section_installed": "インストール済み",

@@ -1760,6 +1760,9 @@ pub enum Key {
     PluginsAddPlugin,
     /// Button of Plugins mode that adds a plugin from a local folder.
     PluginsAddFromFolder,
+    /// Tooltip of the chevron of Add plugin… in Plugins mode, which opens
+    /// the ways to add a plugin.
+    PluginsAddMenu,
     /// Title of Plugins mode with no plugin installed.
     PluginsEmpty,
     /// Line of Plugins mode with no plugin installed.
@@ -2007,7 +2010,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 939] = [
+    pub(super) const ALL: [Self; 940] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2827,6 +2830,7 @@ impl Key {
         Self::ButtonManagePlugins,
         Self::PluginsAddPlugin,
         Self::PluginsAddFromFolder,
+        Self::PluginsAddMenu,
         Self::PluginsEmpty,
         Self::PluginsEmptyHint,
         Self::PluginsSectionInstalled,

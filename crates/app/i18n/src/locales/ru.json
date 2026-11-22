@@ -834,6 +834,7 @@
     "button_manage_plugins": "Управлять плагинами…",
     "plugins_add_plugin": "Добавить плагин…",
     "plugins_add_from_folder": "Добавить плагин из папки…",
+    "plugins_add_menu": "Другие способы добавить плагин",
     "plugins_empty": "Плагины не установлены",
     "plugins_empty_hint": "Плагин учит OTTY читать агента или провайдера. Добавьте его из репозитория GitHub или из папки.",
     "plugins_section_installed": "Установленные",

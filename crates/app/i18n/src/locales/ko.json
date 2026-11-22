@@ -834,6 +834,7 @@
     "button_manage_plugins": "플러그인 관리…",
     "plugins_add_plugin": "플러그인 추가…",
     "plugins_add_from_folder": "폴더에서 플러그인 추가…",
+    "plugins_add_menu": "플러그인을 추가하는 다른 방법",
     "plugins_empty": "설치된 플러그인이 없습니다",
     "plugins_empty_hint": "플러그인은 OTTY가 에이전트나 제공자를 읽도록 합니다. GitHub 저장소나 폴더에서 추가하세요.",
     "plugins_section_installed": "설치됨",
