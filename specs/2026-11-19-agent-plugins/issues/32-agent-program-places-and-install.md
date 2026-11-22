@@ -1,6 +1,6 @@
 # 32 An agent part says where its program is installed and how to install it
 
-Status: open
+Status: done
 Blocked by: 30
 
 ## Why
@@ -45,3 +45,37 @@ nothing, and a tab that runs `opencode` would fail the same way.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-22, issue 32, done. An agent part's manifest may list
+  `program_places` (one file each, from `~`, a variable of its `env` or
+  `/`, no `..`, no pattern) and `[agents.agent.install]` with a `command`
+  (program and arguments) and/or an `https` `page`, at least one; both are
+  checked when the manifest is read (`ProgramPlace`, `ProgramInstall` in
+  `otty-plugin-manifest`). The order is the login shell's `PATH`, then the
+  first place that holds a program, else "program not found"
+  (`profile_list.rs`). The plugin agent tells its loaded plugin where it
+  found the program; from then on the plugin's calls that run it by its
+  name, or by that exact path in a found profile's command, start that
+  path with the permissions of the name (`ProgramPaths` of
+  `otty-plugin-host`), and OTTY starts it by that path for session tabs,
+  the commands of needs and the version check. "Program not found" names
+  the program and the places OTTY looked at; with an install command it
+  shows **Install <agent>**, the line says what it runs, and the page is a
+  second button; with only a page that page is the button; with neither,
+  no button. "Set the path of the program with Edit" is gone with its
+  key: Edit has no such field. Every need's tab and Log in now open as a
+  tab the feature watches, and closing it reads the profiles again.
+  Official plugins: OpenCode 0.1.1 (`~/.opencode/bin/opencode`, page
+  `https://opencode.ai/docs`), Anthropic 0.2.2 (`~/.local/bin/claude`,
+  page `https://docs.anthropic.com/en/docs/claude-code/setup`), OpenAI
+  0.2.2 (page `https://github.com/openai/codex`); no install command,
+  since none could be confirmed from the repository; the template shows
+  both fields. Tests: the fields and their refusals (manifest); a found
+  path runs by name or by that path and nothing else (host); a program at
+  a place is found and started by its full path for a session, a login
+  need and a found profile, the name wins when the shell finds it, and
+  nothing found is "program not found" (agents, over the template); the
+  need with the install button and the page, with only the page, and
+  with no button (core); the profiles are read again once a need's tab
+  closes (core, app). Spec ("The agent's program"), Write a Plugin, the
+  three plugin pages and READMEs follow.

@@ -19,6 +19,12 @@ a profile nobody is logged in with, and again when the provider part of
 another plugin refused a login OpenCode keeps, such as a ChatGPT login
 the `openai` part read.
 
+OpenCode's installer puts the program at `~/.opencode/bin/opencode`, a
+folder the login shell may not have on its `PATH`: the manifest lists it
+in `program_places`, so OTTY finds the program there and starts it by
+that path. When OpenCode is nowhere, the manifest's `install` gives
+OpenCode's page, `https://opencode.ai/docs`.
+
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
 made-up data folders: the files of `fixtures/`, which stand for the home

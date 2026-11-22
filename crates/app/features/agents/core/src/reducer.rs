@@ -303,6 +303,14 @@ pub(super) fn reduce(
             found_report::act(state, action)
         },
         AgentsIntent::FixNeed(action) => need::act(state, action),
+        AgentsIntent::FixTabOpened(tab_id) => {
+            state.watch_fix_tab(tab_id);
+            Vec::new()
+        },
+        AgentsIntent::TabClosed(tab_id) => match state.forget_fix_tab(tab_id) {
+            true => reads::load_profiles(state),
+            false => Vec::new(),
+        },
         AgentsIntent::ToggleAccountsSection => {
             state.toggle_accounts_section();
             Vec::new()
@@ -1266,7 +1274,7 @@ mod tests {
         assert!(is_editing);
         assert!(matches!(
             logged_in.as_slice(),
-            [AgentsOutcome::OpenTab { .. }]
+            [AgentsOutcome::OpenFixTab { .. }]
         ));
         assert_eq!(after_log_in, None);
         assert_eq!(open_menu(&state), None);

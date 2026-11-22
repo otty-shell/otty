@@ -151,7 +151,7 @@ pub(crate) fn read_error(
             let refused = RefusedLogin::new(part.named().clone());
             return SourceError::LoginRefused(Box::new(refused));
         },
-        ReadError::NeedsUser(need) => PartNeed::of_part(part.named(), need),
+        ReadError::NeedsUser(need) => PartNeed::of_called_part(part, need),
         _ => None,
     };
 

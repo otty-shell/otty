@@ -61,9 +61,21 @@ pub(crate) struct RawAgent {
     pub(crate) name: String,
     pub(crate) icon: Option<String>,
     pub(crate) program: Option<String>,
+    #[serde(default)]
+    pub(crate) program_places: Vec<String>,
     pub(crate) tested_version: Option<String>,
+    pub(crate) install: Option<RawInstall>,
     #[serde(default)]
     pub(crate) permissions: RawAgentPermissions,
+}
+
+/// `[agents.agent.install]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawInstall {
+    #[serde(default)]
+    pub(crate) command: Vec<String>,
+    pub(crate) page: Option<String>,
 }
 
 /// `[agents.agent.permissions]`.

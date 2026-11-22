@@ -65,6 +65,7 @@ mod plugin;
 mod plugin_failure;
 mod plugin_log;
 mod plugin_part;
+mod program_paths;
 mod programs;
 mod system_keyring;
 mod terminal;
@@ -75,8 +76,8 @@ pub use otty_plugin_manifest::{
     AgentPart, Api, Contract, ContractVersion, Domain, Environment,
     GlobProblem, JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest,
     ManifestError, PartKind, PartPermissions, PartRef, PathGlob,
-    PermissionLine, Permissions, PluginInfo, PluginVersion, ProgramRule,
-    ProviderPart,
+    PermissionLine, Permissions, PluginInfo, PluginVersion, ProgramInstall,
+    ProgramPlace, ProgramRule, ProviderPart,
 };
 /// The error wasmtime gives inside a call.
 pub use wasmtime::Error;

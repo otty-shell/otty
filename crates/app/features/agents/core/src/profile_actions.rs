@@ -32,7 +32,7 @@ pub(crate) fn log_in(
         return Vec::new();
     };
 
-    vec![AgentsOutcome::OpenTab {
+    vec![AgentsOutcome::OpenFixTab {
         title: profile.name().to_string(),
         folder: state.env().home().to_path_buf(),
         command: command.clone(),
@@ -131,7 +131,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, claude_work, codex, codex_work, connected, open_tab,
+        claude, claude_work, codex, codex_work, connected, open_fix_tab,
         profiles_loaded_from, with_saved_profiles,
     };
 
@@ -157,7 +157,7 @@ mod tests {
 
         assert_eq!(
             default,
-            vec![open_tab(
+            vec![open_fix_tab(
                 "Claude Code",
                 "/home/user",
                 AgentCommand::new("claude")
@@ -165,7 +165,7 @@ mod tests {
         );
         assert_eq!(
             added,
-            vec![open_tab(
+            vec![open_fix_tab(
                 "Codex · Work",
                 "/home/user",
                 AgentCommand::new("codex")

@@ -52,6 +52,8 @@ pub struct AgentEntry {
     name: String,
     icon: Option<Cow<'static, [u8]>>,
     program: String,
+    program_places: Vec<PathBuf>,
+    install: Option<AgentInstall>,
     provider_name: String,
     part: PluginPart,
     keyring_services: Vec<String>,
@@ -77,6 +79,18 @@ impl AgentEntry {
     /// The name of the agent's program, looked up on `PATH`.
     pub fn program(&self) -> &str {
         &self.program
+    }
+
+    /// The places on this computer the agent's official installer puts its
+    /// program, which OTTY checks when the login shell does not find it by
+    /// its name (issue 32).
+    pub fn program_places(&self) -> &[PathBuf] {
+        &self.program_places
+    }
+
+    /// How to install the agent's program, if its part says.
+    pub fn install(&self) -> Option<&AgentInstall> {
+        self.install.as_ref()
     }
 
     /// The company whose models the agent uses and whose API an API key
@@ -127,6 +141,8 @@ impl AgentEntry {
             name: name.into(),
             icon: None,
             program: program.into(),
+            program_places: Vec::new(),
+            install: None,
             provider_name: provider_name.into(),
             part,
             keyring_services: Vec::new(),
@@ -144,6 +160,60 @@ impl AgentEntry {
     pub fn with_keyring_services(mut self, services: Vec<String>) -> Self {
         self.keyring_services = services;
         self
+    }
+
+    /// The same entry whose program its installer puts at one of `places`.
+    pub fn with_program_places(mut self, places: Vec<PathBuf>) -> Self {
+        self.program_places = places;
+        self
+    }
+
+    /// The same entry whose program `install` installs.
+    pub fn with_install(mut self, install: AgentInstall) -> Self {
+        self.install = Some(install);
+        self
+    }
+}
+
+/// How to install an agent's program (issue 32): a command that runs in a
+/// terminal tab the user sees, a page about it, or both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentInstall {
+    command: Option<AgentCommand>,
+    page: Option<String>,
+}
+
+impl AgentInstall {
+    /// The command that installs the program; `None` when only a page is
+    /// given.
+    pub fn command(&self) -> Option<&AgentCommand> {
+        self.command.as_ref()
+    }
+
+    /// The `https` page about installing the program.
+    pub fn page(&self) -> Option<&str> {
+        self.page.as_deref()
+    }
+
+    /// The install by `command`, with the page `page`.
+    ///
+    /// ```
+    /// use otty_agents::{AgentCommand, AgentInstall};
+    ///
+    /// let install = AgentInstall::new(
+    ///     Some(
+    ///         AgentCommand::new("npm")
+    ///             .with_arg("i")
+    ///             .with_arg("-g")
+    ///             .with_arg("coder"),
+    ///     ),
+    ///     Some(String::from("https://example.com/docs")),
+    /// );
+    ///
+    /// assert_eq!(install.page(), Some("https://example.com/docs"));
+    /// ```
+    pub fn new(command: Option<AgentCommand>, page: Option<String>) -> Self {
+        Self { command, page }
     }
 }
 
@@ -247,6 +317,19 @@ pub trait Agent: Send + Sync {
     /// newest session of `profile`, such as "2.1.328". `None` when no
     /// session names one; the app then asks the program itself.
     fn version(&self, profile: &Profile) -> Option<String>;
+
+    /// OTTY found the agent's program at `place`, one of its
+    /// [`AgentEntry::program_places`], since the login shell does not find
+    /// it by its name; `None`: the shell finds it, or it is nowhere. An
+    /// agent that starts programs starts its own by that path from now on;
+    /// by default it is not told.
+    fn start_program_from(&self, _place: Option<PathBuf>) {}
+
+    /// The agent's program as OTTY starts it: its name, or the full path it
+    /// was found at (see [`Agent::start_program_from`]).
+    fn program_to_start(&self) -> String {
+        self.entry().program().to_string()
+    }
 
     /// Program, arguments and variables that start a new session, or
     /// continue `session` when it is given.

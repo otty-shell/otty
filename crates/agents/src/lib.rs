@@ -171,7 +171,9 @@ pub use crate::account_money::AccountMoney;
 pub use crate::account_numbers::{
     AccountNumbers, KeyPlace, own_reader_of, read_account_numbers,
 };
-pub use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder, agent_of};
+pub use crate::agent::{
+    Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder, agent_of,
+};
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, DayCost, read_bill};
 pub use crate::command::AgentCommand;

@@ -5,11 +5,11 @@
 
 use std::path::{Path, PathBuf};
 
-use otty_plugin_host::PluginPart;
 use otty_plugin_host::agents::agent::{
     Command as PartCommand, KeyAsk as PartKeyAsk, Need,
     NeedAction as PartAction,
 };
+use otty_plugin_host::{CalledPart, LoadedPlugin, PluginPart};
 
 use crate::command::AgentCommand;
 
@@ -71,7 +71,7 @@ impl PartNeed {
     ///
     /// ```
     /// use otty_agents::{PartNeed, PartNeedAction};
-    /// use otty_plugin_host::PluginPart;
+    /// use otty_plugin_host::{CalledPart, LoadedPlugin, PluginPart};
     ///
     /// let part = PluginPart::new("example", "Example", "0.1.0", "", "coder");
     /// let need = PartNeed::new(
@@ -132,6 +132,24 @@ impl PartNeed {
             need.text.as_str(),
             action,
         ))
+    }
+
+    /// The need `part` gave, as [`Self::of_part`] makes it, with a command
+    /// to run started the way the part's plugin starts its programs: an
+    /// agent's program found at a program place by its full path (issue
+    /// 32).
+    pub(crate) fn of_called_part(
+        part: &CalledPart,
+        need: &Need,
+    ) -> Option<Self> {
+        let mut shown = Self::of_part(part.named(), need)?;
+
+        if let PartNeedAction::Run(command) = &shown.action {
+            let program = part.plugin().program_to_start(command.program());
+            shown.action =
+                PartNeedAction::Run(command.clone().with_program(program));
+        }
+        Some(shown)
     }
 }
 
@@ -246,6 +264,18 @@ impl KeyAsk {
 
         ask_of_slot.with_prefix_and_page(ask.prefix.clone(), ask.page.clone())
     }
+}
+
+/// A part's command as the app runs it, started the way `plugin` starts
+/// its programs: an agent's program found at a program place by its full
+/// path (issue 32).
+pub(crate) fn started_command(
+    plugin: &LoadedPlugin,
+    command: &PartCommand,
+) -> AgentCommand {
+    let program = plugin.program_to_start(&command.program);
+
+    agent_command(command).with_program(program)
 }
 
 /// A part's command as the app runs it.

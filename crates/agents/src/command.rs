@@ -51,6 +51,13 @@ impl AgentCommand {
         self
     }
 
+    /// The same command, run by `program` instead, such as the full path
+    /// of the same program.
+    pub fn with_program(mut self, program: impl Into<String>) -> Self {
+        self.program = program.into();
+        self
+    }
+
     /// The same command with one more environment variable.
     pub fn with_env(
         mut self,

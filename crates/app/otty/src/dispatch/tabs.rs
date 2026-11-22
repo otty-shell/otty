@@ -3,6 +3,7 @@
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_agents::AgentsIntent;
 use otty_app_domain::quick_launch::WizardTabInit;
 use otty_app_modes::ModesIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
@@ -41,7 +42,8 @@ impl Delivery for TabsIntent {
             ]),
             // The terminals of the tab end, and the terminal decides on the
             // focus and the folder of the tab in front now. Quick launch
-            // forgets the launch editor of the tab.
+            // forgets the launch editor of the tab. Agents mode reads the
+            // profiles again when the tab fixed what a profile needs.
             TabsOutcome::Closed {
                 tab_id,
                 new_active_id,
@@ -60,6 +62,7 @@ impl Delivery for TabsIntent {
                         new_active_id,
                     },
                 ),
+                deliver(app, AgentsIntent::TabClosed(tab_id)),
             ]),
             // The shell starts, in the folder Files asked for, if any; once it
             // runs the terminal tells the modes widget, which may switch to

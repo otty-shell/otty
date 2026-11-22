@@ -96,7 +96,12 @@ id = "example-agent"            # saved by OTTY; never change it
 name = "Example Agent"
 icon = "example-agent.svg"
 program = "example-agent"       # looked up on PATH
+program_places = ["~/.example/bin/example-agent"]  # where its installer puts it, when PATH has not
 tested_version = "1.4.2"        # newest agent version this release was checked with
+
+[agents.agent.install]          # optional: offered when OTTY finds the program nowhere
+command = ["sh", "-c", "curl -fsSL https://example.com/install.sh | sh"]  # runs in a tab the user sees
+page = "https://example.com/docs/install"
 
 [agents.agent.permissions]
 read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
@@ -146,6 +151,26 @@ or embedded images, drawn in one color with `currentColor`. Every part needs its
 in `[api]`, and `[api]` may name no contract without a part, except `language`, which belongs to
 the whole plugin ([below](#the-language)). Unknown fields are refused, so a
 misspelt permission is never dropped silently.
+
+### The agent's program
+
+OTTY starts the agent's `program` through the user's login shell, the way a terminal tab starts it,
+so a program found on that shell's `PATH` is found. Some installers put the program in a folder the
+shell does not have on its `PATH`, such as `~/.opencode/bin/opencode`. List these places in
+`program_places`: each is one file, written from `~`, from a variable the part lists in `env`
+(`{XDG_DATA_HOME}/...`) or from `/`, with no `..` and no pattern. When the login shell does not find
+the program by its name, OTTY takes the first place that holds a program and starts the agent by
+that full path everywhere: session tabs, the commands of needs, the version check, and the programs
+and hidden terminals the plugin starts. The plugin still names the program by its name, and the
+permissions of that name apply; the command of a found profile a provider part is told of carries
+the full path, which the same permissions allow.
+
+When OTTY finds the program nowhere, the profile says "program not found", names the program and
+where OTTY looked. `[agents.agent.install]` says how to install it: `command` is a program and its
+arguments that OTTY runs in a terminal tab the user sees, behind the button "Install <agent>", and
+the line shows the command; `page` is an `https` page, shown as a second button, or as the only one
+when there is no command. Give at least one of them; with no `install` table there is no button.
+After the install tab closes, OTTY reads the profiles again.
 
 ## The code
 

@@ -11,6 +11,7 @@
 //! [`Environment`]: they answer whether that part may read a path, run a
 //! program, call a host or open a key place.
 
+mod agent_program;
 mod contract;
 mod environment;
 mod manifest;
@@ -21,6 +22,7 @@ mod permissions;
 mod testing;
 mod version;
 
+pub use crate::agent_program::{ProgramInstall, ProgramPlace};
 pub use crate::contract::{Api, Contract, ContractVersion, known_versions};
 pub use crate::environment::Environment;
 pub use crate::manifest::{

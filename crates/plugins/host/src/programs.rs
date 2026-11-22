@@ -21,7 +21,8 @@ pub struct ProgramCommand {
 }
 
 impl ProgramCommand {
-    /// The program: a name to look up as the user's shell finds it.
+    /// The program: a name to look up as the user's shell finds it, or the
+    /// full path OTTY found it at among the program places of its part.
     pub fn program(&self) -> &str {
         &self.program
     }

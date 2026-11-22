@@ -257,6 +257,13 @@ impl Agents {
         self.state.is_active()
     }
 
+    /// Return whether the tab `tab_id` fixes what a profile needs, such as
+    /// the install of an agent's program: once it closes, the profiles are
+    /// read again.
+    pub fn is_watching_tab(&self, tab_id: u64) -> bool {
+        self.state.is_fix_tab(tab_id)
+    }
+
     /// Return the agents OTTY knows. The binary gives them to the reads of
     /// `otty-app-agents-io`, so every read uses the same agents.
     pub fn known_agents(&self) -> &AgentList {

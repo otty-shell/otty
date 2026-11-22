@@ -20,8 +20,10 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// it. A default profile is left out when its folder does not exist and its
 /// program is not found either: then the agent is not installed.
 /// `is_program_found` says whether a program, given by its name, can be
-/// started; the app looks it up the way it starts it. An added
-/// profile of an agent not in `agents` is left out.
+/// started; the app looks it up the way it starts it. A program it does
+/// not find is looked for at the agent's program places too (see
+/// [`profile_status`]). An added profile of an agent not in `agents` is
+/// left out.
 ///
 /// Each profile knows whether its folder is the agent's default folder, so
 /// its commands set the agent's config folder variable only when it is
@@ -64,7 +66,7 @@ pub fn profiles(
         let profile = default_profile(agent.as_ref(), env, changes);
 
         let is_installed = profile.config_dir().is_dir()
-            || is_program_found(agent.entry().program());
+            || find_program(agent.as_ref(), &is_program_found);
         if is_installed {
             list.push(profile);
         }
@@ -85,10 +87,11 @@ pub fn profiles(
     list
 }
 
-/// The state of `profile` of `agent`. The agent's program is started by
-/// its name, so it must be found: `is_program_found` says whether a
-/// program, given by its name, can be started, the same way as for
-/// [`profiles`]. The agent checks the rest.
+/// The state of `profile` of `agent`. The agent's program must be found:
+/// `is_program_found` says whether a program, given by its name, can be
+/// started, the same way as for [`profiles`]; when it says no, the first of
+/// the agent's program places that holds a program is where it is, and the
+/// agent starts it from there (issue 32). The agent checks the rest.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -111,11 +114,57 @@ pub fn profile_status(
     profile: &Profile,
     is_program_found: impl Fn(&str) -> bool,
 ) -> ProfileStatus {
-    if !is_program_found(agent.entry().program()) {
+    if !find_program(agent, &is_program_found) {
         return ProfileStatus::ProgramNotFound;
     }
 
     agent.detect(profile)
+}
+
+/// Whether the program of `agent` can be started: the login shell finds
+/// it by its name (`is_found_by_name`), else it is at one of the agent's
+/// program places, the first that holds a program. The agent is told where
+/// it starts it from.
+fn find_program(
+    agent: &dyn Agent,
+    is_found_by_name: impl Fn(&str) -> bool,
+) -> bool {
+    let entry = agent.entry();
+    if is_found_by_name(entry.program()) {
+        agent.start_program_from(None);
+        return true;
+    }
+
+    let place = entry
+        .program_places()
+        .iter()
+        .find(|place| is_program_file(place))
+        .cloned();
+    let is_found = place.is_some();
+
+    agent.start_program_from(place);
+    is_found
+}
+
+/// Whether `path` is a file its owner, group or anyone may run.
+fn is_program_file(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 /// The default profile of `agent` with the user's `changes`, if any.
@@ -287,6 +336,8 @@ mod tests {
     use super::*;
     use crate::agent::AgentId;
     use crate::command::AgentCommand;
+    #[cfg(unix)]
+    use crate::testing::write_program;
     use crate::testing::{
         MockAgent, TempDir, mock_entry, test_agents, write_file,
     };
@@ -654,6 +705,93 @@ mod tests {
     #[test]
     fn a_profile_whose_program_is_not_found_says_so_before_any_check() {
         let mut agent = mock();
+        agent.expect_detect().never();
+
+        let status = profile_status(&agent, &mock_profile(), no_program);
+
+        assert_eq!(status, ProfileStatus::ProgramNotFound);
+    }
+
+    /// A made-up agent whose program `mock-agent` its installer puts at
+    /// one of `places`.
+    fn mock_with_places(places: Vec<PathBuf>) -> MockAgent {
+        let mut agent = MockAgent::new();
+        agent.expect_entry().return_const(
+            mock_entry("mock", "mock-agent").with_program_places(places),
+        );
+        agent
+    }
+
+    /// Issue 32: the login shell does not find `mock-agent` by its name,
+    /// but its installer put it at the second of its program places.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_at_a_program_place_is_found_when_the_shell_finds_nothing() {
+        let temp = TempDir::new();
+        let place = temp.path().join("bin/mock-agent");
+        write_program(&place);
+        let mut agent = mock_with_places(vec![
+            temp.path().join("missing/mock-agent"),
+            place,
+        ]);
+        agent
+            .expect_detect()
+            .return_const(ProfileStatus::NotLoggedIn(None));
+
+        let status = profile_status(&agent, &mock_profile(), no_program);
+
+        assert_eq!(status, ProfileStatus::NotLoggedIn(None));
+    }
+
+    /// Issue 32: a default profile with no folder is shown when its
+    /// program is at a program place.
+    #[cfg(unix)]
+    #[test]
+    fn a_default_profile_with_no_folder_is_shown_when_its_program_is_at_a_place()
+     {
+        let temp = TempDir::new();
+        let home = make_dir(&temp.path().join("home"));
+        let place = temp.path().join("opt/mock/bin/mock-agent");
+        write_program(&place);
+        let mut agent = mock_with_places(vec![place]);
+        agent
+            .expect_default_config_dir()
+            .return_const(home.join(".mock"));
+        agent.expect_config_folder().return_const(
+            crate::agent::ConfigFolder::new(".mock", "MOCK_HOME"),
+        );
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
+
+        let list = profiles(
+            &agents,
+            &env_in(&home),
+            &SavedProfiles::default(),
+            no_program,
+        );
+
+        assert_eq!(
+            list,
+            [Profile::default_for(
+                AgentId::new("mock"),
+                "mock",
+                home.join(".mock")
+            )]
+        );
+    }
+
+    /// Issue 32: a file that is not a program, or no file, at a program
+    /// place is no program.
+    #[cfg(unix)]
+    #[test]
+    fn a_place_with_no_program_finds_nothing() {
+        let temp = TempDir::new();
+        let not_a_program = temp.path().join("bin/mock-agent");
+        write_file(&not_a_program, "not a program");
+        let mut agent = mock_with_places(vec![
+            not_a_program,
+            temp.path().join("bin"),
+            temp.path().join("missing/mock-agent"),
+        ]);
         agent.expect_detect().never();
 
         let status = profile_status(&agent, &mock_profile(), no_program);

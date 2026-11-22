@@ -14,8 +14,9 @@
 //! about.
 
 use otty_agents::{
-    Account, AgentCommand, FormatChange, PartNeed, PartNeedAction, ProviderId,
-    RefusedLogin, SourceError, SourceFailure,
+    Account, AgentCommand, AgentEntry, AgentInstall, FormatChange, PartNeed,
+    PartNeedAction, ProfileStatus, ProviderId, RefusedLogin, SourceError,
+    SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
@@ -109,7 +110,7 @@ pub(crate) fn needs_of_profile(
 ) -> Vec<NeedViewModel> {
     profile_part_need(shown)
         .into_iter()
-        .chain(profile_need(shown))
+        .chain(profile_need(state, shown))
         .chain(format_changed_need(state, shown))
         .chain(profile_plugin_failed_needs(shown))
         .collect()
@@ -291,12 +292,28 @@ pub(crate) fn open_page_label(page: &str) -> String {
 }
 
 /// `command` as the user would type it, without its variables, such as
-/// `codex login`.
+/// `codex login` or `sh -c 'curl -fsSL https://example.com/install | sh'`.
 fn command_text(command: &AgentCommand) -> String {
     std::iter::once(command.program())
         .chain(command.args().iter().map(String::as_str))
+        .map(typed_word)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// `word` as the user would type it in a shell: as it is when it holds
+/// only letters, digits and `-_./:=@%+,~`, else in single quotes.
+fn typed_word(word: &str) -> String {
+    let is_plain = !word.is_empty()
+        && word
+            .chars()
+            .all(|char| char.is_alphanumeric() || "-_./:=@%+,~".contains(char));
+    if is_plain {
+        return word.to_string();
+    }
+
+    let quoted = word.replace('\'', r"'\''");
+    format!("'{quoted}'")
 }
 
 /// The login a provider refused in `failure`, when no agent part said
@@ -536,8 +553,16 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
 }
 
 /// The need of a profile whose agent's program or config folder OTTY can
-/// not find; it has no button.
-fn profile_need(shown: &ProfileState) -> Option<NeedViewModel> {
+/// not find. A missing folder has no button; a missing program offers the
+/// install its agent part gives.
+fn profile_need(
+    state: &AgentsState,
+    shown: &ProfileState,
+) -> Option<NeedViewModel> {
+    if *shown.status() == ProfileStatus::ProgramNotFound {
+        return Some(program_not_found_need(state, shown));
+    }
+
     let need = UserNeed::of(shown.status())?;
     let hint = need.hint()?;
 
@@ -549,6 +574,83 @@ fn profile_need(shown: &ProfileState) -> Option<NeedViewModel> {
         fix: None,
         extra: None,
     })
+}
+
+/// The need of a profile whose agent's program OTTY found neither on the
+/// `PATH` of the login shell nor at the program places of its agent part
+/// (issue 32): "OTTY did not find codex on the PATH of your login shell or
+/// at ~/.codex/bin/codex. [Install Codex] [Open example.com]". The install
+/// command runs in a terminal tab, and the line shows it; with only a page
+/// the button opens the page; with neither there is no button.
+fn program_not_found_need(
+    state: &AgentsState,
+    shown: &ProfileState,
+) -> NeedViewModel {
+    let agent = shown.profile().agent();
+    let entry = state.registry().agent(agent);
+    let name = state.agent_name(agent);
+    let program = entry.map_or(agent.as_str(), AgentEntry::program);
+    let places: Vec<String> = entry
+        .map(AgentEntry::program_places)
+        .unwrap_or_default()
+        .iter()
+        .map(|place| tilde_path(place, state.env().home()))
+        .collect();
+    let install = entry.and_then(AgentEntry::install);
+    let command = install.and_then(AgentInstall::command);
+    let page = install.and_then(AgentInstall::page);
+
+    let not_found = match places.is_empty() {
+        true => i18n::filled(
+            Key::TplAgentsNeedProgramNotFoundText,
+            &[("program", program)],
+        ),
+        false => i18n::filled(
+            Key::TplAgentsNeedProgramNotFoundAtPlacesText,
+            &[("program", program), ("places", &places.join(", "))],
+        ),
+    };
+    let line = match command {
+        Some(command) => {
+            let runs = i18n::filled(
+                Key::TplAgentsNeedInstallRuns,
+                &[("agent", name), ("command", &command_text(command))],
+            );
+            format!("{not_found} {runs}")
+        },
+        None => not_found,
+    };
+
+    let place = shown.profile().name().to_string();
+    let page_button = |page: &str| NeedFixViewModel {
+        label: open_page_label(page),
+        action: Some(NeedAction::OpenPage(page.to_string())),
+    };
+    let (fix, extra) = match command {
+        Some(command) => {
+            let install = NeedFixViewModel {
+                label: i18n::filled(
+                    Key::TplAgentsInstallAgent,
+                    &[("agent", name)],
+                ),
+                action: Some(NeedAction::Run {
+                    title: place.clone(),
+                    command: command.clone(),
+                }),
+            };
+            (Some(install), page.map(page_button))
+        },
+        None => (page.map(page_button), None),
+    };
+
+    NeedViewModel {
+        place,
+        plugin: None,
+        title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
+        line,
+        fix,
+        extra,
+    }
 }
 
 /// The need of a profile whose agent changed the format of its session
@@ -644,9 +746,12 @@ fn format_changed_title(agent: &str, change: &FormatChange) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        FormatChange, ProfileStatus, ProviderRef, SavedProfiles, SourceError,
+        AgentInstall, FormatChange, ProfileStatus, ProviderRef, SavedProfiles,
+        SourceError,
     };
     use otty_app_domain::plugins::{
         OffPart, PartSide, PluginNotes, WaitingUpdate,
@@ -660,9 +765,10 @@ mod tests {
     use crate::testing::{
         api_key, at, bill_loaded, chatgpt_login, claude, claude_work, codex,
         codex_work, connected, deepseek_key_by_host, limits_answer,
-        limits_loaded, organization, registry_without_deepseek,
-        saved_with_given_key, spend_loaded, spend_of, with_accounts,
-        with_accounts_in, with_profiles,
+        limits_loaded, organization, registry_with_codex,
+        registry_without_deepseek, saved_with_given_key, spend_loaded,
+        spend_of, with_accounts, with_accounts_in, with_profiles,
+        with_registry_and_profiles,
     };
     use crate::types::SpendCount;
 
@@ -744,12 +850,140 @@ mod tests {
                     place: String::from("Codex · Work"),
                     plugin: None,
                     title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
-                    line: i18n::t(Key::AgentsProgramNotFoundHint).to_string(),
+                    line: i18n::filled(
+                        Key::TplAgentsNeedProgramNotFoundText,
+                        &[("program", "codex")]
+                    ),
                     fix: None,
                     extra: None,
                 },
             ]
         );
+    }
+
+    /// The install the Codex part gives in the tests of issue 32.
+    fn install_command() -> AgentCommand {
+        AgentCommand::new("sh")
+            .with_arg("-c")
+            .with_arg("curl -fsSL https://example.com/install | sh")
+    }
+
+    /// The need of the default Codex profile, whose program OTTY did not
+    /// find, with the Codex entry `change` makes.
+    fn program_need(
+        change: impl Fn(otty_agents::AgentEntry) -> otty_agents::AgentEntry,
+    ) -> Vec<NeedViewModel> {
+        let state = with_registry_and_profiles(
+            registry_with_codex(change),
+            &[(codex(), ProfileStatus::ProgramNotFound)],
+        );
+
+        profile_needs(&state)
+    }
+
+    /// Issue 32: OTTY found the program nowhere, neither on the `PATH` of
+    /// the login shell nor at the places of its part. The need says so,
+    /// and its button installs the program with the command the part
+    /// gives, run in a terminal tab like any need's command, which the
+    /// line shows; the install page is a second button.
+    #[test]
+    fn a_program_found_nowhere_offers_the_install_its_part_gives() {
+        let needs = program_need(|entry| {
+            entry
+                .with_program_places(vec![
+                    PathBuf::from("/home/user/.codex/bin/codex"),
+                    PathBuf::from("/opt/codex/codex"),
+                ])
+                .with_install(AgentInstall::new(
+                    Some(install_command()),
+                    Some(String::from("https://example.com/docs")),
+                ))
+        });
+
+        let not_found = i18n::filled(
+            Key::TplAgentsNeedProgramNotFoundAtPlacesText,
+            &[
+                ("program", "codex"),
+                ("places", "~/.codex/bin/codex, /opt/codex/codex"),
+            ],
+        );
+        let runs = i18n::filled(
+            Key::TplAgentsNeedInstallRuns,
+            &[
+                ("agent", "Codex"),
+                (
+                    "command",
+                    "sh -c 'curl -fsSL https://example.com/install | sh'",
+                ),
+            ],
+        );
+        assert_eq!(
+            needs,
+            vec![NeedViewModel {
+                place: String::from("Codex"),
+                plugin: None,
+                title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
+                line: format!("{not_found} {runs}"),
+                fix: Some(NeedFixViewModel {
+                    label: i18n::filled(
+                        Key::TplAgentsInstallAgent,
+                        &[("agent", "Codex")]
+                    ),
+                    action: Some(NeedAction::Run {
+                        title: String::from("Codex"),
+                        command: install_command(),
+                    }),
+                }),
+                extra: Some(NeedFixViewModel {
+                    label: open_page_label("https://example.com/docs"),
+                    action: Some(NeedAction::OpenPage(String::from(
+                        "https://example.com/docs"
+                    ))),
+                }),
+            }]
+        );
+    }
+
+    /// Issue 32: a part that gives only the install page: the button opens
+    /// it.
+    #[test]
+    fn a_program_found_nowhere_with_only_an_install_page_opens_it() {
+        let needs = program_need(|entry| {
+            entry.with_install(AgentInstall::new(
+                None,
+                Some(String::from("https://example.com/docs")),
+            ))
+        });
+
+        assert_eq!(needs.len(), 1);
+        assert_eq!(
+            needs[0].line,
+            i18n::filled(
+                Key::TplAgentsNeedProgramNotFoundText,
+                &[("program", "codex")]
+            )
+        );
+        assert_eq!(
+            needs[0].fix,
+            Some(NeedFixViewModel {
+                label: open_page_label("https://example.com/docs"),
+                action: Some(NeedAction::OpenPage(String::from(
+                    "https://example.com/docs"
+                ))),
+            })
+        );
+        assert_eq!(needs[0].extra, None);
+    }
+
+    /// Issue 32: a part that says nothing about installing its program:
+    /// the need has no button.
+    #[test]
+    fn a_program_found_nowhere_with_no_install_has_no_button() {
+        let needs = program_need(|entry| entry);
+
+        assert_eq!(needs.len(), 1);
+        assert_eq!(needs[0].fix, None);
+        assert_eq!(needs[0].extra, None);
     }
 
     /// Issue 20: the need a part gives when no part could read the

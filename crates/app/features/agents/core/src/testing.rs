@@ -558,6 +558,39 @@ pub(crate) fn registry_with(entry: ProviderEntry) -> Arc<Registry> {
     Arc::new(Registry::new(registry.agents().to_vec(), providers))
 }
 
+/// The registry of the tests whose Codex entry is what `change` makes
+/// of it, such as one that says where its installer puts the program.
+pub(crate) fn registry_with_codex(
+    change: impl Fn(otty_agents::AgentEntry) -> otty_agents::AgentEntry,
+) -> Arc<Registry> {
+    let registry = test_registry();
+    let agents = registry
+        .agents()
+        .iter()
+        .map(|entry| match entry.id() == &codex_id() {
+            true => change(entry.clone()),
+            false => entry.clone(),
+        })
+        .collect();
+
+    Arc::new(Registry::new(agents, registry.providers().to_vec()))
+}
+
+/// Agents mode entered with the registry `registry`, with `profiles` read.
+pub(crate) fn with_registry_and_profiles(
+    registry: Arc<Registry>,
+    profiles: &[(Profile, ProfileStatus)],
+) -> AgentsState {
+    let mut state = AgentsState::new(agents(), registry, env());
+    let _ = reduce(&mut state, AgentsIntent::Enter);
+    let _ = reduce(
+        &mut state,
+        profiles_loaded_from(profiles, SavedProfiles::default()),
+    );
+
+    state
+}
+
 /// A made-up key for `api.deepseek.com` found in the settings of the
 /// Claude Code folder, as Claude Code with a DeepSeek base URL keeps it.
 pub(crate) fn deepseek_key_by_host() -> Account {
@@ -894,6 +927,20 @@ pub(crate) fn open_tab(
     command: AgentCommand,
 ) -> AgentsOutcome {
     AgentsOutcome::OpenTab {
+        title: String::from(title),
+        folder: PathBuf::from(folder),
+        command,
+    }
+}
+
+/// The tab that fixes what a profile needs: it runs `command` in `folder`
+/// and is titled `title`; once it closes, the profiles are read again.
+pub(crate) fn open_fix_tab(
+    title: &str,
+    folder: &str,
+    command: AgentCommand,
+) -> AgentsOutcome {
+    AgentsOutcome::OpenFixTab {
         title: String::from(title),
         folder: PathBuf::from(folder),
         command,

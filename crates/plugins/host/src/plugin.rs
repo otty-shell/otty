@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use otty_plugin_manifest::{
@@ -26,6 +27,7 @@ use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 use crate::pacing::LimitPacing;
 use crate::plugin_log::PluginLog;
+use crate::program_paths::ProgramPaths;
 
 /// A plugin loaded by a [`PluginEngine`](crate::PluginEngine), ready to be
 /// called part by part.
@@ -41,6 +43,7 @@ pub struct LoadedPlugin {
     stderr: OutputFile,
     starters: Starters,
     pacing: LimitPacing,
+    program_paths: Arc<ProgramPaths>,
 }
 
 impl LoadedPlugin {
@@ -104,6 +107,18 @@ impl LoadedPlugin {
         &self.pacing
     }
 
+    /// The programs of the plugin's agent parts that start by a full path.
+    pub(crate) fn program_paths(&self) -> &Arc<ProgramPaths> {
+        &self.program_paths
+    }
+
+    /// How OTTY starts the program `program` for this plugin: by the full
+    /// path it was found at (see [`Self::set_program_path`]), else by its
+    /// name.
+    pub fn program_to_start(&self, program: &str) -> String {
+        self.program_paths.to_start(program)
+    }
+
     pub(crate) fn new(
         shared: Arc<EngineShared>,
         manifest: Manifest,
@@ -139,7 +154,18 @@ impl LoadedPlugin {
             stderr,
             starters,
             pacing: LimitPacing::default(),
+            program_paths: Arc::new(ProgramPaths::default()),
         })
+    }
+
+    /// OTTY found the program `program` of an agent part of this plugin
+    /// at `path`, one of the part's program places, since the user's
+    /// login shell does not find it by its name (issue 32); `None`: the
+    /// shell finds it, or it is nowhere. From now on the plugin's calls
+    /// start it by that path, whether they ask by its name or by the path,
+    /// with the permissions of its name.
+    pub fn set_program_path(&self, program: &str, path: Option<PathBuf>) {
+        self.program_paths.set(program, path);
     }
 
     /// Starts a batch of calls into the part `part`: they run with that

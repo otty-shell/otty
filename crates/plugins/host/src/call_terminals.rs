@@ -12,6 +12,7 @@ use crate::call_programs::{
     RUNNING_CAP, checked_command, free_slot, host_error,
 };
 use crate::operations::v0_1::otty::host::types::HostError;
+use crate::program_paths::ProgramPaths;
 use crate::programs::ProgramError;
 use crate::terminal::{RunningTerminal, ScreenOutput, StartTerminal};
 
@@ -34,6 +35,7 @@ pub struct TerminalHandle {
 pub(crate) struct CallTerminals {
     starter: Option<Arc<dyn StartTerminal>>,
     permissions: Arc<Permissions>,
+    paths: Arc<ProgramPaths>,
     call: u64,
     terminals: Vec<Option<Terminal>>,
     has_started: bool,
@@ -46,14 +48,18 @@ impl CallTerminals {
     }
 
     /// The hidden terminals of the calls of a part with `permissions`,
-    /// started by `starter`; with none, every terminal is refused.
+    /// started by `starter`, the programs found at a program place by
+    /// their full path in `paths`; with no starter, every terminal is
+    /// refused.
     pub(crate) fn new(
         starter: Option<Arc<dyn StartTerminal>>,
         permissions: Arc<Permissions>,
+        paths: Arc<ProgramPaths>,
     ) -> Self {
         Self {
             starter,
             permissions,
+            paths,
             call: 0,
             terminals: Vec::new(),
             has_started: false,
@@ -82,9 +88,16 @@ impl CallTerminals {
         cols: u16,
         rows: u16,
     ) -> Result<TerminalHandle, HostError> {
-        let may_start = self.permissions.may_start_terminal(program, args);
-        let command =
-            checked_command(&self.permissions, may_start, program, args, env)?;
+        let name = self.paths.name_of(program);
+        let may_start = self.permissions.may_start_terminal(&name, args);
+        let command = checked_command(
+            &self.permissions,
+            may_start,
+            program,
+            &self.paths.to_start(&name),
+            args,
+            env,
+        )?;
         if !(1..=MAX_COLS).contains(&cols) || !(1..=MAX_ROWS).contains(&rows) {
             return Err(HostError::TooBig(format!(
                 "a hidden terminal is 1 to {MAX_COLS} columns by 1 to \
@@ -276,6 +289,7 @@ fn no_starter() -> HostError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     use otty_plugin_manifest::Environment;
@@ -292,7 +306,41 @@ mod tests {
         CallTerminals::new(
             Some(Arc::new(starter)),
             programs_permissions("test-agent", &env()),
+            Arc::new(ProgramPaths::default()),
         )
+    }
+
+    /// Issue 32: a provider part starts the agent with the command of the
+    /// profile it was told of, which names the full path OTTY found the
+    /// agent's program at; the permission of its name applies.
+    #[test]
+    fn a_program_found_at_a_place_starts_by_its_full_path() {
+        const FOUND: &str = "/home/test-user/.stand-in/bin/stand-in";
+        let paths = Arc::new(ProgramPaths::default());
+        paths.set("stand-in", Some(PathBuf::from(FOUND)));
+        let mut terminal = MockRunningTerminal::new();
+        terminal.expect_stop().return_const(());
+        let mut starter = MockStartTerminal::new();
+        starter
+            .expect_start()
+            .withf(|command, _, _| command.program() == FOUND)
+            .times(1)
+            .return_once(move |_, _, _| Ok(Box::new(terminal)));
+        let mut terminals = CallTerminals::new(
+            Some(Arc::new(starter)),
+            programs_permissions("test-agent", &env()),
+            paths,
+        );
+
+        let by_path = terminals.start(FOUND, &strings(&["tui"]), &[], 100, 40);
+        let other =
+            terminals.start("/tmp/stand-in", &strings(&["tui"]), &[], 100, 40);
+
+        assert!(by_path.is_ok(), "{by_path:?}");
+        assert_same(
+            other,
+            Err(HostError::NotAllowed("/tmp/stand-in".to_string())),
+        );
     }
 
     /// A starter of one terminal that shows `screens` one after the other
@@ -526,6 +574,7 @@ mod tests {
         let terminals = CallTerminals::new(
             Some(Arc::new(starter)),
             programs_permissions("other-agent", &env()),
+            Arc::new(ProgramPaths::default()),
         );
 
         let folders = terminals.working_folders();
@@ -543,6 +592,7 @@ mod tests {
         let mut terminals = CallTerminals::new(
             None,
             programs_permissions("test-agent", &env()),
+            Arc::new(ProgramPaths::default()),
         );
 
         let terminal =

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use otty_plugin_manifest::Permissions;
 
 use crate::operations::v0_1::otty::host::types::HostError;
+use crate::program_paths::ProgramPaths;
 use crate::programs::{
     LineOutput, ProgramCommand, ProgramError, RunOutput, RunningProgram,
     StartProgram,
@@ -38,6 +39,7 @@ pub struct TalkHandle {
 pub(crate) struct CallPrograms {
     starter: Option<Arc<dyn StartProgram>>,
     permissions: Arc<Permissions>,
+    paths: Arc<ProgramPaths>,
     call: u64,
     talks: Vec<Option<Talk>>,
     has_started: bool,
@@ -50,14 +52,17 @@ impl CallPrograms {
     }
 
     /// The programs of the calls of a part with `permissions`, started by
-    /// `starter`; with none, every program is refused.
+    /// `starter`, those found at a program place by their full path in
+    /// `paths`; with no starter, every program is refused.
     pub(crate) fn new(
         starter: Option<Arc<dyn StartProgram>>,
         permissions: Arc<Permissions>,
+        paths: Arc<ProgramPaths>,
     ) -> Self {
         Self {
             starter,
             permissions,
+            paths,
             call: 0,
             talks: Vec::new(),
             has_started: false,
@@ -85,9 +90,16 @@ impl CallPrograms {
         env: &[(String, String)],
         timeout: Duration,
     ) -> Result<RunOutput, HostError> {
-        let may_run = self.permissions.may_run(program, args);
-        let command =
-            checked_command(&self.permissions, may_run, program, args, env)?;
+        let name = self.paths.name_of(program);
+        let may_run = self.permissions.may_run(&name, args);
+        let command = checked_command(
+            &self.permissions,
+            may_run,
+            program,
+            &self.paths.to_start(&name),
+            args,
+            env,
+        )?;
         let starter = self.starter()?;
 
         self.has_started = true;
@@ -114,9 +126,16 @@ impl CallPrograms {
         args: &[String],
         env: &[(String, String)],
     ) -> Result<TalkHandle, HostError> {
-        let may_run = self.permissions.may_run(program, args);
-        let command =
-            checked_command(&self.permissions, may_run, program, args, env)?;
+        let name = self.paths.name_of(program);
+        let may_run = self.permissions.may_run(&name, args);
+        let command = checked_command(
+            &self.permissions,
+            may_run,
+            program,
+            &self.paths.to_start(&name),
+            args,
+            env,
+        )?;
         if self.talks.iter().flatten().count() >= RUNNING_CAP {
             return Err(HostError::Failed(format!(
                 "a call may talk to at most {RUNNING_CAP} programs at once"
@@ -255,19 +274,20 @@ struct Talk {
     deadline: Instant,
 }
 
-/// The command of `program` with `args` and the variables `env`, once the
-/// called part may start it (`allowed`) and lists every variable in `env`.
-/// A variable it does not list is refused, so it never reaches the
-/// program.
+/// The command that starts the program the part asked for as `asked`
+/// by `started`, with `args` and the variables `env`, once the called part
+/// may start it (`allowed`) and lists every variable in `env`. A variable
+/// it does not list is refused, so it never reaches the program.
 pub(crate) fn checked_command(
     permissions: &Permissions,
     allowed: bool,
-    program: &str,
+    asked: &str,
+    started: &str,
     args: &[String],
     env: &[(String, String)],
 ) -> Result<ProgramCommand, HostError> {
     if !allowed {
-        return Err(HostError::NotAllowed(program.to_string()));
+        return Err(HostError::NotAllowed(asked.to_string()));
     }
     if let Some((name, _)) =
         env.iter().find(|(name, _)| !permissions.may_read_var(name))
@@ -275,7 +295,7 @@ pub(crate) fn checked_command(
         return Err(HostError::NotAllowed(format!("variable {name}")));
     }
 
-    Ok(ProgramCommand::new(program, args, env))
+    Ok(ProgramCommand::new(started, args, env))
 }
 
 /// `error` of `program` in the words of a host error.
@@ -301,6 +321,7 @@ pub(crate) fn free_slot<T>(slots: &mut Vec<Option<T>>) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     use mockall::predicate::always;
@@ -318,6 +339,7 @@ mod tests {
         CallPrograms::new(
             Some(Arc::new(starter)),
             programs_permissions("test-agent", &env()),
+            Arc::new(ProgramPaths::default()),
         )
     }
 
@@ -386,6 +408,55 @@ mod tests {
         assert!(programs.has_started());
     }
 
+    /// Issue 32: the login shell does not find `stand-in` by its name,
+    /// but OTTY found it at a program place of the part. The part asks
+    /// for it by its name or by that full path, the permission of the
+    /// name applies, and it runs by the full path; any other path is
+    /// refused.
+    #[test]
+    fn a_program_found_at_a_place_runs_by_its_full_path() {
+        const FOUND: &str = "/home/test-user/.stand-in/bin/stand-in";
+        let paths = Arc::new(ProgramPaths::default());
+        paths.set("stand-in", Some(PathBuf::from(FOUND)));
+        let mut starter = MockStartProgram::new();
+        starter
+            .expect_run()
+            .withf(|command, _, _| {
+                command.program() == FOUND && command.args() == ["--version"]
+            })
+            .times(2)
+            .returning(|_, _, _| Ok(RunOutput::default()));
+        starter
+            .expect_start()
+            .withf(|command| command.program() == FOUND)
+            .times(1)
+            .return_once(|_| {
+                let mut program = MockRunningProgram::new();
+                program.expect_stop().return_const(());
+                Ok(Box::new(program))
+            });
+        let mut programs = CallPrograms::new(
+            Some(Arc::new(starter)),
+            programs_permissions("test-agent", &env()),
+            paths,
+        );
+        let version = strings(&["--version"]);
+
+        let by_name = programs.run("stand-in", &version, &[], RUN_TIME_CAP);
+        let by_path = programs.run(FOUND, &version, &[], RUN_TIME_CAP);
+        let other = programs.run("/tmp/stand-in", &version, &[], RUN_TIME_CAP);
+        let serve = strings(&["serve", "--profile", "work"]);
+        let talk = programs.start_talk("stand-in", &serve, &[]);
+
+        assert!(by_name.is_ok(), "{by_name:?}");
+        assert!(by_path.is_ok(), "{by_path:?}");
+        assert_same(
+            other,
+            Err(HostError::NotAllowed("/tmp/stand-in".to_string())),
+        );
+        assert!(talk.is_ok(), "{talk:?}");
+    }
+
     #[test]
     fn an_undeclared_program_or_argument_is_refused_and_nothing_starts() {
         let mut starter = MockStartProgram::new();
@@ -428,6 +499,7 @@ mod tests {
         let mut as_other_agent = CallPrograms::new(
             Some(Arc::new(other_starter)),
             programs_permissions("other-agent", &env()),
+            Arc::new(ProgramPaths::default()),
         );
 
         let refused = as_test_agent.run(
@@ -542,8 +614,11 @@ mod tests {
 
     #[test]
     fn no_starter_starts_nothing() {
-        let mut programs =
-            CallPrograms::new(None, programs_permissions("test-agent", &env()));
+        let mut programs = CallPrograms::new(
+            None,
+            programs_permissions("test-agent", &env()),
+            Arc::new(ProgramPaths::default()),
+        );
 
         let output = programs.run(
             "stand-in",

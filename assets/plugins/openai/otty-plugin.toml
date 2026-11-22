@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.1"
+version = "0.2.2"
 description = "Codex profiles, logins, sessions and tokens; ChatGPT limits and credits, from OpenAI or from Codex; OpenAI organization costs."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -24,6 +24,11 @@ name = "Codex"
 icon = "codex.svg"
 program = "codex"
 tested_version = "0.169.0"
+
+# Offered when OTTY finds the program nowhere: the repository of Codex,
+# which says how to install it.
+[agents.agent.install]
+page = "https://github.com/openai/codex"
 
 # Apply only while a function of this part runs. `CODEX_HOME` moves the
 # default config folder.

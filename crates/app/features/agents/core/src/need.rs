@@ -16,8 +16,9 @@ use super::{add_account_dialog, keyring};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NeedAction {
     /// Run the command a plugin part gave in a terminal tab titled
-    /// `title`, in the home folder, such as the agent's login or the agent
-    /// itself, which renews its login.
+    /// `title`, in the home folder, such as the agent's login, the agent
+    /// itself, which renews its login, or the install of its program. The
+    /// profiles are read again once the tab closes.
     Run {
         /// The title of the tab: the account or the profile of the need.
         title: String,
@@ -59,7 +60,7 @@ pub(crate) fn act(
     action: NeedAction,
 ) -> Vec<AgentsOutcome> {
     match action {
-        NeedAction::Run { title, command } => vec![AgentsOutcome::OpenTab {
+        NeedAction::Run { title, command } => vec![AgentsOutcome::OpenFixTab {
             title,
             folder: state.env().home().to_path_buf(),
             command,
@@ -95,7 +96,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, connected, key_ask, open_tab, organization,
+        api_key, claude, codex, connected, key_ask, open_fix_tab, organization,
         with_accounts, with_saved_profiles,
     };
 
@@ -126,8 +127,36 @@ mod tests {
 
         assert_eq!(
             outcomes,
-            vec![open_tab("Codex · Work", "/home/user", login)]
+            vec![open_fix_tab("Codex · Work", "/home/user", login)]
         );
+    }
+
+    /// Issue 32: once the tab of a need closes, such as the install of
+    /// the agent's program or its login, the profiles are read again, so
+    /// a program just installed is found; another tab that closes reads
+    /// nothing.
+    #[test]
+    fn the_profiles_are_read_again_once_the_tab_of_a_need_closes() {
+        let mut state = with_saved_profiles(
+            &[(codex(), otty_agents::ProfileStatus::ProgramNotFound)],
+            report_shown(),
+        );
+        let _ = reduce(&mut state, AgentsIntent::FixTabOpened(7));
+
+        let other = reduce(&mut state, AgentsIntent::TabClosed(3));
+        let fix = reduce(&mut state, AgentsIntent::TabClosed(7));
+        let _ = reduce(
+            &mut state,
+            crate::testing::profiles_loaded(&[(
+                codex(),
+                otty_agents::ProfileStatus::ProgramNotFound,
+            )]),
+        );
+        let again = reduce(&mut state, AgentsIntent::TabClosed(7));
+
+        assert_eq!(other, []);
+        assert_eq!(fix, [AgentsOutcome::LoadProfiles]);
+        assert_eq!(again, []);
     }
 
     /// Issue 20: the key a part asks for opens its dialog, for the

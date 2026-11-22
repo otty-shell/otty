@@ -11,17 +11,19 @@ use otty_plugin_host::agents::agent::{
     Billing as PartBilling, Login, LoginKind, ProfilePlace,
     ProfileStatus as PartStatus,
 };
-use otty_plugin_host::{CalledPart, LoadedPlugin, PartHealth, PartRef};
+use otty_plugin_host::{
+    AgentPart, CalledPart, LoadedPlugin, PartHealth, PartRef, ProgramInstall,
+};
 
 use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
 };
-use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
+use crate::agent::{Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::BillingKind;
-use crate::part_need::{PartNeed, agent_command};
+use crate::part_need::{PartNeed, started_command};
 use crate::plugin_sources::PluginSessions;
 use crate::plugin_spend::PluginSpend;
 use crate::plugin_values::{part_profile, provider_of};
@@ -88,7 +90,12 @@ impl PluginAgent {
             part.named().name(),
             part.named().clone(),
         )
-        .with_keyring_services(keyring_services);
+        .with_keyring_services(keyring_services)
+        .with_program_places(program_places(&manifest_part, part.plugin()));
+        let entry = match manifest_part.install() {
+            Some(install) => entry.with_install(agent_install(install)),
+            None => entry,
+        };
         let folder_variable = manifest_part
             .permissions()
             .env()
@@ -195,7 +202,7 @@ impl Agent for PluginAgent {
                 ProfileStatus::ConfigDirNotFound
             },
             Ok(PartStatus::NotLoggedIn(need)) => ProfileStatus::NotLoggedIn(
-                PartNeed::of_part(self.part.named(), &need)
+                PartNeed::of_called_part(&self.part, &need)
                     .map(|need| need.about_profile(profile.config_dir()))
                     .map(Box::new),
             ),
@@ -235,7 +242,7 @@ impl Agent for PluginAgent {
         });
 
         let need = need.ok().flatten()?;
-        PartNeed::of_part(self.part.named(), &need)
+        PartNeed::of_called_part(&self.part, &need)
             .map(|need| need.about_profile(profile.config_dir()))
     }
 
@@ -268,9 +275,21 @@ impl Agent for PluginAgent {
             .read("launch", |batch| batch.agent()?.launch(&asked, session));
 
         match command {
-            Ok(command) => agent_command(&command),
-            Err(_) => AgentCommand::new(self.entry.program()),
+            Ok(command) => started_command(self.part.plugin(), &command),
+            Err(_) => AgentCommand::new(self.program_to_start()),
         }
+    }
+
+    /// Calls of every part of the plugin that start the program now start
+    /// it from `place`.
+    fn start_program_from(&self, place: Option<PathBuf>) {
+        self.part
+            .plugin()
+            .set_program_path(self.entry.program(), place);
+    }
+
+    fn program_to_start(&self) -> String {
+        self.part.plugin().program_to_start(self.entry.program())
     }
 
     fn session_sources(&self) -> Vec<Box<dyn SessionSource>> {
@@ -382,6 +401,26 @@ fn is_same_provider(found: &ProviderRef, account: &Account) -> bool {
         || account.provider().as_host().is_some()
 }
 
+/// The program places of `part` on the computer `plugin` sees.
+fn program_places(part: &AgentPart, plugin: &LoadedPlugin) -> Vec<PathBuf> {
+    part.program_places()
+        .iter()
+        .filter_map(|place| place.path_on(plugin.env()))
+        .collect()
+}
+
+/// How the manifest says the agent's program is installed.
+fn agent_install(install: &ProgramInstall) -> AgentInstall {
+    let command = install.command().split_first().map(|(program, args)| {
+        args.iter()
+            .fold(AgentCommand::new(program.as_str()), |command, arg| {
+                command.with_arg(arg.as_str())
+            })
+    });
+
+    AgentInstall::new(command, install.page().map(String::from))
+}
+
 /// How a part says a login is paid for.
 fn billing_kind(billing: PartBilling) -> BillingKind {
     match billing {
@@ -394,9 +433,13 @@ fn billing_kind(billing: PartBilling) -> BillingKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile_list::profiles;
+    use crate::part_need::PartNeedAction;
+    use crate::plugin_values::found_profile;
+    use crate::profile_list::{profile_status, profiles};
     use crate::saved_profiles::SavedProfiles;
     use crate::testing::{NOW, TemplateHome, answer_line, meta_line};
+    #[cfg(unix)]
+    use crate::testing::{write_file, write_program};
 
     const AGENT: &str = "example-agent";
 
@@ -493,6 +536,99 @@ mod tests {
             )]
         );
         assert!(login.is_some_and(|login| login.kind == LoginKind::ApiKey));
+    }
+
+    /// Issue 32: the places and the install come from the manifest, the
+    /// places made concrete for this home.
+    #[test]
+    fn the_entry_has_the_program_places_and_the_install_of_the_manifest() {
+        let home = TemplateHome::new();
+
+        let agent = agent(&home);
+
+        let entry = agent.entry();
+        assert_eq!(
+            entry.program_places(),
+            [home.home().join(".example/bin/example-agent")]
+        );
+        let install = entry.install().expect("an install");
+        assert_eq!(
+            install.command(),
+            Some(
+                &AgentCommand::new("sh")
+                    .with_arg("-c")
+                    .with_arg("curl -fsSL https://example.com/install.sh | sh")
+            )
+        );
+        assert_eq!(install.page(), Some("https://example.com/docs/install"));
+    }
+
+    /// Issue 32: the login shell does not find `example-agent`, but the
+    /// installer put it at `~/.example/bin/example-agent`. OTTY finds it
+    /// there and starts it by that path for a session, for the login a
+    /// need runs and for the version; a provider part is told of the
+    /// profile with that command.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_at_a_program_place_is_started_by_its_full_path() {
+        let home = TemplateHome::new();
+        let place = home.home().join(".example/bin/example-agent");
+        write_program(&place);
+        let logged_out = home.home().join(".example-agent-work");
+        write_file(&logged_out.join("state.json"), "{}");
+        let work = Profile::found(AgentId::new(AGENT), "Work", logged_out);
+        let agent = agent(&home);
+        let full_path = place.display().to_string();
+
+        let status = profile_status(&agent, &home.profile(), |_| false);
+        let launch = agent.launch(&home.profile(), None);
+        let need = agent.detect(&work);
+        let found = found_profile(&agent, &home.profile());
+
+        assert!(matches!(status, ProfileStatus::Connected { .. }));
+        assert_eq!(launch.program(), full_path);
+        assert_eq!(agent.program_to_start(), full_path);
+        let ProfileStatus::NotLoggedIn(Some(need)) = need else {
+            panic!("a login need, not {need:?}");
+        };
+        let PartNeedAction::Run(login) = need.action() else {
+            panic!("a command to run, not {:?}", need.action());
+        };
+        assert_eq!(login.program(), full_path);
+        assert_eq!(login.args(), ["login"]);
+        assert_eq!(found.launch.program, full_path);
+    }
+
+    /// Issue 32: the name comes first: a program the login shell finds is
+    /// started by its name, even with a copy at a program place.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_the_login_shell_finds_is_started_by_its_name() {
+        let home = TemplateHome::new();
+        write_program(&home.home().join(".example/bin/example-agent"));
+        let agent = agent(&home);
+        let _ = profile_status(&agent, &home.profile(), |_| false);
+
+        let status = profile_status(&agent, &home.profile(), |program| {
+            program == "example-agent"
+        });
+
+        assert!(matches!(status, ProfileStatus::Connected { .. }));
+        assert_eq!(agent.launch(&home.profile(), None).program(), AGENT);
+        assert_eq!(agent.program_to_start(), AGENT);
+    }
+
+    /// Issue 32: with no program at its places either, the profile says
+    /// its program is not found, and nothing starts by a path.
+    #[test]
+    fn a_program_found_nowhere_is_not_found() {
+        let home = TemplateHome::new();
+        let agent = agent(&home);
+
+        let status = profile_status(&agent, &home.profile(), |_| false);
+
+        assert_eq!(status, ProfileStatus::ProgramNotFound);
+        assert_eq!(agent.program_to_start(), AGENT);
     }
 
     #[test]

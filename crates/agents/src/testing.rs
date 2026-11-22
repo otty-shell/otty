@@ -382,6 +382,17 @@ pub(crate) fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("write test file");
 }
 
+/// Writes a made-up program to `path` that only ends, which its owner
+/// may run, creating the folders on the way.
+#[cfg(unix)]
+pub(crate) fn write_program(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    write_file(path, "#!/bin/sh\nexit 0\n");
+    let permissions = std::fs::Permissions::from_mode(0o755);
+    std::fs::set_permissions(path, permissions).expect("make it a program");
+}
+
 /// The time `seconds` after the epoch.
 pub(crate) fn at(seconds: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)

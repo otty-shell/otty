@@ -70,7 +70,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, connected, open_tab, organization,
+        api_key, claude, codex, connected, open_fix_tab, organization,
         profiles_loaded_from, profiles_loaded_with_problem, with_accounts,
         with_saved_profiles,
     };
@@ -208,7 +208,7 @@ mod tests {
             outcomes,
             vec![
                 save_shown(),
-                open_tab(
+                open_fix_tab(
                     "Codex",
                     "/home/user",
                     AgentCommand::new("codex").with_arg("login")

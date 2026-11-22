@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official · version 0.2.0 · install it from `assets/plugins/anthropic/` of the OTTY repository with
+Official · version 0.2.2 · install it from `assets/plugins/anthropic/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)); its own
 repository will be `github.com/otty-shell/otty-plugin-anthropic`
 
@@ -34,6 +34,7 @@ admin key, else an [estimate](../../overview/#the-money).
 | Variables      | `CLAUDE_CONFIG_DIR`.                                                                                  |
 | Runs           | Nothing.                                                                                              |
 | Sends          | Nothing.                                                                                              |
+| Program        | `claude`, found on the `PATH` of your login shell or where the native installer puts it, `~/.local/bin/claude`; OTTY then starts it by that path, also for `/usage`. Found nowhere, the profile shows "program not found" with **Open docs.anthropic.com**, the setup page of Claude Code. |
 | Commands       | New session `claude`, continue `claude --resume <id>`, Log in `claude`.                                |
 
 A key with `ANTHROPIC_BASE_URL` set is a key for that server's host, not for Anthropic: with

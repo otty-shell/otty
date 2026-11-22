@@ -7,6 +7,7 @@ pub(crate) mod raw;
 
 use std::collections::BTreeSet;
 
+use crate::agent_program::{ProgramInstall, ProgramPlace};
 use crate::contract::Api;
 pub use crate::manifest::error::ManifestError;
 use crate::manifest::raw::{RawAgent, RawManifest, RawPlugin, RawProvider};
@@ -254,7 +255,9 @@ pub struct AgentPart {
     name: String,
     icon: String,
     program: Option<String>,
+    program_places: Vec<ProgramPlace>,
     tested_version: Option<String>,
+    install: Option<ProgramInstall>,
     permissions: PartPermissions,
 }
 
@@ -280,6 +283,17 @@ impl AgentPart {
         self.program.as_deref()
     }
 
+    /// The places the agent's official installer puts its program, which
+    /// OTTY checks when the login shell does not find it by its name.
+    pub fn program_places(&self) -> &[ProgramPlace] {
+        &self.program_places
+    }
+
+    /// How to install the agent's program, if the part says.
+    pub fn install(&self) -> Option<&ProgramInstall> {
+        self.install.as_ref()
+    }
+
     /// The newest agent version this release was checked with.
     pub fn tested_version(&self) -> Option<&str> {
         self.tested_version.as_deref()
@@ -301,13 +315,40 @@ impl AgentPart {
         check_part_id(&part)?;
         check_name(&raw.name, &part)?;
         let icon = checked_icon(raw.icon.as_deref(), &part)?;
+        let program_places = raw
+            .program_places
+            .iter()
+            .map(|place| {
+                ProgramPlace::parse(place, &raw.permissions.env).map_err(
+                    |problem| ManifestError::BadPart {
+                        part: part.clone(),
+                        reason: format!(
+                            "has the program place `{place}`, which {problem}"
+                        ),
+                    },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let install = raw
+            .install
+            .as_ref()
+            .map(|install| {
+                ProgramInstall::new(&install.command, install.page.as_deref())
+            })
+            .transpose()
+            .map_err(|reason| ManifestError::BadPart {
+                part: part.clone(),
+                reason,
+            })?;
 
         Ok(Self {
             id: raw.id.clone(),
             name: raw.name.clone(),
             icon,
             program: raw.program.clone(),
+            program_places,
             tested_version: raw.tested_version.clone(),
+            install,
             permissions: PartPermissions::of_agent(&raw.permissions, &part)?,
         })
     }
@@ -483,6 +524,7 @@ fn is_plain_file_name(name: &str, extension: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_program::ProgramPlace;
     use crate::path_glob::GlobProblem;
     use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST, edited};
 
@@ -857,6 +899,129 @@ sqlite = ["~/.codex/state.db"]"#,
         ));
 
         assert!(matches!(error, ManifestError::BadHost { .. }));
+    }
+
+    /// Issue 32: OpenCode's installer puts the program in a folder the
+    /// login shell may not have on its `PATH`.
+    fn with_places_and_install(install: &str) -> String {
+        edited(
+            OPENCODE_MANIFEST,
+            "program = \"opencode\"\n",
+            &format!(
+                "program = \"opencode\"\nprogram_places = \
+                 [\"~/.opencode/bin/opencode\", \
+                 \"{{XDG_DATA_HOME}}/opencode/bin/opencode\", \
+                 \"/opt/opencode/bin/opencode\"]\n\n{install}\n"
+            ),
+        )
+    }
+
+    /// Issue 32: an agent part may name the places its official installer
+    /// puts its program, from home, a variable it lists or the root, and
+    /// how to install it: a command, a page, or both.
+    #[test]
+    fn an_agent_part_may_name_the_places_and_the_install_of_its_program() {
+        let text = with_places_and_install(
+            "[agents.agent.install]\ncommand = [\"sh\", \"-c\", \"curl -fsSL \
+             https://example.com/install | sh\"]\npage = \
+             \"https://example.com/docs\"",
+        );
+        let page_only = with_places_and_install(
+            "[agents.agent.install]\npage = \"https://example.com/docs\"",
+        );
+
+        let manifest = Manifest::parse(&text).expect("valid");
+        let page_only = Manifest::parse(&page_only).expect("valid");
+        let plain = Manifest::parse(OPENCODE_MANIFEST).expect("valid");
+
+        let part = &manifest.agents()[0];
+        let places: Vec<&str> = part
+            .program_places()
+            .iter()
+            .map(ProgramPlace::as_str)
+            .collect();
+        assert_eq!(
+            places,
+            [
+                "~/.opencode/bin/opencode",
+                "{XDG_DATA_HOME}/opencode/bin/opencode",
+                "/opt/opencode/bin/opencode"
+            ]
+        );
+        let install = part.install().expect("an install");
+        assert_eq!(
+            install.command(),
+            ["sh", "-c", "curl -fsSL https://example.com/install | sh"]
+        );
+        assert_eq!(install.page(), Some("https://example.com/docs"));
+        let page_only = page_only.agents()[0].install().expect("an install");
+        assert!(page_only.command().is_empty());
+        assert_eq!(page_only.page(), Some("https://example.com/docs"));
+        assert!(plain.agents()[0].program_places().is_empty());
+        assert_eq!(plain.agents()[0].install(), None);
+    }
+
+    /// Issue 32: a program place is one file at a place OTTY can tell
+    /// without asking the disk.
+    #[test]
+    fn a_program_place_that_is_not_one_plain_file_is_refused() {
+        let bad = [
+            ("~/.opencode/../bin/opencode", "contains `..`"),
+            ("bin/opencode", "must start with"),
+            ("~/.opencode/*/opencode", "names one file"),
+            ("{OPENCODE_HOME}/bin/opencode", "does not list in `env`"),
+            ("~/.opencode/bin/", "names no file"),
+        ];
+
+        for (place, why) in bad {
+            let text = edited(
+                &with_places_and_install(""),
+                "\"~/.opencode/bin/opencode\"",
+                &format!("\"{place}\""),
+            );
+
+            let error = refusal(&text);
+
+            assert!(
+                matches!(&error, ManifestError::BadPart { part, .. }
+                    if *part == PartRef::agent("opencode")),
+                "{place}: {error:?}"
+            );
+            assert!(error.to_string().contains(why), "{place}: {error}");
+        }
+    }
+
+    /// Issue 32: the install runs a program with its arguments in a tab
+    /// the user sees, or opens an `https` page; it says at least one.
+    #[test]
+    fn an_install_with_no_way_or_a_bad_one_is_refused() {
+        let bad = [
+            ("[agents.agent.install]", "no command and no page"),
+            (
+                "[agents.agent.install]\ncommand = []",
+                "no command and no page",
+            ),
+            ("[agents.agent.install]\ncommand = [\"\"]", "empty program"),
+            (
+                "[agents.agent.install]\npage = \"http://example.com/docs\"",
+                "not an https:// link",
+            ),
+        ];
+
+        for (install, why) in bad {
+            let error = refusal(&with_places_and_install(install));
+
+            assert!(
+                matches!(error, ManifestError::BadPart { .. }),
+                "{install}: {error:?}"
+            );
+            assert!(error.to_string().contains(why), "{install}: {error}");
+        }
+
+        let misspelt = refusal(&with_places_and_install(
+            "[agents.agent.install]\npgae = \"https://example.com/docs\"",
+        ));
+        assert!(matches!(misspelt, ManifestError::Shape(_)), "{misspelt:?}");
     }
 
     #[test]

@@ -5,7 +5,7 @@
 [plugin]
 id = "opencode"
 name = "OpenCode"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sessions and tokens of OpenCode."
 repository = "https://github.com/otty-shell/otty-plugin-opencode"
 license = "Apache-2.0"
@@ -24,7 +24,15 @@ id = "opencode"
 name = "OpenCode"
 icon = "opencode.svg"
 program = "opencode"
+# OpenCode's installer puts the program here, a folder the login
+# shell may not have on its PATH; OTTY then starts it by this path.
+program_places = ["~/.opencode/bin/opencode"]
 tested_version = "2.3.2"
+
+# Offered when OTTY finds the program nowhere: OpenCode's page on how
+# to install it.
+[agents.agent.install]
+page = "https://opencode.ai/docs"
 
 # Apply only while a function of this part runs. The database is opened
 # read-only by OTTY; the plugin never writes to it.

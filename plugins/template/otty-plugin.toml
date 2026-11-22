@@ -25,7 +25,17 @@ id = "example-agent"
 name = "Example Agent"
 icon = "example-agent.svg"
 program = "example-agent"
+# Where the agent's official installer puts its program. OTTY looks
+# there when the user's login shell does not find `example-agent` by its
+# name, and then starts it by that full path.
+program_places = ["~/.example/bin/example-agent"]
 tested_version = "1.4.2"
+
+# How to install the agent's program, offered when OTTY finds it nowhere:
+# a command OTTY runs in a terminal tab the user sees, a page, or both.
+[agents.agent.install]
+command = ["sh", "-c", "curl -fsSL https://example.com/install.sh | sh"]
+page = "https://example.com/docs/install"
 
 # Apply only while a function of this part runs.
 [agents.agent.permissions]

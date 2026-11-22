@@ -276,10 +276,12 @@ impl<'plugin> CallBatch<'plugin> {
             programs: CallPrograms::new(
                 programs,
                 Arc::clone(&self.permissions),
+                Arc::clone(self.plugin.program_paths()),
             ),
             terminals: CallTerminals::new(
                 terminals,
                 Arc::clone(&self.permissions),
+                Arc::clone(self.plugin.program_paths()),
             ),
             zstd_cursor: ZstdCursor::default(),
         };

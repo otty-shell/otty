@@ -155,6 +155,24 @@ impl Delivery for AgentsIntent {
                 let intent = agent_tab_intent(app, title, &folder, &command);
                 deliver(app, intent)
             },
+            // The tab of a need opens like a session tab; the feature is
+            // told which tab it is, and reads the profiles again once it
+            // closes (see `dispatch/tabs.rs`).
+            AgentsOutcome::OpenFixTab {
+                title,
+                folder,
+                command,
+            } => {
+                let intent = agent_tab_intent(app, title, &folder, &command);
+                let opened = deliver(app, intent);
+                let watched = match app.tabs.active_tab_id() {
+                    Some(tab_id) => {
+                        deliver(app, AgentsIntent::FixTabOpened(tab_id))
+                    },
+                    None => Task::none(),
+                };
+                Task::batch([opened, watched])
+            },
             // Terminal mode shows first, so the panes take its grid size;
             // then the new pane opens on the right of the focused one.
             AgentsOutcome::OpenSplit { folder, command } => {
@@ -595,6 +613,34 @@ mod tests {
         assert_eq!(app.tabs.active_tab_title(), Some("Fix the tabs"));
         assert_eq!(app.modes.active(), Mode::Terminal);
         assert!(!app.agents.is_active());
+    }
+
+    /// Issue 32: the tab of a need, such as the install of the agent's
+    /// program, opens as a session tab does, and the feature is told which
+    /// tab it is: once it closes, the profiles are read again. The
+    /// terminals are mocks: nothing is installed.
+    #[test]
+    fn the_tab_of_a_need_opens_and_its_closing_reaches_agents_mode() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenFixTab {
+                title: String::from("OpenCode"),
+                folder: PathBuf::from("/home/user"),
+                command: AgentCommand::new("sh")
+                    .with_arg("-c")
+                    .with_arg("echo installed"),
+            },
+        );
+        let tab_id = app.tabs.active_tab_id().expect("the install tab");
+        let watched = app.agents.is_watching_tab(tab_id);
+        let _ = deliver(&mut app, TabsIntent::CloseTab { tab_id });
+
+        assert!(watched);
+        assert_eq!(app.tabs.len(), 0);
+        assert!(!app.agents.is_watching_tab(tab_id));
     }
 
     /// Continue in a split splits the focused pane of the shell tab in

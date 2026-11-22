@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.1"
+version = "0.2.2"
 description = "Claude Code profiles, sessions, tokens and logins; Claude limits, from Anthropic or the /usage panel of Claude Code; Anthropic organization bills."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -23,7 +23,16 @@ id = "claude-code"
 name = "Claude Code"
 icon = "claude-code.svg"
 program = "claude"
+# The native installer of Claude Code puts the program here, a folder
+# the login shell may not have on its PATH; OTTY then starts it by
+# this path.
+program_places = ["~/.local/bin/claude"]
 tested_version = "2.1.328"
+
+# Offered when OTTY finds the program nowhere: the setup page of
+# Claude Code.
+[agents.agent.install]
+page = "https://docs.anthropic.com/en/docs/claude-code/setup"
 
 # Apply only while a function of this part runs. `CLAUDE_CONFIG_DIR` moves
 # the default config folder, so it comes first in `env`.

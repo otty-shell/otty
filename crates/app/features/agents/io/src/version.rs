@@ -12,7 +12,8 @@ use crate::background::on_own_thread;
 use crate::login_shell::{SHELL_TIMEOUT, ask_login_shell};
 
 /// Ask the program of `agent` for its version in the background, through
-/// the user's shell at `shell`. The answer comes back as
+/// the user's shell at `shell`: by its name, or by the full path the last
+/// read of the profiles found it at (issue 32). The answer comes back as
 /// [`AgentsIntent::VersionLoaded`], with no version when the program
 /// fails, prints none, takes too long or the agent is not known.
 ///
@@ -38,8 +39,8 @@ pub fn load_version(
     agent: AgentId,
     shell: &str,
 ) -> Task<AgentsIntent> {
-    let program = agent_of(agents, &agent)
-        .map(|known| known.entry().program().to_string());
+    let program =
+        agent_of(agents, &agent).map(|known| known.program_to_start());
     let shell = shell.to_string();
 
     on_own_thread(

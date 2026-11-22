@@ -81,7 +81,7 @@ impl fmt::Display for PathGlob {
 
 /// What a glob starts from.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum GlobStart {
+pub(crate) enum GlobStart {
     /// `~`: the home folder.
     Home,
     /// `{NAME}`: the folder or file the variable `NAME` names.
@@ -167,7 +167,9 @@ fn path_glob(pattern: &str) -> Result<Glob, globset::Error> {
 
 /// The start of `text` and the rest after it, which is empty or starts
 /// with `/`.
-fn split_start(text: &str) -> Result<(GlobStart, &str), GlobProblem> {
+pub(crate) fn split_start(
+    text: &str,
+) -> Result<(GlobStart, &str), GlobProblem> {
     if let Some(rest) = text.strip_prefix('~')
         && (rest.is_empty() || rest.starts_with('/'))
     {

@@ -215,6 +215,11 @@ pub enum AgentsIntent {
     /// The button of a need on the All accounts or All profiles page was
     /// pressed: do what the need asks.
     FixNeed(NeedAction),
+    /// The tab of [`AgentsOutcome::OpenFixTab`] opened as the tab with this
+    /// id: once it closes, the profiles are read again.
+    FixTabOpened(u64),
+    /// The tab with this id closed.
+    TabClosed(u64),
     /// The title of the Accounts section of the left panel was pressed:
     /// open or close the section.
     ToggleAccountsSection,
@@ -360,8 +365,7 @@ pub enum AgentsOutcome {
     },
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode. New session of a project screen and Start
-    /// of the New session dialog report it alike, and Log in of a profile
-    /// reports it with the login command in the home folder.
+    /// of the New session dialog report it alike.
     OpenTab {
         /// The title of the tab: the session title or the profile name.
         title: String,
@@ -369,6 +373,20 @@ pub enum AgentsOutcome {
         folder: PathBuf,
         /// The program, arguments and variables that start the agent or
         /// log the profile in.
+        command: AgentCommand,
+    },
+    /// Open a terminal tab named `title` that runs `command` in `folder`,
+    /// then show Terminal mode, as [`AgentsOutcome::OpenTab`] does, for
+    /// what a profile needs: the command of a need, such as a login or the
+    /// install of the agent's program (issue 32), and Log in of a profile.
+    /// The app tells the id of the tab with [`AgentsIntent::FixTabOpened`],
+    /// and the profiles are read again once it closes.
+    OpenFixTab {
+        /// The title of the tab: the profile or the account of the need.
+        title: String,
+        /// The folder the command runs in: the home folder.
+        folder: PathBuf,
+        /// The program, arguments and variables the need runs.
         command: AgentCommand,
     },
     /// Split the focused pane of the terminal tab in front, run `command`

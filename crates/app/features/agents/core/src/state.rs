@@ -44,6 +44,7 @@ pub(crate) struct AgentsState {
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    fix_tabs: Vec<u64>,
     is_keyring_dialog_open: bool,
     is_keyring_given: bool,
     rename: Option<RenameDialog>,
@@ -144,6 +145,11 @@ impl AgentsState {
     /// Whether the Found by OTTY report is open.
     pub(crate) fn is_found_report_open(&self) -> bool {
         self.is_found_report_open
+    }
+
+    /// Whether the tab `tab_id` fixes what a profile needs.
+    pub(crate) fn is_fix_tab(&self, tab_id: u64) -> bool {
+        self.fix_tabs.contains(&tab_id)
     }
 
     /// Whether Agents mode is the active mode.
@@ -252,6 +258,7 @@ impl AgentsState {
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
+            fix_tabs: Vec::new(),
             is_keyring_dialog_open: false,
             is_keyring_given: false,
             rename: None,
@@ -720,6 +727,21 @@ impl AgentsState {
     /// Stop asking about a removal and return the profile it was about.
     pub(crate) fn take_removing(&mut self) -> Option<Profile> {
         self.removing.take()
+    }
+
+    /// The tab `tab_id` fixes what a profile needs: once it closes, the
+    /// profiles are read again.
+    pub(crate) fn watch_fix_tab(&mut self, tab_id: u64) {
+        self.fix_tabs.push(tab_id);
+    }
+
+    /// Forget the tab `tab_id`, which closed; whether it was a tab that
+    /// fixes what a profile needs.
+    pub(crate) fn forget_fix_tab(&mut self, tab_id: u64) -> bool {
+        let count = self.fix_tabs.len();
+        self.fix_tabs.retain(|watched| *watched != tab_id);
+
+        self.fix_tabs.len() != count
     }
 
     /// Open or close the keyring dialog.

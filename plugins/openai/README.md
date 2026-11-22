@@ -34,6 +34,10 @@ organization needs one or OpenAI refused the one given.
 While it runs, the files of the `codex` part are refused to it, but for
 the session files, where Codex writes the limits.
 
+When Codex is nowhere on the `PATH` of the login shell, the manifest's
+`install` gives its repository, `https://github.com/openai/codex`,
+which says how to install it.
+
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
 the made-up files of `fixtures/`, which stand for the home folder:

@@ -560,8 +560,13 @@ language = "0.1"                  # the language receiver; belongs to no part an
 id = "codex"                      # saved in agents.json; never changes
 name = "Codex"
 icon = "codex.svg"
-program = "codex"                 # looked up on PATH, "installed or not"
+program = "codex"                 # looked up on the login shell's PATH, "installed or not"
+# program_places = ["~/.codex/bin/codex"]  # where an installer puts it off PATH (issue 32)
 tested_version = "0.169.0"        # newest agent version this release was checked with
+
+[agents.agent.install]            # offered when the program is found nowhere (issue 32)
+page = "https://github.com/openai/codex"
+# command = ["sh", "-c", "…"]    # run in a terminal tab the user sees
 
 [agents.agent.permissions]               # apply only while a function of this part runs
 read = ["~/.codex*/**", "{CODEX_HOME}/**"]
@@ -618,7 +623,11 @@ id = "opencode"
 name = "OpenCode"
 icon = "opencode.svg"
 program = "opencode"
+program_places = ["~/.opencode/bin/opencode"]
 tested_version = "2.3.2"
+
+[agents.agent.install]
+page = "https://opencode.ai/docs"
 
 [agents.agent.permissions]
 read = ["~/.local/share/opencode/**", "{XDG_DATA_HOME}/opencode/**"]
@@ -648,7 +657,28 @@ home unless a listed variable points there. Writes are listed as
 program and an argument pattern, hidden terminals as
 `[[agents.agent.permissions.terminal]]`, keyring entries as
 `[[agents.agent.permissions.keyring]]` with service, user and the JSON fields
-holding keys. The manifest is checked as a whole: every part needs the
+holding keys.
+
+**The agent's program (issue 32).** OTTY starts an agent's `program`
+through the user's login shell, so a name on that shell's `PATH` is found.
+An installer that puts the program elsewhere, such as OpenCode's
+`~/.opencode/bin/opencode`, is named in `program_places`: each place is one
+file from `~`, from a variable the part lists in `env` or from `/`, with
+no `..` and no pattern, checked when the manifest is read. The order is:
+the login shell finds the name, then the first place that holds a
+program, else "program not found". A program found at a place is started
+by that full path everywhere OTTY starts it: session tabs, the commands of
+needs, the version check, and the programs and hidden terminals of the
+plugin, whose calls still name it by its name, with the permissions of
+that name; the command of a found profile carries the full path, and the
+same permissions allow that one path. OTTY has no agent-specific place of
+its own. `[agents.agent.install]` gives a `command` (a program and its
+arguments, run in a terminal tab the user sees, never hidden) and/or an
+`https` `page`, at least one. "Program not found" names the program and
+where OTTY looked, and shows **Install <agent>**, which runs the command
+and whose line shows it, and the page as a second button, or as the only
+one with no command; with no `install`, no button. Once the tab of a need
+closes, the install or a login, OTTY reads the profiles again. The manifest is checked as a whole: every part needs the
 contract of its kind in `[api]`, and `[api]` names no contract without a
 part, except `language`, which belongs to the whole plugin.
 

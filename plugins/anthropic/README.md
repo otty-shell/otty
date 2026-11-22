@@ -38,6 +38,13 @@ as refused, and OTTY asks the agent part that keeps the login, such as
 `claude-code` part are refused to it, but for the session files of its
 own `/usage` run.
 
+The native installer of Claude Code puts the program at
+`~/.local/bin/claude`, a folder the login shell may not have on its
+`PATH`: the manifest lists it in `program_places`, so OTTY finds the
+program there and starts it by that path, also for `/usage`. When
+Claude Code is nowhere, the manifest's `install` gives its setup page,
+`https://docs.anthropic.com/en/docs/claude-code/setup`.
+
 It is its own cargo workspace, outside the OTTY build, and uses the SDK
 by path while it lives in this repository. Its tests run natively over
 the made-up files of `fixtures/`, which stand for the home folder:

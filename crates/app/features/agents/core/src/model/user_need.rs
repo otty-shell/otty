@@ -23,7 +23,8 @@ impl UserNeed {
     }
 
     /// What is missing, for the profile page; `None` for a login, whose
-    /// need its agent part gives.
+    /// need its agent part gives, and for a program, whose need names
+    /// where OTTY looked (see `needs.rs`).
     pub(super) fn hint(&self) -> Option<&'static str> {
         self.hint
     }
@@ -32,10 +33,9 @@ impl UserNeed {
     pub(super) fn of(status: &ProfileStatus) -> Option<Self> {
         let (state, hint) = match status {
             ProfileStatus::NotLoggedIn(_) => (Key::AgentsStateNeedsLogin, None),
-            ProfileStatus::ProgramNotFound => (
-                Key::AgentsStateProgramNotFound,
-                Some(Key::AgentsProgramNotFoundHint),
-            ),
+            ProfileStatus::ProgramNotFound => {
+                (Key::AgentsStateProgramNotFound, None)
+            },
             ProfileStatus::ConfigDirNotFound => (
                 Key::AgentsStateConfigDirNotFound,
                 Some(Key::AgentsConfigDirNotFoundHint),

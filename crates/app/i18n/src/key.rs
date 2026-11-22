@@ -1177,8 +1177,6 @@ pub enum Key {
     AgentsFieldConfigDir,
     /// Button of a profile that is not logged in: opens a tab where the agent logs in.
     AgentsLogIn,
-    /// Note of a profile whose program was not found.
-    AgentsProgramNotFoundHint,
     /// Note of a profile whose config folder was not found.
     AgentsConfigDirNotFoundHint,
     /// Title of the dialog that edits a profile.
@@ -1536,6 +1534,14 @@ pub enum Key {
     TplAgentsNeedAskKey,
     /// The button that opens a page a plugin part names: {host} is its host, such as console.example.com.
     TplAgentsNeedOpenPage,
+    /// The line of a profile whose program OTTY did not find on the PATH of the login shell: {program} is the name of the program, such as `opencode`.
+    TplAgentsNeedProgramNotFoundText,
+    /// The line of a profile whose program OTTY found neither on the PATH of the login shell nor at the places its agent part names: {program} is its name, {places} the places, such as `~/.opencode/bin/opencode`.
+    TplAgentsNeedProgramNotFoundAtPlacesText,
+    /// Added to the line of a missing program: what its install button runs; {agent} is the agent's name, {command} the command as typed.
+    TplAgentsNeedInstallRuns,
+    /// The button of a missing program that runs its install in a terminal tab: {agent} is the agent's name, such as "OpenCode".
+    TplAgentsInstallAgent,
     /// A line of the dialog of a key a plugin part asks for: what the key starts with, {prefix}.
     TplAgentsKeyStartsWith,
     /// A period of the usage block: the last 7 days.
@@ -2010,7 +2016,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 940] = [
+    pub(super) const ALL: [Self; 943] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2543,7 +2549,6 @@ impl Key {
         Self::AgentsFieldPlan,
         Self::AgentsFieldConfigDir,
         Self::AgentsLogIn,
-        Self::AgentsProgramNotFoundHint,
         Self::AgentsConfigDirNotFoundHint,
         Self::AgentsEditProfileTitle,
         Self::AgentsFolderTyped,
@@ -2719,6 +2724,10 @@ impl Key {
         Self::TplAgentsNeedRun,
         Self::TplAgentsNeedAskKey,
         Self::TplAgentsNeedOpenPage,
+        Self::TplAgentsNeedProgramNotFoundText,
+        Self::TplAgentsNeedProgramNotFoundAtPlacesText,
+        Self::TplAgentsNeedInstallRuns,
+        Self::TplAgentsInstallAgent,
         Self::TplAgentsKeyStartsWith,
         Self::AgentsSevenDays,
         Self::AgentsThirtyDays,
