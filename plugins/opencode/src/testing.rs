@@ -276,6 +276,33 @@ impl MadeUpDatabase {
         self.connection.last_insert_rowid()
     }
 
+    /// Gives the `credential` table the columns newer OpenCode keeps,
+    /// among them `active`, which marks the login OpenCode uses; every
+    /// login is then not active until [`Self::activate`].
+    pub(crate) fn with_active_column(self) -> Self {
+        self.connection
+            .execute_batch(
+                "ALTER TABLE credential ADD COLUMN connector_id TEXT;
+                 ALTER TABLE credential ADD COLUMN method_id TEXT;
+                 ALTER TABLE credential ADD COLUMN active INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE credential ADD COLUMN time_created INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE credential ADD COLUMN time_updated INTEGER NOT NULL DEFAULT 0;",
+            )
+            .expect("add the columns of newer OpenCode");
+
+        self
+    }
+
+    /// Marks the login at `row_id` as the one OpenCode uses.
+    pub(crate) fn activate(&self, row_id: i64) {
+        self.connection
+            .execute(
+                "UPDATE credential SET active = 1 WHERE rowid = ?1",
+                params![row_id],
+            )
+            .expect("mark the login active");
+    }
+
     fn create(path: &Path, tables: &str) -> Self {
         let connection = Connection::open(path).expect("create the database");
         connection

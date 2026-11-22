@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "密钥 ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "密钥",
-    "agents_account_login": "登录",
+    "agents_account_unknown": "未知",
     "agents_found_in_user": "由你添加",
     "agents_accounts_need_you": "账户需要你处理",
     "agents_profiles_need_you": "配置需要你处理",

@@ -6,7 +6,10 @@
 //!
 //! A ChatGPT login is told by its account id, as in Codex, so the same
 //! login in Codex and in OpenCode is one account; its access token, a
-//! JWT, names the email and the plan, read through its handle. A key is
+//! JWT, names the email and the plan, read through its handle. Two
+//! ChatGPT logins with no account and no email to compare are one when
+//! their tokens name the same person by the `sub` claim; `sub` stays in
+//! the plugin and is never given to OTTY. A key is
 //! told by its fingerprint, which OTTY takes. A login of another
 //! provider with no id to tell it apart, such as a Claude login, is left
 //! out, and so is a login of a provider OTTY does not read.
@@ -74,6 +77,8 @@ impl StoredLogin {
 /// What the access token of a ChatGPT login tells of it.
 #[derive(Default, Deserialize)]
 struct AccessClaims {
+    /// The person the token is of, the same in every login they make.
+    sub: Option<String>,
     #[serde(rename = "https://api.openai.com/auth")]
     auth: Option<ChatgptAuth>,
     #[serde(rename = "https://api.openai.com/profile")]
@@ -102,6 +107,26 @@ struct Found<'a> {
     place: &'a dyn Fn(&str) -> KeyPlace,
 }
 
+/// A login read, with what tells it apart from the others inside the
+/// plugin: the fingerprint of its key, or the person its token is of.
+struct ReadLogin {
+    login: Login,
+    fingerprint: Option<String>,
+    person: Option<String>,
+}
+
+impl ReadLogin {
+    /// Whether `self` and `other` are the same login: the same key, else
+    /// the same ChatGPT account ([`is_same_account`]).
+    fn is_same_login(&self, other: &ReadLogin) -> bool {
+        match (&self.fingerprint, &other.fingerprint) {
+            (Some(one), Some(other)) => one == other,
+            (None, None) => is_same_account(self, other),
+            _ => false,
+        }
+    }
+}
+
 /// The logins of `profile`: those of `auth.json` first, then those of the
 /// `credential` table. A login found in both places is given once.
 pub(crate) fn logins(profile: &Profile) -> Vec<Login> {
@@ -115,19 +140,13 @@ pub(crate) fn logins(profile: &Profile) -> Vec<Login> {
         .and_then(|database| database.credentials().ok())
         .unwrap_or_default();
 
-    let mut found: Vec<Login> = Vec::new();
-    let mut fingerprints: Vec<String> = Vec::new();
-    let mut take = |login: Option<Login>, fingerprint: Option<String>| {
-        let Some(login) = login else {
+    let mut found: Vec<ReadLogin> = Vec::new();
+    let mut take = |read: Option<ReadLogin>| {
+        let Some(read) = read else {
             return;
         };
-        let is_copy = match &fingerprint {
-            Some(fingerprint) => fingerprints.contains(fingerprint),
-            None => found.iter().any(|kept| is_same_account(kept, &login)),
-        };
-        if !is_copy {
-            fingerprints.extend(fingerprint);
-            found.push(login);
+        if !found.iter().any(|kept| kept.is_same_login(&read)) {
+            found.push(read);
         }
     };
 
@@ -146,13 +165,12 @@ pub(crate) fn logins(profile: &Profile) -> Vec<Login> {
                     pointer: format!("{prefix}{field}"),
                 })
             };
-            let (login, fingerprint) = login_of(&Found {
+            take(login_of(&Found {
                 provider_id: &provider_id,
                 login,
                 document,
                 place: &place,
-            });
-            take(login, fingerprint);
+            }));
         }
     }
 
@@ -172,17 +190,16 @@ pub(crate) fn logins(profile: &Profile) -> Vec<Login> {
                     pointer: Some(field.to_string()),
                 })
             };
-            let (login, fingerprint) = login_of(&Found {
+            take(login_of(&Found {
                 provider_id: &row.integration_id,
                 login,
                 document: &row.value,
                 place: &place,
-            });
-            take(login, fingerprint);
+            }));
         }
     }
 
-    found
+    found.into_iter().map(|read| read.login).collect()
 }
 
 /// Whether the profile in `profile` is logged in: connected with any
@@ -214,13 +231,10 @@ pub(crate) fn status(profile: &Profile) -> ProfileStatus {
     })
 }
 
-/// The login of `found`, with the fingerprint of its key when it is told
-/// by its key; `None` for a provider OTTY does not read or a login it can
-/// not tell apart.
-fn login_of(found: &Found<'_>) -> (Option<Login>, Option<String>) {
-    let Some(provider) = provider_of(found.provider_id) else {
-        return (None, None);
-    };
+/// The login of `found`, with what tells it apart; `None` for a provider
+/// OTTY does not read or a login it can not tell apart.
+fn login_of(found: &Found<'_>) -> Option<ReadLogin> {
+    let provider = provider_of(found.provider_id)?;
     let id = match &provider {
         ProviderRef::Id(id) => id.as_str(),
         ProviderRef::Host(_) => "",
@@ -228,25 +242,19 @@ fn login_of(found: &Found<'_>) -> (Option<Login>, Option<String>) {
 
     match (found.login.kind.as_str(), id) {
         ("api" | "key", _) => key_login(found, provider),
-        ("oauth", OPENAI) => (chatgpt_login(found), None),
-        _ => (None, None),
+        ("oauth", OPENAI) => chatgpt_login(found),
+        _ => None,
     }
 }
 
 /// The key login of `found` for `provider`, told by the fingerprint of
 /// its key; none when the login holds no key.
-fn key_login(
-    found: &Found<'_>,
-    provider: ProviderRef,
-) -> (Option<Login>, Option<String>) {
+fn key_login(found: &Found<'_>, provider: ProviderRef) -> Option<ReadLogin> {
     let fingerprint = found
         .login
         .key
         .and_then(|index| found.document.key(index))
-        .and_then(|key| key.fingerprint().ok());
-    let Some(fingerprint) = fingerprint else {
-        return (None, None);
-    };
+        .and_then(|key| key.fingerprint().ok())?;
 
     let login = Login {
         kind: LoginKind::ApiKey,
@@ -256,12 +264,16 @@ fn key_login(
         plan: None,
     };
 
-    (Some(login), Some(fingerprint))
+    Some(ReadLogin {
+        login,
+        fingerprint: Some(fingerprint),
+        person: None,
+    })
 }
 
 /// The ChatGPT login of `found`: told by its account id, else its email,
-/// with the plan its access token names.
-fn chatgpt_login(found: &Found<'_>) -> Option<Login> {
+/// else the person its token is of, with the plan its access token names.
+fn chatgpt_login(found: &Found<'_>) -> Option<ReadLogin> {
     let token = found
         .login
         .access
@@ -284,8 +296,9 @@ fn chatgpt_login(found: &Found<'_>) -> Option<Login> {
     let plan = auth
         .and_then(|auth| filled(auth.chatgpt_plan_type.as_deref()))
         .and_then(plan_name);
+    let person = filled(claims.sub.as_deref());
 
-    Some(Login {
+    let login = Login {
         kind: LoginKind::Subscription,
         for_whom: ProviderRef::Id(OPENAI.to_string()),
         place: (found.place)(&format!("/{ACCESS_FIELD}")),
@@ -295,24 +308,40 @@ fn chatgpt_login(found: &Found<'_>) -> Option<Login> {
             ..Identity::default()
         },
         plan,
+    };
+
+    Some(ReadLogin {
+        login,
+        fingerprint: None,
+        person: person.map(String::from),
     })
 }
 
-/// Whether `one` and `other` are the same account told by its identity.
-fn is_same_account(one: &Login, other: &Login) -> bool {
-    let identity = &one.identity;
-    let has_identity =
-        identity.account_id.is_some() || identity.email.is_some();
+/// Whether `one` and `other` are the same account: the same account id
+/// when both name one, else the same email when both name one, else the
+/// same person when both tokens name one.
+fn is_same_account(one: &ReadLogin, other: &ReadLogin) -> bool {
+    if one.login.for_whom != other.login.for_whom {
+        return false;
+    }
 
-    has_identity
-        && one.for_whom == other.for_whom
-        && match (&identity.account_id, &other.identity.account_id) {
-            (Some(one), Some(other)) => one == other,
-            _ => {
-                identity.email.is_some()
-                    && identity.email == other.identity.email
-            },
-        }
+    let (one_identity, other_identity) =
+        (&one.login.identity, &other.login.identity);
+    if let (Some(one), Some(other)) =
+        (&one_identity.account_id, &other_identity.account_id)
+    {
+        return one == other;
+    }
+    if let (Some(one), Some(other)) =
+        (&one_identity.email, &other_identity.email)
+    {
+        return one == other;
+    }
+
+    matches!(
+        (&one.person, &other.person),
+        (Some(one), Some(other)) if one == other
+    )
 }
 
 /// Whether the data folder `folder` holds any file. A folder is never
@@ -616,6 +645,116 @@ mod tests {
         assert!(
             matches!(status, ProfileStatus::Connected(_)),
             "connected: {status:?}"
+        );
+    }
+
+    /// A ChatGPT login by "chatgpt-token-sharing" as the `credential`
+    /// table keeps it: its token names only the person, by `sub`.
+    fn shared_token_login(sub: &str) -> String {
+        let token = made_up_jwt(&format!(
+            r#"{{"https://api.openai.com/auth": {{
+                "encrypted_auth_metadata": "made-up", "per_user_salt": "made-up"}},
+                "sub": "{sub}"}}"#
+        ));
+
+        format!(
+            r#"{{"type": "oauth", "methodID": "chatgpt-token-sharing",
+            "refresh": "r", "access": "{token}", "expires": 1}}"#
+        )
+    }
+
+    fn access_in_table(data: &DataFolder, row_id: i64) -> KeyPlace {
+        KeyPlace::SqliteField(SqliteField {
+            database: data.file("opencode.db"),
+            table: "credential".to_string(),
+            column: "value".to_string(),
+            row_id,
+            pointer: Some("/access".to_string()),
+        })
+    }
+
+    fn nameless_chatgpt(place: KeyPlace) -> Login {
+        Login {
+            kind: LoginKind::Subscription,
+            for_whom: openai(),
+            place,
+            identity: Identity::default(),
+            plan: None,
+        }
+    }
+
+    /// Owner, 2026-11-22: the user logged in twice, OpenCode kept both
+    /// logins and uses the active one. Only that one is given.
+    #[test]
+    fn of_two_logins_of_a_provider_the_active_one_is_given() {
+        let data = DataFolder::new();
+        let database = data.second_shape().with_active_column();
+        database.credential(
+            "cred_1",
+            "openai",
+            &format!(
+                r#"{{"type": "oauth", "refresh": "r", "access": "{}",
+                "expires": 1}}"#,
+                access_token(SHARED_ID, "dev@example.com", "plus")
+            ),
+        );
+        let used = database.credential(
+            "cred_2",
+            "openai",
+            &format!(
+                r#"{{"type": "oauth", "refresh": "r", "access": "{}",
+                "expires": 1}}"#,
+                access_token(OTHER_ID, "team@example.com", "team")
+            ),
+        );
+        database.activate(used);
+        let profile = data.profile();
+
+        let found = data.run(|| logins(&profile));
+
+        assert_eq!(
+            found,
+            [chatgpt(
+                OTHER_ID,
+                "team@example.com",
+                "Business",
+                access_in_table(&data, used)
+            )]
+        );
+    }
+
+    /// Two logins of one person, told by the `sub` of their tokens, are
+    /// one login even when their tokens name no account and no email;
+    /// the logins of two people stay two.
+    #[test]
+    fn two_logins_of_one_person_are_one() {
+        let data = DataFolder::new();
+        let database = data.first_shape();
+        let first = database.credential(
+            "cred_1",
+            "openai",
+            &shared_token_login("made-up-user"),
+        );
+        database.credential(
+            "cred_2",
+            "openai",
+            &shared_token_login("made-up-user"),
+        );
+        let other = database.credential(
+            "cred_3",
+            "openai",
+            &shared_token_login("made-up-other-user"),
+        );
+        let profile = data.profile();
+
+        let found = data.run(|| logins(&profile));
+
+        assert_eq!(
+            found,
+            [
+                nameless_chatgpt(access_in_table(&data, first)),
+                nameless_chatgpt(access_in_table(&data, other)),
+            ]
         );
     }
 

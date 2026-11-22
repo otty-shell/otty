@@ -74,6 +74,9 @@ pub(crate) struct CredentialRow {
     pub(crate) integration_id: String,
     /// The JSON of the login, its key fields as `{"$key": n}`.
     pub(crate) value: JsonWithKeys,
+    /// Whether OpenCode marks the login as the one it uses for its
+    /// provider; never in a table with no `active` column.
+    pub(crate) is_active: bool,
 }
 
 /// The database of one profile, with the tables it has.
@@ -173,8 +176,11 @@ impl Database {
         Ok(())
     }
 
-    /// The logins of the `credential` table; none in a database that has
-    /// no such table yet. The key fields of each login come back as
+    /// The logins of the `credential` table that OpenCode uses; none in a
+    /// database that has no such table yet. Newer OpenCode keeps every
+    /// login the user made and marks the one it uses `active`: of a
+    /// provider with an active login only that one is given, of any other
+    /// provider every login. The key fields of each login come back as
     /// handles; the host reads them at the row of the login, so the rowid
     /// is asked for too.
     pub(crate) fn credentials(&self) -> Result<Vec<CredentialRow>, HostError> {
@@ -182,19 +188,39 @@ impl Database {
             return Ok(Vec::new());
         }
 
-        let rows = sqlite::query(
-            &self.path,
-            "SELECT rowid, integration_id, value FROM credential
-             WHERE integration_id IS NOT NULL",
-            &[],
-        )?;
+        let active = if self.has_active_column()? {
+            "active"
+        } else {
+            "0"
+        };
+        let sql = format!(
+            "SELECT rowid, integration_id, value, {active} FROM credential
+             WHERE integration_id IS NOT NULL"
+        );
+        let rows = sqlite::query(&self.path, &sql, &[])?;
 
-        Ok(rows.into_iter().filter_map(credential_row).collect())
+        let credentials: Vec<CredentialRow> =
+            rows.into_iter().filter_map(credential_row).collect();
+
+        Ok(in_use(credentials))
     }
 
     /// Whether the database has the table `name`.
     fn has_table(&self, name: &str) -> bool {
         self.tables.iter().any(|table| table == name)
+    }
+
+    /// Whether the `credential` table has the `active` column, which
+    /// older OpenCode does not write.
+    fn has_active_column(&self) -> Result<bool, HostError> {
+        let rows = sqlite::query(
+            &self.path,
+            "SELECT name FROM pragma_table_info('credential')
+             WHERE name = 'active'",
+            &[],
+        )?;
+
+        Ok(!rows.is_empty())
     }
 
     /// Gives `take` the messages `sql` selects, page by page: `sql` takes
@@ -287,6 +313,21 @@ fn message_row(row: &[Value]) -> Option<MessageRow> {
     })
 }
 
+/// The logins of `credentials` OpenCode uses: the active one of a
+/// provider that has one, else every login of the provider.
+fn in_use(credentials: Vec<CredentialRow>) -> Vec<CredentialRow> {
+    let active: Vec<String> = credentials
+        .iter()
+        .filter(|row| row.is_active)
+        .map(|row| row.integration_id.clone())
+        .collect();
+
+    credentials
+        .into_iter()
+        .filter(|row| row.is_active || !active.contains(&row.integration_id))
+        .collect()
+}
+
 /// The login of `row`; `None` when its value is no JSON.
 fn credential_row(row: Vec<Value>) -> Option<CredentialRow> {
     let mut values = row.into_iter();
@@ -302,11 +343,14 @@ fn credential_row(row: Vec<Value>) -> Option<CredentialRow> {
         Value::JsonWithKeys(value) => value,
         _ => return None,
     };
+    let is_active =
+        matches!(values.next(), Some(Value::Integer(active)) if active != 0);
 
     Some(CredentialRow {
         row_id,
         integration_id,
         value,
+        is_active,
     })
 }
 
@@ -530,6 +574,59 @@ mod tests {
         let fingerprint =
             data.run(|| login.value.key(0).map(|key| key.fingerprint()));
         assert!(matches!(fingerprint, Some(Ok(_))));
+    }
+
+    /// Owner, 2026-11-22: OpenCode keeps each login the user made and
+    /// marks the one it uses `active`. Only that one is read; a provider
+    /// with no active login has all of its logins read.
+    #[test]
+    fn only_the_active_login_of_a_provider_is_read() {
+        let data = DataFolder::new();
+        let made_up = data.second_shape().with_active_column();
+        made_up.credential("cred_1", "openai", r#"{"type":"oauth"}"#);
+        let used =
+            made_up.credential("cred_2", "openai", r#"{"type":"oauth"}"#);
+        made_up.activate(used);
+        let first_key = made_up.credential(
+            "cred_3",
+            "deepseek",
+            r#"{"type":"key","key":"sk-made-up-0001"}"#,
+        );
+        let second_key = made_up.credential(
+            "cred_4",
+            "deepseek",
+            r#"{"type":"key","key":"sk-made-up-0002"}"#,
+        );
+
+        let database = open(&data);
+        let credentials = data
+            .run(|| database.credentials())
+            .expect("logins are read");
+
+        let rows: Vec<i64> =
+            credentials.iter().map(|login| login.row_id).collect();
+        assert_eq!(rows, [used, first_key, second_key]);
+    }
+
+    /// An older `credential` table has no `active` column: every login
+    /// of it is read.
+    #[test]
+    fn with_no_active_column_every_login_is_read() {
+        let data = DataFolder::new();
+        let made_up = data.first_shape();
+        let first =
+            made_up.credential("cred_1", "openai", r#"{"type":"oauth"}"#);
+        let second =
+            made_up.credential("cred_2", "openai", r#"{"type":"oauth"}"#);
+
+        let database = open(&data);
+        let credentials = data
+            .run(|| database.credentials())
+            .expect("logins are read");
+
+        let rows: Vec<i64> =
+            credentials.iter().map(|login| login.row_id).collect();
+        assert_eq!(rows, [first, second]);
     }
 
     /// The SQL of the plugin never sees a key: naming the key column

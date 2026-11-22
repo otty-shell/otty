@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "Schlüssel ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "Schlüssel",
-    "agents_account_login": "Anmeldung",
+    "agents_account_unknown": "unbekannt",
     "agents_found_in_user": "von dir hinzugefügt",
     "agents_accounts_need_you": "Konten brauchen dich",
     "agents_profiles_need_you": "Profile brauchen dich",

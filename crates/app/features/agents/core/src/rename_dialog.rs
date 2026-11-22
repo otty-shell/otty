@@ -319,7 +319,7 @@ mod tests {
         let outcomes = type_name(&mut state, " ");
 
         assert_eq!(outcomes, vec![save(SavedProfiles::default())]);
-        assert_eq!(account_names(&state), ["OpenAI · you@example.com"]);
+        assert_eq!(account_names(&state), ["you@example.com"]);
     }
 
     /// A key is known only by its fingerprint, which is not kept, so its

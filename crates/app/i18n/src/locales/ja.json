@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "キー ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "キー",
-    "agents_account_login": "ログイン",
+    "agents_account_unknown": "不明",
     "agents_found_in_user": "あなたが追加",
     "agents_accounts_need_you": "アカウントの対応が必要",
     "agents_profiles_need_you": "プロファイルの対応が必要",

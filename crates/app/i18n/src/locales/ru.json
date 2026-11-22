@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "ключ ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "ключ",
-    "agents_account_login": "вход",
+    "agents_account_unknown": "неизвестно",
     "agents_found_in_user": "добавлен вами",
     "agents_accounts_need_you": "Аккаунтам нужны вы",
     "agents_profiles_need_you": "Профилям нужны вы",

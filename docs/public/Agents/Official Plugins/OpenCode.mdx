@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside } from '@astrojs/starlight/components';
 
-Official · version 0.1.3 · install it from `assets/plugins/opencode/` of the OTTY repository with
+Official · version 0.1.4 · install it from `assets/plugins/opencode/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)); its own
 repository will be `github.com/otty-shell/otty-plugin-opencode`
 
@@ -24,7 +24,7 @@ providers.
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profile        | The data folder `~/.local/share/opencode`, or `opencode` in `XDG_DATA_HOME`.                          |
 | Reads          | The database `opencode.db` in it, or the one `OPENCODE_DB` names, read-only, with its write-ahead log: sessions, every answer of the history (provider, model, tokens, cost, session, folder), the agent's version. Never the tables with the text of a conversation. |
-| Logins, as handles | `auth.json`: the `key`, `access` and `refresh` field of each login. The `credential` table of the database: the same fields of its `value` column. |
+| Logins, as handles | `auth.json`: the `key`, `access` and `refresh` field of each login. The `credential` table of the database: the same fields of its `value` column. When you logged in to a provider more than once, OpenCode keeps every login and marks the one it uses; only that one is read. |
 | Variables      | `XDG_DATA_HOME`, `OPENCODE_DB`.                                                                        |
 | Runs           | Nothing. OTTY runs `opencode --version` itself only when the database names no version.                 |
 | Writes         | Nothing. The database is opened read-only, so the plugin never locks it or changes it.                |
@@ -36,7 +36,7 @@ providers.
 
 | Login in OpenCode                        | Read by                                                             |
 | ---------------------------------------- | ------------------------------------------------------------------- |
-| ChatGPT login                            | [OpenAI](../openai/#openai-provider): its limits, with OpenCode's token. The same login in Codex is the same account. A login whose token names no account (OpenCode's "chatgpt-token-sharing") is still a login, shown with no name. |
+| ChatGPT login                            | [OpenAI](../openai/#openai-provider): its limits, with OpenCode's token. The same login in Codex is the same account. A login whose token names no account (OpenCode's "chatgpt-token-sharing") is still a login, shown as "unknown". Two such logins of the same person are one account. |
 | Anthropic, OpenAI, DeepSeek or OpenRouter key | The plugin of that provider, known by the key's fingerprint.   |
 | Claude login                             | Left out: OpenCode keeps nothing that tells which account it is.    |
 | A key for a provider no plugin serves    | Listed with the need **No provider plugin**.                        |

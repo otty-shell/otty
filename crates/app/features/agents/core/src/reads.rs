@@ -1051,10 +1051,7 @@ mod tests {
         assert_eq!(read, [pair("deepseek"), pair("deepseek-fork")]);
         assert_eq!(
             names,
-            [
-                "DeepSeek · key ••••seek (DeepSeek)",
-                "DeepSeek Fork · key ••••seek (DeepSeek Fork)"
-            ]
+            ["key ••••seek (DeepSeek)", "key ••••seek (DeepSeek Fork)"]
         );
     }
 

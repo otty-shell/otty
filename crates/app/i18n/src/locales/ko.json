@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "키 ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "키",
-    "agents_account_login": "로그인",
+    "agents_account_unknown": "알 수 없음",
     "agents_found_in_user": "직접 추가함",
     "agents_accounts_need_you": "계정에 조치 필요",
     "agents_profiles_need_you": "프로필에 조치 필요",

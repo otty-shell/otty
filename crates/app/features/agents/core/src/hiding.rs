@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(
             listed[1],
             (
-                String::from("OpenAI · you@example.com"),
+                String::from("you@example.com"),
                 Some(String::from("hidden"))
             )
         );
@@ -306,10 +306,7 @@ mod tests {
                 .into_iter()
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
-            [
-                "OpenAI · you@example.com",
-                "DeepSeek · $DEEPSEEK_API_KEY (DeepSeek)"
-            ]
+            ["you@example.com", "$DEEPSEEK_API_KEY (DeepSeek)"]
         );
         assert!(
             state

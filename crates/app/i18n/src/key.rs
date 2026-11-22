@@ -1454,8 +1454,8 @@ pub enum Key {
     TplAgentsAccountOfPlugin,
     /// A key too short to show any of it.
     AgentsAccountKey,
-    /// A login whose files name no email.
-    AgentsAccountLogin,
+    /// A login whose files name no email, no key and no plan.
+    AgentsAccountUnknown,
     /// An account the user added.
     AgentsFoundInUser,
     /// Title of the needs of the accounts.
@@ -2681,7 +2681,7 @@ impl Key {
         Self::TplAgentsAccountKey,
         Self::TplAgentsAccountOfPlugin,
         Self::AgentsAccountKey,
-        Self::AgentsAccountLogin,
+        Self::AgentsAccountUnknown,
         Self::AgentsFoundInUser,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,

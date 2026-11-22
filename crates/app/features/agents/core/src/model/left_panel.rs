@@ -6,7 +6,7 @@ use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
-use super::account_name::account_name;
+use super::account_name::short_account_name;
 use super::entry_icon::EntryIcon;
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::{
@@ -106,7 +106,8 @@ pub(crate) struct AccountRowViewModel {
     pub(crate) is_selected: bool,
     /// The icon of its provider.
     pub(crate) icon: EntryIcon,
-    /// The provider and the login, such as "Example Cloud · you@example.com".
+    /// The login without the provider its logo shows, such as
+    /// "you@example.com", or the name the user gave the account.
     pub(crate) name: String,
     /// Its number with its word and color, such as "42 % used", which
     /// draws itself in the tight form; `None` while nothing is known.
@@ -124,7 +125,7 @@ impl AccountRowViewModel {
         Self {
             is_selected,
             icon: state.provider_icon(account.provider()),
-            name: account_name(
+            name: short_account_name(
                 state.registry(),
                 state.profiles().saved(),
                 &account,
@@ -301,14 +302,14 @@ mod tests {
                     account: organization(),
                     is_selected: false,
                     icon: crate::testing::provider_icon("anthropic"),
-                    name: String::from("Anthropic · dev@example.com"),
+                    name: String::from("dev@example.com"),
                     number: None,
                 },
                 AccountRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
                     is_selected: false,
                     icon: crate::testing::provider_icon("openai"),
-                    name: String::from("OpenAI · you@example.com"),
+                    name: String::from("you@example.com"),
                     number: Some(AccountNumber::word(
                         i18n::with_count(Key::TplAgentsPercentUsed, 42),
                         SessionTone::Muted
@@ -318,6 +319,67 @@ mod tests {
         );
         assert!(vm.accounts.is_open);
         assert_eq!(vm.accounts.note, None);
+    }
+
+    /// Issue 34: a row names its account by the login alone, as its logo
+    /// already says the provider; a name the user gave is shown as given.
+    #[test]
+    fn an_account_row_is_its_login_or_the_name_the_user_gave() {
+        let saved = SavedProfiles::default()
+            .with_account_name(&organization(), Some(String::from("Work")));
+        let state = with_accounts(
+            &[
+                (claude(), connected(), vec![organization()]),
+                (codex(), connected(), vec![chatgpt_login()]),
+            ],
+            saved,
+        );
+
+        let vm = LeftPanelViewModel::from_state(&state, now());
+
+        let names: Vec<&str> = vm
+            .accounts
+            .accounts
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(names, ["Work", "you@example.com"]);
+    }
+
+    /// Issue 34: a login two plugins read keeps its plugin after the
+    /// login, so the two rows tell apart.
+    #[test]
+    fn an_account_row_two_plugins_read_names_its_plugin() {
+        let fork = otty_agents::ProviderEntry::new(
+            otty_agents::ProviderId::new("openai"),
+            "OpenAI",
+            otty_plugin_host::PluginPart::new(
+                "openai-fork",
+                "OpenAI Fork",
+                "0.1.0",
+                "",
+                "openai",
+            ),
+        );
+        let found = chatgpt_login().with_read_by(None);
+        let state = crate::testing::with_accounts_in(
+            crate::testing::registry_with(fork),
+            &[(codex(), connected(), vec![found])],
+            SavedProfiles::default(),
+        );
+
+        let vm = LeftPanelViewModel::from_state(&state, now());
+
+        let names: Vec<&str> = vm
+            .accounts
+            .accounts
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["you@example.com (OpenAI)", "you@example.com (OpenAI Fork)"]
+        );
     }
 
     #[test]

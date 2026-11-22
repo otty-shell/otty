@@ -682,7 +682,7 @@
     "tpl_agents_account_key": "chave ••••{last}",
     "tpl_agents_account_of_plugin": "{name} ({plugin})",
     "agents_account_key": "chave",
-    "agents_account_login": "login",
+    "agents_account_unknown": "desconhecido",
     "agents_found_in_user": "adicionada por você",
     "agents_accounts_need_you": "As contas precisam de você",
     "agents_profiles_need_you": "Os perfis precisam de você",
