@@ -13,6 +13,7 @@ use otty_app_agents_io::{self as agents_io, LoadedReaders, RunningParts};
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::PluginsPlace;
 use otty_app_modes::ModesIntent;
+use otty_app_notifications::NotificationsIntent;
 use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome, RunningPlugin};
 use otty_app_plugins_io as plugins_io;
 
@@ -83,6 +84,13 @@ impl Delivery for PluginsIntent {
             },
             // Try again started a paused part: Agents mode reads again.
             PluginsOutcome::ReadAgain => deliver(app, AgentsIntent::Refresh),
+            // What Reload, Check for updates or an update did (issue 35).
+            PluginsOutcome::Done(text) => {
+                deliver(app, NotificationsIntent::PushDone(text))
+            },
+            PluginsOutcome::Failed(text) => {
+                deliver(app, NotificationsIntent::Push(text))
+            },
         }
     }
 }
@@ -132,6 +140,8 @@ pub(crate) fn running_plugins(
 
 #[cfg(test)]
 mod tests {
+    use iced_test::simulator;
+
     use super::*;
     use crate::testing::window::app;
 
@@ -159,6 +169,32 @@ mod tests {
         assert_eq!(on_top, Some(Overlay::PluginsDialog));
         assert!(!app.plugins.has_dialog());
         assert_eq!(app.modes.active(), Mode::Plugins);
+    }
+
+    /// Issue 35: what Reload or Check for updates did, or why it failed,
+    /// is a toast in the window.
+    #[test]
+    fn the_results_of_plugins_mode_are_notifications() {
+        let mut app = app();
+
+        let _done = PluginsIntent::read(
+            &mut app,
+            PluginsOutcome::Done(String::from("Plugin Example reloaded")),
+        );
+        let _failed = PluginsIntent::read(
+            &mut app,
+            PluginsOutcome::Failed(String::from(
+                "Plugin Example could not be reloaded: no file",
+            )),
+        );
+
+        let mut ui = simulator(crate::view::view(&app));
+        assert!(ui.find("Plugin Example reloaded").is_ok());
+        assert!(
+            ui.find("Plugin Example could not be reloaded: no file")
+                .is_ok()
+        );
+        assert_eq!(app.notifications.unseen_count(), 2);
     }
 
     /// A dialog of Plugins mode is not on screen in another mode, so it

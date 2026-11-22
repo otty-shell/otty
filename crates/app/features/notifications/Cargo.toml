@@ -2,7 +2,7 @@
 name = "otty-app-notifications"
 homepage = "https://otty.run"
 repository = "https://github.com/otty-shell/otty"
-description = "Notifications of the OTTY app: error toasts and the list under the bell"
+description = "Notifications of the OTTY app: toasts of errors and finished actions, and the list under the bell"
 readme = "README.md"
 authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"

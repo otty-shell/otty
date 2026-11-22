@@ -1,9 +1,11 @@
 //! The notifications feature of the OTTY app: it tells the user about errors
-//! with toasts at the top of the window and keeps the last ones for the list
-//! under the bell in the header.
+//! and finished actions with toasts at the top of the window and keeps the
+//! last ones for the list under the bell in the header.
 //!
 //! Other features report an error through their own outcome, and the binary
-//! turns it into [`NotificationsIntent::Push`]. The feature does no I/O: the
+//! turns it into [`NotificationsIntent::Push`]; a finished action, such as
+//! "Plugin OpenCode reloaded", into [`NotificationsIntent::PushDone`]. The
+//! feature does no I/O: the
 //! binary reads the clock into [`NotificationsCtx`]. The toast timer runs
 //! from the feature's own [`Component::subscription`] while a toast shows.
 //!
@@ -60,7 +62,7 @@ use view::{notification_list, toast_stack};
 /// toast goes away about five seconds after it came.
 const TOAST_TICK: Duration = Duration::from_millis(250);
 
-/// The notifications feature: the error toasts and the list under the bell.
+/// The notifications feature: the toasts and the list under the bell.
 ///
 /// The list is kept in memory only and holds the last 100 notifications.
 ///

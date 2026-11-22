@@ -10,6 +10,7 @@ pub(super) fn reduce(
 ) -> Vec<NotificationsOutcome> {
     match intent {
         NotificationsIntent::Push(text) => state.push(text, ctx.now),
+        NotificationsIntent::PushDone(text) => state.push_done(text, ctx.now),
         NotificationsIntent::DismissToast(id) => state.dismiss_toast(id),
         NotificationsIntent::Tick => state.expire_toasts(ctx.now),
         NotificationsIntent::OpenList => {
@@ -55,6 +56,21 @@ mod tests {
 
         assert!(outcomes.is_empty());
         assert_eq!(toasts(&state), vec!["disk full"]);
+    }
+
+    /// Issue 35: the news of a finished action shows as a toast too.
+    #[test]
+    fn a_finished_action_shows_as_a_toast_and_asks_for_nothing() {
+        let mut state = NotificationsState::default();
+
+        let outcomes = reduce(
+            &mut state,
+            NotificationsIntent::PushDone(String::from("Plugin X reloaded")),
+            at(Instant::now()),
+        );
+
+        assert!(outcomes.is_empty());
+        assert_eq!(toasts(&state), vec!["Plugin X reloaded"]);
     }
 
     /// The toast counts its five seconds from the time in the context,

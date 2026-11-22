@@ -157,4 +157,10 @@ pub enum PluginsOutcome {
     Notes(PluginNotes),
     /// A paused part runs again: Agents mode reads again.
     ReadAgain,
+    /// Tell the user what an action did, such as "Plugin Example
+    /// reloaded": a neutral notification (issue 35).
+    Done(String),
+    /// Tell the user why an action failed, such as "Plugin Example could
+    /// not be reloaded: …": an error notification (issue 35).
+    Failed(String),
 }

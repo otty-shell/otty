@@ -38,6 +38,7 @@ pub(crate) fn view<'a>(
         svg::Handle::from_memory(icons::NOTICE_ERROR),
         palette,
     )
+    .success_icon(svg::Handle::from_memory(icons::NOTICE_DONE))
     .clear(
         svg::Handle::from_memory(icons::BROOM),
         i18n::t(Key::NotificationsClear),
@@ -46,7 +47,12 @@ pub(crate) fn view<'a>(
     .remove_label(i18n::t(Key::NotificationRemove))
     .empty(i18n::t(Key::NotificationsEmpty));
     for row in vm.rows {
-        list = list.row(row.text, row.age, NotificationsIntent::Remove(row.id));
+        let remove = NotificationsIntent::Remove(row.id);
+        list = if row.is_done {
+            list.success_row(row.text, row.age, remove)
+        } else {
+            list.row(row.text, row.age, remove)
+        };
     }
     let list: Element<'a, NotificationsIntent> = list.into();
 
@@ -100,6 +106,7 @@ mod tests {
                 .iter()
                 .map(|(id, text, age)| NotificationListRowViewModel {
                     id: *id,
+                    is_done: false,
                     text,
                     age: String::from(*age),
                 })

@@ -1,10 +1,10 @@
 //! The main area of Plugins mode: the page of the selected plugin, one
 //! column at most as wide as a form and centred, as the pages of Agents
-//! mode; or a card with a short line that says what to do, and the two
-//! ways to add a plugin.
+//! mode, each of its parts a card (issue 35); or a card with a short line
+//! that says what to do, and the two ways to add a plugin.
 
-use iced::widget::{Column, Row, column, container, row, svg, text};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Column, Row, Space, column, container, row, svg, text};
+use iced::{Alignment, Border, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
@@ -13,12 +13,16 @@ use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::letter_icon::letter_icon;
 use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, size, spacing, typography};
+use otty_ui_kit::{fonts, radius, size, spacing, typography};
 
+use super::can_access::{can_access, kind_tag};
 use crate::event::PluginsIntent;
-use crate::model::{MainViewModel, PartRowViewModel, PluginPageViewModel};
+use crate::model::{
+    MainViewModel, PartRowViewModel, PluginPageViewModel, SourceViewModel,
+};
 
 /// Edge of the icon before the plugin name.
 const ICON_EDGE: f32 = 26.0;
@@ -138,11 +142,14 @@ fn header<'a>(
         .into()
 }
 
-/// Version, authors, repository and source.
+/// Version, authors, source and, for a local plugin, the repository its
+/// manifest names. A repository opens on a press.
 fn facts<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
+    let open = || PluginsIntent::OpenRepository(page.id.clone());
+
     let mut facts = KeyValueList::new(palette)
         .entry(i18n::t(Key::PluginsFieldVersion), page.version.clone());
     if let Some(authors) = &page.authors {
@@ -151,18 +158,22 @@ fn facts<'a>(
     if let Some(repository) = &page.repository {
         facts = facts.entry_parts(
             i18n::t(Key::PluginsFieldRepository),
-            [ValuePart::link(
-                repository.clone(),
-                PluginsIntent::OpenRepository(page.id.clone()),
-            )],
+            [ValuePart::link(repository.clone(), open())],
         );
     }
-    facts = facts.entry(i18n::t(Key::PluginsFieldSource), page.source.clone());
+    let source = match &page.source {
+        SourceViewModel::Folder(folder) => ValuePart::text(folder.clone()),
+        SourceViewModel::Repository(url) => {
+            ValuePart::link(url.clone(), open())
+        },
+    };
+    facts = facts.entry_parts(i18n::t(Key::PluginsFieldSource), [source]);
 
     facts.into()
 }
 
-/// What the latest check said, and the update that waits with Review.
+/// The update that waits with Review, and a newer version that needs a
+/// newer OTTY.
 fn news<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
@@ -170,15 +181,6 @@ fn news<'a>(
     let mut lines = column![].spacing(spacing::SPACE_2);
     let mut has_lines = false;
 
-    if let Some(news) = page.news.clone() {
-        let color = if page.is_news_failure {
-            palette.status_error()
-        } else {
-            palette.text_muted()
-        };
-        lines = lines.push(small_text(news, color));
-        has_lines = true;
-    }
     if let Some(waiting) = page.waiting.clone() {
         lines = lines.push(
             row![
@@ -191,6 +193,10 @@ fn news<'a>(
             .spacing(spacing::SPACE_3)
             .align_y(Alignment::Center),
         );
+        has_lines = true;
+    }
+    if let Some(too_new) = page.too_new.clone() {
+        lines = lines.push(small_text(too_new, palette.text_muted()));
         has_lines = true;
     }
 
@@ -272,15 +278,16 @@ fn parts<'a>(
         .into()
 }
 
-/// One part: its switch, its health with Try again while it is paused,
-/// its last failed call with Copy report, and its permissions.
+/// One part as a card: a header with its name, the tag of its kind, its
+/// health badge, Try again while it is paused and its switch at the right
+/// end; its last failed call with Copy report; what it can access.
 fn part_card<'a>(
     plugin: &str,
     part: PartRowViewModel,
     is_busy: bool,
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
-    let mut switch = Switch::new(part.is_on, palette).label(part.title);
+    let mut switch = Switch::new(part.is_on, palette);
     if !is_busy {
         let plugin = plugin.to_string();
         let reference = part.part.clone();
@@ -290,17 +297,31 @@ fn part_card<'a>(
             on,
         });
     }
-
-    let health_color = if part.is_paused {
-        palette.status_warn()
+    let tone = if !part.is_on {
+        StatusTone::Neutral
+    } else if part.is_paused {
+        StatusTone::Warn
     } else {
-        palette.text_muted()
+        StatusTone::Ok
     };
-    let mut health = row![small_text(part.health, health_color)]
-        .spacing(spacing::SPACE_2)
-        .align_y(Alignment::Center);
+    let mut badge = StatusBadge::new(part.health, tone, palette);
     if part.is_paused {
-        health = health.push(
+        badge = badge.tooltip(i18n::t(Key::PluginsPaused));
+    }
+
+    let mut header = Row::new()
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .height(size::CONTROL_MD)
+        .push(
+            text(part.name)
+                .font(fonts::UI_SEMIBOLD)
+                .color(palette.text_strong()),
+        )
+        .push(kind_tag(part.kind, palette))
+        .push(badge);
+    if part.is_paused {
+        header = header.push(
             Button::new(i18n::t(Key::PluginsTryAgain), palette)
                 .kind(ButtonKind::Secondary)
                 .size(ButtonSize::Small)
@@ -310,8 +331,9 @@ fn part_card<'a>(
                 }),
         );
     }
+    header = header.push(Space::new().width(Length::Fill)).push(switch);
 
-    let mut card = column![switch, health].spacing(spacing::SPACE_1);
+    let mut card = column![header].spacing(spacing::SPACE_4);
     if let Some(last) = part.last_failure {
         card = card.push(
             row![
@@ -325,17 +347,23 @@ fn part_card<'a>(
             .align_y(Alignment::Center),
         );
     }
-    if part.permissions.is_empty() {
-        card = card.push(small_text(
-            i18n::t(Key::PluginsNoPermissions),
-            palette.text_muted(),
-        ));
-    }
-    for line in part.permissions {
-        card = card.push(small_text(format!("• {line}"), palette.text_body()));
-    }
+    card = card.push(can_access(part.groups, palette));
 
-    card.into()
+    let background = palette.surface_panel();
+    let line = palette.line();
+    container(card)
+        .width(Length::Fill)
+        .padding([spacing::SPACE_4, spacing::SPACE_5])
+        .style(move |_| container::Style {
+            background: Some(background.into()),
+            border: Border {
+                radius: radius::RADIUS_MD.into(),
+                width: size::LINE,
+                color: line,
+            },
+            ..container::Style::default()
+        })
+        .into()
 }
 
 #[cfg(test)]
@@ -345,6 +373,9 @@ mod tests {
 
     use super::*;
     use crate::model::LastFailureViewModel;
+    use crate::model::permissions::{
+        PermissionGroup, PermissionGroupViewModel, PlaceViewModel,
+    };
 
     fn example() -> PluginPageViewModel {
         PluginPageViewModel {
@@ -358,19 +389,28 @@ mod tests {
             repository: Some(String::from(
                 "https://github.com/otty-shell/otty-plugin-example",
             )),
-            source: String::from("Folder /work/example"),
+            source: SourceViewModel::Folder(String::from("/work/example")),
             parts: vec![PartRowViewModel {
                 part: PartRef::agent("example-agent"),
-                title: String::from("Example Agent (agent)"),
+                name: String::from("Example Agent"),
+                kind: "Agent",
                 is_on: true,
-                health: "Paused after three failures",
+                health: "Paused",
                 is_paused: true,
-                permissions: vec![String::from("Reads files in `~/.x/**`")],
+                groups: vec![PermissionGroupViewModel {
+                    label: "Files",
+                    places: vec![PlaceViewModel {
+                        group: PermissionGroup::Files,
+                        text: String::from("~/.x/**"),
+                        is_words: false,
+                        note: None,
+                        mark: None,
+                    }],
+                }],
                 last_failure: None,
             }],
-            news: None,
-            is_news_failure: false,
             waiting: None,
+            too_new: None,
             is_local: true,
             error: None,
             is_busy: false,
@@ -416,8 +456,7 @@ mod tests {
         let mut ui = simulator(page_view(example(), &palette));
 
         assert!(ui.find("OTTY team").is_ok());
-        assert!(ui.find("Folder /work/example").is_ok());
-        assert!(ui.find("• Reads files in `~/.x/**`").is_ok());
+        assert!(ui.find("/work/example").is_ok());
         assert!(ui.find(i18n::t(Key::PluginsCheckForUpdates)).is_err());
         let _ = ui.click(i18n::t(Key::PluginsReload));
         let _ = ui.click(i18n::t(Key::PluginsTryAgain));
@@ -463,6 +502,46 @@ mod tests {
         let mut ui = simulator(page_view(example(), &palette));
 
         let _ = ui.click("https://github.com/otty-shell/otty-plugin-example");
+
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [PluginsIntent::OpenRepository(id)] if id == "example"
+        ));
+    }
+
+    /// Issue 35: the card of a part shows its name, the tag of its kind,
+    /// its health badge and what it can access, places without backticks.
+    #[test]
+    fn a_part_card_shows_its_kind_health_and_permissions() {
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(page_view(example(), &palette));
+
+        let name = ui.find("Example Agent").expect("the name").bounds();
+        let kind = ui.find("Agent").expect("the kind").bounds();
+        let health = ui.find("Paused").expect("the health").bounds();
+
+        assert!(name.x < kind.x && kind.x < health.x);
+        assert!((name.center_y() - kind.center_y()).abs() < 2.0);
+        assert!(ui.find(i18n::t(Key::PluginsCanAccess)).is_ok());
+        assert!(ui.find("Files").is_ok());
+        assert!(ui.find("~/.x/**").is_ok());
+    }
+
+    /// Issue 35: a source from a repository is its link, and the page
+    /// shows no line of what Reload or Check for updates did.
+    #[test]
+    fn a_repository_source_opens_it() {
+        let palette = UiPalette::otty_dark();
+        let mut page = example();
+        page.repository = None;
+        page.is_local = false;
+        page.source = SourceViewModel::Repository(String::from(
+            "https://github.com/someone/example",
+        ));
+        let mut ui = simulator(page_view(page, &palette));
+
+        let _ = ui.click("https://github.com/someone/example");
 
         let sent: Vec<PluginsIntent> = ui.into_messages().collect();
         assert!(matches!(

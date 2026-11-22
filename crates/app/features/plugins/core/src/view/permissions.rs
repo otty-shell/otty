@@ -1,9 +1,10 @@
 //! The dialogs that show permissions: the install dialog and the update
-//! dialog with what changed.
-//! Each part is a title and its lines.
+//! dialog with what changed. Each part is its name with the tag of its
+//! kind, then what it can access, grouped as on the page of a plugin
+//! (issue 35).
 
-use iced::Element;
 use iced::widget::{Column, column, row, text};
+use iced::{Alignment, Element};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
@@ -11,6 +12,7 @@ use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing};
 
+use super::can_access::{can_access, kind_tag};
 use crate::event::PluginsIntent;
 use crate::model::{
     InstallDialogViewModel, PartPermissionsViewModel, UpdateDialogViewModel,
@@ -32,7 +34,7 @@ pub(super) fn install<'a>(
         about = about.push(small_text(repository, palette.text_muted()));
     }
     body = body.push(about);
-    body = body.push(parts(dialog.parts, false, palette));
+    body = body.push(parts(dialog.parts, palette));
     if let Some(error) = dialog.error {
         body = body.push(small_text(error, palette.status_error()));
     }
@@ -62,7 +64,7 @@ pub(super) fn update<'a>(
 ) -> Element<'a, PluginsIntent> {
     let body = column![
         small_text(i18n::t(Key::PluginsUpdateAsks), palette.text_body()),
-        parts(dialog.parts, true, palette),
+        parts(dialog.parts, palette),
     ]
     .spacing(spacing::SPACE_4);
     let body = match dialog.error {
@@ -87,53 +89,33 @@ pub(super) fn update<'a>(
         .into()
 }
 
-/// Each part: its title with its mark, its lines, marked new in the
-/// update dialog (`marks_new`), and the lines it no longer asks for.
+/// Each part: its name, the tag of its kind and in the update dialog its
+/// mark, then what it can access, unless the new version no longer has
+/// it.
 fn parts<'a>(
     parts: Vec<PartPermissionsViewModel>,
-    marks_new: bool,
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
-    let mut list = Column::new().spacing(spacing::SPACE_3);
+    let mut list = Column::new().spacing(spacing::SPACE_5);
 
     for part in parts {
         let mut title = row![
-            text(part.title)
+            text(part.name)
                 .font(fonts::UI_SEMIBOLD)
-                .color(palette.text_strong())
+                .color(palette.text_strong()),
+            kind_tag(part.kind, palette),
         ]
-        .spacing(spacing::SPACE_2);
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center);
         if let Some(mark) = part.mark {
             title = title.push(small_text(mark, palette.status_warn()));
         }
 
-        let mut lines = column![title].spacing(spacing::SPACE_1);
-        if part.lines.is_empty()
-            && part.removed.is_empty()
-            && part.mark.is_none()
-        {
-            lines = lines.push(small_text(
-                i18n::t(Key::PluginsNoPermissions),
-                palette.text_muted(),
-            ));
+        let mut block = column![title].spacing(spacing::SPACE_3);
+        if !part.is_removed {
+            block = block.push(can_access(part.groups, palette));
         }
-        for line in part.lines {
-            let line = if marks_new {
-                i18n::filled(
-                    Key::TplPluginsNewPermission,
-                    &[("permission", &line)],
-                )
-            } else {
-                format!("• {line}")
-            };
-            lines = lines.push(small_text(line, palette.text_body()));
-        }
-        for line in part.removed {
-            let removed =
-                i18n::filled(Key::TplPluginsNoLonger, &[("permission", &line)]);
-            lines = lines.push(small_text(removed, palette.text_muted()));
-        }
-        list = list.push(lines);
+        list = list.push(block);
     }
 
     list.into()
@@ -144,6 +126,47 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::model::permissions::{
+        PermissionGroup, PermissionGroupViewModel, PlaceViewModel,
+    };
+
+    /// Issue 35: the install dialog shows each part with the tag of its
+    /// kind and what it can access, grouped as on the page.
+    #[test]
+    fn the_install_dialog_shows_the_same_groups() {
+        let palette = UiPalette::otty_dark();
+        let dialog = InstallDialogViewModel {
+            title: String::from("Install Example 0.1.0"),
+            authors: None,
+            repository: None,
+            trust: "Community plugin: reviewed by its author only",
+            parts: vec![PartPermissionsViewModel {
+                name: String::from("Example Cloud"),
+                kind: "Provider",
+                mark: None,
+                is_removed: false,
+                groups: vec![PermissionGroupViewModel {
+                    label: "Sites",
+                    places: vec![PlaceViewModel {
+                        group: PermissionGroup::Sites,
+                        text: String::from("api.example.com"),
+                        is_words: false,
+                        note: None,
+                        mark: None,
+                    }],
+                }],
+            }],
+            error: None,
+            is_busy: false,
+        };
+        let mut ui = simulator(install(dialog, &palette));
+
+        assert!(ui.find("Example Cloud").is_ok());
+        assert!(ui.find("Provider").is_ok());
+        assert!(ui.find(i18n::t(Key::PluginsCanAccess)).is_ok());
+        assert!(ui.find("Sites").is_ok());
+        assert!(ui.find("api.example.com").is_ok());
+    }
 
     #[test]
     fn install_of_the_install_dialog_installs() {

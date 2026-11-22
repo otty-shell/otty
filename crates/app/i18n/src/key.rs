@@ -1794,16 +1794,14 @@ pub enum Key {
     PluginsFieldRepository,
     /// Key of where a plugin came from on its page.
     PluginsFieldSource,
-    /// Source of a plugin installed from GitHub releases.
-    PluginsSourceRelease,
-    /// Source of a plugin installed from a folder: {folder}.
-    TplPluginsSourceFolder,
     /// Title of the parts on the page of a plugin.
     PluginsSectionParts,
     /// Health of a part that is on and not paused.
     PluginsHealthWorking,
     /// Health of a part that is off.
     PluginsHealthOff,
+    /// Health of a part paused after three failures in a row.
+    PluginsHealthPaused,
     /// Mark of an official plugin.
     PluginsOfficial,
     /// Mark of a community plugin.
@@ -1814,9 +1812,6 @@ pub enum Key {
     PluginsPartAgent,
     /// Kind of a provider part, as in "Example Cloud (provider)".
     PluginsPartProvider,
-    /// A part with its domain and kind, as in "Coder (Agents: agent)":
-    /// {name}, {domain}, {kind}.
-    TplPluginsPart,
     /// Line next to a part paused after three failures in a row.
     PluginsPaused,
     /// Button that starts a paused part again.
@@ -1833,14 +1828,20 @@ pub enum Key {
     PluginsRemove,
     /// Button that opens the update dialog of a waiting update.
     PluginsReview,
-    /// Line of a plugin whose check found nothing newer.
-    PluginsUpToDate,
-    /// Line of a plugin that updated on its own: {version}.
-    TplPluginsUpdatedTo,
     /// Line of a plugin whose newest release needs a newer OTTY: {version}.
     TplPluginsTooNew,
     /// Line of a plugin whose update waits for the user's OK: {version}.
     TplPluginsUpdateWaits,
+    /// Notification after Reload with the same version: {name}.
+    TplPluginsReloaded,
+    /// Notification after an update: {name}, {version}.
+    TplPluginsUpdated,
+    /// Notification after Check for updates with nothing newer: {name}.
+    TplPluginsUpToDate,
+    /// Error notification of Reload: {name}, {reason}.
+    TplPluginsReloadFailed,
+    /// Error notification of Check for updates: {name}, {reason}.
+    TplPluginsCheckFailed,
     /// Title of the Add plugin dialog.
     PluginsAddPluginTitle,
     /// Label of the field of the GitHub link.
@@ -1869,6 +1870,40 @@ pub enum Key {
     PluginsLocalNote,
     /// Line of a part that asks for no permissions.
     PluginsNoPermissions,
+    /// Title over the permissions of a part: what it can reach.
+    PluginsCanAccess,
+    /// Muted line under "Can access": everything else is refused.
+    PluginsCanAccessNote,
+    /// Group of permissions: files the part reads.
+    PluginsGroupFiles,
+    /// Group of permissions: files the part writes and deletes.
+    PluginsGroupChangesFiles,
+    /// Group of permissions: SQLite databases the part reads.
+    PluginsGroupDatabases,
+    /// Group of permissions: environment variables the part reads.
+    PluginsGroupVariables,
+    /// Group of permissions: programs the part runs.
+    PluginsGroupPrograms,
+    /// Group of permissions: programs the part runs in a hidden terminal.
+    PluginsGroupHiddenTerminal,
+    /// Group of permissions: entries of the system keyring.
+    PluginsGroupKeyring,
+    /// Group of permissions: files, databases and variables with logins or keys.
+    PluginsGroupLogins,
+    /// Group of permissions: sites the part sends requests to.
+    PluginsGroupSites,
+    /// Group of permissions: provider logins found by other plugins.
+    PluginsGroupFromAgents,
+    /// Group of permissions OTTY can not sort, as written in plugins.json.
+    PluginsGroupOther,
+    /// Muted words after a keyring entry.
+    PluginsPlaceKeyringNote,
+    /// A place of "From agents": {provider} accounts.
+    TplPluginsPlaceAccounts,
+    /// Mark of a permission an update asks for.
+    PluginsMarkNew,
+    /// Mark of a permission an update no longer asks for.
+    PluginsMarkNoLonger,
     /// Button of the install dialog.
     PluginsInstall,
     /// Title of the update dialog: {name}, {from}, {to}.
@@ -1879,10 +1914,6 @@ pub enum Key {
     PluginsNewPart,
     /// Mark of a part the new version no longer has.
     PluginsPartRemoved,
-    /// A permission the update asks for: {permission}.
-    TplPluginsNewPermission,
-    /// A permission the update no longer asks for: {permission}.
-    TplPluginsNoLonger,
     /// Button of the update dialog.
     PluginsUpdate,
     /// Button of the update dialog that keeps the installed version.
@@ -1899,32 +1930,6 @@ pub enum Key {
     PluginsBack,
     /// Error of a plugin that needs a newer OTTY.
     PluginsNeedsNewerOtty,
-    /// Permission: {glob}.
-    TplPluginsPermReadsFiles,
-    /// Permission: {glob}.
-    TplPluginsPermWritesFiles,
-    /// Permission: {glob}.
-    TplPluginsPermQueriesDatabases,
-    /// Permission: {name}.
-    TplPluginsPermReadsVariable,
-    /// Permission: {command}.
-    TplPluginsPermRunsProgram,
-    /// Permission: {command}.
-    TplPluginsPermHiddenTerminal,
-    /// Permission: {service}, {user}.
-    TplPluginsPermReadsKeyring,
-    /// Permission: {glob}.
-    TplPluginsPermReadsLoginsInFiles,
-    /// Permission: {column}, {table}, {databases}.
-    TplPluginsPermReadsLoginsInDatabase,
-    /// Permission: {name}.
-    TplPluginsPermReadsKeyInVariable,
-    /// Permission: {host}.
-    TplPluginsPermSendsRequests,
-    /// Permission: {provider}.
-    TplPluginsPermGetsProviderKeys,
-    /// Permission: {host}.
-    TplPluginsPermGetsHostKeys,
     /// Error: {url}.
     TplPluginsErrorBadUrl,
     /// Error when GitHub refuses requests.
@@ -2013,7 +2018,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 941] = [
+    pub(super) const ALL: [Self; 944] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2849,17 +2854,15 @@ impl Key {
         Self::PluginsFieldAuthors,
         Self::PluginsFieldRepository,
         Self::PluginsFieldSource,
-        Self::PluginsSourceRelease,
-        Self::TplPluginsSourceFolder,
         Self::PluginsSectionParts,
         Self::PluginsHealthWorking,
         Self::PluginsHealthOff,
+        Self::PluginsHealthPaused,
         Self::PluginsOfficial,
         Self::PluginsCommunity,
         Self::PluginsLocal,
         Self::PluginsPartAgent,
         Self::PluginsPartProvider,
-        Self::TplPluginsPart,
         Self::PluginsPaused,
         Self::PluginsTryAgain,
         Self::PluginsCheckForUpdates,
@@ -2868,10 +2871,13 @@ impl Key {
         Self::PluginsShowLog,
         Self::PluginsRemove,
         Self::PluginsReview,
-        Self::PluginsUpToDate,
-        Self::TplPluginsUpdatedTo,
         Self::TplPluginsTooNew,
         Self::TplPluginsUpdateWaits,
+        Self::TplPluginsReloaded,
+        Self::TplPluginsUpdated,
+        Self::TplPluginsUpToDate,
+        Self::TplPluginsReloadFailed,
+        Self::TplPluginsCheckFailed,
         Self::PluginsAddPluginTitle,
         Self::PluginsUrlLabel,
         Self::PluginsUrlHint,
@@ -2886,13 +2892,28 @@ impl Key {
         Self::PluginsCommunityNote,
         Self::PluginsLocalNote,
         Self::PluginsNoPermissions,
+        Self::PluginsCanAccess,
+        Self::PluginsCanAccessNote,
+        Self::PluginsGroupFiles,
+        Self::PluginsGroupChangesFiles,
+        Self::PluginsGroupDatabases,
+        Self::PluginsGroupVariables,
+        Self::PluginsGroupPrograms,
+        Self::PluginsGroupHiddenTerminal,
+        Self::PluginsGroupKeyring,
+        Self::PluginsGroupLogins,
+        Self::PluginsGroupSites,
+        Self::PluginsGroupFromAgents,
+        Self::PluginsGroupOther,
+        Self::PluginsPlaceKeyringNote,
+        Self::TplPluginsPlaceAccounts,
+        Self::PluginsMarkNew,
+        Self::PluginsMarkNoLonger,
         Self::PluginsInstall,
         Self::TplPluginsUpdateTitle,
         Self::PluginsUpdateAsks,
         Self::PluginsNewPart,
         Self::PluginsPartRemoved,
-        Self::TplPluginsNewPermission,
-        Self::TplPluginsNoLonger,
         Self::PluginsUpdate,
         Self::PluginsNotNow,
         Self::TplPluginsLogTitle,
@@ -2901,19 +2922,6 @@ impl Key {
         Self::PluginsRemoveText,
         Self::PluginsBack,
         Self::PluginsNeedsNewerOtty,
-        Self::TplPluginsPermReadsFiles,
-        Self::TplPluginsPermWritesFiles,
-        Self::TplPluginsPermQueriesDatabases,
-        Self::TplPluginsPermReadsVariable,
-        Self::TplPluginsPermRunsProgram,
-        Self::TplPluginsPermHiddenTerminal,
-        Self::TplPluginsPermReadsKeyring,
-        Self::TplPluginsPermReadsLoginsInFiles,
-        Self::TplPluginsPermReadsLoginsInDatabase,
-        Self::TplPluginsPermReadsKeyInVariable,
-        Self::TplPluginsPermSendsRequests,
-        Self::TplPluginsPermGetsProviderKeys,
-        Self::TplPluginsPermGetsHostKeys,
         Self::TplPluginsErrorBadUrl,
         Self::PluginsErrorRateLimited,
         Self::TplPluginsErrorNotFound,

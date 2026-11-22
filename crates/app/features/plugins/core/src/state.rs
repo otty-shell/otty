@@ -34,17 +34,15 @@ pub(crate) enum Dialog {
     Remove(String),
 }
 
-/// What the latest update check, reload or change said about one plugin,
-/// on its page.
+/// What the latest update check or reload left to show about one plugin.
+/// What it did, such as "Plugin Example updated to 0.5.0", is a
+/// notification instead (issue 35).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PluginNews {
-    /// Check for updates found nothing newer: "Up to date".
-    UpToDate,
-    /// "Updated to 0.5.0".
-    Updated(String),
-    /// A newer version waits for the user's OK.
+    /// A newer version waits for the user's OK: Review on its page.
     Waiting(Box<PendingUpdate>),
-    /// Why the check or the change failed, in plain words.
+    /// Why the check or the reload failed, in plain words: its row in the
+    /// left panel is signed failed.
     Failed(String),
 }
 

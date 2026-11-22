@@ -1,9 +1,11 @@
 //! The main area of Plugins mode (issue 30): the page of the selected
-//! plugin, with what it is (its name, version, authors, repository and
-//! source), who reviewed it, its parts with a switch each, their
-//! permissions, health and last failed call, what the latest check said
-//! and its actions; or a short line that says what to do when nothing is
-//! selected or nothing is installed.
+//! plugin, with what it is (its name, version, authors, source and, for a
+//! local plugin, its repository), who reviewed it, its parts as cards with
+//! a switch each, their kind, health, last failed call and permissions
+//! grouped by what they reach (issue 35), an update that waits and its
+//! actions; or a short line that says what to do when nothing is selected
+//! or nothing is installed. What Reload and Check for updates did is a
+//! notification, not a line of the page (issue 35).
 
 use std::time::SystemTime;
 
@@ -12,9 +14,10 @@ use otty_plugin_host::{LastFailure, PluginFailureKind};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{Source, Trust};
 
+use super::permissions::{PermissionGroupViewModel, granted_place, grouped};
 use crate::state::{PluginNews, PluginsState};
 use crate::types::ListedPlugin;
-use crate::words::{error_text, granted_text, part_title, trust_note};
+use crate::words::{error_text, kind_text, trust_note};
 
 /// What fills the main area.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,18 +71,17 @@ pub(crate) struct PluginPageViewModel {
     pub(crate) icon: Option<Vec<u8>>,
     /// Its authors, from its manifest.
     pub(crate) authors: Option<String>,
-    /// Its repository, for Open repository.
+    /// The repository a local plugin's manifest names. A plugin from a
+    /// repository shows it as its source instead.
     pub(crate) repository: Option<String>,
-    /// Where it came from and how it updates.
-    pub(crate) source: String,
+    /// Where it came from.
+    pub(crate) source: SourceViewModel,
     /// Its parts, each with its switch.
     pub(crate) parts: Vec<PartRowViewModel>,
-    /// What the latest check or change said, such as "Updated to 0.5.0".
-    pub(crate) news: Option<String>,
-    /// Whether the line of the news is a failure.
-    pub(crate) is_news_failure: bool,
     /// The line of an update that waits for the user's OK, with Review.
     pub(crate) waiting: Option<String>,
+    /// "0.6.0 needs a newer OTTY".
+    pub(crate) too_new: Option<String>,
     /// Whether it is a local plugin: Reload in place of Check for updates.
     pub(crate) is_local: bool,
     /// Why the latest switch failed.
@@ -88,21 +90,32 @@ pub(crate) struct PluginPageViewModel {
     pub(crate) is_busy: bool,
 }
 
-/// One part of a plugin with its switch.
+/// Where a plugin came from, the Source fact of its page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourceViewModel {
+    /// The folder on this computer it was installed from.
+    Folder(String),
+    /// The link of the repository it was installed from; a press opens it.
+    Repository(String),
+}
+
+/// One part of a plugin as a card.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PartRowViewModel {
     /// The part.
     pub(crate) part: PartRef,
-    /// Its name and kind, such as "Coder (agent)".
-    pub(crate) title: String,
+    /// Its name, such as "Coder".
+    pub(crate) name: String,
+    /// Its kind for its tag: "Agent" or "Provider".
+    pub(crate) kind: &'static str,
     /// Whether it is on.
     pub(crate) is_on: bool,
-    /// "Working", "Off" or "Paused after three failures".
+    /// Its health badge: "Working", "Paused" or "Off".
     pub(crate) health: &'static str,
     /// Whether it is paused after three failures in a row: Try again.
     pub(crate) is_paused: bool,
-    /// The permissions the user granted to it, in their language.
-    pub(crate) permissions: Vec<String>,
+    /// The permissions the user granted to it, grouped by what they reach.
+    pub(crate) groups: Vec<PermissionGroupViewModel>,
     /// The last call of the part that failed or that the host refused,
     /// for plugin authors (issue 19).
     pub(crate) last_failure: Option<LastFailureViewModel>,
@@ -142,22 +155,26 @@ fn page(
             let reference = part.part();
             let is_paused = is_paused(state, id, &reference);
             PartRowViewModel {
-                title: part_title(&plugin.part_name(&reference), &reference),
+                name: plugin.part_name(&reference),
+                kind: kind_text(&reference),
                 is_on: part.is_on(),
                 health: health_text(part.is_on(), is_paused),
                 is_paused,
-                permissions: part
-                    .granted()
-                    .iter()
-                    .map(|line| granted_text(line, manifest))
-                    .collect(),
+                groups: grouped(
+                    part.granted()
+                        .iter()
+                        .map(|line| granted_place(line, manifest))
+                        .collect(),
+                ),
                 last_failure: last_failure(state, id, &reference)
                     .map(|last| last_failure_line(&last, now)),
                 part: reference,
             }
         })
         .collect();
-    let (news, is_news_failure) = news_line(state, id);
+    let too_new = state.too_new_of(id).map(|version| {
+        i18n::filled(Key::TplPluginsTooNew, &[("version", version)])
+    });
     let waiting = state.waiting_update(id).map(|update| {
         i18n::filled(
             Key::TplPluginsUpdateWaits,
@@ -170,6 +187,10 @@ fn page(
     let description = manifest
         .and_then(|manifest| manifest.plugin().description())
         .map(String::from);
+    let repository = match installed.source() {
+        Source::Local { .. } => plugin.repository().map(String::from),
+        Source::Release { .. } => None,
+    };
     // An error while a dialog is open belongs to the dialog.
     let error = state
         .error()
@@ -184,69 +205,39 @@ fn page(
         trust_note: trust_note(installed.trust()),
         icon: plugin.icon.clone(),
         authors,
-        repository: plugin.repository().map(String::from),
-        source: source_text(installed.source()),
+        repository,
+        source: source_of(installed.source()),
         parts,
-        news,
-        is_news_failure,
         waiting,
+        too_new,
         is_local: installed.trust() == Trust::Local,
         error,
         is_busy: state.is_busy(),
     }
 }
 
-/// Where a plugin came from and how it updates, in the user's language.
-fn source_text(source: &Source) -> String {
+/// Where a plugin came from: the folder, or the link of the repository.
+fn source_of(source: &Source) -> SourceViewModel {
     match source {
-        Source::Release { .. } => {
-            i18n::t(Key::PluginsSourceRelease).to_string()
+        Source::Release { url } => SourceViewModel::Repository(url.clone()),
+        Source::Local { folder } => {
+            SourceViewModel::Folder(folder.display().to_string())
         },
-        Source::Local { folder } => i18n::filled(
-            Key::TplPluginsSourceFolder,
-            &[("folder", &folder.display().to_string())],
-        ),
     }
 }
 
-/// The health of a part: off, paused after three failures, or working.
+/// The health badge of a part: off, paused after three failures, or
+/// working.
 fn health_text(is_on: bool, is_paused: bool) -> &'static str {
     let key = if !is_on {
         Key::PluginsHealthOff
     } else if is_paused {
-        Key::PluginsPaused
+        Key::PluginsHealthPaused
     } else {
         Key::PluginsHealthWorking
     };
 
     i18n::t(key)
-}
-
-/// What the latest check said of the plugin `id`, and whether it is a
-/// failure. A newer version that needs a newer OTTY comes after an
-/// update.
-fn news_line(state: &PluginsState, id: &str) -> (Option<String>, bool) {
-    let too_new = state.too_new_of(id).map(|version| {
-        i18n::filled(Key::TplPluginsTooNew, &[("version", version)])
-    });
-
-    match state.news_of(id) {
-        Some(PluginNews::Updated(version)) => {
-            let updated =
-                i18n::filled(Key::TplPluginsUpdatedTo, &[("version", version)]);
-            let line = match too_new {
-                Some(too_new) => format!("{updated} · {too_new}"),
-                None => updated,
-            };
-            (Some(line), false)
-        },
-        Some(PluginNews::Failed(reason)) => (Some(reason.clone()), true),
-        Some(PluginNews::UpToDate) => {
-            let up_to_date = i18n::t(Key::PluginsUpToDate).to_string();
-            (Some(too_new.unwrap_or(up_to_date)), false)
-        },
-        _ => (too_new, false),
-    }
 }
 
 /// Whether the part `part` of the plugin `id` is paused.
@@ -287,7 +278,7 @@ fn last_failure_line(
             "{} ({reason})",
             i18n::t(Key::AgentsPluginFailureCouldNotRead)
         ),
-        kind => kind_text(kind).to_string(),
+        kind => failure_kind_text(kind).to_string(),
     };
 
     LastFailureViewModel {
@@ -305,7 +296,7 @@ fn last_failure_line(
 
 /// The kind of a failed call in the user's language, such as "the plugin
 /// did not finish in time".
-fn kind_text(kind: PluginFailureKind) -> &'static str {
+fn failure_kind_text(kind: PluginFailureKind) -> &'static str {
     let key = match kind {
         PluginFailureKind::Stopped => Key::AgentsPluginFailureStopped,
         PluginFailureKind::TooSlow => Key::AgentsPluginFailureTooSlow,
@@ -327,12 +318,9 @@ mod tests {
     use otty_plugin_releases::fixtures::with_part_on;
 
     use super::*;
+    use crate::model::permissions::{PermissionGroup, PlaceViewModel};
     use crate::testing::{agent, local_example, official_example, provider};
     use crate::types::RunningPlugin;
-
-    fn sends_requests(host: &str) -> String {
-        i18n::filled(Key::TplPluginsPermSendsRequests, &[("host", host)])
-    }
 
     /// `plugins` installed and `example` selected.
     fn selected(plugins: Vec<ListedPlugin>) -> PluginsState {
@@ -383,8 +371,9 @@ mod tests {
         );
     }
 
-    /// Issue 30: the page says what the plugin is: its name, version,
-    /// authors, repository, source and who reviewed it.
+    /// Issue 30, 35: the page says what the plugin is: its name, version,
+    /// authors, source and who reviewed it. The source of a plugin from a
+    /// repository is the repository, with no Repository row besides.
     #[test]
     fn the_page_says_what_the_plugin_is() {
         let state = selected(vec![official_example()]);
@@ -394,31 +383,37 @@ mod tests {
         assert_eq!(page.name, "Example");
         assert_eq!(page.version, "0.1.0");
         assert_eq!(page.authors.as_deref(), Some("OTTY team"));
+        assert_eq!(page.repository, None);
         assert_eq!(
-            page.repository.as_deref(),
-            Some("https://github.com/otty-shell/otty-plugin-example")
+            page.source,
+            SourceViewModel::Repository(String::from(
+                "https://github.com/otty-shell/otty-plugin-example"
+            ))
         );
-        assert_eq!(page.source, i18n::t(Key::PluginsSourceRelease));
         assert_eq!(page.trust_note, i18n::t(Key::PluginsOfficialNote));
         assert!(page.description.is_some());
         assert!(!page.is_local);
     }
 
-    /// Issue 09: the page lists the parts with their kind, switch, health
-    /// and the permissions the user granted.
+    /// Issue 09, 35: the page lists the parts with their kind, switch,
+    /// health and the permissions the user granted, grouped by what they
+    /// reach, places without backticks.
     #[test]
-    fn each_part_shows_its_switch_health_and_permissions() {
+    fn each_part_shows_its_kind_health_and_grouped_permissions() {
         let state = selected(vec![official_example()]);
 
         let page = page_of(&state, SystemTime::now());
 
-        let titles: Vec<&str> =
-            page.parts.iter().map(|part| part.title.as_str()).collect();
+        let names: Vec<(&str, &str)> = page
+            .parts
+            .iter()
+            .map(|part| (part.name.as_str(), part.kind))
+            .collect();
         assert_eq!(
-            titles,
+            names,
             [
-                part_title("Example Agent", &agent()),
-                part_title("Example Cloud", &provider()),
+                ("Example Agent", i18n::t(Key::PluginsPartAgent)),
+                ("Example Cloud", i18n::t(Key::PluginsPartProvider)),
             ]
         );
         assert!(page.parts.iter().all(|part| part.is_on));
@@ -427,15 +422,36 @@ mod tests {
                 .iter()
                 .all(|part| part.health == i18n::t(Key::PluginsHealthWorking))
         );
-        assert!(
-            page.parts[1]
-                .permissions
-                .contains(&sends_requests("api.example.com"))
+        let sites = &page.parts[1].groups[0];
+        assert_eq!(sites.label, i18n::t(Key::PluginsGroupSites));
+        assert_eq!(
+            sites.places,
+            [PlaceViewModel {
+                group: PermissionGroup::Sites,
+                text: String::from("api.example.com"),
+                is_words: false,
+                note: None,
+                mark: None,
+            }]
+        );
+        let labels: Vec<&str> = page.parts[0]
+            .groups
+            .iter()
+            .map(|group| group.label)
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                i18n::t(Key::PluginsGroupFiles),
+                i18n::t(Key::PluginsGroupVariables),
+                i18n::t(Key::PluginsGroupLogins),
+            ]
         );
     }
 
-    /// Issue 09: a local plugin shows its folder as the source and Reload
-    /// in place of Check for updates.
+    /// Issue 09, 35: a local plugin shows its folder as the source, the
+    /// repository its manifest names, and Reload in place of Check for
+    /// updates.
     #[test]
     fn a_local_plugin_shows_its_folder_and_reloads() {
         let state = selected(vec![local_example()]);
@@ -445,10 +461,11 @@ mod tests {
         assert_eq!(page.trust_note, i18n::t(Key::PluginsLocalNote));
         assert_eq!(
             page.source,
-            i18n::filled(
-                Key::TplPluginsSourceFolder,
-                &[("folder", "/work/otty-plugin-example")]
-            )
+            SourceViewModel::Folder(String::from("/work/otty-plugin-example"))
+        );
+        assert_eq!(
+            page.repository.as_deref(),
+            Some("https://github.com/otty-shell/otty-plugin-example")
         );
         assert!(page.is_local);
     }
@@ -483,7 +500,7 @@ mod tests {
         let page = page_of(&state, SystemTime::now());
 
         assert!(page.parts[0].is_paused);
-        assert_eq!(page.parts[0].health, i18n::t(Key::PluginsPaused));
+        assert_eq!(page.parts[0].health, i18n::t(Key::PluginsHealthPaused));
         assert!(!page.parts[1].is_paused);
     }
 
@@ -539,20 +556,21 @@ mod tests {
         assert_eq!(page.parts[1].last_failure, None);
     }
 
+    /// Issue 35: a release for a newer OTTY stays on the page; a failed
+    /// check does not, it is a notification.
     #[test]
-    fn an_update_and_a_release_for_a_newer_otty_show_on_the_page() {
+    fn a_release_for_a_newer_otty_stays_on_the_page() {
         let mut state = selected(vec![official_example()]);
-        state.set_news("example", PluginNews::Updated(String::from("0.5.0")));
+        state.set_news("example", PluginNews::Failed(String::from("offline")));
         state.set_too_new("example", Some(String::from("0.6.0")));
 
         let page = page_of(&state, SystemTime::now());
 
-        let updated =
-            i18n::filled(Key::TplPluginsUpdatedTo, &[("version", "0.5.0")]);
-        let too_new =
-            i18n::filled(Key::TplPluginsTooNew, &[("version", "0.6.0")]);
-        assert_eq!(page.news, Some(format!("{updated} · {too_new}")));
-        assert!(!page.is_news_failure);
+        assert_eq!(
+            page.too_new,
+            Some(i18n::filled(Key::TplPluginsTooNew, &[("version", "0.6.0")]))
+        );
+        assert_eq!(page.waiting, None);
     }
 
     /// The error of an open dialog shows in the dialog, not on the page.

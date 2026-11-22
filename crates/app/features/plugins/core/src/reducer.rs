@@ -1,10 +1,13 @@
 //! What Plugins mode does with each intent: which plugin it selects and
-//! which dialog it shows, what it asks `otty-app-plugins-io` to do, and
-//! what it tells the binary when the installed plugins change.
+//! which dialog it shows, what it asks `otty-app-plugins-io` to do, what it
+//! tells the binary when the installed plugins change, and the
+//! notifications of what Reload, Check for updates and an update did
+//! (issue 35).
 
 use std::path::{Path, PathBuf};
 
 use otty_app_domain::plugins::{OffPart, PartSide, PluginsPlace};
+use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallError, UpdateOutcome, UpdateReport};
 
@@ -15,6 +18,18 @@ use crate::state::{Dialog, PluginNews, PluginsState};
 use crate::types::ListedPlugin;
 use crate::view::{FOLDER_FIELD, URL_FIELD};
 use crate::words::error_text;
+
+/// What asked for an update check or a reload: its notifications differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Request {
+    /// The daily update check: nothing to say when nothing is newer.
+    DailyCheck,
+    /// Check for updates: "Plugin Example is up to date" too.
+    Check,
+    /// Reload of a local plugin: "Plugin Example reloaded" when its
+    /// version stays.
+    Reload,
+}
 
 /// Reduce `intent` into state changes and outcomes.
 pub(crate) fn reduce(
@@ -104,18 +119,30 @@ pub(crate) fn reduce(
             plugins,
             asked,
         } => {
-            for report in &reports {
-                note_report(state, report, asked);
-            }
-            take_plugins(state, plugins)
+            let request = if asked {
+                Request::Check
+            } else {
+                Request::DailyCheck
+            };
+            let told: Vec<PluginsOutcome> = reports
+                .iter()
+                .filter_map(|report| note_report(state, report, request))
+                .collect();
+
+            let mut outcomes = take_plugins(state, plugins);
+            outcomes.extend(told);
+            outcomes
         },
         PluginsIntent::Reloaded {
             plugin,
             outcome,
             plugins,
         } => {
-            note_outcome(state, &plugin, outcome, true);
-            take_plugins(state, plugins)
+            let told = note_outcome(state, &plugin, outcome, Request::Reload);
+
+            let mut outcomes = take_plugins(state, plugins);
+            outcomes.extend(told);
+            outcomes
         },
         PluginsIntent::UpdateTick => vec![PluginsOutcome::CheckUpdatesIfDue],
         PluginsIntent::Running(running) => {
@@ -276,8 +303,9 @@ fn remove(state: &mut PluginsState) -> Vec<PluginsOutcome> {
 }
 
 /// A change finished: the dialog closes and the plugins are as they are
-/// now, a new one selected; or the reason it failed, in the open dialog or
-/// on the page.
+/// now, a new one selected, and an update the user agreed to says so in a
+/// notification; or the reason it failed, in the open dialog or on the
+/// page.
 fn changed(
     state: &mut PluginsState,
     answer: ChangeAnswer,
@@ -291,17 +319,14 @@ fn changed(
         },
     };
 
+    let mut told = None;
     let installed = match state.dialog().cloned() {
         Some(Dialog::Update { plugin }) => {
-            let version = state
+            told = state
                 .waiting_update(&plugin)
-                .map(|update| update.to().to_string());
-            match version {
-                Some(version) => {
-                    state.set_news(&plugin, PluginNews::Updated(version));
-                },
-                None => state.forget_news(&plugin),
-            }
+                .map(|update| update.to().to_string())
+                .map(|version| updated(state, &plugin, &version));
+            state.forget_news(&plugin);
             None
         },
         Some(Dialog::Remove(plugin)) => {
@@ -315,10 +340,11 @@ fn changed(
     };
     state.close_dialog();
 
-    let outcomes = take_plugins(state, plugins);
+    let mut outcomes = take_plugins(state, plugins);
     if installed.is_some() {
         state.select(installed);
     }
+    outcomes.extend(told);
 
     outcomes
 }
@@ -341,42 +367,92 @@ fn take_plugins(
     outcomes
 }
 
-/// What `report` says of its plugin, on its page. `asked`: the user asked
-/// for the check, so "Up to date" shows too.
-fn note_report(state: &mut PluginsState, report: &UpdateReport, asked: bool) {
+/// What `report` says of its plugin: on its page a newer version that
+/// needs a newer OTTY, and the notification of the check, if any.
+fn note_report(
+    state: &mut PluginsState,
+    report: &UpdateReport,
+    request: Request,
+) -> Option<PluginsOutcome> {
     let plugin = report.plugin_id();
     let too_new = report
         .too_new()
         .map(|skipped| skipped.tag().trim_start_matches('v').to_string());
 
     state.set_too_new(plugin, too_new);
-    note_outcome(state, plugin, report.outcome().clone(), asked);
+    note_outcome(state, plugin, report.outcome().clone(), request)
 }
 
-/// What `outcome` says of the plugin `plugin`, on its page.
+/// What `outcome` of `request` says of the plugin `plugin`: an update that
+/// waits stays on its page, a failure signs its row failed; the rest is
+/// the notification returned. A reload that kept the version says
+/// "reloaded", a new version "updated to", and Check for updates with
+/// nothing newer "up to date".
 fn note_outcome(
     state: &mut PluginsState,
     plugin: &str,
     outcome: Result<UpdateOutcome, InstallError>,
-    asked: bool,
-) {
+    request: Request,
+) -> Option<PluginsOutcome> {
+    let name = plugin_name(state, plugin);
+
     match outcome {
-        Ok(UpdateOutcome::Updated { to, .. }) => {
-            state.set_news(plugin, PluginNews::Updated(to.to_string()));
-        },
         Ok(UpdateOutcome::Waiting(update)) => {
             state.set_news(plugin, PluginNews::Waiting(update));
+            None
         },
-        Ok(UpdateOutcome::UpToDate) if asked => {
-            state.set_news(plugin, PluginNews::UpToDate);
+        Ok(UpdateOutcome::Updated { from, to })
+            if request != Request::Reload || from != to =>
+        {
+            state.forget_news(plugin);
+            Some(updated(state, plugin, &to.to_string()))
+        },
+        Err(error) => {
+            let reason = error_text(&error);
+            let key = match request {
+                Request::Reload => Key::TplPluginsReloadFailed,
+                _ => Key::TplPluginsCheckFailed,
+            };
+            state.set_news(plugin, failed(&error));
+            Some(PluginsOutcome::Failed(i18n::filled(
+                key,
+                &[("name", &name), ("reason", &reason)],
+            )))
         },
         Ok(_) => {
             if matches!(state.news_of(plugin), Some(PluginNews::Failed(_))) {
                 state.forget_news(plugin);
             }
+            let key = match request {
+                Request::Reload => Key::TplPluginsReloaded,
+                Request::Check => Key::TplPluginsUpToDate,
+                Request::DailyCheck => return None,
+            };
+            Some(PluginsOutcome::Done(i18n::filled(key, &[("name", &name)])))
         },
-        Err(error) => state.set_news(plugin, failed(&error)),
     }
+}
+
+/// "Plugin Example updated to 0.5.0".
+fn updated(
+    state: &PluginsState,
+    plugin: &str,
+    version: &str,
+) -> PluginsOutcome {
+    let name = plugin_name(state, plugin);
+
+    PluginsOutcome::Done(i18n::filled(
+        Key::TplPluginsUpdated,
+        &[("name", &name), ("version", version)],
+    ))
+}
+
+/// The name of the installed plugin `plugin`, or its id.
+fn plugin_name(state: &PluginsState, plugin: &str) -> String {
+    state
+        .plugin(plugin)
+        .map(|listed| listed.installed.name().to_string())
+        .unwrap_or_else(|| plugin.to_string())
 }
 
 /// The repository of the plugin `plugin`.

@@ -29,36 +29,46 @@ needs with their plugin selected.
   header, a `+` with a chevron like the New session and New launch buttons of Terminal mode: `+`
   opens **Add plugin…**, and the chevron opens a menu with **Add plugin…** (from a repository) and
   **Add plugin from folder…**.
-- **In the main area**, the page of the selected plugin: its version, authors, repository and
-  source, who reviewed it, its parts with their switches, permissions and health, and **Check for
-  updates** (or **Reload** for a local plugin), **Show log** (what the plugin wrote to its log) and
-  **Remove**. The repository link opens it in your browser. With nothing selected, or nothing
-  installed, the main area says what to do and has both ways to add a plugin.
+- **In the main area**, the page of the selected plugin: its version, authors and source, who
+  reviewed it, each of its parts as a card, and **Check for updates** (or **Reload** for a local
+  plugin), **Show log** (what the plugin wrote to its log) and **Remove**. The source is the link
+  of the repository the plugin came from, or its folder for a local plugin; a local plugin whose
+  manifest names a repository also shows **Repository**. A repository link opens it in your
+  browser. With nothing selected, or nothing installed, the main area says what to do and has both
+  ways to add a plugin.
 
 ## Plugins and parts
 
 A plugin has one or more **parts**. Each part belongs to a domain of OTTY, the place of the window
 it fills; the plugins of Agents mode have parts of the **Agents** domain: an **agent part** reads one
-agent's folders, a **provider part** reads the accounts of one provider. Plugins mode names the
-domain next to the kind, such as "Codex (Agents: agent)". Each part has its own permissions and its
-own switch.
+agent's folders, a **provider part** reads the accounts of one provider. On the page of a plugin
+each part is a card: its name, a small tag with its kind (**Agent** or **Provider**), its health
+(**Working**, **Paused** or **Off**), its switch at the right end, and under them what it can
+access. Each part has its own permissions and its own switch.
 
 <figure class="not-content">
 <svg viewBox="0 0 560 150" width="100%" role="img" aria-labelledby="plugin-parts-title" style="max-width: 560px; font-family: var(--sl-font); font-size: 13px;">
-  <title id="plugin-parts-title">The OpenAI plugin holds two parts: Codex, an agent part of the Agents domain that reads ~/.codex, and OpenAI, a provider part that sends requests to chatgpt.com and api.openai.com. Each part has its own switch.</title>
+  <title id="plugin-parts-title">The OpenAI plugin holds two parts, each a card with its own switch: Codex, an agent part that can access the files in ~/.codex and run codex, and OpenAI, a provider part that can access the sites chatgpt.com and api.openai.com.</title>
   <rect x="10" y="10" width="540" height="130" rx="8" style="fill: none; stroke: var(--sl-color-hairline);" />
   <text x="26" y="34" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI 0.2.0</text>
   <text x="130" y="34" style="fill: var(--sl-color-gray-3);">Official</text>
   <rect x="26" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-  <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex (Agents: agent)</text>
-  <text x="42" y="94" style="fill: var(--sl-color-gray-3);">Reads files in ~/.codex*/**</text>
-  <text x="42" y="112" style="fill: var(--sl-color-gray-3);">Runs codex app-server</text>
+  <text x="42" y="74" style="fill: var(--sl-color-white); font-weight: 600;">Codex</text>
+  <rect x="88" y="62" width="44" height="16" rx="4" style="fill: var(--sl-color-gray-5);" />
+  <text x="110" y="74" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Agent</text>
+  <text x="42" y="98" style="fill: var(--sl-color-gray-3);">Files</text>
+  <text x="112" y="98" style="fill: var(--sl-color-gray-2); font-family: var(--sl-font-mono);">~/.codex*/**</text>
+  <text x="42" y="116" style="fill: var(--sl-color-gray-3);">Programs</text>
+  <text x="112" y="116" style="fill: var(--sl-color-gray-2); font-family: var(--sl-font-mono);">codex app-server</text>
   <rect x="234" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
   <circle cx="254" cy="70" r="6" style="fill: var(--sl-color-white);" />
   <rect x="286" y="50" width="250" height="76" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-  <text x="302" y="74" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI (Agents: provider)</text>
-  <text x="302" y="94" style="fill: var(--sl-color-gray-3);">Sends requests to chatgpt.com</text>
-  <text x="302" y="112" style="fill: var(--sl-color-gray-3);">and api.openai.com</text>
+  <text x="302" y="74" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI</text>
+  <rect x="354" y="62" width="60" height="16" rx="4" style="fill: var(--sl-color-gray-5);" />
+  <text x="384" y="74" text-anchor="middle" style="fill: var(--sl-color-gray-2); font-size: 11px;">Provider</text>
+  <text x="302" y="98" style="fill: var(--sl-color-gray-3);">Sites</text>
+  <text x="372" y="98" style="fill: var(--sl-color-gray-2); font-family: var(--sl-font-mono);">chatgpt.com</text>
+  <text x="372" y="116" style="fill: var(--sl-color-gray-2); font-family: var(--sl-font-mono);">api.openai.com</text>
   <rect x="494" y="62" width="28" height="16" rx="8" style="fill: var(--sl-color-accent);" />
   <circle cx="514" cy="70" r="6" style="fill: var(--sl-color-white);" />
 </svg>
@@ -88,7 +98,8 @@ After the mark, a sign says when a plugin needs a look:
 2. OTTY takes the newest release with a semver tag (`v1.2.0` or `1.2.0`) that this OTTY can run;
    pre-releases are skipped. A repository with no such release is refused.
 3. The install dialog shows the name, version and authors, how far the plugin is trusted, and each
-   part with its permissions in plain words. Press **Install**.
+   part with the tag of its kind and what it can access, grouped as on the plugin's page. Press
+   **Install**.
 
 OTTY checks everything before it runs the plugin: the manifest, the size of the files (the `.wasm`
 at most 20 MiB), the icons (SVG, at most 16 KiB, no scripts, links or embedded images), and that the
@@ -120,17 +131,29 @@ Permissions are listed per part, and **apply per part**: while OTTY asks one par
 only that part's permissions count. The OpenAI provider part may read the session files of Codex,
 where Codex writes the limits it was last told, but not the rest of `~/.codex`, which the Codex
 part of the same plugin reads. A provider part that reads limits by asking the agent itself lists
-the program and the files it needs, under its own name. They are shown like this:
+the program and the files it needs, under its own name.
 
-- "Reads files in `~/.codex*/**`"
-- "Reads your login in `~/.codex*/auth.json` (OTTY gives it only as a handle)"
-- "Runs `codex -s read-only -a never app-server`"
-- "Writes and deletes files in `~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl`"
-- "Sends requests to `chatgpt.com`"
-- "Gets the logins and keys of OpenAI accounts found in your agents, as handles"
+Under **Can access** ("Only this is open to the part, OTTY refuses everything else."), each part
+lists its permissions grouped by what they reach, one row per group: the group on the left, its
+places on the right, one per line. A group the part does not use is left out, and a part that asks
+for nothing says "Asks for no permissions".
 
-A **handle** stands in for a key or login token: the plugin can put it into a request, but never
-reads the key itself. See [What OTTY reads and sends](../what-otty-reads-and-sends/).
+| Group               | Its places                                                                        |
+| ------------------- | --------------------------------------------------------------------------------- |
+| **Files**           | Files it reads, such as `~/.codex*/**`.                                           |
+| **Changes files**   | Files it writes and deletes, such as `~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl`. |
+| **Databases**       | SQLite databases it reads, never writes, such as `~/.local/share/opencode/opencode.db`. |
+| **Variables**       | Environment variables it reads, such as `CODEX_HOME`.                             |
+| **Programs**        | Programs it runs, such as `codex -s read-only -a never app-server`.               |
+| **Hidden terminal** | Programs it runs in a terminal you do not see, such as `opencode stats`.          |
+| **Keyring**         | Entries of the system keyring, read once you allow the keyring.                   |
+| **Logins**          | Where it reads your login or key: a file such as `~/.codex*/auth.json`, a database, or a variable such as `OPENAI_API_KEY`. |
+| **Sites**           | Sites it sends requests to, such as `chatgpt.com`.                                |
+| **From agents**     | The logins and keys of its provider's accounts found in your agents, such as "OpenAI accounts", and the sites they are for. |
+
+OTTY gives every login and key to a plugin only as a **handle**: it stands in for the key or login
+token, the plugin can put it into a request but never reads the key itself. See
+[What OTTY reads and sends](../what-otty-reads-and-sends/).
 
 You grant the whole list or nothing; then you can turn single parts off. The page of a plugin shows
 the permissions of each part at any time.
@@ -153,8 +176,9 @@ The switch of a part stops or starts only that part; its files and your settings
 part is off, its profiles leave Agents mode; when a provider part is off, its accounts keep their
 tokens and estimates but lose their limits and balances, and show the need **Plugin part is off**.
 
-A part whose reads fail three times in a row is **Paused after three failures**; the plugin's other
-parts keep working. **Try again** starts it again, as does the next start of OTTY.
+A part whose reads fail three times in a row is **Paused** ("Paused after three failures" when you
+point at it), and **Try again** shows next to it; the plugin's other parts keep working. **Try
+again** starts it again, as does the next start of OTTY.
 
 Under a part, its card shows the last call that failed or that OTTY refused, with its time and
 kind: "Last failure 5 min ago: numbers, the plugin did not finish in time". It never shows a
@@ -164,17 +188,26 @@ place to look when a plugin gives no numbers.
 ## Updates
 
 Once a day, and when you press **Check for updates**, OTTY looks for a newer release of each plugin
-added from GitHub and takes the newest one it can run:
+added from GitHub and takes the newest one it can run. What it did is a notification at the top of
+the window, kept in the list under the bell:
 
 | The new release                          | What happens                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| Asks for nothing new                     | Installs on its own. Its page says "Updated to 0.5.0".                               |
-| Asks for new permissions or has a new part | Waits. The plugin is signed **update** on the left, its page says "0.5.0 asks for new permissions" with **Review**, and Agents mode shows **Plugin update needs your OK**, whose **Review** opens the dialog in Plugins mode. The dialog marks each permission "New:" or "No longer:". The installed version keeps running until you press **Update**. |
+| Asks for nothing new                     | Installs on its own. A notification says "Plugin OpenAI updated to 0.5.0".           |
+| Asks for new permissions or has a new part | Waits. The plugin is signed **update** on the left, its page says "0.5.0 asks for new permissions" with **Review**, and Agents mode shows **Plugin update needs your OK**, whose **Review** opens the dialog in Plugins mode. The dialog shows what each changed part can access, marks a new permission **new** and one the new version drops **no longer**. The installed version keeps running until you press **Update**, which says "Plugin OpenAI updated to 0.5.0". |
 | Needs a newer OTTY                       | Skipped. Its page says "0.6.0 needs a newer OTTY"; the installed version keeps running. |
 | Changed its files after you installed it | Refused: "The release v1.2.0 of OpenCode changed after it was installed. OTTY keeps the installed copy." |
+| There is nothing newer                   | After **Check for updates**, a notification says "Plugin OpenAI is up to date". The daily check says nothing. |
+
+When the check fails, an error notification says why, such as "Plugin OpenAI could not check for
+updates: GitHub refuses more requests from this computer for now. Try again in an hour.", and the
+plugin is signed **failed** on the left.
 
 Parts keep their on or off state across updates, and a new part is on. Local plugins are never checked;
-**Reload** reads their folder again and shows the same dialog when the new copy asks for more.
+**Reload** reads their folder again. A notification says "Plugin OpenCode reloaded" when the version
+is the same, or "Plugin OpenCode updated to 0.1.4" when it changed; when the new copy asks for more,
+the same dialog shows. A reload that fails is an error notification: "Plugin OpenCode could not be
+reloaded: …".
 
 ## Remove
 

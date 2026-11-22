@@ -1,4 +1,5 @@
-//! The toasts: errors at the top center of the window, newest on top.
+//! The toasts: errors and finished actions at the top center of the
+//! window, newest on top.
 //! They are no overlay: Esc leaves them, they take no keyboard focus, and
 //! a dialog's scrim lies over them.
 
@@ -7,7 +8,7 @@ use iced::{Element, Length, Padding, alignment};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::notice::Notice;
+use otty_ui_kit::components::notice::{Notice, NoticeTone};
 use otty_ui_kit::spacing;
 
 use crate::event::NotificationsIntent;
@@ -26,8 +27,9 @@ pub(crate) struct ToastStackProps<'a> {
 }
 
 /// Render the toasts at the top center of the main area, newest on top,
-/// each a floating kit `Notice` whose cross hides it. Return `None` while
-/// no toast shows.
+/// each a floating kit `Notice` whose cross hides it: red with the error
+/// mark for an error, neutral with a green check for a finished action.
+/// Return `None` while no toast shows.
 ///
 /// The returned layer is full size, but only the toasts take presses, so
 /// presses beside them still reach the layers below.
@@ -41,16 +43,19 @@ pub(crate) fn view(
     let palette = props.theme.theme.ui();
     let mut toasts = column![].spacing(spacing::SPACE_2).width(TOAST_WIDTH);
     for toast in props.vm.toasts {
-        let notice = Notice::new(
-            toast.text,
-            svg::Handle::from_memory(icons::NOTICE_ERROR),
-            palette,
-        )
-        .floating()
-        .on_dismiss(
-            NotificationsIntent::DismissToast(toast.id),
-            i18n::t(Key::NotificationDismiss),
-        );
+        let (tone, icon) = if toast.is_done {
+            (NoticeTone::Success, icons::NOTICE_DONE)
+        } else {
+            (NoticeTone::Error, icons::NOTICE_ERROR)
+        };
+        let notice =
+            Notice::new(toast.text, svg::Handle::from_memory(icon), palette)
+                .tone(tone)
+                .floating()
+                .on_dismiss(
+                    NotificationsIntent::DismissToast(toast.id),
+                    i18n::t(Key::NotificationDismiss),
+                );
         // A press on a toast must not reach the panes under it.
         toasts = toasts.push(opaque(notice));
     }
@@ -87,6 +92,7 @@ mod tests {
                 .iter()
                 .map(|(id, text)| ToastStackItemViewModel {
                     id: *id,
+                    is_done: false,
                     text: String::from(*text),
                 })
                 .collect(),

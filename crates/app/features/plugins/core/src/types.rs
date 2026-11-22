@@ -37,18 +37,17 @@ impl ListedPlugin {
         part_name(self.manifest.as_ref(), part)
     }
 
-    /// The repository of the plugin: as its manifest names it, or the one
-    /// it was installed from.
+    /// The repository of the plugin: the one it was installed from, which
+    /// its page shows as its source, or the one its manifest names.
     pub fn repository(&self) -> Option<&str> {
         let named = self
             .manifest
             .as_ref()
             .and_then(|manifest| manifest.plugin().repository());
 
-        match (named, self.installed.source()) {
-            (Some(url), _) => Some(url),
-            (None, Source::Release { url }) => Some(url),
-            _ => None,
+        match self.installed.source() {
+            Source::Release { url } => Some(url),
+            Source::Local { .. } => named,
         }
     }
 

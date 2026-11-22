@@ -103,6 +103,9 @@ pub const EXTERNAL_LINK: &[u8] =
 /// Error mark of a notice: an exclamation mark in a circle.
 pub const NOTICE_ERROR: &[u8] =
     include_bytes!("../../../../assets/svg/notice-error.svg");
+/// Mark of a notice that says an action finished: a check in a circle.
+pub const NOTICE_DONE: &[u8] =
+    include_bytes!("../../../../assets/svg/notice-done.svg");
 /// Product logo shown on the empty state. Drawn in its own colors.
 ///
 /// A PNG, not the SVG: `logo-small.svg` only wraps a large raster image,

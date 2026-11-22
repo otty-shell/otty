@@ -1,4 +1,5 @@
 use otty_app_domain::plugins::{PluginNotes, WaitingUpdate};
+use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_host::fixtures::paused_health;
 use otty_plugin_host::{PartHealth, PluginLog};
 use otty_plugin_manifest::PluginVersion;
@@ -51,6 +52,29 @@ fn waiting_example() -> (ListedPlugin, otty_plugin_releases::PendingUpdate) {
     let update = pending_update(&plugin.installed, &newer);
 
     (plugin, update)
+}
+
+fn version(text: &str) -> PluginVersion {
+    PluginVersion::parse(text).expect("version")
+}
+
+fn done(key: Key, values: &[(&str, &str)]) -> PluginsOutcome {
+    PluginsOutcome::Done(i18n::filled(key, values))
+}
+
+/// What the reload of the local example said, with the plugins after it.
+fn reloaded(
+    state: &mut PluginsState,
+    outcome: Result<UpdateOutcome, InstallError>,
+) -> Vec<PluginsOutcome> {
+    reduce(
+        state,
+        PluginsIntent::Reloaded {
+            plugin: String::from("example"),
+            outcome,
+            plugins: vec![crate::testing::local_example()],
+        },
+    )
 }
 
 /// Issue 30: Manage plugins… of Agents mode opens the mode with nothing
@@ -435,22 +459,23 @@ fn try_again_starts_a_paused_part() {
     assert_eq!(outcomes, [PluginsOutcome::ReadAgain]);
 }
 
-/// Issue 09: an automatic update shows "Updated to <version>" and loads
-/// the new parts; one that waits shows on the row and in the notes.
+/// Issue 09, 35: an automatic update says so in a notification and a
+/// release for a newer OTTY stays on the page; one that waits shows on
+/// the page and in the notes.
 #[test]
-fn the_checks_note_updates_and_waiting_updates() {
+fn the_checks_tell_updates_and_note_waiting_updates() {
     let (plugin, update) = waiting_example();
     let mut state = open_state(vec![plugin.clone(), official_example()]);
     let updated = report(
         "example",
         Ok(UpdateOutcome::Updated {
-            from: PluginVersion::parse("0.1.0").expect("version"),
-            to: PluginVersion::parse("0.2.0").expect("version"),
+            from: version("0.1.0"),
+            to: version("0.2.0"),
         }),
         Some(("v0.3.0", "Needs a newer OTTY (agents.agent contract 0.2)")),
     );
 
-    let _ = reduce(
+    let told = reduce(
         &mut state,
         PluginsIntent::Checked {
             reports: vec![updated],
@@ -473,11 +498,17 @@ fn the_checks_note_updates_and_waiting_updates() {
         },
     );
 
-    let updated_to = otty_app_i18n::filled(
-        otty_app_i18n::Key::TplPluginsUpdatedTo,
-        &[("version", "0.2.0")],
+    assert_eq!(
+        told.last(),
+        Some(&done(
+            Key::TplPluginsUpdated,
+            &[("name", "Example"), ("version", "0.2.0")]
+        ))
     );
-    assert!(row.news.expect("news").starts_with(&updated_to));
+    assert_eq!(
+        row.too_new,
+        Some(i18n::filled(Key::TplPluginsTooNew, &[("version", "0.3.0")]))
+    );
     assert_eq!(
         outcomes,
         [PluginsOutcome::Notes(PluginNotes {
@@ -494,7 +525,7 @@ fn the_checks_note_updates_and_waiting_updates() {
 }
 
 /// Review of the need "Plugin update needs your OK" opens the update
-/// dialog; Update installs it.
+/// dialog; Update installs it and says so in a notification.
 #[test]
 fn review_opens_the_update_dialog_and_update_applies_it() {
     let (plugin, update) = waiting_example();
@@ -506,7 +537,7 @@ fn review_opens_the_update_dialog_and_update_applies_it() {
         PluginsIntent::Open(PluginsPlace::Review(String::from("example"))),
     );
     let applied = reduce(&mut state, PluginsIntent::ApplyUpdate);
-    let _ = reduce(&mut state, PluginsIntent::Changed(Ok(vec![plugin])));
+    let changed = reduce(&mut state, PluginsIntent::Changed(Ok(vec![plugin])));
 
     assert!(opened.is_empty());
     assert_eq!(state.selected(), Some("example"));
@@ -517,20 +548,25 @@ fn review_opens_the_update_dialog_and_update_applies_it() {
         }]
     );
     assert_eq!(state.dialog(), None);
+    assert_eq!(state.news_of("example"), None);
     assert_eq!(
-        state.news_of("example"),
-        Some(&PluginNews::Updated(String::from("0.2.0")))
+        changed.last(),
+        Some(&done(
+            Key::TplPluginsUpdated,
+            &[("name", "Example"), ("version", "0.2.0")]
+        ))
     );
 }
 
-/// Check for updates of a plugin that has nothing newer says "Up to
-/// date"; the daily check leaves the row as it is.
+/// Issue 35: Check for updates of a plugin that has nothing newer says
+/// "Plugin Example is up to date" in a notification; the daily check says
+/// nothing.
 #[test]
 fn only_a_check_the_user_asked_for_says_up_to_date() {
     let mut state = open_state(vec![released_example()]);
     let up_to_date = || report("example", Ok(UpdateOutcome::UpToDate), None);
 
-    let _ = reduce(
+    let daily = reduce(
         &mut state,
         PluginsIntent::Checked {
             reports: vec![up_to_date()],
@@ -538,8 +574,7 @@ fn only_a_check_the_user_asked_for_says_up_to_date() {
             asked: false,
         },
     );
-    let daily = state.news_of("example").cloned();
-    let _ = reduce(
+    let asked = reduce(
         &mut state,
         PluginsIntent::Checked {
             reports: vec![up_to_date()],
@@ -548,15 +583,25 @@ fn only_a_check_the_user_asked_for_says_up_to_date() {
         },
     );
 
-    assert_eq!(daily, None);
-    assert_eq!(state.news_of("example"), Some(&PluginNews::UpToDate));
+    assert!(
+        daily
+            .iter()
+            .all(|outcome| matches!(outcome, PluginsOutcome::Notes(_)))
+    );
+    assert_eq!(
+        asked.last(),
+        Some(&done(Key::TplPluginsUpToDate, &[("name", "Example")]))
+    );
+    assert_eq!(state.news_of("example"), None);
 }
 
+/// Issue 35: a failed check is an error notification, and the row of the
+/// plugin is signed failed; the page does not show it.
 #[test]
-fn a_failed_check_says_why_on_the_row() {
+fn a_failed_check_is_an_error_notification() {
     let mut state = open_state(vec![released_example()]);
 
-    let _ = reduce(
+    let outcomes = reduce(
         &mut state,
         PluginsIntent::Checked {
             reports: vec![report(
@@ -569,18 +614,90 @@ fn a_failed_check_says_why_on_the_row() {
         },
     );
 
-    let row = page(&state);
-    assert!(row.is_news_failure);
+    let reason = i18n::t(Key::PluginsErrorRateLimited);
     assert_eq!(
-        row.news.as_deref(),
-        Some(otty_app_i18n::t(
-            otty_app_i18n::Key::PluginsErrorRateLimited
+        outcomes.last(),
+        Some(&PluginsOutcome::Failed(i18n::filled(
+            Key::TplPluginsCheckFailed,
+            &[("name", "Example"), ("reason", reason)]
+        )))
+    );
+    assert!(matches!(
+        state.news_of("example"),
+        Some(PluginNews::Failed(_))
+    ));
+    let row = page(&state);
+    assert_eq!(row.error, None);
+    assert_eq!(row.waiting, None);
+}
+
+/// Issue 35: Reload that keeps the version says "Plugin Example
+/// reloaded", not "updated to".
+#[test]
+fn reload_with_the_same_version_says_reloaded() {
+    let mut state = open_state(vec![crate::testing::local_example()]);
+
+    let outcomes = reloaded(
+        &mut state,
+        Ok(UpdateOutcome::Updated {
+            from: version("0.1.0"),
+            to: version("0.1.0"),
+        }),
+    );
+
+    assert_eq!(
+        outcomes.last(),
+        Some(&done(Key::TplPluginsReloaded, &[("name", "Example")]))
+    );
+    assert_eq!(state.news_of("example"), None);
+}
+
+/// Issue 35: Reload that brings a new version says "Plugin Example
+/// updated to 0.1.4".
+#[test]
+fn reload_with_a_new_version_says_updated_to_it() {
+    let mut state = open_state(vec![crate::testing::local_example()]);
+
+    let outcomes = reloaded(
+        &mut state,
+        Ok(UpdateOutcome::Updated {
+            from: version("0.1.0"),
+            to: version("0.1.4"),
+        }),
+    );
+
+    assert_eq!(
+        outcomes.last(),
+        Some(&done(
+            Key::TplPluginsUpdated,
+            &[("name", "Example"), ("version", "0.1.4")]
         ))
     );
 }
 
+/// Issue 35: a failed reload is an error notification that says why.
+#[test]
+fn a_failed_reload_is_an_error_notification() {
+    let mut state = open_state(vec![crate::testing::local_example()]);
+
+    let outcomes = reloaded(
+        &mut state,
+        Err(InstallError::MissingFile(String::from("example.wasm"))),
+    );
+
+    let reason =
+        error_text(&InstallError::MissingFile(String::from("example.wasm")));
+    assert_eq!(
+        outcomes.last(),
+        Some(&PluginsOutcome::Failed(i18n::filled(
+            Key::TplPluginsReloadFailed,
+            &[("name", "Example"), ("reason", &reason)]
+        )))
+    );
+}
+
 /// Reload of a local plugin reloads it; a reload that asks for
-/// more waits for the user like an update.
+/// more waits for the user like an update, with no notification.
 #[test]
 fn reload_of_a_local_plugin_that_asks_for_more_waits() {
     let mut state = open_state(vec![crate::testing::local_example()]);
@@ -588,17 +705,15 @@ fn reload_of_a_local_plugin_that_asks_for_more_waits() {
 
     let asked =
         reduce(&mut state, PluginsIntent::Reload(String::from("example")));
-    let _ = reduce(
-        &mut state,
-        PluginsIntent::Reloaded {
-            plugin: String::from("example"),
-            outcome: Ok(UpdateOutcome::Waiting(Box::new(update))),
-            plugins: vec![crate::testing::local_example()],
-        },
-    );
+    let outcomes =
+        reloaded(&mut state, Ok(UpdateOutcome::Waiting(Box::new(update))));
 
     assert_eq!(asked, [PluginsOutcome::Reload(String::from("example"))]);
     assert!(state.waiting_update("example").is_some());
+    assert!(outcomes.iter().all(|outcome| !matches!(
+        outcome,
+        PluginsOutcome::Done(_) | PluginsOutcome::Failed(_)
+    )));
 }
 
 #[test]
@@ -619,7 +734,7 @@ fn remove_asks_first_then_removes() {
 }
 
 #[test]
-fn open_repository_opens_the_repository_of_the_manifest() {
+fn open_repository_opens_the_repository_it_came_from() {
     let mut state = open_state(vec![official_example()]);
 
     let outcomes = reduce(

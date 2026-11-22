@@ -1,6 +1,6 @@
 use otty_app_i18n as i18n;
 
-use super::state::NotificationsState;
+use super::state::{NotificationKind, NotificationsState};
 
 /// Most characters a toast shows; a longer text is cut and ends with "…".
 /// The list shows the whole text.
@@ -19,6 +19,7 @@ impl ToastStackViewModel {
             .toasts()
             .map(|toast| ToastStackItemViewModel {
                 id: toast.id(),
+                is_done: toast.kind() == NotificationKind::Done,
                 text: toast_text(toast.text()),
             })
             .collect();
@@ -27,10 +28,12 @@ impl ToastStackViewModel {
     }
 }
 
-/// One toast: the id its cross sends and its text, cut when long.
+/// One toast: the id its cross sends, whether it tells a finished action
+/// rather than an error, and its text, cut when long.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ToastStackItemViewModel {
     pub(super) id: u64,
+    pub(super) is_done: bool,
     pub(super) text: String,
 }
 
@@ -52,6 +55,7 @@ impl<'a> NotificationListViewModel<'a> {
             .items()
             .map(|item| NotificationListRowViewModel {
                 id: item.id(),
+                is_done: item.kind() == NotificationKind::Done,
                 text: item.text(),
                 age: i18n::time_ago(
                     opened_at.saturating_duration_since(item.at()),
@@ -66,11 +70,13 @@ impl<'a> NotificationListViewModel<'a> {
     }
 }
 
-/// One row of the list: the id its cross removes, the whole text and how
-/// long ago it came, counted to the moment the list opened.
+/// One row of the list: the id its cross removes, whether it tells a
+/// finished action rather than an error, the whole text and how long ago
+/// it came, counted to the moment the list opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotificationListRowViewModel<'a> {
     pub(super) id: u64,
+    pub(super) is_done: bool,
     pub(super) text: &'a str,
     pub(super) age: String,
 }
@@ -113,14 +119,31 @@ mod tests {
             vec![
                 ToastStackItemViewModel {
                     id: ids[0],
+                    is_done: false,
                     text: String::from("busy"),
                 },
                 ToastStackItemViewModel {
                     id: ids[1],
+                    is_done: false,
                     text: String::from("disk full"),
                 },
             ]
         );
+    }
+
+    /// Issue 35: a finished action is marked done in its toast and its row.
+    #[test]
+    fn a_finished_action_is_marked_done_in_its_toast_and_row() {
+        let mut state = NotificationsState::default();
+        state.push_done(String::from("Plugin X reloaded"), Instant::now());
+        let toasts = ToastStackViewModel::from_state(&state);
+        let _ = state.open_list(Instant::now());
+
+        let list = NotificationListViewModel::from_state(&state)
+            .expect("the list is open");
+
+        assert!(toasts.toasts[0].is_done);
+        assert!(list.rows[0].is_done);
     }
 
     #[test]
@@ -174,11 +197,13 @@ mod tests {
             vec![
                 NotificationListRowViewModel {
                     id: ids[0],
+                    is_done: false,
                     text: "busy",
                     age: i18n::t(Key::JustNow).to_owned(),
                 },
                 NotificationListRowViewModel {
                     id: ids[1],
+                    is_done: false,
                     text: "disk full",
                     age: i18n::with_count(Key::TplMinutesAgo, 3),
                 },

@@ -4,12 +4,14 @@
 
 mod details;
 mod dialogs;
+pub(crate) mod permissions;
 mod side_panel;
 
 #[cfg(test)]
 pub(crate) use details::LastFailureViewModel;
 pub(crate) use details::{
-    MainViewModel, PartRowViewModel, PluginPageViewModel, failed,
+    MainViewModel, PartRowViewModel, PluginPageViewModel, SourceViewModel,
+    failed,
 };
 pub(crate) use dialogs::{
     InstallDialogViewModel, PartPermissionsViewModel, UpdateDialogViewModel,

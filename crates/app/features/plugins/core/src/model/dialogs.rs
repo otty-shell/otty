@@ -1,27 +1,34 @@
 //! The dialogs of Plugins mode that show permissions (spec
 //! 2026-11-19-agent-plugins, "Install and update flow", "Permissions"):
-//! the install dialog with each part and its permissions in words, the
-//! update dialog with what changed part by part.
+//! the install dialog with each part and its permissions grouped as on the
+//! page of a plugin (issue 35), the update dialog with what changed part by
+//! part.
 
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::Manifest;
 use otty_plugin_releases::{InstallPlan, PartChange, PendingUpdate};
 
+use super::permissions::{
+    PermissionGroupViewModel, PlaceMark, granted_place, grouped, part_places,
+};
 use crate::state::PluginsState;
 use crate::types::{ListedPlugin, part_name};
-use crate::words::{granted_text, part_permissions, part_title, trust_note};
+use crate::words::{kind_text, trust_note};
 
 /// One part and its permissions; in the update dialog what changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PartPermissionsViewModel {
-    /// The part with its kind, such as "Coder (agent)".
-    pub(crate) title: String,
+    /// The part's name, such as "Coder".
+    pub(crate) name: String,
+    /// Its kind for its tag: "Agent" or "Provider".
+    pub(crate) kind: &'static str,
     /// "new part" or "no longer in the plugin" in the update dialog.
     pub(crate) mark: Option<&'static str>,
-    /// Its permissions; in the update dialog the new ones.
-    pub(crate) lines: Vec<String>,
-    /// The permissions it no longer asks for, in the update dialog.
-    pub(crate) removed: Vec<String>,
+    /// Whether the new version no longer has the part: no permissions show.
+    pub(crate) is_removed: bool,
+    /// Its permissions grouped; in the update dialog the new ones marked
+    /// new and the ones it no longer asks for after them.
+    pub(crate) groups: Vec<PermissionGroupViewModel>,
 }
 
 /// The install dialog of a plugin found.
@@ -74,10 +81,11 @@ pub(crate) fn install_dialog(
         .parts()
         .iter()
         .map(|part| PartPermissionsViewModel {
-            title: part_title(&part_name(Some(manifest), part), part),
+            name: part_name(Some(manifest), part),
+            kind: kind_text(part),
             mark: None,
-            lines: part_permissions(manifest, part),
-            removed: Vec::new(),
+            is_removed: false,
+            groups: grouped(part_places(manifest, part)),
         })
         .collect();
 
@@ -129,45 +137,60 @@ pub(crate) fn update_dialog(
     }
 }
 
-/// What changed in one part, its lines in the user's language: the new
-/// ones from the new manifest, the removed ones from the installed one.
+/// What changed in one part. A new part shows all its permissions; a
+/// changed part shows all the permissions of the new version, the new ones
+/// marked new, then the ones it no longer asks for, placed by the installed
+/// manifest.
 fn part_change(
     change: &PartChange,
     new: &Manifest,
     old: Option<&Manifest>,
 ) -> PartPermissionsViewModel {
-    let in_new = |lines: &[String]| -> Vec<String> {
-        lines
-            .iter()
-            .map(|line| granted_text(line, Some(new)))
-            .collect()
-    };
-    let in_old = |lines: &[String]| -> Vec<String> {
-        lines.iter().map(|line| granted_text(line, old)).collect()
-    };
-
     match change {
-        PartChange::New { part, lines } => PartPermissionsViewModel {
-            title: part_title(&part_name(Some(new), part), part),
+        PartChange::New { part, .. } => PartPermissionsViewModel {
+            name: part_name(Some(new), part),
+            kind: kind_text(part),
             mark: Some(i18n::t(Key::PluginsNewPart)),
-            lines: in_new(lines),
-            removed: Vec::new(),
+            is_removed: false,
+            groups: grouped(part_places(new, part)),
         },
         PartChange::Removed { part } => PartPermissionsViewModel {
-            title: part_title(&part_name(old, part), part),
+            name: part_name(old, part),
+            kind: kind_text(part),
             mark: Some(i18n::t(Key::PluginsPartRemoved)),
-            lines: Vec::new(),
-            removed: Vec::new(),
+            is_removed: true,
+            groups: Vec::new(),
         },
         PartChange::Changed {
             part,
             added,
             removed,
-        } => PartPermissionsViewModel {
-            title: part_title(&part_name(Some(new), part), part),
-            mark: None,
-            lines: in_new(added),
-            removed: in_old(removed),
+        } => {
+            let added: Vec<_> = added
+                .iter()
+                .map(|line| granted_place(line, Some(new)))
+                .collect();
+            let mut places: Vec<_> = part_places(new, part)
+                .into_iter()
+                .map(|place| {
+                    if added.contains(&place) {
+                        place.marked(PlaceMark::New)
+                    } else {
+                        place
+                    }
+                })
+                .collect();
+            places.extend(removed.iter().map(|line| {
+                granted_place(line, old).marked(PlaceMark::NoLonger)
+            }));
+
+            PartPermissionsViewModel {
+                name: part_name(Some(new), part),
+                kind: kind_text(part),
+                mark: None,
+                is_removed: false,
+                groups: grouped(places),
+            }
         },
     }
 }
@@ -180,17 +203,23 @@ mod tests {
     };
 
     use super::*;
+    use crate::model::permissions::{PermissionGroup, PlaceViewModel};
     use crate::testing::{agent, provider, released_example};
-    use crate::words::permission_text;
 
-    fn sends_requests(host: &str) -> String {
-        i18n::filled(Key::TplPluginsPermSendsRequests, &[("host", host)])
+    fn site(host: &str, mark: Option<PlaceMark>) -> PlaceViewModel {
+        PlaceViewModel {
+            group: PermissionGroup::Sites,
+            text: String::from(host),
+            is_words: false,
+            note: None,
+            mark,
+        }
     }
 
-    /// Issue 09: the install dialog lists each part with its permissions
-    /// in words, and who reviewed the plugin.
+    /// Issue 09, 35: the install dialog lists each part with its kind and
+    /// its permissions grouped as on the page, and who reviewed the plugin.
     #[test]
-    fn the_install_dialog_lists_the_permissions_of_each_part() {
+    fn the_install_dialog_groups_the_permissions_of_each_part() {
         let state = PluginsState::new(Vec::new());
         let plan = install_plan(
             &example_manifest("0.1.0"),
@@ -198,6 +227,7 @@ mod tests {
                 url: String::from("https://github.com/someone/example"),
             },
         );
+        let manifest = plan.manifest().clone();
 
         let dialog = install_dialog(&state, &plan);
 
@@ -209,34 +239,36 @@ mod tests {
             )
         );
         assert_eq!(dialog.trust, i18n::t(Key::PluginsCommunityNote));
-        let titles: Vec<&str> = dialog
+        let names: Vec<(&str, &str)> = dialog
             .parts
             .iter()
-            .map(|part| part.title.as_str())
+            .map(|part| (part.name.as_str(), part.kind))
             .collect();
         assert_eq!(
-            titles,
+            names,
             [
-                part_title("Example Agent", &agent()),
-                part_title("Example Cloud", &provider()),
+                ("Example Agent", i18n::t(Key::PluginsPartAgent)),
+                ("Example Cloud", i18n::t(Key::PluginsPartProvider)),
             ]
         );
-        assert!(dialog.parts[0].lines.contains(&permission_text(
-            &otty_plugin_manifest::PermissionLine::ReadsVariable(String::from(
-                "EXAMPLE_AGENT_HOME"
-            ))
-        )));
-        assert!(
-            dialog.parts[1]
-                .lines
-                .contains(&sends_requests("api.example.com"))
+        assert_eq!(
+            dialog.parts[0].groups,
+            grouped(part_places(&manifest, &agent()))
+        );
+        assert_eq!(
+            dialog.parts[1].groups,
+            grouped(part_places(&manifest, &provider()))
+        );
+        assert_eq!(
+            dialog.parts[1].groups[0].label,
+            i18n::t(Key::PluginsGroupSites)
         );
     }
 
-    /// Issue 09: the update dialog shows the permission diff per part:
-    /// the new ones and the ones no longer asked for.
+    /// Issue 09, 35: the update dialog shows the permissions of a changed
+    /// part, the new ones marked new and the ones no longer asked for.
     #[test]
-    fn the_update_dialog_shows_the_permission_diff_per_part() {
+    fn the_update_dialog_marks_what_is_new_and_what_is_no_longer() {
         let plugin = released_example();
         let state = PluginsState::new(vec![plugin.clone()]);
         let newer = example_manifest("0.2.0").replace(
@@ -254,14 +286,23 @@ mod tests {
                 &[("name", "Example"), ("from", "0.1.0"), ("to", "0.2.0")]
             )
         );
+        assert_eq!(dialog.parts.len(), 1);
+        let part = &dialog.parts[0];
+        assert_eq!(part.name, "Example Cloud");
+        assert_eq!(part.mark, None);
+        assert_eq!(part.groups[0].label, i18n::t(Key::PluginsGroupSites));
         assert_eq!(
-            dialog.parts,
-            [PartPermissionsViewModel {
-                title: part_title("Example Cloud", &provider()),
-                mark: None,
-                lines: vec![sends_requests("v2.example.com")],
-                removed: vec![sends_requests("api.example.com")],
-            }]
+            part.groups[0].places,
+            [
+                site("v2.example.com", Some(PlaceMark::New)),
+                site("api.example.com", Some(PlaceMark::NoLonger)),
+            ]
+        );
+        assert!(
+            part.groups[1]
+                .places
+                .iter()
+                .all(|place| place.mark.is_none())
         );
     }
 
@@ -286,10 +327,9 @@ mod tests {
 
         assert_eq!(dialog.parts.len(), 1);
         assert_eq!(dialog.parts[0].mark, Some(i18n::t(Key::PluginsNewPart)));
-        assert!(
-            dialog.parts[0]
-                .lines
-                .contains(&sends_requests("api.example.com"))
+        assert_eq!(
+            dialog.parts[0].groups[0].places,
+            [site("api.example.com", None)]
         );
     }
 }
