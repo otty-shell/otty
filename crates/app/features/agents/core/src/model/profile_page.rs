@@ -309,8 +309,9 @@ mod tests {
     use crate::need::NeedAction;
     use crate::reducer::reduce;
     use crate::testing::{
-        SESSION_VERSION, api_key, chatgpt_login, codex, connected, now,
-        price_table, read, session, set_prices, spend_loaded, with_accounts,
+        SESSION_VERSION, api_key, chatgpt_login, claude, codex, connected,
+        month_spend, now, price_table, read, session, set_prices, spend_loaded,
+        with_accounts,
     };
     use crate::types::SpendCount;
     use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
@@ -483,6 +484,154 @@ mod tests {
             Some(i18n::t(Key::AgentsMoneyNoPrices).to_string())
         );
         assert_eq!(reason(&priced), None);
+    }
+
+    /// The usage block of the page after each intent of `intents`.
+    fn usage_after(
+        state: &mut AgentsState,
+        intents: &[AgentsIntent],
+    ) -> Vec<UsageBlockViewModel> {
+        intents
+            .iter()
+            .map(|intent| {
+                let _ = reduce(state, intent.clone());
+                page(state).usage.expect("the usage shows")
+            })
+            .collect()
+    }
+
+    /// Owner, 2026-11-23: the period switch of the page. Today has a bar
+    /// per hour, 7 and 30 days a bar per day with today the last, and the
+    /// total under the title follows.
+    #[test]
+    fn each_period_shows_its_own_bars_and_total() {
+        let mut state =
+            codex_with(connected(), vec![chatgpt_login()], month_spend());
+
+        let shown = usage_after(
+            &mut state,
+            &[
+                AgentsIntent::PickPeriod(UsagePeriod::Today),
+                AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays),
+                AgentsIntent::PickPeriod(UsagePeriod::SevenDays),
+            ],
+        );
+
+        let [today, month, week] = shown.as_slice() else {
+            panic!("three blocks: {shown:?}");
+        };
+        let today_word = i18n::t(Key::AgentsToday).to_string();
+        let in_days = |amount: &str, count: &str| {
+            Some(i18n::filled(
+                Key::TplAgentsAmountInDays,
+                &[("amount", amount), ("count", count)],
+            ))
+        };
+        assert_eq!(today.period, UsagePeriod::Today);
+        assert_eq!(today.bars.len(), 24);
+        assert_eq!(today.bars[9].value, 100_000);
+        assert_eq!(
+            today.line,
+            Some(i18n::filled(
+                Key::TplAgentsAmountToday,
+                &[("amount", "100K")]
+            ))
+        );
+        assert_eq!(
+            today.axis,
+            Some((String::from("00:00"), String::from("23:00")))
+        );
+        assert_eq!(month.period, UsagePeriod::ThirtyDays);
+        assert_eq!(month.bars.len(), 30);
+        assert_eq!(month.line, in_days("3M", "30"));
+        assert_eq!(month.current, Some(29), "today is the last bar");
+        assert_eq!(
+            month.axis,
+            Some((String::from("Oct 18"), today_word.clone()))
+        );
+        assert_eq!(week.period, UsagePeriod::SevenDays);
+        assert_eq!(week.bars.len(), 7);
+        assert_eq!(week.line, in_days("700K", "7"));
+        assert_eq!(week.axis, Some((String::from("Nov 10"), today_word)));
+    }
+
+    /// Owner, 2026-11-23: the measure switch of the page. Money writes
+    /// the total, the bars and the rows in dollars at the list prices,
+    /// with the mark of an estimate; Tokens writes them in tokens again.
+    #[test]
+    fn money_and_tokens_switch_the_numbers_of_the_page() {
+        let mut state = codex_with(api_key(), Vec::new(), month_spend());
+        set_prices(&mut state, price_table());
+
+        let shown = usage_after(
+            &mut state,
+            &[
+                AgentsIntent::PickMeasure(UsageMeasure::Money),
+                AgentsIntent::PickMeasure(UsageMeasure::Tokens),
+            ],
+        );
+
+        let [money, tokens] = shown.as_slice() else {
+            panic!("two blocks: {shown:?}");
+        };
+        let in_week = |amount: &str| {
+            Some(i18n::filled(
+                Key::TplAgentsAmountInDays,
+                &[("amount", amount), ("count", "7")],
+            ))
+        };
+        assert_eq!(money.measure, UsageMeasure::Money);
+        assert_eq!(money.line, in_week("$0.88"));
+        assert_eq!(money.rows[0].value, "$0.88");
+        assert_eq!(money.bars[6].value, 125_000, "micro-dollars");
+        assert!(money.money_kind.is_some(), "the estimate is marked");
+        assert_eq!(tokens.measure, UsageMeasure::Tokens);
+        assert_eq!(tokens.line, in_week("700K"));
+        assert_eq!(tokens.rows[0].value, "700K");
+        assert_eq!(tokens.bars[6].value, 100_000);
+        assert_eq!(tokens.money_kind, None);
+    }
+
+    /// The module doc of `usage.rs`: the choices of the profile pages are
+    /// the same for every profile. A period and a measure picked on one
+    /// page show on the next and on the first again.
+    #[test]
+    fn the_choices_stay_when_another_profile_shows() {
+        let mut state = with_accounts(
+            &[
+                (codex(), api_key(), Vec::new()),
+                (claude(), api_key(), Vec::new()),
+            ],
+            SavedProfiles::default(),
+        );
+        for profile in [codex(), claude()] {
+            let _ = reduce(
+                &mut state,
+                spend_loaded(
+                    &profile,
+                    SpendCount::Counted(month_spend()),
+                    now(),
+                ),
+            );
+        }
+        set_prices(&mut state, price_table());
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        let shown = usage_after(
+            &mut state,
+            &[
+                AgentsIntent::PickPeriod(UsagePeriod::Today),
+                AgentsIntent::PickMeasure(UsageMeasure::Money),
+                AgentsIntent::SelectProfile(claude()),
+                AgentsIntent::SelectProfile(codex()),
+            ],
+        );
+
+        for usage in &shown[2..] {
+            assert_eq!(usage.period, UsagePeriod::Today);
+            assert_eq!(usage.measure, UsageMeasure::Money);
+            assert_eq!(usage.bars.len(), 24);
+        }
     }
 
     #[test]

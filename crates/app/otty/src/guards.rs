@@ -282,10 +282,16 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
         // funnel menu, the profiles of New session, the menu of a session
         // (Show statistics is one of its actions), the menu of a profile
         // (its actions, Edit, Log in, Remove), the menu of an account and
-        // the "⋯" of All accounts and All profiles. A new item of these
-        // menus is added here; the tests press every item.
+        // the "⋯" of All accounts and All profiles, and the periods and the
+        // measures of the usage block of a profile page. A new item of
+        // these menus is added here; the tests press every item. The
+        // pointer over the rows of the usage block is no press, so it
+        // passes too.
         AppEvent::Agents(
             AgentsIntent::ProjectFilter(_)
+            | AgentsIntent::PickPeriod(_)
+            | AgentsIntent::PickMeasure(_)
+            | AgentsIntent::HoverUsageRow(_)
             | AgentsIntent::NewSessionWith(_)
             | AgentsIntent::SessionMenu(_)
             | AgentsIntent::ProfileMenu(_)
@@ -2337,6 +2343,179 @@ mod tests {
             Some(otty_app_agents::AgentsOverlay::RemoveDialog),
             "Remove asks first"
         );
+    }
+
+    /// Owner, 2026-11-23: Today, 7 days, 30 days, Tokens and Money of the
+    /// usage block of a profile page did nothing, the frame took them for
+    /// a press outside the menu. Every item of both menus now goes to it.
+    #[test]
+    fn every_item_of_the_agents_usage_menus_passes() {
+        let mut app = agents_app_with_a_session();
+
+        open_agents_menu_with(&mut app, AgentsIntent::OpenPeriodMenu);
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsToday),
+                i18n::t(i18n::Key::AgentsSevenDays),
+                i18n::t(i18n::Key::AgentsThirtyDays),
+            ],
+        );
+        open_agents_menu_with(&mut app, AgentsIntent::OpenMeasureMenu);
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsTokens),
+                i18n::t(i18n::Key::AgentsNumberMoney),
+            ],
+        );
+    }
+
+    /// The pointer moving over the rows of a usage block is no press: a
+    /// menu stays open, as it does over the Files tree.
+    #[test]
+    fn the_pointer_over_the_usage_rows_keeps_a_menu_open() {
+        for event in [
+            AgentsIntent::HoverUsageRow(Some(String::from("gpt-5"))),
+            AgentsIntent::HoverUsageRow(None),
+        ] {
+            assert_eq!(
+                context_menu_guard(&AppEvent::Agents(event)),
+                MenuGuard::Allow
+            );
+        }
+    }
+
+    /// Codex paying with an API key, its 400 000 tokens of gpt-5 counted
+    /// today at 09:00, gpt-5 at the made-up list price of $1.25 per
+    /// million input tokens, and its page shown.
+    fn agents_app_with_a_counted_profile() -> App {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
+        let api_key = otty_agents::ProfileStatus::Connected {
+            account: None,
+            plan: None,
+            billing: Some(otty_agents::BillingKind::ApiKey),
+        };
+        let tokens = otty_agents::ModelTokens::new(
+            Some("gpt-5"),
+            otty_agents::TokenCount::new(400_000, 0, 0),
+            1,
+        );
+        let parts = vec![otty_agents::ProjectModelTokens::new(
+            Some(std::path::PathBuf::from(PROJECT)),
+            tokens.clone(),
+        )];
+        let hours = (0..24)
+            .map(|hour| match hour {
+                9 => otty_agents::HourSpend::new(hour, parts.clone()),
+                _ => otty_agents::HourSpend::new(hour, Vec::new()),
+            })
+            .collect();
+        let today = otty_agents::DaySpend::new(
+            jiff::civil::date(2026, 11, 16),
+            vec![tokens],
+        )
+        .with_parts(parts);
+        let spend =
+            otty_agents::Spend::new(vec![today], Vec::new()).with_hours(hours);
+        let gpt_5 = otty_agents::TokenPrices {
+            input: otty_agents::Dollars::from_micro_dollars(1_250_000),
+            ..otty_agents::TokenPrices::default()
+        };
+        let prices = otty_agents::FetchedPrices::new(
+            otty_agents::PriceTable::new(vec![otty_agents::ModelPrice::new(
+                "gpt-5", gpt_5,
+            )]),
+            std::time::SystemTime::UNIX_EPOCH,
+        );
+
+        for intent in [
+            profiles_loaded(vec![(codex_profile(), api_key)]),
+            AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
+                profile: codex_profile(),
+                spend: otty_app_agents::SpendCount::Counted(spend),
+                counted_at: std::time::SystemTime::UNIX_EPOCH,
+            }),
+            AgentsIntent::PricesLoaded(otty_app_agents::LoadedPrices {
+                prices: otty_agents::fixtures::walked(std::iter::once((
+                    otty_agents::SourceId::LiteLlmPrices,
+                    Ok(prices),
+                ))),
+                read_at: std::time::SystemTime::UNIX_EPOCH,
+            }),
+            AgentsIntent::SelectProfile(codex_profile()),
+        ] {
+            let _ = app.agents.reduce(intent, agents_menu_ctx());
+        }
+
+        app
+    }
+
+    /// Open the menu of the usage block with `open` and press `label` in
+    /// it, through the frame as the user does.
+    fn pick_in_usage_menu(app: &mut App, open: AgentsIntent, label: &str) {
+        open_agents_menu_with(app, open);
+
+        for event in pressed_in_agents_menu(app, label) {
+            let _ = crate::update::update_input(app, event);
+        }
+    }
+
+    /// Whether the main area of Agents mode shows `text`.
+    fn main_area_shows(app: &App, text: &str) -> bool {
+        let theme = otty_app_theme::theme::AppTheme::default();
+        let main = crate::screens::agents::main(
+            app,
+            otty_app_theme::theme::ThemeProps::new(&theme),
+        );
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(1000.0, 700.0),
+            main,
+        );
+
+        ui.find(text).is_ok()
+    }
+
+    /// Owner, 2026-11-23: a period and a measure picked in their menus
+    /// show on the profile page: the menu closes and the total under
+    /// Usage follows.
+    #[test]
+    fn a_period_and_a_measure_picked_in_their_menus_show_on_the_page() {
+        let mut app = agents_app_with_a_counted_profile();
+        let total = |amount: &str, key: i18n::Key| {
+            i18n::filled(key, &[("amount", amount), ("count", "7")])
+        };
+        let week = main_area_shows(
+            &app,
+            &total("400K", i18n::Key::TplAgentsAmountInDays),
+        );
+
+        pick_in_usage_menu(
+            &mut app,
+            AgentsIntent::OpenPeriodMenu,
+            i18n::t(i18n::Key::AgentsToday),
+        );
+        let today = main_area_shows(
+            &app,
+            &total("400K", i18n::Key::TplAgentsAmountToday),
+        );
+        let is_closed = top_overlay(&app).is_none();
+        pick_in_usage_menu(
+            &mut app,
+            AgentsIntent::OpenMeasureMenu,
+            i18n::t(i18n::Key::AgentsNumberMoney),
+        );
+        let money = main_area_shows(
+            &app,
+            &total("$0.50", i18n::Key::TplAgentsAmountToday),
+        );
+
+        assert!(week, "the page opens on 7 days of tokens");
+        assert!(today, "Today shows the tokens of today");
+        assert!(is_closed, "the menu closes");
+        assert!(money, "Money shows the dollars of today");
     }
 
     /// Typing, choosing an entry and the palette's own dismiss layer go to

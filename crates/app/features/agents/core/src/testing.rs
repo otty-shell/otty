@@ -5,15 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 
+use jiff::ToSpan;
 use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AccountIdentity, AccountKind, AccountLogin, AgentCommand,
     AgentEnv, AgentId, AgentSession, Answer, Bill, Billing, DayCost, DaySpend,
-    Dollars, FetchedPrices, FoundIn, GivenKey, KeyRef, LimitWindow, Limits,
-    ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile, ProfileStatus,
-    ProviderEntry, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
-    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
-    Unavailable, UsageWindows, WindowId,
+    Dollars, FetchedPrices, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow,
+    Limits, ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile,
+    ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef,
+    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
+    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -494,6 +495,38 @@ pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
     };
 
     Spend::new(vec![day(11, earlier), day(16, today)], Vec::new())
+}
+
+/// The tokens of a month as a count of the session files gives them:
+/// 100 000 input tokens of gpt-5 through OpenAI in `/work/otty` on each
+/// of the 30 days from 2026-10-18 to today, 2026-11-16, and today's at
+/// 09:00 in the hours of today.
+pub(crate) fn month_spend() -> Spend {
+    let tokens =
+        ModelTokens::new(Some("gpt-5"), TokenCount::new(100_000, 0, 0), 1)
+            .with_provider(Some(ProviderRef::of_id("openai")));
+    let parts = || {
+        vec![ProjectModelTokens::new(
+            Some(PathBuf::from("/work/otty")),
+            tokens.clone(),
+        )]
+    };
+
+    let days = jiff::civil::date(2026, 10, 18)
+        .series(1.day())
+        .take(30)
+        .map(|date| {
+            DaySpend::new(date, vec![tokens.clone()]).with_parts(parts())
+        })
+        .collect();
+    let hours = (0..24)
+        .map(|hour| match hour {
+            9 => HourSpend::new(hour, parts()),
+            _ => HourSpend::new(hour, Vec::new()),
+        })
+        .collect();
+
+    Spend::new(days, Vec::new()).with_hours(hours)
 }
 
 /// The answer of a count of the tokens of `profile` that ended at

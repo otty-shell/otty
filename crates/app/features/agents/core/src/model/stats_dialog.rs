@@ -404,12 +404,12 @@ mod tests {
     use crate::model::UsageTableRowViewModel;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, chatgpt_login, claude, codex, connected, now,
+        api_key, at, chatgpt_login, claude, codex, connected, month_spend, now,
         organization, read, session, set_prices, spend_loaded, with_accounts,
         with_profiles,
     };
     use crate::types::{LoadedProjectStats, LoadedSessionStats, SpendCount};
-    use crate::usage::{UsageMeasure, UsageTab};
+    use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -1046,6 +1046,90 @@ mod tests {
         let kind = usage.money_kind.expect("the usage is money");
         let mark = kind.mark().expect("the estimate is marked");
         assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
+    }
+
+    /// The total under the title over `count` days, such as "700K in 7
+    /// days".
+    fn in_days(amount: &str, count: &str) -> Option<String> {
+        Some(i18n::filled(
+            Key::TplAgentsAmountInDays,
+            &[("amount", amount), ("count", count)],
+        ))
+    }
+
+    /// The total under the title of today, such as "100K today".
+    fn of_today(amount: &str) -> Option<String> {
+        Some(i18n::filled(
+            Key::TplAgentsAmountToday,
+            &[("amount", amount)],
+        ))
+    }
+
+    /// Owner, 2026-11-23: the switches of the session popup change what
+    /// it shows. It opens on Today, the day of its last tokens, with a bar
+    /// per hour; 30 days has a bar per day; Money writes the sums in
+    /// dollars.
+    #[test]
+    fn the_switches_of_the_session_popup_change_its_numbers() {
+        let mut state = state_with(api_key());
+        session_dialog(&mut state);
+        let stats =
+            SessionStats::new(None, None, Vec::new()).with_spend(month_spend());
+        let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
+
+        let opened = session_body(&state).usage;
+        let _ = reduce(
+            &mut state,
+            AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays),
+        );
+        let month = session_body(&state).usage;
+        let _ =
+            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
+        let money = session_body(&state).usage;
+
+        assert_eq!(opened.period, UsagePeriod::Today);
+        assert_eq!(opened.bars.len(), 24);
+        assert_eq!(opened.line, of_today("100K"));
+        assert_eq!(month.bars.len(), 30);
+        assert_eq!(month.line, in_days("3M", "30"));
+        assert_eq!(money.measure, UsageMeasure::Money);
+        assert_eq!(money.line, in_days("$6.00", "30"));
+        assert_eq!(money.rows[0].value, "$6.00");
+        assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
+    }
+
+    /// Owner, 2026-11-23: the switches of the project popup change what
+    /// it shows: 7 days at first, Today with a bar per hour, and Money
+    /// the sums in dollars.
+    #[test]
+    fn the_switches_of_the_project_popup_change_its_numbers() {
+        let mut state = state_with(api_key());
+        let _ = reduce(
+            &mut state,
+            spend_loaded(
+                &claude(),
+                SpendCount::Counted(month_spend()),
+                at(NOW),
+            ),
+        );
+        project_dialog(&mut state);
+
+        let opened = project_body(&state).usage;
+        let _ =
+            reduce(&mut state, AgentsIntent::PickPeriod(UsagePeriod::Today));
+        let today = project_body(&state).usage;
+        let _ =
+            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
+        let money = project_body(&state).usage;
+
+        assert_eq!(opened.period, UsagePeriod::SevenDays);
+        assert_eq!(opened.bars.len(), 7);
+        assert_eq!(opened.line, in_days("700K", "7"));
+        assert_eq!(today.bars.len(), 24);
+        assert_eq!(today.line, of_today("100K"));
+        assert_eq!(money.measure, UsageMeasure::Money);
+        assert_eq!(money.line, of_today("$0.20"));
+        assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 
     #[test]
