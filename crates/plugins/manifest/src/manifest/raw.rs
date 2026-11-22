@@ -59,6 +59,7 @@ pub(crate) struct RawPlugin {
 pub(crate) struct RawAgent {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) description: Option<String>,
     pub(crate) icon: Option<String>,
     pub(crate) program: Option<String>,
     #[serde(default)]
@@ -140,6 +141,7 @@ pub(crate) struct RawKeyPlace {
 pub(crate) struct RawProvider {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) description: Option<String>,
     pub(crate) icon: Option<String>,
     #[serde(default)]
     pub(crate) hosts: Vec<String>,

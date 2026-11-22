@@ -1,7 +1,9 @@
 //! The main area of Plugins mode: the page of the selected plugin, one
 //! column at most as wide as a form and centred, as the pages of Agents
-//! mode, each of its parts a card (issue 35); or a card with a short line
-//! that says what to do, and the two ways to add a plugin.
+//! mode, with the tag of who reviewed it after its version and each of its
+//! parts a card with its description and Can access (issues 35, 36); or a
+//! card with a short line that says what to do, and the two ways to add a
+//! plugin.
 
 use iced::widget::{Column, Row, Space, column, container, row, svg, text};
 use iced::{Alignment, Border, Element, Length};
@@ -15,10 +17,12 @@ use otty_ui_kit::components::letter_icon::letter_icon;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::status_badge::{StatusBadge, StatusTone};
 use otty_ui_kit::components::switch::Switch;
+use otty_ui_kit::components::tag::{tag, warn_tag};
+use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, radius, size, spacing, typography};
 
-use super::can_access::{can_access, kind_tag};
+use super::can_access::kind_tag;
 use crate::event::PluginsIntent;
 use crate::model::{
     MainViewModel, PartRowViewModel, PluginPageViewModel, SourceViewModel,
@@ -32,6 +36,8 @@ const PAGE_PADDING_X: f32 = 20.0;
 const BLOCK_GAP: f32 = 24.0;
 /// Size of the title of a block.
 const BLOCK_TITLE_SIZE: f32 = 14.0;
+/// Height of the line the trust tag is centred in: the tag is 16 px high.
+const TAG_LINE: f32 = 20.0;
 
 /// Render the main area.
 pub(crate) fn view<'a>(
@@ -82,7 +88,6 @@ fn plugin_page<'a>(
     if let Some(description) = page.description.clone() {
         about = about.push(small_text(description, palette.text_body()));
     }
-    about = about.push(small_text(page.trust_note, palette.text_muted()));
     about = about.push(facts(&page, palette));
 
     let mut blocks = Column::new().spacing(BLOCK_GAP);
@@ -111,7 +116,9 @@ fn plugin_page<'a>(
         .into()
 }
 
-/// The icon, the name and the version of the plugin.
+/// The icon, the name and the version of the plugin, and the tag of who
+/// reviewed it with its note in the tooltip, in the warn tone for a
+/// community plugin.
 fn header<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
@@ -135,15 +142,20 @@ fn header<'a>(
     )
     .shrink(0.0);
     let version = text(page.version.clone()).color(palette.text_muted());
+    let trust = if page.trust.is_warn {
+        warn_tag(page.trust.label, TAG_LINE, palette)
+    } else {
+        tag(page.trust.label, TAG_LINE, palette)
+    };
+    let trust = tooltip(trust, page.trust.note, palette);
 
-    row![icon, name, version]
+    row![icon, name, version, trust]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center)
         .into()
 }
 
-/// Version, authors, source and, for a local plugin, the repository its
-/// manifest names. A repository opens on a press.
+/// Version, authors and source. A repository opens on a press.
 fn facts<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
@@ -154,12 +166,6 @@ fn facts<'a>(
         .entry(i18n::t(Key::PluginsFieldVersion), page.version.clone());
     if let Some(authors) = &page.authors {
         facts = facts.entry(i18n::t(Key::PluginsFieldAuthors), authors.clone());
-    }
-    if let Some(repository) = &page.repository {
-        facts = facts.entry_parts(
-            i18n::t(Key::PluginsFieldRepository),
-            [ValuePart::link(repository.clone(), open())],
-        );
     }
     let source = match &page.source {
         SourceViewModel::Folder(folder) => ValuePart::text(folder.clone()),
@@ -280,7 +286,8 @@ fn parts<'a>(
 
 /// One part as a card: a header with its name, the tag of its kind, its
 /// health badge, Try again while it is paused and its switch at the right
-/// end; its last failed call with Copy report; what it can access.
+/// end; its description with Can access · 5 at the right end, or "Asks for
+/// no permissions"; its last failed call with Copy report.
 fn part_card<'a>(
     plugin: &str,
     part: PartRowViewModel,
@@ -309,6 +316,8 @@ fn part_card<'a>(
         badge = badge.tooltip(i18n::t(Key::PluginsPaused));
     }
 
+    let foot = foot(plugin, &part, palette);
+
     let mut header = Row::new()
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center)
@@ -333,7 +342,7 @@ fn part_card<'a>(
     }
     header = header.push(Space::new().width(Length::Fill)).push(switch);
 
-    let mut card = column![header].spacing(spacing::SPACE_4);
+    let mut card = column![header, foot].spacing(spacing::SPACE_2);
     if let Some(last) = part.last_failure {
         card = card.push(
             row![
@@ -347,7 +356,6 @@ fn part_card<'a>(
             .align_y(Alignment::Center),
         );
     }
-    card = card.push(can_access(part.groups, palette));
 
     let background = palette.surface_panel();
     let line = palette.line();
@@ -366,16 +374,53 @@ fn part_card<'a>(
         .into()
 }
 
+/// The line under the header of a part card: its description, muted,
+/// and Can access with the number of places at the right end, or "Asks
+/// for no permissions" when there are none.
+fn foot<'a>(
+    plugin: &str,
+    part: &PartRowViewModel,
+    palette: &UiPalette,
+) -> Element<'a, PluginsIntent> {
+    let description: Element<'a, PluginsIntent> = match &part.description {
+        Some(description) => {
+            container(small_text(description.clone(), palette.text_muted()))
+                .width(Length::Fill)
+                .into()
+        },
+        None => Space::new().width(Length::Fill).into(),
+    };
+    let access: Element<'a, PluginsIntent> = if part.places == 0 {
+        small_text(i18n::t(Key::PluginsNoPermissions), palette.text_muted())
+            .into()
+    } else {
+        let label = i18n::filled(
+            Key::TplPluginsCanAccessButton,
+            &[("count", &part.places.to_string())],
+        );
+        Button::new(label, palette)
+            .kind(ButtonKind::Secondary)
+            .size(ButtonSize::Small)
+            .on_press(PluginsIntent::ShowCanAccess {
+                plugin: plugin.to_string(),
+                part: part.part.clone(),
+            })
+            .into()
+    };
+
+    row![description, access]
+        .spacing(spacing::SPACE_4)
+        .align_y(Alignment::Center)
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use iced_test::simulator;
     use otty_plugin_manifest::PartRef;
 
     use super::*;
-    use crate::model::LastFailureViewModel;
-    use crate::model::permissions::{
-        PermissionGroup, PermissionGroupViewModel, PlaceViewModel,
-    };
+    use crate::model::{LastFailureViewModel, TrustTagViewModel};
 
     fn example() -> PluginPageViewModel {
         PluginPageViewModel {
@@ -383,30 +428,25 @@ mod tests {
             name: String::from("Example"),
             version: String::from("0.1.0"),
             description: None,
-            trust_note: "Local plugin",
+            trust: TrustTagViewModel {
+                label: "Local",
+                note: "Local plugin: installed from a folder",
+                is_warn: false,
+            },
             icon: None,
             authors: Some(String::from("OTTY team")),
-            repository: Some(String::from(
-                "https://github.com/otty-shell/otty-plugin-example",
-            )),
             source: SourceViewModel::Folder(String::from("/work/example")),
             parts: vec![PartRowViewModel {
                 part: PartRef::agent("example-agent"),
                 name: String::from("Example Agent"),
                 kind: "Agent",
+                description: Some(String::from(
+                    "Finds Example Agent sessions, tokens and logins.",
+                )),
                 is_on: true,
                 health: "Paused",
                 is_paused: true,
-                groups: vec![PermissionGroupViewModel {
-                    label: "Files",
-                    places: vec![PlaceViewModel {
-                        group: PermissionGroup::Files,
-                        text: String::from("~/.x/**"),
-                        is_words: false,
-                        note: None,
-                        mark: None,
-                    }],
-                }],
+                places: 5,
                 last_failure: None,
             }],
             waiting: None,
@@ -495,37 +535,78 @@ mod tests {
         ));
     }
 
-    /// The repository link opens the repository.
+    /// Issue 36: the tag of who reviewed the plugin follows its version;
+    /// its note is in the tooltip, not a line of the page. The facts are
+    /// Version, Authors and Source, no Repository.
     #[test]
-    fn the_repository_link_opens_it() {
+    fn the_trust_tag_follows_the_version() {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(page_view(example(), &palette));
 
-        let _ = ui.click("https://github.com/otty-shell/otty-plugin-example");
+        let version = ui.find("0.1.0").expect("the version").bounds();
+        let trust = ui.find("Local").expect("the trust tag").bounds();
 
-        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
-        assert!(matches!(
-            sent.as_slice(),
-            [PluginsIntent::OpenRepository(id)] if id == "example"
-        ));
+        assert!(version.x < trust.x);
+        assert!((version.center_y() - trust.center_y()).abs() < 2.0);
+        assert!(ui.find("Local plugin: installed from a folder").is_err());
+        assert!(ui.find("Repository").is_err());
+        assert!(
+            ui.find("https://github.com/otty-shell/otty-plugin-example")
+                .is_err()
+        );
     }
 
-    /// Issue 35: the card of a part shows its name, the tag of its kind,
-    /// its health badge and what it can access, places without backticks.
+    /// Issue 35, 36: the card of a part shows its name, the tag of its
+    /// kind and its health badge, under them its description and Can
+    /// access · 5, which opens what it can access.
     #[test]
-    fn a_part_card_shows_its_kind_health_and_permissions() {
+    fn a_part_card_shows_its_description_and_can_access() {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(page_view(example(), &palette));
+        let button =
+            i18n::filled(Key::TplPluginsCanAccessButton, &[("count", "5")]);
 
         let name = ui.find("Example Agent").expect("the name").bounds();
         let kind = ui.find("Agent").expect("the kind").bounds();
         let health = ui.find("Paused").expect("the health").bounds();
+        let description = ui
+            .find("Finds Example Agent sessions, tokens and logins.")
+            .expect("the description")
+            .bounds();
+        let access = ui.find(button.as_str()).expect("Can access").bounds();
 
         assert!(name.x < kind.x && kind.x < health.x);
         assert!((name.center_y() - kind.center_y()).abs() < 2.0);
-        assert!(ui.find(i18n::t(Key::PluginsCanAccess)).is_ok());
-        assert!(ui.find("Files").is_ok());
-        assert!(ui.find("~/.x/**").is_ok());
+        assert!(description.y > name.y);
+        assert!(description.x < access.x);
+        assert!(ui.find("~/.x/**").is_err());
+        let _ = ui.click(button.as_str());
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [PluginsIntent::ShowCanAccess { plugin, part }]
+                if plugin == "example" && *part == PartRef::agent("example-agent")
+        ));
+    }
+
+    /// Issue 36: a part with no permission and no description shows only
+    /// "Asks for no permissions", and no Can access.
+    #[test]
+    fn a_part_with_no_permission_has_no_can_access() {
+        let palette = UiPalette::otty_dark();
+        let mut page = example();
+        page.parts[0].places = 0;
+        page.parts[0].description = None;
+        let mut ui = simulator(page_view(page, &palette));
+
+        assert!(ui.find(i18n::t(Key::PluginsNoPermissions)).is_ok());
+        assert!(
+            ui.find(
+                i18n::filled(Key::TplPluginsCanAccessButton, &[("count", "0")])
+                    .as_str()
+            )
+            .is_err()
+        );
     }
 
     /// Issue 35: a source from a repository is its link, and the page
@@ -534,7 +615,6 @@ mod tests {
     fn a_repository_source_opens_it() {
         let palette = UiPalette::otty_dark();
         let mut page = example();
-        page.repository = None;
         page.is_local = false;
         page.source = SourceViewModel::Repository(String::from(
             "https://github.com/someone/example",

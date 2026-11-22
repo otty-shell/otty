@@ -1,10 +1,10 @@
 //! The main area of Plugins mode (issue 30): the page of the selected
-//! plugin, with what it is (its name, version, authors, source and, for a
-//! local plugin, its repository), who reviewed it, its parts as cards with
-//! a switch each, their kind, health, last failed call and permissions
-//! grouped by what they reach (issue 35), an update that waits and its
-//! actions; or a short line that says what to do when nothing is selected
-//! or nothing is installed. What Reload and Check for updates did is a
+//! plugin, with what it is (its name, version, authors and source), a tag
+//! of who reviewed it (issue 36), its parts as cards with a switch each,
+//! their kind, description, health, last failed call and how many places
+//! they can access (issues 35, 36), an update that waits and its actions;
+//! or a short line that says what to do when nothing is selected or
+//! nothing is installed. What Reload and Check for updates did is a
 //! notification, not a line of the page (issue 35).
 
 use std::time::SystemTime;
@@ -14,10 +14,10 @@ use otty_plugin_host::{LastFailure, PluginFailureKind};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{Source, Trust};
 
-use super::permissions::{PermissionGroupViewModel, granted_place, grouped};
+use super::permissions::granted_groups;
 use crate::state::{PluginNews, PluginsState};
-use crate::types::ListedPlugin;
-use crate::words::{error_text, kind_text, trust_note};
+use crate::types::{ListedPlugin, part_description};
+use crate::words::{error_text, kind_text, trust_note, trust_text};
 
 /// What fills the main area.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,15 +65,12 @@ pub(crate) struct PluginPageViewModel {
     pub(crate) version: String,
     /// What it says it does, from its manifest.
     pub(crate) description: Option<String>,
-    /// Who reviewed it: "Official plugin: reviewed by the OTTY team".
-    pub(crate) trust_note: &'static str,
+    /// The tag of who reviewed it, after the version.
+    pub(crate) trust: TrustTagViewModel,
     /// The SVG of its icon, or `None` for a letter icon.
     pub(crate) icon: Option<Vec<u8>>,
     /// Its authors, from its manifest.
     pub(crate) authors: Option<String>,
-    /// The repository a local plugin's manifest names. A plugin from a
-    /// repository shows it as its source instead.
-    pub(crate) repository: Option<String>,
     /// Where it came from.
     pub(crate) source: SourceViewModel,
     /// Its parts, each with its switch.
@@ -88,6 +85,19 @@ pub(crate) struct PluginPageViewModel {
     pub(crate) error: Option<String>,
     /// Whether a change runs: the switches do nothing.
     pub(crate) is_busy: bool,
+}
+
+/// The tag of who reviewed a plugin, such as "Official", with its note in
+/// the tooltip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrustTagViewModel {
+    /// "Official", "Community" or "Local".
+    pub(crate) label: &'static str,
+    /// "Official plugin: reviewed by the OTTY team".
+    pub(crate) note: &'static str,
+    /// Whether the tag has the warn tone: a community plugin is reviewed
+    /// by its author only.
+    pub(crate) is_warn: bool,
 }
 
 /// Where a plugin came from, the Source fact of its page.
@@ -108,14 +118,17 @@ pub(crate) struct PartRowViewModel {
     pub(crate) name: String,
     /// Its kind for its tag: "Agent" or "Provider".
     pub(crate) kind: &'static str,
+    /// What it does, one sentence from the manifest.
+    pub(crate) description: Option<String>,
     /// Whether it is on.
     pub(crate) is_on: bool,
     /// Its health badge: "Working", "Paused" or "Off".
     pub(crate) health: &'static str,
     /// Whether it is paused after three failures in a row: Try again.
     pub(crate) is_paused: bool,
-    /// The permissions the user granted to it, grouped by what they reach.
-    pub(crate) groups: Vec<PermissionGroupViewModel>,
+    /// How many places the user let it access: Can access · 5 opens
+    /// them; none, and it asks for no permissions.
+    pub(crate) places: usize,
     /// The last call of the part that failed or that the host refused,
     /// for plugin authors (issue 19).
     pub(crate) last_failure: Option<LastFailureViewModel>,
@@ -154,18 +167,19 @@ fn page(
         .map(|part| {
             let reference = part.part();
             let is_paused = is_paused(state, id, &reference);
+            let name = plugin.part_name(&reference);
+            let places = granted_groups(part.granted(), manifest, &name)
+                .iter()
+                .map(|group| group.places.len())
+                .sum();
             PartRowViewModel {
-                name: plugin.part_name(&reference),
                 kind: kind_text(&reference),
+                description: part_description(manifest, &reference),
                 is_on: part.is_on(),
                 health: health_text(part.is_on(), is_paused),
                 is_paused,
-                groups: grouped(
-                    part.granted()
-                        .iter()
-                        .map(|line| granted_place(line, manifest))
-                        .collect(),
-                ),
+                places,
+                name,
                 last_failure: last_failure(state, id, &reference)
                     .map(|last| last_failure_line(&last, now)),
                 part: reference,
@@ -187,10 +201,6 @@ fn page(
     let description = manifest
         .and_then(|manifest| manifest.plugin().description())
         .map(String::from);
-    let repository = match installed.source() {
-        Source::Local { .. } => plugin.repository().map(String::from),
-        Source::Release { .. } => None,
-    };
     // An error while a dialog is open belongs to the dialog.
     let error = state
         .error()
@@ -202,10 +212,13 @@ fn page(
         name: installed.name().to_string(),
         version: installed.version().to_string(),
         description,
-        trust_note: trust_note(installed.trust()),
+        trust: TrustTagViewModel {
+            label: trust_text(installed.trust()),
+            note: trust_note(installed.trust()),
+            is_warn: installed.trust() == Trust::Community,
+        },
         icon: plugin.icon.clone(),
         authors,
-        repository,
         source: source_of(installed.source()),
         parts,
         waiting,
@@ -315,11 +328,13 @@ mod tests {
 
     use otty_plugin_host::fixtures::{failed_health, paused_health};
     use otty_plugin_host::{PartHealth, PluginFailure, PluginLog, PluginPart};
-    use otty_plugin_releases::fixtures::with_part_on;
+    use otty_plugin_manifest::Manifest;
+    use otty_plugin_releases::fixtures::{example_manifest, with_part_on};
 
     use super::*;
-    use crate::model::permissions::{PermissionGroup, PlaceViewModel};
-    use crate::testing::{agent, local_example, official_example, provider};
+    use crate::testing::{
+        agent, local_example, official_example, provider, released_example,
+    };
     use crate::types::RunningPlugin;
 
     /// `plugins` installed and `example` selected.
@@ -371,9 +386,10 @@ mod tests {
         );
     }
 
-    /// Issue 30, 35: the page says what the plugin is: its name, version,
-    /// authors, source and who reviewed it. The source of a plugin from a
-    /// repository is the repository, with no Repository row besides.
+    /// Issue 30, 35, 36: the page says what the plugin is: its name,
+    /// version, authors and source, and a tag of who reviewed it with its
+    /// note in the tooltip. The source of a plugin from a repository is
+    /// the repository.
     #[test]
     fn the_page_says_what_the_plugin_is() {
         let state = selected(vec![official_example()]);
@@ -383,23 +399,47 @@ mod tests {
         assert_eq!(page.name, "Example");
         assert_eq!(page.version, "0.1.0");
         assert_eq!(page.authors.as_deref(), Some("OTTY team"));
-        assert_eq!(page.repository, None);
         assert_eq!(
             page.source,
             SourceViewModel::Repository(String::from(
                 "https://github.com/otty-shell/otty-plugin-example"
             ))
         );
-        assert_eq!(page.trust_note, i18n::t(Key::PluginsOfficialNote));
+        assert_eq!(
+            page.trust,
+            TrustTagViewModel {
+                label: i18n::t(Key::PluginsOfficial),
+                note: i18n::t(Key::PluginsOfficialNote),
+                is_warn: false,
+            }
+        );
         assert!(page.description.is_some());
         assert!(!page.is_local);
     }
 
-    /// Issue 09, 35: the page lists the parts with their kind, switch,
-    /// health and the permissions the user granted, grouped by what they
-    /// reach, places without backticks.
+    /// Owner, 2026-11-22: a community plugin is reviewed by its author
+    /// only, so its tag has the warn tone.
     #[test]
-    fn each_part_shows_its_kind_health_and_grouped_permissions() {
+    fn a_community_plugin_has_a_warn_tag() {
+        let state = selected(vec![released_example()]);
+
+        let page = page_of(&state, SystemTime::now());
+
+        assert_eq!(
+            page.trust,
+            TrustTagViewModel {
+                label: i18n::t(Key::PluginsCommunity),
+                note: i18n::t(Key::PluginsCommunityNote),
+                is_warn: true,
+            }
+        );
+    }
+
+    /// Issue 09, 35, 36: the page lists the parts with their kind,
+    /// description, switch, health and how many places the user let them
+    /// access.
+    #[test]
+    fn each_part_shows_its_kind_description_and_health() {
         let state = selected(vec![official_example()]);
 
         let page = page_of(&state, SystemTime::now());
@@ -422,50 +462,52 @@ mod tests {
                 .iter()
                 .all(|part| part.health == i18n::t(Key::PluginsHealthWorking))
         );
-        let sites = &page.parts[1].groups[0];
-        assert_eq!(sites.label, i18n::t(Key::PluginsGroupSites));
         assert_eq!(
-            sites.places,
-            [PlaceViewModel {
-                group: PermissionGroup::Sites,
-                text: String::from("api.example.com"),
-                is_words: false,
-                note: None,
-                mark: None,
-            }]
+            page.parts[0].description.as_deref(),
+            Some("Finds Example Agent sessions, tokens and logins.")
         );
-        let labels: Vec<&str> = page.parts[0]
-            .groups
-            .iter()
-            .map(|group| group.label)
-            .collect();
         assert_eq!(
-            labels,
-            [
-                i18n::t(Key::PluginsGroupFiles),
-                i18n::t(Key::PluginsGroupVariables),
-                i18n::t(Key::PluginsGroupLogins),
-            ]
+            page.parts[1].description.as_deref(),
+            Some("Reads the limits of Example Cloud accounts.")
         );
+        // Two folders, a variable and two login files; a site, the
+        // accounts and the keys of one host.
+        assert_eq!(page.parts[0].places, 5);
+        assert_eq!(page.parts[1].places, 3);
     }
 
-    /// Issue 09, 35: a local plugin shows its folder as the source, the
-    /// repository its manifest names, and Reload in place of Check for
-    /// updates.
+    /// Issue 36: a part whose manifest says nothing of what it does shows
+    /// no description.
+    #[test]
+    fn a_part_without_a_description_shows_none() {
+        let text = example_manifest("0.1.0").replace(
+            "description = \"Finds Example Agent sessions, tokens and logins.\"\n",
+            "",
+        );
+        let mut plugin = official_example();
+        plugin.manifest = Some(Manifest::parse(&text).expect("valid"));
+        let state = selected(vec![plugin]);
+
+        let page = page_of(&state, SystemTime::now());
+
+        assert_eq!(page.parts[0].description, None);
+        assert!(page.parts[1].description.is_some());
+    }
+
+    /// Issue 09, 35, 36: a local plugin shows its folder as the source,
+    /// no row of the repository its manifest names, and Reload in place
+    /// of Check for updates.
     #[test]
     fn a_local_plugin_shows_its_folder_and_reloads() {
         let state = selected(vec![local_example()]);
 
         let page = page_of(&state, SystemTime::now());
 
-        assert_eq!(page.trust_note, i18n::t(Key::PluginsLocalNote));
+        assert_eq!(page.trust.label, i18n::t(Key::PluginsLocal));
+        assert_eq!(page.trust.note, i18n::t(Key::PluginsLocalNote));
         assert_eq!(
             page.source,
             SourceViewModel::Folder(String::from("/work/otty-plugin-example"))
-        );
-        assert_eq!(
-            page.repository.as_deref(),
-            Some("https://github.com/otty-shell/otty-plugin-example")
         );
         assert!(page.is_local);
     }

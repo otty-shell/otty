@@ -9,7 +9,7 @@ use otty_plugin_releases::fixtures::{
 };
 
 use super::*;
-use crate::model::{MainViewModel, PluginPageViewModel};
+use crate::model::{DialogViewModel, MainViewModel, PluginPageViewModel};
 use crate::testing::{
     agent, fork, official_example, provider, released_example,
 };
@@ -770,4 +770,35 @@ fn copy_report_of_a_part_copies_its_report() {
         reduce(&mut state, PluginsIntent::CopyReport(report.clone()));
 
     assert_eq!(outcomes, [PluginsOutcome::CopyText(report)]);
+}
+
+/// Issue 36: Can access of a part opens what it can access in a dialog,
+/// titled with its name; Close closes it and keeps the page.
+#[test]
+fn can_access_of_a_part_opens_its_dialog() {
+    let mut state = open_state(vec![official_example()]);
+
+    let outcomes = reduce(
+        &mut state,
+        PluginsIntent::ShowCanAccess {
+            plugin: String::from("example"),
+            part: provider(),
+        },
+    );
+    let title = match DialogViewModel::from_state(&state) {
+        Some(DialogViewModel::CanAccess(dialog)) => dialog.title,
+        other => panic!("the Can access dialog: {other:?}"),
+    };
+    let _ = reduce(&mut state, PluginsIntent::Back);
+
+    assert!(outcomes.is_empty());
+    assert_eq!(
+        title,
+        i18n::filled(
+            Key::TplPluginsCanAccessTitle,
+            &[("part", "Example Cloud")]
+        )
+    );
+    assert_eq!(state.dialog(), None);
+    assert_eq!(state.selected(), Some("example"));
 }

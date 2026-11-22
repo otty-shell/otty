@@ -17,6 +17,9 @@ the folder into a new repository and replace what the parts read.
   OTTY calls a function of one part, only that part's permissions apply:
   here the provider part may not read `~/.example-agent/`, and the agent
   part may not call `api.example.com`.
+- Each part says in one sentence what it does with `description`, and
+  so does the plugin, with commas, not semicolons: Plugins mode shows a
+  part's on its card.
 - All agent parts are served by one `impl Agent`, all provider parts by
   one `impl Provider`; the part's id comes with each call. The traits and
   the types of the domain are in `otty_plugin_sdk::agents`; the host

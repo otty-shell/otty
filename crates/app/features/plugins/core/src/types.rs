@@ -108,3 +108,26 @@ pub(crate) fn part_name(manifest: Option<&Manifest>, part: &PartRef) -> String {
 
     name.unwrap_or_else(|| part.id().to_string())
 }
+
+/// What `part` does, one sentence from `manifest`, when it says.
+pub(crate) fn part_description(
+    manifest: Option<&Manifest>,
+    part: &PartRef,
+) -> Option<String> {
+    let manifest = manifest?;
+
+    let description = match part.kind() {
+        PartKind::Agent => manifest
+            .agents()
+            .iter()
+            .find(|agent| agent.id() == part.id())
+            .and_then(|agent| agent.description()),
+        PartKind::Provider => manifest
+            .providers()
+            .iter()
+            .find(|provider| provider.id() == part.id())
+            .and_then(|provider| provider.description()),
+    };
+
+    description.map(String::from)
+}

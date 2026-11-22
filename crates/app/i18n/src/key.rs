@@ -1790,8 +1790,6 @@ pub enum Key {
     PluginsFieldVersion,
     /// Key of the authors on the page of a plugin.
     PluginsFieldAuthors,
-    /// Key of the repository on the page of a plugin.
-    PluginsFieldRepository,
     /// Key of where a plugin came from on its page.
     PluginsFieldSource,
     /// Title of the parts on the page of a plugin.
@@ -1820,8 +1818,6 @@ pub enum Key {
     PluginsCheckForUpdates,
     /// Action of a local plugin that reads its folder again.
     PluginsReload,
-    /// Action of a plugin that opens its repository.
-    PluginsOpenRepository,
     /// Action of a plugin that shows its log.
     PluginsShowLog,
     /// Action and button that remove a plugin.
@@ -1862,11 +1858,11 @@ pub enum Key {
     TplPluginsInstallTitle,
     /// Authors of a plugin in the install dialog: {authors}.
     TplPluginsAuthors,
-    /// Line of the install dialog for an official plugin.
+    /// Note of an official plugin: the install dialog, the tooltip of its tag.
     PluginsOfficialNote,
-    /// Line of the install dialog for a community plugin.
+    /// Note of a community plugin: the install dialog, the tooltip of its tag.
     PluginsCommunityNote,
-    /// Line of the install dialog for a plugin from a local folder.
+    /// Note of a local plugin: the install dialog, the tooltip of its tag.
     PluginsLocalNote,
     /// Line of a part that asks for no permissions.
     PluginsNoPermissions,
@@ -1874,6 +1870,10 @@ pub enum Key {
     PluginsCanAccess,
     /// Muted line under "Can access": everything else is refused.
     PluginsCanAccessNote,
+    /// Title of the dialog of what a part can access: {part}.
+    TplPluginsCanAccessTitle,
+    /// Button on the card of a part: {count} places it can access.
+    TplPluginsCanAccessButton,
     /// Group of permissions: files the part reads.
     PluginsGroupFiles,
     /// Group of permissions: files the part writes and deletes.
@@ -1892,13 +1892,36 @@ pub enum Key {
     PluginsGroupLogins,
     /// Group of permissions: sites the part sends requests to.
     PluginsGroupSites,
-    /// Group of permissions: provider logins found by other plugins.
-    PluginsGroupFromAgents,
+    /// Group of permissions: logins and keys of the provider's accounts
+    /// that agent plugins found.
+    PluginsGroupFoundLogins,
     /// Group of permissions OTTY can not sort, as written in plugins.json.
     PluginsGroupOther,
+    /// Muted line under Files: read only.
+    PluginsGroupFilesMeaning,
+    /// Muted line under Changes files: may write and delete.
+    PluginsGroupChangesFilesMeaning,
+    /// Muted line under Databases: SQLite, read only.
+    PluginsGroupDatabasesMeaning,
+    /// Muted line under Variables: environment variables, read only.
+    PluginsGroupVariablesMeaning,
+    /// Muted line under Programs: runs them and reads the output.
+    PluginsGroupProgramsMeaning,
+    /// Muted line under Hidden terminal: runs without a visible tab.
+    PluginsGroupHiddenTerminalMeaning,
+    /// Muted line under Keyring: entries given as handles.
+    PluginsGroupKeyringMeaning,
+    /// Muted line under Logins: where logins are kept, given as handles.
+    PluginsGroupLoginsMeaning,
+    /// Muted line under Sites: sends requests only to these.
+    PluginsGroupSitesMeaning,
+    /// Muted line under Found logins: {provider} accounts agent plugins found.
+    TplPluginsGroupFoundLoginsMeaning,
     /// Muted words after a keyring entry.
     PluginsPlaceKeyringNote,
-    /// A place of "From agents": {provider} accounts.
+    /// Muted words before a host in Found logins: keys for `example.com`.
+    PluginsPlaceKeysFor,
+    /// A place of "Found logins": {provider} accounts.
     TplPluginsPlaceAccounts,
     /// Mark of a permission an update asks for.
     PluginsMarkNew,
@@ -2018,7 +2041,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 944] = [
+    pub(super) const ALL: [Self; 955] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2852,7 +2875,6 @@ impl Key {
         Self::PluginsSignFailed,
         Self::PluginsFieldVersion,
         Self::PluginsFieldAuthors,
-        Self::PluginsFieldRepository,
         Self::PluginsFieldSource,
         Self::PluginsSectionParts,
         Self::PluginsHealthWorking,
@@ -2867,7 +2889,6 @@ impl Key {
         Self::PluginsTryAgain,
         Self::PluginsCheckForUpdates,
         Self::PluginsReload,
-        Self::PluginsOpenRepository,
         Self::PluginsShowLog,
         Self::PluginsRemove,
         Self::PluginsReview,
@@ -2894,6 +2915,8 @@ impl Key {
         Self::PluginsNoPermissions,
         Self::PluginsCanAccess,
         Self::PluginsCanAccessNote,
+        Self::TplPluginsCanAccessTitle,
+        Self::TplPluginsCanAccessButton,
         Self::PluginsGroupFiles,
         Self::PluginsGroupChangesFiles,
         Self::PluginsGroupDatabases,
@@ -2903,9 +2926,20 @@ impl Key {
         Self::PluginsGroupKeyring,
         Self::PluginsGroupLogins,
         Self::PluginsGroupSites,
-        Self::PluginsGroupFromAgents,
+        Self::PluginsGroupFoundLogins,
         Self::PluginsGroupOther,
+        Self::PluginsGroupFilesMeaning,
+        Self::PluginsGroupChangesFilesMeaning,
+        Self::PluginsGroupDatabasesMeaning,
+        Self::PluginsGroupVariablesMeaning,
+        Self::PluginsGroupProgramsMeaning,
+        Self::PluginsGroupHiddenTerminalMeaning,
+        Self::PluginsGroupKeyringMeaning,
+        Self::PluginsGroupLoginsMeaning,
+        Self::PluginsGroupSitesMeaning,
+        Self::TplPluginsGroupFoundLoginsMeaning,
         Self::PluginsPlaceKeyringNote,
+        Self::PluginsPlaceKeysFor,
         Self::TplPluginsPlaceAccounts,
         Self::PluginsMarkNew,
         Self::PluginsMarkNoLonger,

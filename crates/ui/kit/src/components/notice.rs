@@ -21,6 +21,9 @@ const PADDING: Padding = Padding {
 };
 /// Text size (`.ot-banner { font-size: 12.5px }`).
 const TEXT_SIZE: f32 = 12.5;
+/// How much of `status-warn` the wash under a warning holds
+/// (`color-mix(in srgb, var(--status-warn) 12%, transparent)`).
+const WARN_WASH: f32 = 0.12;
 /// Edge of the leading icon. The design says 15px; 16 keeps the icon on
 /// whole pixels at every scale, as in [`IconButton`].
 ///
@@ -38,8 +41,9 @@ const CROSS_SIZE: f32 = 12.0;
 ///
 /// It is an error on `surface-danger` by default, what a failed action
 /// shows; [`NoticeTone::Success`] makes it the neutral notice of a finished
-/// action. Components never bundle icons, so the caller passes the icon of
-/// the tone: the error mark or the check.
+/// action, [`NoticeTone::Warn`] a warning. Components never bundle icons,
+/// so the caller passes the icon of the tone: the error mark, the warning
+/// sign or the check.
 ///
 /// # Example
 ///
@@ -98,8 +102,8 @@ impl<Message> Notice<Message> {
         }
     }
 
-    /// Sets what the notice tells: an error (the default) or that an action
-    /// finished.
+    /// Sets what the notice tells: an error (the default), a warning or
+    /// that an action finished.
     pub fn tone(mut self, tone: NoticeTone) -> Self {
         self.tone = tone;
         self
@@ -160,12 +164,17 @@ impl<'a, Message: Clone + 'a> From<Notice<Message>> for Element<'a, Message> {
     }
 }
 
-/// What a [`Notice`] tells: an error, or that an action finished.
+/// What a [`Notice`] tells: an error, a warning, or that an action
+/// finished.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoticeTone {
     /// A failed action: `text-danger` on `surface-danger`, the icon in
     /// `status-error`.
     Error,
+    /// Something to weigh before going on, such as a plugin reviewed by
+    /// its author only: `status-warn` text and icon on a faint wash of
+    /// `status-warn`.
+    Warn,
     /// A finished action, such as "Plugin OpenCode reloaded": neutral,
     /// `text-strong` on `surface-overlay` with a `line` border, the icon
     /// (a check) in `status-ok`.
@@ -177,6 +186,7 @@ impl NoticeTone {
     pub const fn text_color(self, palette: &UiPalette) -> Color {
         match self {
             Self::Error => palette.text_danger(),
+            Self::Warn => palette.status_warn(),
             Self::Success => palette.text_strong(),
         }
     }
@@ -185,6 +195,7 @@ impl NoticeTone {
     pub const fn icon_color(self, palette: &UiPalette) -> Color {
         match self {
             Self::Error => palette.status_error(),
+            Self::Warn => palette.status_warn(),
             Self::Success => palette.status_ok(),
         }
     }
@@ -193,6 +204,10 @@ impl NoticeTone {
     const fn background(self, palette: &UiPalette) -> Color {
         match self {
             Self::Error => palette.surface_danger(),
+            Self::Warn => Color {
+                a: WARN_WASH,
+                ..palette.status_warn()
+            },
             Self::Success => palette.surface_overlay(),
         }
     }
@@ -201,6 +216,7 @@ impl NoticeTone {
     const fn cross_color(self, palette: &UiPalette) -> Color {
         match self {
             Self::Error => palette.text_danger(),
+            Self::Warn => palette.status_warn(),
             Self::Success => palette.text_muted(),
         }
     }
@@ -221,7 +237,7 @@ fn notice_style(
     };
     let (border_width, border_color) = match tone {
         NoticeTone::Success => (size::LINE, palette.line()),
-        NoticeTone::Error => (0.0, Color::TRANSPARENT),
+        NoticeTone::Error | NoticeTone::Warn => (0.0, Color::TRANSPARENT),
     };
 
     container::Style {
@@ -432,6 +448,44 @@ mod tests {
             let text = contrast_ratio(palette.text_strong(), background);
             let icon = contrast_ratio(palette.status_ok(), background);
 
+            assert!(text >= TEXT_MIN, "{theme}: text is {text:.2}:1");
+            assert!(icon >= NON_TEXT_MIN, "{theme}: icon is {icon:.2}:1");
+        }
+    }
+
+    /// Owner, 2026-11-22: a warning, such as the note of a community
+    /// plugin in its install dialog, is drawn in the warn tone on a faint
+    /// warn wash, readable over the dialog card in both themes.
+    #[test]
+    fn given_warn_notice_then_it_is_warn_on_a_warn_wash_and_readable() {
+        for (theme, palette) in [
+            ("OTTY Dark", UiPalette::otty_dark()),
+            ("OTTY Light", UiPalette::otty_light()),
+        ] {
+            let style = notice_style(&palette, NoticeTone::Warn, false);
+            let wash = Color {
+                a: WARN_WASH,
+                ..palette.status_warn()
+            };
+            let card = palette.surface_overlay();
+            let shown = Color {
+                r: card.r + (wash.r - card.r) * WARN_WASH,
+                g: card.g + (wash.g - card.g) * WARN_WASH,
+                b: card.b + (wash.b - card.b) * WARN_WASH,
+                a: 1.0,
+            };
+
+            let text =
+                contrast_ratio(NoticeTone::Warn.text_color(&palette), shown);
+            let icon =
+                contrast_ratio(NoticeTone::Warn.icon_color(&palette), shown);
+
+            assert_eq!(style.background, Some(wash.into()));
+            assert_eq!(style.border.width, 0.0);
+            assert_eq!(
+                NoticeTone::Warn.text_color(&palette),
+                palette.status_warn()
+            );
             assert!(text >= TEXT_MIN, "{theme}: text is {text:.2}:1");
             assert!(icon >= NON_TEXT_MIN, "{theme}: icon is {icon:.2}:1");
         }

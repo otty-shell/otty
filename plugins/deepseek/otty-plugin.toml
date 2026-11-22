@@ -3,8 +3,8 @@
 [plugin]
 id = "deepseek"
 name = "DeepSeek"
-version = "0.1.0"
-description = "The money left on DeepSeek accounts."
+version = "0.1.1"
+description = "DeepSeek accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-deepseek"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -20,6 +20,7 @@ language = "0.1"
 [[agents.provider]]
 id = "deepseek"
 name = "DeepSeek"
+description = "Reads the money left on DeepSeek accounts."
 icon = "deepseek.svg"
 hosts = ["deepseek.com"]
 usage_page = "https://platform.deepseek.com/usage"

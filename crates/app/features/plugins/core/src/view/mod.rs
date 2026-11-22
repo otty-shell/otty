@@ -37,6 +37,9 @@ pub(crate) fn dialog<'a>(
             permissions::install(dialog, palette)
         },
         DialogViewModel::Update(dialog) => permissions::update(dialog, palette),
+        DialogViewModel::CanAccess(dialog) => {
+            can_access::dialog(dialog, palette)
+        },
         DialogViewModel::Log { title, text } => {
             forms::log(title, text, palette)
         },

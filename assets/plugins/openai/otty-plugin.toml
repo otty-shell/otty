@@ -3,8 +3,8 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.3"
-description = "Codex profiles, logins, sessions and tokens; ChatGPT limits and credits, from OpenAI or from Codex; OpenAI organization costs."
+version = "0.2.4"
+description = "Codex, ChatGPT and OpenAI accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -21,6 +21,7 @@ language = "0.1"
 [[agents.agent]]
 id = "codex"
 name = "Codex"
+description = "Finds Codex profiles, sessions, tokens and logins."
 icon = "codex.svg"
 program = "codex"
 tested_version = "0.169.0"
@@ -58,6 +59,7 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
 [[agents.provider]]
 id = "openai"
 name = "OpenAI"
+description = "Reads ChatGPT limits and credits, and OpenAI organization costs."
 icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"

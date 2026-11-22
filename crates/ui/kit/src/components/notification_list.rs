@@ -236,11 +236,12 @@ struct RowIcons {
 }
 
 impl RowIcons {
-    /// Returns the icon of a row that tells `tone`.
+    /// Returns the icon of a row that tells `tone`: the check of a
+    /// success, else the mark of the list.
     fn of(&self, tone: NoticeTone) -> svg::Handle {
         match tone {
             NoticeTone::Success => self.success.clone(),
-            NoticeTone::Error => self.error.clone(),
+            _ => self.error.clone(),
         }
     }
 }

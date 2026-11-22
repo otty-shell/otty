@@ -68,6 +68,13 @@ pub enum PluginsIntent {
     Review(String),
     /// Update of the update dialog.
     ApplyUpdate,
+    /// Can access of a part: the dialog of what it can access.
+    ShowCanAccess {
+        /// The plugin id.
+        plugin: String,
+        /// The part.
+        part: PartRef,
+    },
     /// Show log of a plugin.
     ShowLog(String),
     /// Open repository of a plugin.

@@ -1,6 +1,6 @@
 # 36 A part says what it does; what it can access opens in a dialog
 
-Status: ready
+Status: done
 Blocked by: 35
 
 ## Why
@@ -59,6 +59,25 @@ description), under it its groups inline under "Can access" with the
 explanation lines. No button there: at install the permissions are
 visible at once. The update dialog keeps its "new" / "no longer" marks.
 
+Owner, 2026-11-22, later the same day:
+
+- The line "Only this is open to the part, OTTY refuses everything
+  else." shows only in the "<Part> can access" dialog of the page, muted,
+  right under the title; not in the install or update dialog.
+- In the install dialog the note of a community plugin ("Community
+  plugin: reviewed by its author only") is a warning, in the warn colour
+  with the warning sign; the Official and Local notes stay plain. On the
+  page the "Community" trust tag has the warn tone too.
+- The "<Part> can access" dialog has no part header (no name, kind tag
+  or description, the title names the part): the muted line, then a card
+  of the groups alone, styled as the groups in the install dialog. The
+  install and update dialogs keep the full part card with "Can access"
+  over the groups.
+- Wherever the groups show, a thin rule in the line colour separates the
+  rows, with a little more room above and below each row, so a label,
+  what it means and its places read as one block; the places inside one
+  row stay tight.
+
 ## What to build
 
 1. **A part's description.** A part of the manifest (`[[agents.agent]]`,
@@ -101,3 +120,25 @@ visible at once. The update dialog keeps its "new" / "no longer" marks.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-22, done. `otty-plugin-manifest` reads an optional `description`
+of each `[[agents.agent]]` and `[[agents.provider]]` part. The page of a
+plugin shows the trust tag after the version (its note in the tooltip,
+"Community" in the warn tone through the new kit `warn_tag`), the facts
+Version, Authors and Source, and on each part card its description with
+"Can access · N", or "Asks for no permissions" and no button. The button
+opens the "<Part> can access" dialog: the muted line, then the groups
+alone on a card. Every group carries its line of what it means, "From
+agents" is "Found logins" with "Anthropic accounts" and "keys for
+`anthropic.com`", and a thin rule separates the rows. The install and
+update dialogs show each part as a compact card (name, kind tag,
+description, a rule, "Can access" and the groups) without the line; the
+note of a community plugin is a warning notice (new kit tone
+`NoticeTone::Warn` and the icon `notice-warn.svg`). The official plugins
+give short descriptions with commas and one sentence per part:
+Anthropic 0.2.4, OpenAI 0.2.4, OpenCode 0.1.5, DeepSeek 0.1.1,
+OpenRouter 0.1.1, rebuilt into `assets/plugins/`. The template keeps
+0.1.0, the start version of a new plugin, and gains part descriptions.
+Unlike the prototype: a place too long for its line wraps without the
+hanging indent, and the warning notice uses the kit notice's regular
+weight.

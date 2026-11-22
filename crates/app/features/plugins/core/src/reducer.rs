@@ -100,6 +100,10 @@ pub(crate) fn reduce(
             open(state, PluginsPlace::Review(plugin))
         },
         PluginsIntent::ApplyUpdate => apply_update(state),
+        PluginsIntent::ShowCanAccess { plugin, part } => {
+            state.show(Dialog::CanAccess { plugin, part });
+            Vec::new()
+        },
         PluginsIntent::ShowLog(plugin) => {
             state.show(Dialog::Log(plugin));
             Vec::new()

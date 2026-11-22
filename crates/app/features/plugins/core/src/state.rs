@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallPlan, PendingUpdate};
 
 use crate::types::{ListedPlugin, RunningPlugin};
@@ -27,6 +28,13 @@ pub(crate) enum Dialog {
     Update {
         /// The plugin id.
         plugin: String,
+    },
+    /// What one part of an installed plugin can access.
+    CanAccess {
+        /// The plugin id.
+        plugin: String,
+        /// The part.
+        part: PartRef,
     },
     /// The log of the plugin with this id.
     Log(String),

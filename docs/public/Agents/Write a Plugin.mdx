@@ -80,7 +80,7 @@ otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY rel
 id = "example"                  # stable; a new id is a new plugin
 name = "Example"
 version = "0.1.0"               # equals the release tag without "v"
-description = "A made-up agent and a made-up provider."
+description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/you/otty-plugin-example"
 license = "Apache-2.0"
 authors = ["You"]
@@ -94,6 +94,7 @@ language = "0.1"                # optional, of no domain: the plugin's texts com
 [[agents.agent]]
 id = "example-agent"            # saved by OTTY; never change it
 name = "Example Agent"
+description = "Finds Example Agent sessions, tokens and logins."  # one sentence, on its card
 icon = "example-agent.svg"
 program = "example-agent"       # looked up on PATH
 program_places = ["~/.example/bin/example-agent"]  # where its installer puts it, when PATH has not
@@ -114,6 +115,7 @@ fields = ["/api_key"]
 [[agents.provider]]
 id = "example-cloud"
 name = "Example Cloud"
+description = "Reads the limits of Example Cloud accounts."
 icon = "example-cloud.svg"
 hosts = ["example.com"]         # keys found for these hosts go to this part, and to any other that serves them
 usage_page = "https://example.com/usage"
@@ -127,7 +129,9 @@ http = ["api.example.com"]
 Each part belongs to a **domain** of OTTY, the place of the window it fills, and is written under the
 domain's name: the agents and providers of Agents mode are the `agents` domain, so each
 `[[agents.agent]]` and `[[agents.provider]]` is a **part** with its own id, icon and permissions, and
-`[api]` names its contract as `agents.agent` and `agents.provider`. A part at the top level, such as
+`[api]` names its contract as `agents.agent` and `agents.provider`. The `description` of the plugin
+and of each part is optional, one short sentence with commas, not semicolons: Plugins mode shows the
+plugin's under its name and a part's on its card, next to **Can access**. A part at the top level, such as
 `[[agent]]`, is refused as an unknown field. A plugin may have any number of parts; a new part is a
 new release. The permissions of a part apply only while
 OTTY calls that part: above, the provider part may not read `~/.example-agent`, and the agent part

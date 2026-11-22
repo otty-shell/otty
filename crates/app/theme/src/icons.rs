@@ -103,6 +103,9 @@ pub const EXTERNAL_LINK: &[u8] =
 /// Error mark of a notice: an exclamation mark in a circle.
 pub const NOTICE_ERROR: &[u8] =
     include_bytes!("../../../../assets/svg/notice-error.svg");
+/// Mark of a warning notice: an exclamation mark in a triangle.
+pub const NOTICE_WARN: &[u8] =
+    include_bytes!("../../../../assets/svg/notice-warn.svg");
 /// Mark of a notice that says an action finished: a check in a circle.
 pub const NOTICE_DONE: &[u8] =
     include_bytes!("../../../../assets/svg/notice-done.svg");

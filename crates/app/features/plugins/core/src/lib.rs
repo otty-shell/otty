@@ -244,7 +244,7 @@ mod tests {
         let mut main = simulator(plugins.main_area(theme).into_element(theme));
 
         assert!(panel.find("Example").is_ok());
-        assert!(main.find(i18n::t(Key::PluginsOfficialNote)).is_ok());
+        assert!(main.find(i18n::t(Key::PluginsOfficial)).is_ok());
         assert!(plugins.overlay(theme).is_none());
     }
 

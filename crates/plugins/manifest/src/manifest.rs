@@ -253,6 +253,7 @@ impl PluginInfo {
 pub struct AgentPart {
     id: String,
     name: String,
+    description: Option<String>,
     icon: String,
     program: Option<String>,
     program_places: Vec<ProgramPlace>,
@@ -270,6 +271,12 @@ impl AgentPart {
     /// The agent's name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// One sentence on what the part does, shown on its card in Plugins
+    /// mode.
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
     }
 
     /// The file name of the agent's SVG icon, next to the manifest.
@@ -344,6 +351,7 @@ impl AgentPart {
         Ok(Self {
             id: raw.id.clone(),
             name: raw.name.clone(),
+            description: raw.description.clone(),
             icon,
             program: raw.program.clone(),
             program_places,
@@ -359,6 +367,7 @@ impl AgentPart {
 pub struct ProviderPart {
     id: String,
     name: String,
+    description: Option<String>,
     icon: String,
     hosts: Vec<String>,
     usage_page: Option<String>,
@@ -377,6 +386,12 @@ impl ProviderPart {
     /// The provider's name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// One sentence on what the part does, shown on its card in Plugins
+    /// mode.
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
     }
 
     /// The file name of the provider's SVG icon, next to the manifest.
@@ -465,6 +480,7 @@ impl ProviderPart {
         Ok(Self {
             id: raw.id.clone(),
             name: raw.name.clone(),
+            description: raw.description.clone(),
             icon,
             hosts: raw.hosts.clone(),
             usage_page: raw.usage_page.clone(),
@@ -530,6 +546,39 @@ mod tests {
 
     fn refusal(text: &str) -> ManifestError {
         Manifest::parse(text).expect_err("refused")
+    }
+
+    /// Issue 36: each part may say in one sentence what it does; a part
+    /// that says nothing has no description.
+    #[test]
+    fn a_part_may_say_what_it_does() {
+        let text = edited(
+            OPENAI_MANIFEST,
+            r#"icon = "codex.svg""#,
+            r#"icon = "codex.svg"
+description = "Finds Codex profiles, sessions, tokens and logins.""#,
+        );
+
+        let provider = edited(
+            OPENAI_MANIFEST,
+            r#"icon = "openai.svg""#,
+            r#"icon = "openai.svg"
+description = "Reads ChatGPT limits and OpenAI API spending.""#,
+        );
+
+        let manifest = Manifest::parse(&text).expect("valid");
+        let with_provider = Manifest::parse(&provider).expect("valid");
+
+        assert_eq!(
+            manifest.agents()[0].description(),
+            Some("Finds Codex profiles, sessions, tokens and logins.")
+        );
+        assert_eq!(manifest.providers()[0].description(), None);
+        assert_eq!(
+            with_provider.providers()[0].description(),
+            Some("Reads ChatGPT limits and OpenAI API spending.")
+        );
+        assert_eq!(with_provider.agents()[0].description(), None);
     }
 
     #[test]

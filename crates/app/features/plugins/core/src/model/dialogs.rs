@@ -1,18 +1,20 @@
 //! The dialogs of Plugins mode that show permissions (spec
 //! 2026-11-19-agent-plugins, "Install and update flow", "Permissions"):
-//! the install dialog with each part and its permissions grouped as on the
-//! page of a plugin (issue 35), the update dialog with what changed part by
-//! part.
+//! the install dialog with each part, what it does and its permissions in
+//! their groups (issues 35, 36), the update dialog with what changed part
+//! by part, and the Can access dialog of one part of an installed plugin
+//! (issue 36).
 
 use otty_app_i18n::{self as i18n, Key};
-use otty_plugin_manifest::Manifest;
-use otty_plugin_releases::{InstallPlan, PartChange, PendingUpdate};
+use otty_plugin_manifest::{Manifest, PartRef};
+use otty_plugin_releases::{InstallPlan, PartChange, PendingUpdate, Trust};
 
 use super::permissions::{
-    PermissionGroupViewModel, PlaceMark, granted_place, grouped, part_places,
+    PermissionGroupViewModel, PlaceMark, granted_groups, granted_place,
+    grouped, part_places,
 };
 use crate::state::PluginsState;
-use crate::types::{ListedPlugin, part_name};
+use crate::types::{ListedPlugin, part_description, part_name};
 use crate::words::{kind_text, trust_note};
 
 /// One part and its permissions; in the update dialog what changed.
@@ -22,6 +24,8 @@ pub(crate) struct PartPermissionsViewModel {
     pub(crate) name: String,
     /// Its kind for its tag: "Agent" or "Provider".
     pub(crate) kind: &'static str,
+    /// What it does, one sentence from the manifest.
+    pub(crate) description: Option<String>,
     /// "new part" or "no longer in the plugin" in the update dialog.
     pub(crate) mark: Option<&'static str>,
     /// Whether the new version no longer has the part: no permissions show.
@@ -42,6 +46,9 @@ pub(crate) struct InstallDialogViewModel {
     pub(crate) repository: Option<String>,
     /// Who reviewed it: official, community or local.
     pub(crate) trust: &'static str,
+    /// Whether `trust` shows as a warning: a community plugin is reviewed
+    /// by its author only.
+    pub(crate) is_trust_warn: bool,
     /// Each part with its permissions.
     pub(crate) parts: Vec<PartPermissionsViewModel>,
     /// Why the install failed.
@@ -63,6 +70,34 @@ pub(crate) struct UpdateDialogViewModel {
     pub(crate) is_busy: bool,
 }
 
+/// The Can access dialog of one part of an installed plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CanAccessDialogViewModel {
+    /// "Example Cloud can access".
+    pub(crate) title: String,
+    /// The permissions the user granted to the part, in their groups.
+    pub(crate) groups: Vec<PermissionGroupViewModel>,
+}
+
+/// The Can access dialog of the part `part` of `plugin`; `None` when the
+/// plugin no longer has it.
+pub(crate) fn can_access_dialog(
+    plugin: &ListedPlugin,
+    part: &PartRef,
+) -> Option<CanAccessDialogViewModel> {
+    let installed = plugin.installed.part(part)?;
+    let name = plugin.part_name(part);
+
+    Some(CanAccessDialogViewModel {
+        title: i18n::filled(Key::TplPluginsCanAccessTitle, &[("part", &name)]),
+        groups: granted_groups(
+            installed.granted(),
+            plugin.manifest.as_ref(),
+            &name,
+        ),
+    })
+}
+
 /// The install dialog of `plan`.
 pub(crate) fn install_dialog(
     state: &PluginsState,
@@ -80,12 +115,16 @@ pub(crate) fn install_dialog(
     let parts = manifest
         .parts()
         .iter()
-        .map(|part| PartPermissionsViewModel {
-            name: part_name(Some(manifest), part),
-            kind: kind_text(part),
-            mark: None,
-            is_removed: false,
-            groups: grouped(part_places(manifest, part)),
+        .map(|part| {
+            let name = part_name(Some(manifest), part);
+            PartPermissionsViewModel {
+                kind: kind_text(part),
+                description: part_description(Some(manifest), part),
+                mark: None,
+                is_removed: false,
+                groups: grouped(part_places(manifest, part), &name),
+                name,
+            }
         })
         .collect();
 
@@ -100,6 +139,7 @@ pub(crate) fn install_dialog(
         authors,
         repository: plugin.repository().map(String::from),
         trust: trust_note(plan.trust()),
+        is_trust_warn: plan.trust() == Trust::Community,
         parts,
         error: state.error().map(String::from),
         is_busy: state.is_busy(),
@@ -147,16 +187,21 @@ fn part_change(
     old: Option<&Manifest>,
 ) -> PartPermissionsViewModel {
     match change {
-        PartChange::New { part, .. } => PartPermissionsViewModel {
-            name: part_name(Some(new), part),
-            kind: kind_text(part),
-            mark: Some(i18n::t(Key::PluginsNewPart)),
-            is_removed: false,
-            groups: grouped(part_places(new, part)),
+        PartChange::New { part, .. } => {
+            let name = part_name(Some(new), part);
+            PartPermissionsViewModel {
+                kind: kind_text(part),
+                description: part_description(Some(new), part),
+                mark: Some(i18n::t(Key::PluginsNewPart)),
+                is_removed: false,
+                groups: grouped(part_places(new, part), &name),
+                name,
+            }
         },
         PartChange::Removed { part } => PartPermissionsViewModel {
             name: part_name(old, part),
             kind: kind_text(part),
+            description: part_description(old, part),
             mark: Some(i18n::t(Key::PluginsPartRemoved)),
             is_removed: true,
             groups: Vec::new(),
@@ -184,12 +229,14 @@ fn part_change(
                 granted_place(line, old).marked(PlaceMark::NoLonger)
             }));
 
+            let name = part_name(Some(new), part);
             PartPermissionsViewModel {
-                name: part_name(Some(new), part),
                 kind: kind_text(part),
+                description: part_description(Some(new), part),
                 mark: None,
                 is_removed: false,
-                groups: grouped(places),
+                groups: grouped(places, &name),
+                name,
             }
         },
     }
@@ -197,23 +244,70 @@ fn part_change(
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_manifest::PartRef;
     use otty_plugin_releases::Source;
     use otty_plugin_releases::fixtures::{
         example_manifest, install_plan, pending_update,
     };
 
     use super::*;
-    use crate::model::permissions::{PermissionGroup, PlaceViewModel};
-    use crate::testing::{agent, provider, released_example};
+    use crate::model::permissions::{
+        PermissionGroup, PlaceViewModel, granted_groups,
+    };
+    use crate::testing::{agent, official_example, provider, released_example};
 
     fn site(host: &str, mark: Option<PlaceMark>) -> PlaceViewModel {
         PlaceViewModel {
             group: PermissionGroup::Sites,
             text: String::from(host),
             is_words: false,
+            lead: None,
             note: None,
             mark,
         }
+    }
+
+    /// Issue 36: the Can access dialog of a part is titled with its name
+    /// and shows the permissions the user granted to it, in their groups;
+    /// the title names the part, so nothing else does.
+    #[test]
+    fn the_can_access_dialog_shows_the_granted_groups() {
+        let plugin = official_example();
+        let granted = plugin
+            .installed
+            .part(&provider())
+            .expect("the provider part")
+            .granted()
+            .to_vec();
+
+        let dialog =
+            can_access_dialog(&plugin, &provider()).expect("the dialog");
+
+        assert_eq!(
+            dialog.title,
+            i18n::filled(
+                Key::TplPluginsCanAccessTitle,
+                &[("part", "Example Cloud")]
+            )
+        );
+        assert_eq!(
+            dialog.groups,
+            granted_groups(&granted, plugin.manifest.as_ref(), "Example Cloud")
+        );
+        assert_eq!(
+            dialog.groups[1].label,
+            i18n::t(Key::PluginsGroupFoundLogins)
+        );
+    }
+
+    /// A part the plugin no longer has opens no dialog.
+    #[test]
+    fn a_part_that_is_gone_has_no_can_access_dialog() {
+        let plugin = official_example();
+
+        let dialog = can_access_dialog(&plugin, &PartRef::agent("gone"));
+
+        assert_eq!(dialog, None);
     }
 
     /// Issue 09, 35: the install dialog lists each part with its kind and
@@ -239,6 +333,7 @@ mod tests {
             )
         );
         assert_eq!(dialog.trust, i18n::t(Key::PluginsCommunityNote));
+        assert!(dialog.is_trust_warn);
         let names: Vec<(&str, &str)> = dialog
             .parts
             .iter()
@@ -252,12 +347,16 @@ mod tests {
             ]
         );
         assert_eq!(
+            dialog.parts[0].description.as_deref(),
+            Some("Finds Example Agent sessions, tokens and logins.")
+        );
+        assert_eq!(
             dialog.parts[0].groups,
-            grouped(part_places(&manifest, &agent()))
+            grouped(part_places(&manifest, &agent()), "Example Agent")
         );
         assert_eq!(
             dialog.parts[1].groups,
-            grouped(part_places(&manifest, &provider()))
+            grouped(part_places(&manifest, &provider()), "Example Cloud")
         );
         assert_eq!(
             dialog.parts[1].groups[0].label,
@@ -327,6 +426,10 @@ mod tests {
 
         assert_eq!(dialog.parts.len(), 1);
         assert_eq!(dialog.parts[0].mark, Some(i18n::t(Key::PluginsNewPart)));
+        assert_eq!(
+            dialog.parts[0].description.as_deref(),
+            Some("Reads the limits of Example Cloud accounts.")
+        );
         assert_eq!(
             dialog.parts[0].groups[0].places,
             [site("api.example.com", None)]

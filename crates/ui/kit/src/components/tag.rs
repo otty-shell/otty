@@ -9,7 +9,7 @@
 
 use iced::widget::text::Wrapping;
 use iced::widget::{container, text};
-use iced::{Border, Element, Length, Pixels, alignment};
+use iced::{Border, Color, Element, Length, Pixels, alignment};
 
 use super::ellipsis_text::text_width;
 use crate::palette::UiPalette;
@@ -24,6 +24,9 @@ const SPACE_Y: f32 = 2.0;
 /// a terminal block, where 3 px stay free above and below it. In a lower
 /// line it takes what the line leaves after the free space above and below.
 const MAX_HEIGHT: f32 = 16.0;
+/// How much of `status-warn` the wash under a [`warn_tag`] holds
+/// (`color-mix(in srgb, var(--status-warn) 16%, transparent)`).
+const WARN_WASH: f32 = 0.16;
 /// The text size: the caption size, 11.5 px.
 const TEXT_SIZE: f32 = typography::CAPTION.size();
 
@@ -52,17 +55,73 @@ pub fn tag<'a, Message: 'a>(
     line_height: f32,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let height = tag_height(line_height);
-    let background = palette.surface_raised();
+    toned(
+        label.into(),
+        line_height,
+        palette.surface_raised(),
+        palette.text_muted(),
+    )
+}
 
-    let label = text(label.into())
+/// Renders `label` as a [`tag`] in the warn tone: `status-warn` on a faint
+/// wash of it, for a label to weigh, such as "Community" on the page of a
+/// plugin that only its author reviewed.
+///
+/// # Example
+///
+/// ```
+/// use iced::Element;
+/// use otty_ui_kit::components::tag::warn_tag;
+/// use otty_ui_kit::palette::UiPalette;
+///
+/// let palette = UiPalette::otty_dark();
+/// let community: Element<'_, ()> = warn_tag("Community", 20.0, &palette);
+/// ```
+pub fn warn_tag<'a, Message: 'a>(
+    label: impl Into<String>,
+    line_height: f32,
+    palette: &UiPalette,
+) -> Element<'a, Message> {
+    toned(
+        label.into(),
+        line_height,
+        warn_wash(palette),
+        palette.status_warn(),
+    )
+}
+
+/// Returns the width of the tag of `label`, measured with the font and the
+/// size [`tag`] draws it with, so a caller can tell whether it fits.
+///
+/// # Example
+///
+/// ```
+/// use otty_ui_kit::components::tag::tag_width;
+///
+/// assert!(tag_width("20 lines hidden") > tag_width("1 line hidden"));
+/// ```
+pub fn tag_width(label: &str) -> f32 {
+    text_width(label, TEXT_SIZE, fonts::UI) + 2.0 * PADDING_X
+}
+
+/// The tag of `label` in a line `line_height` high, `color` on
+/// `background`.
+fn toned<'a, Message: 'a>(
+    label: String,
+    line_height: f32,
+    background: Color,
+    color: Color,
+) -> Element<'a, Message> {
+    let height = tag_height(line_height);
+
+    let label = text(label)
         .font(fonts::UI)
         .size(TEXT_SIZE)
         .line_height(Pixels(height))
         .height(Length::Fill)
         .align_y(alignment::Vertical::Center)
         .wrapping(Wrapping::None)
-        .color(palette.text_muted());
+        .color(color);
     let tag = container(label)
         .height(height)
         .padding([0.0, PADDING_X])
@@ -81,18 +140,12 @@ pub fn tag<'a, Message: 'a>(
         .into()
 }
 
-/// Returns the width of the tag of `label`, measured with the font and the
-/// size [`tag`] draws it with, so a caller can tell whether it fits.
-///
-/// # Example
-///
-/// ```
-/// use otty_ui_kit::components::tag::tag_width;
-///
-/// assert!(tag_width("20 lines hidden") > tag_width("1 line hidden"));
-/// ```
-pub fn tag_width(label: &str) -> f32 {
-    text_width(label, TEXT_SIZE, fonts::UI) + 2.0 * PADDING_X
+/// The wash under the text of a [`warn_tag`]: `status-warn`, faint.
+fn warn_wash(palette: &UiPalette) -> Color {
+    Color {
+        a: WARN_WASH,
+        ..palette.status_warn()
+    }
 }
 
 /// The height of the tag in a line `line_height` high: the line less the
@@ -260,6 +313,35 @@ mod tests {
         assert_eq!(tag_height(22.0), 16.0);
         assert_eq!(tag_height(40.0), 16.0);
         assert_eq!(tag_height(3.0), 0.0);
+    }
+
+    /// Owner, 2026-11-22: the warn tag, such as "Community" on the page of
+    /// a plugin reviewed by its author only, is laid out as a tag, in the
+    /// warn tone on a faint warn wash.
+    #[test]
+    fn a_warn_tag_is_laid_out_as_a_tag_in_the_warn_tone() {
+        let palette = UiPalette::otty_dark();
+        let content: Element<'_, ()> =
+            column![warn_tag("Community", 20.0, &palette), text("below")]
+                .into();
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(240.0, 100.0),
+            content,
+        );
+
+        let label = ui.find("Community").expect("the label").bounds();
+        let below = ui.find("below").expect("the text below").bounds();
+
+        assert_eq!(below.y, 20.0);
+        assert!(label.width > 0.0);
+        assert_eq!(
+            warn_wash(&palette),
+            Color {
+                a: WARN_WASH,
+                ..palette.status_warn()
+            }
+        );
     }
 
     #[test]

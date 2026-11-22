@@ -545,7 +545,7 @@ provider part (version numbers are examples):
 id = "openai"                     # stable: a new id is a new plugin
 name = "OpenAI"
 version = "0.4.0"                 # equals the release tag without "v"
-description = "Codex sessions, tokens and limits; ChatGPT and OpenAI account numbers."
+description = "Codex, ChatGPT and OpenAI accounts in OTTY."  # one sentence, commas
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -559,6 +559,7 @@ language = "0.1"                  # the language receiver; belongs to no part an
 [[agents.agent]]
 id = "codex"                      # saved in agents.json; never changes
 name = "Codex"
+description = "Finds Codex profiles, sessions, tokens and logins."  # on its card (issue 36)
 icon = "codex.svg"
 program = "codex"                 # looked up on the login shell's PATH, "installed or not"
 # program_places = ["~/.codex/bin/codex"]  # where an installer puts it off PATH (issue 32)
@@ -590,6 +591,7 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
 [[agents.provider]]
 id = "openai"                     # provider ids and agent ids are separate lists
 name = "OpenAI"
+description = "Reads ChatGPT limits and credits, and OpenAI organization costs."
 icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]  # a host is this or ends with "." + this
 usage_page = "https://platform.openai.com/usage"            # of a key or an organization
@@ -608,7 +610,7 @@ A plugin with one part is shorter. The OpenCode plugin:
 id = "opencode"
 name = "OpenCode"
 version = "0.2.0"
-description = "Sessions and tokens of OpenCode."
+description = "OpenCode sessions and usage in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-opencode"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -1486,15 +1488,20 @@ then the cleanup and the docs.
   split button Add plugin, as the New session and New launch buttons of
   Terminal mode: `+` opens **Add plugin…** with the URL field, the
   chevron opens a menu of **Add plugin…** and **Add plugin from
-  folder…**. Main area: the page of the selected plugin: name, version,
-  description, who reviewed it, authors, repository (a link that opens
-  it), source; its parts, each with its kind, an on/off switch, its
-  health ("Working", "Off", "Paused after three failures" with Try
-  again), its last failure and its permissions; the news of the latest
+  folder…**. Main area: the page of the selected plugin: name, version
+  with a tag of who reviewed it (its note in the tooltip, "Community" in
+  the warn tone), description, authors, source (the repository link that
+  opens it, or the folder); its parts, each with its kind, an on/off
+  switch, its health ("Working", "Off", "Paused after three failures"
+  with Try again), its one-sentence description, its last failure and
+  "Can access · N", which opens a dialog of its permissions in groups,
+  each with one line of what it means (issue 36); the news of the latest
   check and the waiting update with Review; Check for updates (Reload for
   a local plugin), Show log, Remove. With nothing installed or nothing
   selected a card says what to do and offers both ways to add a plugin.
-  Dialogs over the window: the install dialog with permissions per part,
+  Dialogs over the window: the install dialog with permissions per part
+  (each part a card with its description, a community plugin's note a
+  warning),
   the update dialog with the permission diff per part, the log, the
   question before Remove; errors in plain words. **Manage plugins…** of
   Agents mode opens the mode with nothing selected;

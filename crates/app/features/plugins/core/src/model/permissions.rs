@@ -1,8 +1,9 @@
-//! The permissions of a part as Plugins mode shows them (issue 35): each
-//! one is a place, such as a folder, a command or a site, in the group of
-//! what it reaches, such as Files or Sites. The page of a plugin and the
-//! install and update dialogs show the same groups, one row per group in a
-//! fixed order, a group with nothing left out.
+//! The permissions of a part as Plugins mode shows them (issues 35, 36):
+//! each one is a place, such as a folder, a command or a site, in the
+//! group of what it reaches, such as Files or Sites, and each group says
+//! in one line what it means. The Can access dialog of a part and the
+//! install and update dialogs show the same groups, one row per group in
+//! a fixed order, a group with nothing left out.
 
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::{Manifest, PartKind, PartRef, PermissionLine};
@@ -29,8 +30,9 @@ pub(crate) enum PermissionGroup {
     Logins,
     /// Sites it sends requests to.
     Sites,
-    /// Provider logins and keys other plugins found in the agents.
-    FromAgents,
+    /// Logins and keys of the provider's accounts that agent plugins
+    /// found.
+    FoundLogins,
     /// A line `plugins.json` keeps that the manifest no longer has, as it
     /// was kept.
     Other,
@@ -49,11 +51,37 @@ impl PermissionGroup {
             Self::Keyring => Key::PluginsGroupKeyring,
             Self::Logins => Key::PluginsGroupLogins,
             Self::Sites => Key::PluginsGroupSites,
-            Self::FromAgents => Key::PluginsGroupFromAgents,
+            Self::FoundLogins => Key::PluginsGroupFoundLogins,
             Self::Other => Key::PluginsGroupOther,
         };
 
         i18n::t(key)
+    }
+
+    /// One muted line on what the group means, such as "Read only";
+    /// `provider` names the accounts of Found logins. A line OTTY can not
+    /// sort has none.
+    pub(crate) fn meaning(self, provider: &str) -> Option<String> {
+        let key = match self {
+            Self::Files => Key::PluginsGroupFilesMeaning,
+            Self::ChangesFiles => Key::PluginsGroupChangesFilesMeaning,
+            Self::Databases => Key::PluginsGroupDatabasesMeaning,
+            Self::Variables => Key::PluginsGroupVariablesMeaning,
+            Self::Programs => Key::PluginsGroupProgramsMeaning,
+            Self::HiddenTerminal => Key::PluginsGroupHiddenTerminalMeaning,
+            Self::Keyring => Key::PluginsGroupKeyringMeaning,
+            Self::Logins => Key::PluginsGroupLoginsMeaning,
+            Self::Sites => Key::PluginsGroupSitesMeaning,
+            Self::FoundLogins => {
+                return Some(i18n::filled(
+                    Key::TplPluginsGroupFoundLoginsMeaning,
+                    &[("provider", provider)],
+                ));
+            },
+            Self::Other => return None,
+        };
+
+        Some(i18n::t(key).to_string())
     }
 }
 
@@ -77,6 +105,8 @@ pub(crate) struct PlaceViewModel {
     /// Whether `text` is words, such as "Example Cloud accounts", shown in
     /// the UI font.
     pub(crate) is_words: bool,
+    /// Muted words before the place, such as "keys for" `example.com`.
+    pub(crate) lead: Option<&'static str>,
     /// Muted words after the place, such as "once you allow the keyring".
     pub(crate) note: Option<&'static str>,
     /// What the update dialog says of it.
@@ -96,25 +126,30 @@ impl PlaceViewModel {
             group,
             text: text.to_string(),
             is_words: false,
+            lead: None,
             note: None,
             mark: None,
         }
     }
 }
 
-/// One row of a part: the label of a group and its places, one per line.
+/// One row of a part: the label of a group with what it means, and its
+/// places, one per line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PermissionGroupViewModel {
     /// "Files", "Sites"…
     pub(crate) label: &'static str,
+    /// The muted line under the label, such as "Read only".
+    pub(crate) meaning: Option<String>,
     /// Its places, in the order of the manifest.
     pub(crate) places: Vec<PlaceViewModel>,
 }
 
-/// `places` in their groups: the groups in their order, the places of a
-/// group in the order given, each place once.
+/// `places` of the part named `part` in their groups: the groups in their
+/// order, the places of a group in the order given, each place once.
 pub(crate) fn grouped(
     mut places: Vec<PlaceViewModel>,
+    part: &str,
 ) -> Vec<PermissionGroupViewModel> {
     places.sort_by_key(|place| place.group);
 
@@ -134,6 +169,7 @@ pub(crate) fn grouped(
         .into_iter()
         .map(|(group, places)| PermissionGroupViewModel {
             label: group.label(),
+            meaning: group.meaning(part),
             places,
         })
         .collect()
@@ -150,6 +186,21 @@ pub(crate) fn part_places(
         .into_iter()
         .map(|(_, place)| place)
         .collect()
+}
+
+/// The permissions `granted` to the part named `part`, as `plugins.json`
+/// keeps them, in their groups, placed by `manifest`.
+pub(crate) fn granted_groups(
+    granted: &[String],
+    manifest: Option<&Manifest>,
+    part: &str,
+) -> Vec<PermissionGroupViewModel> {
+    let places = granted
+        .iter()
+        .map(|line| granted_place(line, manifest))
+        .collect();
+
+    grouped(places, part)
 }
 
 /// The permission `line` the user granted, as `plugins.json` keeps it in
@@ -213,7 +264,7 @@ fn line_place(line: &PermissionLine) -> PlaceViewModel {
         PermissionLine::GetsProviderKeys(provider) => PlaceViewModel {
             is_words: true,
             ..PlaceViewModel::name(
-                PermissionGroup::FromAgents,
+                PermissionGroup::FoundLogins,
                 &i18n::filled(
                     Key::TplPluginsPlaceAccounts,
                     &[("provider", provider)],
@@ -258,7 +309,13 @@ fn kept_lines(
             lines.extend(provider.hosts().iter().map(|host| {
                 (
                     format!("Gets the keys found for `{host}`"),
-                    PlaceViewModel::name(PermissionGroup::FromAgents, host),
+                    PlaceViewModel {
+                        lead: Some(i18n::t(Key::PluginsPlaceKeysFor)),
+                        ..PlaceViewModel::name(
+                            PermissionGroup::FoundLogins,
+                            host,
+                        )
+                    },
                 )
             }));
 
@@ -290,7 +347,8 @@ mod tests {
     /// reach, in the order of the groups, places without backticks.
     #[test]
     fn an_agent_part_is_grouped_by_what_it_reaches() {
-        let groups = grouped(part_places(&manifest(), &agent()));
+        let groups =
+            grouped(part_places(&manifest(), &agent()), "Example Agent");
 
         let labels: Vec<&str> =
             groups.iter().map(|group| group.label).collect();
@@ -322,23 +380,81 @@ mod tests {
         );
     }
 
-    /// Issue 35: a provider part sends requests to its sites and gets the
-    /// accounts and the keys of its sites from the agents.
+    /// Issue 35, 36: a provider part sends requests to its sites and gets
+    /// the accounts and the keys of its sites that agent plugins found,
+    /// shown as "Found logins": "Example Cloud accounts", "keys for
+    /// example.com".
     #[test]
-    fn a_provider_part_shows_its_sites_and_what_it_gets_from_agents() {
-        let groups = grouped(part_places(&manifest(), &provider()));
+    fn a_provider_part_shows_its_sites_and_the_logins_found() {
+        let groups =
+            grouped(part_places(&manifest(), &provider()), "Example Cloud");
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].label, i18n::t(Key::PluginsGroupSites));
         assert_eq!(texts(&groups[0]), ["api.example.com"]);
-        assert_eq!(groups[1].label, i18n::t(Key::PluginsGroupFromAgents));
+        assert_eq!(groups[1].label, i18n::t(Key::PluginsGroupFoundLogins));
         let accounts = i18n::filled(
             Key::TplPluginsPlaceAccounts,
             &[("provider", "Example Cloud")],
         );
         assert_eq!(texts(&groups[1]), [accounts.as_str(), "example.com"]);
         assert!(groups[1].places[0].is_words);
+        assert_eq!(groups[1].places[0].lead, None);
         assert!(!groups[1].places[1].is_words);
+        assert_eq!(
+            groups[1].places[1].lead,
+            Some(i18n::t(Key::PluginsPlaceKeysFor))
+        );
+    }
+
+    /// Issue 36: under each label one muted line says what the group
+    /// means; the one of Found logins names the provider. A line kept in
+    /// `plugins.json` that OTTY can not sort has none.
+    #[test]
+    fn each_group_says_what_it_means() {
+        let groups = grouped(
+            vec![
+                PlaceViewModel::name(PermissionGroup::Files, "~/.x/**"),
+                PlaceViewModel::name(PermissionGroup::FoundLogins, "x.com"),
+                PlaceViewModel::name(PermissionGroup::Other, "Runs old"),
+            ],
+            "Example Cloud",
+        );
+
+        assert_eq!(
+            groups[0].meaning.as_deref(),
+            Some(i18n::t(Key::PluginsGroupFilesMeaning))
+        );
+        assert_eq!(
+            groups[1].meaning,
+            Some(i18n::filled(
+                Key::TplPluginsGroupFoundLoginsMeaning,
+                &[("provider", "Example Cloud")],
+            ))
+        );
+        assert_eq!(groups[2].meaning, None);
+    }
+
+    #[test]
+    fn every_group_but_other_has_its_meaning() {
+        let all = [
+            PermissionGroup::Files,
+            PermissionGroup::ChangesFiles,
+            PermissionGroup::Databases,
+            PermissionGroup::Variables,
+            PermissionGroup::Programs,
+            PermissionGroup::HiddenTerminal,
+            PermissionGroup::Keyring,
+            PermissionGroup::Logins,
+            PermissionGroup::Sites,
+            PermissionGroup::FoundLogins,
+        ];
+
+        let meanings: Vec<Option<String>> =
+            all.iter().map(|group| group.meaning("Example")).collect();
+
+        assert!(meanings.iter().all(Option::is_some));
+        assert_eq!(PermissionGroup::Other.meaning("Example"), None);
     }
 
     /// Owner, 2026-11-22: a login in a database shows only the database,
@@ -410,11 +526,14 @@ mod tests {
     fn a_place_shows_once_in_its_group() {
         let place = || PlaceViewModel::name(PermissionGroup::Logins, "a.db");
 
-        let groups = grouped(vec![
-            place(),
-            PlaceViewModel::name(PermissionGroup::Files, "~/x/**"),
-            place(),
-        ]);
+        let groups = grouped(
+            vec![
+                place(),
+                PlaceViewModel::name(PermissionGroup::Files, "~/x/**"),
+                place(),
+            ],
+            "Example Agent",
+        );
 
         assert_eq!(groups.len(), 2);
         assert_eq!(texts(&groups[1]), ["a.db"]);

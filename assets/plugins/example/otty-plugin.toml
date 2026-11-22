@@ -5,7 +5,7 @@
 id = "example"
 name = "Example"
 version = "0.1.0"
-description = "A made-up agent and a made-up provider: the start of a new plugin."
+description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/otty-shell/otty-plugin-example"
 license = "Apache-2.0"
 authors = ["OTTY team"]
@@ -23,6 +23,8 @@ language = "0.1"
 [[agents.agent]]
 id = "example-agent"
 name = "Example Agent"
+# One sentence on what the part does, shown on its card in Plugins mode.
+description = "Finds Example Agent sessions, tokens and logins."
 icon = "example-agent.svg"
 program = "example-agent"
 # Where the agent's official installer puts its program. OTTY looks
@@ -50,6 +52,7 @@ fields = ["/api_key"]
 [[agents.provider]]
 id = "example-cloud"
 name = "Example Cloud"
+description = "Reads the limits of Example Cloud accounts."
 icon = "example-cloud.svg"
 hosts = ["example.com"]
 usage_page = "https://example.com/usage"

@@ -9,12 +9,15 @@ mod side_panel;
 
 #[cfg(test)]
 pub(crate) use details::LastFailureViewModel;
+#[cfg(test)]
+pub(crate) use details::TrustTagViewModel;
 pub(crate) use details::{
     MainViewModel, PartRowViewModel, PluginPageViewModel, SourceViewModel,
     failed,
 };
 pub(crate) use dialogs::{
-    InstallDialogViewModel, PartPermissionsViewModel, UpdateDialogViewModel,
+    CanAccessDialogViewModel, InstallDialogViewModel, PartPermissionsViewModel,
+    UpdateDialogViewModel,
 };
 use otty_app_i18n::{self as i18n, Key};
 #[cfg(test)]
@@ -48,6 +51,8 @@ pub(crate) enum DialogViewModel<'a> {
     Install(InstallDialogViewModel),
     /// The update dialog.
     Update(UpdateDialogViewModel),
+    /// What one part can access.
+    CanAccess(CanAccessDialogViewModel),
     /// The log of a plugin.
     Log {
         /// "Log of Example".
@@ -92,6 +97,9 @@ impl<'a> DialogViewModel<'a> {
                 let update = state.waiting_update(plugin)?;
                 Self::Update(dialogs::update_dialog(state, listed, update))
             },
+            Dialog::CanAccess { plugin, part } => Self::CanAccess(
+                dialogs::can_access_dialog(state.plugin(plugin)?, part)?,
+            ),
             Dialog::Log(plugin) => {
                 let name = state.plugin(plugin)?.installed.name();
                 let text = state
