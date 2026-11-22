@@ -43,6 +43,25 @@ and the account are enough.
    the next line before any of them is cut. The full name stays readable
    in the tooltip. Check the profile page and the project page at a
    narrow width (e.g. the page column at 320 px).
+
+   **The project page shrinks like every other screen.** Owner: the main
+   screen of Agents should do what the other screens do: shrink down to
+   their minimum width, then scroll sideways, by the same code, not a
+   second way. Every other screen of the main area (Agents' profile,
+   account, All accounts and All profiles pages, Containers, Quick
+   Launch, Plugins) is a `MainContent::Screen` in the kit's `ScreenArea`
+   (`crates/ui/kit/src/components/screen_area.rs`, minimum
+   `size::SCREEN_MIN`); the project page (`MainAreaViewModel::Project`
+   in `crates/app/features/agents/core/src/lib.rs` `main_area`) is the
+   only one that is `ScrollsOnItsOwn`, because its sessions table
+   scrolls on its own, so its header (facts, Pays through chips) squeezes
+   without limit. Make the project page keep the same minimum width and
+   scroll sideways below it with the same mechanism as the other screens
+   (reuse `ScreenArea` or what it is built on; read its module doc on why
+   `responsive`/`DataTable` does not fit inside it, and how Containers
+   puts its tables in screens, before choosing). Do not add a second
+   minimum-width mechanism. The table keeps scrolling up and down, and
+   one scroller per direction: nothing scrolls twice.
 5. Docs that show these chips follow.
 
 ## Done when
