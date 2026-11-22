@@ -865,6 +865,8 @@
     "plugins_show_log": "显示日志",
     "plugins_remove": "移除",
     "plugins_review": "查看",
+    "plugins_menu_review_update": "查看更新…",
+    "plugins_menu_remove": "移除…",
     "tpl_plugins_too_new": "{version} 需要更新版本的 OTTY",
     "tpl_plugins_update_waits": "{version} 请求新的权限",
     "tpl_plugins_reloaded": "插件 {name} 已重新加载",

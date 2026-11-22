@@ -17,12 +17,11 @@ use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::super::usage::UsageTab;
-use super::account_name::account_name;
+use super::account_chip::{AccountChipViewModel, account_chip};
 use super::entry_icon::EntryIcon;
 use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::read_by::profile_read_by;
-use super::short_number::{AccountNumber, account_number};
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
 use super::used_by::untold_accounts;
@@ -46,8 +45,8 @@ pub(crate) struct ProfilePageViewModel {
     pub(crate) failure: Option<String>,
     /// The usage block, once the tokens were counted.
     pub(crate) usage: Option<UsageBlockViewModel>,
-    /// The accounts the profile pays through.
-    pub(crate) pays_through: Vec<PaysThroughViewModel>,
+    /// The chips of the accounts the profile pays through.
+    pub(crate) pays_through: Vec<AccountChipViewModel>,
     /// Profile info: Agent, Version, Folder, Projects, Sessions and Read
     /// by.
     pub(crate) facts: Vec<FactViewModel>,
@@ -105,21 +104,6 @@ impl ProfilePageViewModel {
             facts,
         }
     }
-}
-
-/// One chip of "Pays through"; a press opens the account.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PaysThroughViewModel {
-    /// The account, sent when the chip is pressed.
-    pub(crate) account: Account,
-    /// The icon of its provider.
-    pub(crate) icon: EntryIcon,
-    /// The provider and the login, such as "Example Cloud · you@example.com".
-    pub(crate) name: String,
-    /// Its number, its color and the tooltip of an estimate, as in the
-    /// left panel ("42 % used", "login expired"); `None` while nothing is
-    /// known.
-    pub(crate) number: Option<AccountNumber>,
 }
 
 /// Why the usage of `shown` can not be shown as money, for the Money
@@ -252,21 +236,12 @@ fn info(agent: &str, shown: &ProfileState) -> Option<String> {
 fn pays_through(
     state: &AgentsState,
     shown: &ProfileState,
-) -> Vec<PaysThroughViewModel> {
+) -> Vec<AccountChipViewModel> {
     shown
         .accounts()
         .iter()
         .filter(|account| !state.profiles().is_account_hidden(account))
-        .map(|account| PaysThroughViewModel {
-            account: account.clone(),
-            icon: state.provider_icon(account.provider()),
-            name: account_name(
-                state.registry(),
-                state.profiles().saved(),
-                account,
-            ),
-            number: account_number(state, account),
-        })
+        .map(|account| account_chip(state, account))
         .collect()
 }
 
@@ -428,12 +403,18 @@ mod tests {
         assert_eq!(usage.account_reason, None);
         assert_eq!(
             vm.pays_through,
-            [PaysThroughViewModel {
+            [AccountChipViewModel {
                 account: chatgpt_login(),
                 icon: crate::testing::provider_icon("openai"),
-                name: String::from("OpenAI · you@example.com"),
+                name: String::from("you@example.com"),
+                full_name: String::from("OpenAI · you@example.com"),
                 number: None,
             }]
+        );
+        assert_eq!(
+            vm.pays_through,
+            [account_chip(&state, &chatgpt_login())],
+            "the chip is the one every account chip is"
         );
         assert_eq!(
             vm.facts,

@@ -1,9 +1,12 @@
 //! The left panel of Plugins mode under the switcher: one section of the
 //! installed plugins, as the sections of Agents mode, with the Add plugin
 //! split button in its header, the search field and a row for each plugin
-//! whose name holds the search.
+//! whose name holds the search. A right click on a row opens the menu of
+//! its plugin.
 
-use iced::widget::{Column, Id, column, container, scrollable, svg};
+use iced::widget::{
+    Column, Id, column, container, mouse_area, scrollable, svg,
+};
 use iced::{Element, Length, Padding};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_slots::{SectionMessage, SectionState};
@@ -90,7 +93,7 @@ pub(crate) fn view<'a>(
 }
 
 /// A plugin: its icon, its name, its mark and its sign. A press shows its
-/// page.
+/// page; a right click opens its menu.
 fn plugin_row<'a>(
     vm: PluginListRowViewModel,
     palette: &UiPalette,
@@ -103,11 +106,14 @@ fn plugin_row<'a>(
         Some(bytes) => row.icon(svg::Handle::from_memory(bytes), None),
         None => row.letter_icon(vm.name),
     };
-
-    row.state(note)
+    let row = row
+        .state(note)
         .count_tone(tone)
         .selected(vm.is_selected)
-        .on_press(PluginsIntent::Select(vm.id))
+        .on_press(PluginsIntent::Select(vm.id.clone()));
+
+    mouse_area(row)
+        .on_right_press(PluginsIntent::OpenMenu(vm.id))
         .into()
 }
 
@@ -202,6 +208,26 @@ mod tests {
         assert!(matches!(
             sent.as_slice(),
             [SectionMessage::Feature(PluginsIntent::Select(id))]
+                if id == "example"
+        ));
+    }
+
+    /// Issue 37: a right click on a plugin opens its menu and selects
+    /// nothing.
+    #[test]
+    fn a_right_click_on_a_plugin_opens_its_menu() {
+        let palette = UiPalette::otty_dark();
+        let mut ui =
+            simulator(view(panel(vec![example()]), closed_menu(), &palette));
+
+        let row = ui.find("Example").expect("the row should show");
+        ui.point_at(row.bounds().center());
+        let _ = ui.simulate(otty_app_testing::mouse::right_click());
+
+        let sent: Vec<Message> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [SectionMessage::Feature(PluginsIntent::OpenMenu(id))]
                 if id == "example"
         ));
     }

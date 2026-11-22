@@ -149,7 +149,7 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        FactViewModel, NeedFixViewModel, NeedViewModel, PaysThroughViewModel,
+        AccountChipViewModel, FactViewModel, NeedFixViewModel, NeedViewModel,
         UsageBlockViewModel,
     };
     use crate::need::NeedAction;
@@ -202,10 +202,11 @@ mod tests {
             info: Some(String::from("Codex has no sessions yet.")),
             failure: None,
             usage: Some(usage_block()),
-            pays_through: vec![PaysThroughViewModel {
+            pays_through: vec![AccountChipViewModel {
                 account: chatgpt(),
                 icon: crate::testing::provider_icon("openai"),
-                name: String::from("OpenAI · you@example.com"),
+                name: String::from("you@example.com"),
+                full_name: String::from("OpenAI · you@example.com"),
                 number: Some(crate::model::AccountNumber::word(
                     String::from("42 % used"),
                     SessionTone::Muted,
@@ -375,7 +376,7 @@ mod tests {
 
     #[test]
     fn a_chip_of_pays_through_opens_its_account_and_a_need_its_fix() {
-        let chip = sent(page(), "OpenAI · you@example.com");
+        let chip = sent(page(), "you@example.com");
         let log_in = sent(page(), i18n::t(Key::AgentsLogIn));
 
         assert_eq!(chip, [AgentsIntent::SelectAccount(chatgpt())]);

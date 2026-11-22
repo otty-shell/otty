@@ -14,19 +14,27 @@ use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::PluginsPlace;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome, RunningPlugin};
+use otty_app_plugins::{
+    Plugins, PluginsCtx, PluginsIntent, PluginsOutcome, RunningPlugin,
+};
 use otty_app_plugins_io as plugins_io;
 
 use super::{Delivery, deliver};
 use crate::app::{App, hidden_entries, installed_parts, read_variable};
 use crate::message::AppEvent;
 
-/// Plugins mode reads what it reports.
+/// Plugins mode gets the pointer and the size of the main area for the
+/// menu of a plugin, and reads what it reports.
 impl Delivery for PluginsIntent {
     type Component = Plugins;
 
-    fn parts(app: &mut App) -> (&mut Plugins, ()) {
-        (&mut app.plugins, ())
+    fn parts(app: &mut App) -> (&mut Plugins, PluginsCtx) {
+        let ctx = PluginsCtx {
+            cursor: app.sidebar.cursor(),
+            screen_size: app.screen_size,
+        };
+
+        (&mut app.plugins, ctx)
     }
 
     fn read(app: &mut App, outcome: PluginsOutcome) -> Task<AppEvent> {

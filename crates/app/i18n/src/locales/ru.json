@@ -865,6 +865,8 @@
     "plugins_show_log": "Показать журнал",
     "plugins_remove": "Удалить",
     "plugins_review": "Просмотреть",
+    "plugins_menu_review_update": "Просмотреть обновление…",
+    "plugins_menu_remove": "Удалить…",
     "tpl_plugins_too_new": "Для {version} нужен более новый OTTY",
     "tpl_plugins_update_waits": "{version} просит новые разрешения",
     "tpl_plugins_reloaded": "Плагин {name} перезагружен",

@@ -865,6 +865,8 @@
     "plugins_show_log": "로그 보기",
     "plugins_remove": "제거",
     "plugins_review": "검토",
+    "plugins_menu_review_update": "업데이트 검토…",
+    "plugins_menu_remove": "제거…",
     "tpl_plugins_too_new": "{version}에는 최신 OTTY가 필요합니다",
     "tpl_plugins_update_waits": "{version}이(가) 새 권한을 요청합니다",
     "tpl_plugins_reloaded": "플러그인 {name}을(를) 다시 불러왔습니다",

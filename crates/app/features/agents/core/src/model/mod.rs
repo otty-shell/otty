@@ -1,3 +1,4 @@
+mod account_chip;
 mod account_name;
 mod account_numbers;
 mod account_page;
@@ -34,6 +35,7 @@ mod used_by;
 mod user_need;
 mod window_name;
 
+pub(crate) use account_chip::AccountChipViewModel;
 pub(crate) use account_name::own_account_name;
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
@@ -66,7 +68,7 @@ pub(crate) use overview::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     ProfileTableRowViewModel,
 };
-pub(crate) use profile_page::{PaysThroughViewModel, ProfilePageViewModel};
+pub(crate) use profile_page::ProfilePageViewModel;
 #[cfg(test)]
 pub(crate) use project::session_columns;
 pub(crate) use project::{

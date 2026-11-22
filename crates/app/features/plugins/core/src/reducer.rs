@@ -10,11 +10,13 @@ use otty_app_domain::plugins::{OffPart, PartSide, PluginsPlace};
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallError, UpdateOutcome, UpdateReport};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
+use crate::ctx::PluginsCtx;
 use crate::event::{ChangeAnswer, PluginsIntent, PluginsOutcome};
 use crate::model::failed;
 use crate::notes::notes;
-use crate::state::{Dialog, PluginNews, PluginsState};
+use crate::state::{Dialog, PluginMenu, PluginNews, PluginsState};
 use crate::types::ListedPlugin;
 use crate::view::{FOLDER_FIELD, URL_FIELD};
 use crate::words::error_text;
@@ -31,15 +33,34 @@ enum Request {
     Reload,
 }
 
-/// Reduce `intent` into state changes and outcomes.
+/// Reduce `intent` into state changes and outcomes; the menu of a plugin
+/// opens at the pointer of `ctx`.
 pub(crate) fn reduce(
     state: &mut PluginsState,
     intent: PluginsIntent,
+    ctx: &PluginsCtx,
 ) -> Vec<PluginsOutcome> {
+    // The items of the menu of a plugin send the intents of its page: the
+    // menu closes and they do what the page does.
+    if is_menu_item(&intent) {
+        state.close_menu();
+    }
+
     match intent {
         PluginsIntent::Open(place) => open(state, place),
         PluginsIntent::Select(plugin) => {
             state.select(Some(plugin));
+            Vec::new()
+        },
+        PluginsIntent::OpenMenu(plugin) => {
+            if state.plugin(&plugin).is_some() {
+                let place = MenuPlace::new(ctx.cursor, ctx.screen_size);
+                state.open_menu(PluginMenu::new(plugin, place));
+            }
+            Vec::new()
+        },
+        PluginsIntent::CloseMenu => {
+            state.close_menu();
             Vec::new()
         },
         PluginsIntent::SearchChanged(text) => {
@@ -154,6 +175,18 @@ pub(crate) fn reduce(
             Vec::new()
         },
     }
+}
+
+/// Whether `intent` is one the items of the menu of a plugin send.
+fn is_menu_item(intent: &PluginsIntent) -> bool {
+    matches!(
+        intent,
+        PluginsIntent::Reload(_)
+            | PluginsIntent::CheckForUpdates(_)
+            | PluginsIntent::Review(_)
+            | PluginsIntent::ShowLog(_)
+            | PluginsIntent::AskRemove(_)
+    )
 }
 
 /// Shows `place` in the mode: nothing selected for the list, the plugin

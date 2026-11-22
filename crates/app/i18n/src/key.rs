@@ -1824,6 +1824,11 @@ pub enum Key {
     PluginsRemove,
     /// Button that opens the update dialog of a waiting update.
     PluginsReview,
+    /// Item of the menu of a plugin that opens the update dialog of its
+    /// waiting update.
+    PluginsMenuReviewUpdate,
+    /// Item of the menu of a plugin that asks before it is removed.
+    PluginsMenuRemove,
     /// Line of a plugin whose newest release needs a newer OTTY: {version}.
     TplPluginsTooNew,
     /// Line of a plugin whose update waits for the user's OK: {version}.
@@ -2041,7 +2046,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 955] = [
+    pub(super) const ALL: [Self; 957] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2892,6 +2897,8 @@ impl Key {
         Self::PluginsShowLog,
         Self::PluginsRemove,
         Self::PluginsReview,
+        Self::PluginsMenuReviewUpdate,
+        Self::PluginsMenuRemove,
         Self::TplPluginsTooNew,
         Self::TplPluginsUpdateWaits,
         Self::TplPluginsReloaded,

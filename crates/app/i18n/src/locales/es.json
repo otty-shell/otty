@@ -865,6 +865,8 @@
     "plugins_show_log": "Mostrar registro",
     "plugins_remove": "Quitar",
     "plugins_review": "Revisar",
+    "plugins_menu_review_update": "Revisar actualización…",
+    "plugins_menu_remove": "Quitar…",
     "tpl_plugins_too_new": "{version} necesita un OTTY más nuevo",
     "tpl_plugins_update_waits": "{version} pide permisos nuevos",
     "tpl_plugins_reloaded": "Plugin {name} recargado",

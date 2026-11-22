@@ -8,6 +8,7 @@ use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::OverlayKind;
 use otty_app_terminal::TerminalIntent;
@@ -205,6 +206,7 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
         dispatch::dispatch(app, AppEvent::Agents(AgentsIntent::CloseMenu)),
+        dispatch::dispatch(app, AppEvent::Plugins(PluginsIntent::CloseMenu)),
         dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss),

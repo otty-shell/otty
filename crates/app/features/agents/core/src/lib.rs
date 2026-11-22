@@ -156,7 +156,7 @@ use model::{
     AddAccountDialogViewModel, FoundReportViewModel, KeyringDialogViewModel,
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, RenameDialogViewModel, StatsDialogViewModel,
-    StatusBarViewModel,
+    StatusBarViewModel, own_account_name,
 };
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
@@ -400,39 +400,41 @@ impl Component for Agents {
 impl MainArea for Agents {
     type Screen = AgentsScreen;
 
-    /// The sessions table of the selected project, which scrolls on its
-    /// own, or a screen: the page of a profile, the page of an
-    /// account, the All accounts or All profiles page, or a card; the ages count up to the current time.
+    /// A screen: the page of the selected project, whose sessions table
+    /// scrolls down on its own, the page of a profile, the page of an
+    /// account, the All accounts or All profiles page, or a card; the ages
+    /// count up to the current time. Every screen keeps the minimum width
+    /// and scrolls sideways below it (issue 38).
     fn main_area<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> MainContent<'a, AgentsIntent, AgentsScreen> {
         let vm = MainAreaViewModel::from_state(&self.state, SystemTime::now());
         let id = match &vm {
-            MainAreaViewModel::NoAgentPart => Some(AgentsScreen::NoAgentPart),
-            MainAreaViewModel::Loading => Some(AgentsScreen::Loading),
-            MainAreaViewModel::NoAgent => Some(AgentsScreen::NoAgent),
-            MainAreaViewModel::Start => Some(AgentsScreen::Start),
-            MainAreaViewModel::Project(_) => None,
+            MainAreaViewModel::NoAgentPart => AgentsScreen::NoAgentPart,
+            MainAreaViewModel::Loading => AgentsScreen::Loading,
+            MainAreaViewModel::NoAgent => AgentsScreen::NoAgent,
+            MainAreaViewModel::Start => AgentsScreen::Start,
+            MainAreaViewModel::Project(project) => {
+                AgentsScreen::Project(project.info.path.clone())
+            },
             MainAreaViewModel::Profile(page) => {
-                Some(AgentsScreen::Profile(page.name.clone()))
+                AgentsScreen::Profile(page.name.clone())
             },
-            MainAreaViewModel::Account(page) => {
-                Some(AgentsScreen::Account(page.name.clone()))
-            },
-            MainAreaViewModel::AllAccounts(_) => {
-                Some(AgentsScreen::AllAccounts)
-            },
-            MainAreaViewModel::AllProfiles(_) => {
-                Some(AgentsScreen::AllProfiles)
-            },
+            MainAreaViewModel::Account(page) => AgentsScreen::Account(
+                own_account_name(self.state.registry(), &page.account),
+            ),
+            MainAreaViewModel::AllAccounts(_) => AgentsScreen::AllAccounts,
+            MainAreaViewModel::AllProfiles(_) => AgentsScreen::AllProfiles,
         };
+        let has_table = matches!(vm, MainAreaViewModel::Project(_));
 
         let content = main_area::view(vm, theme.theme.ui());
-        match id {
-            Some(id) => MainContent::Screen { id, content },
-            None => MainContent::ScrollsOnItsOwn(content),
+        if has_table {
+            return MainContent::TableScreen { id, content };
         }
+
+        MainContent::Screen { id, content }
     }
 }
 
@@ -577,9 +579,13 @@ pub enum AgentsScreen {
     NoAgent,
     /// The card that says what the mode is for.
     Start,
+    /// The page of the project in this folder, the home folder written as
+    /// `~`.
+    Project(String),
     /// The page of the profile with this name.
     Profile(String),
-    /// The page of the account with this name.
+    /// The page of the account with this name: its provider and its
+    /// login, such as "OpenAI · you@example.com".
     Account(String),
     /// Every account and what the accounts need from the user.
     AllAccounts,
@@ -646,20 +652,51 @@ mod tests {
         assert_eq!(feature.subscription().units(), 0);
     }
 
-    /// The sessions table has a fixed header over rows that scroll, which
-    /// an outer scroller would break.
+    /// Issue 38: the page of a project is a screen as every other page:
+    /// it keeps the minimum width and scrolls sideways below it, while its
+    /// sessions table, with a fixed header over rows that scroll, scrolls
+    /// down on its own.
     #[test]
-    fn the_sessions_table_of_the_selected_project_scrolls_on_its_own() {
+    fn the_page_of_a_project_is_a_screen_whose_table_scrolls_on_its_own() {
         let feature = agents_with_a_project();
         let theme = AppTheme::default();
 
         let content = feature.main_area(ThemeProps::new(&theme));
 
-        let MainContent::ScrollsOnItsOwn(content) = content else {
-            panic!("the sessions table scrolls on its own");
+        let MainContent::TableScreen { id, content } = content else {
+            panic!("the project page is a screen with a table");
         };
+        assert_eq!(id, AgentsScreen::Project(String::from("/work/otty")));
         let mut ui = simulator(content);
         ui.find("Title of c1").expect("the session should show");
+    }
+
+    /// Issue 38: in a main area narrower than a screen's minimum the
+    /// project page keeps the minimum width, as every other screen does:
+    /// its title row ends at the same place as in the smallest main area.
+    #[test]
+    fn in_a_narrow_main_area_the_project_page_keeps_the_minimum_width() {
+        let feature = agents_with_a_project();
+        let theme = AppTheme::default();
+        let updated_x = |width: f32| {
+            let content = feature
+                .main_area(ThemeProps::new(&theme))
+                .into_element(ThemeProps::new(&theme));
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                iced::Size::new(width, 600.0),
+                content,
+            );
+            ui.find(i18n::t(Key::AgentsColumnUpdated))
+                .expect("the column shows")
+                .bounds()
+                .x
+        };
+
+        let smallest = updated_x(otty_ui_kit::size::SCREEN_MIN);
+        let narrow = updated_x(320.0);
+
+        assert!((narrow - smallest).abs() < 0.5, "{narrow} vs {smallest}");
     }
 
     #[test]

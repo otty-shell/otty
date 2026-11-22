@@ -1,6 +1,6 @@
 # 38 Account chips name an account by its login
 
-Status: ready
+Status: done
 Blocked by: 34
 
 ## Why
@@ -63,6 +63,10 @@ and the account are enough.
    minimum-width mechanism. The table keeps scrolling up and down, and
    one scroller per direction: nothing scrolls twice.
 5. Docs that show these chips follow.
+6. **No path under the title of a project.** Owner, 2026-11-22: on the
+   Agents project page, the folder path shown right after the page
+   title goes: Project info already shows the path, so it is a
+   duplicate. The path stays in Project info.
 
 ## Done when
 
@@ -75,3 +79,39 @@ and the account are enough.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-22, done. One chip of an account, `AccountChipViewModel`, built
+by `model/account_chip.rs` `account_chip` and drawn by `view/chips.rs`
+`account_chips`; "Pays through" of a profile and the accounts of a
+project both use them (`PaysThroughViewModel` is gone). The chip names
+the account with `short_account_name` (the name the user gave it, else
+the login, with its plugin when two plugins read it); its tooltip is the
+whole name with the provider ("OpenAI · you@example.com"), after the
+user's name on a line of its own when there is one, and over the
+tooltip of an estimate when the number has one. Of the other places
+with `account_name(`, only the title of an account's page has the logo
+beside it: it shows the short name too (its screen key keeps the whole
+name, so two logins of two providers do not share a scroll position).
+The All accounts table, the usage groups, the session account, the
+needs and Found by OTTY have no logo and keep the whole name.
+
+A chip never wraps its texts: the name is an `EllipsisText` that leaves
+the number its width, the icon and the number keep their size, the
+chip is at most as wide as its line, and the wrapping row moves a chip
+to the next line before any chip is cut. Tested at 320 px.
+
+The project page is a screen now: `MainContent::TableScreen` puts it in
+the same `ScreenArea` with the same `size::SCREEN_MIN`, built with the
+new `ScreenArea::filling_height`, whose scroller scrolls only sideways,
+so the page gets the room's height and the sessions table fills the
+rest and scrolls down on its own under its sticky header. Below the
+minimum the page scrolls sideways as every screen. To keep one scroller
+per direction, the minimum of the Title column went from 220 to 198 px:
+the four minimums and the "⋯" column (524 px) now fit the smallest
+screen less the page padding, so the table never scrolls sideways
+itself. Containers' list table is still `ScrollsOnItsOwn` (out of scope):
+it could move to `TableScreen` the same way.
+
+Item 6: the title row shows the folder name only, the path stays in
+Project info; the tests of the short path, its tooltip and its baseline
+went with it. Docs: Overview.mdx.

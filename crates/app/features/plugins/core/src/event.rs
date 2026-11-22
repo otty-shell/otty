@@ -14,7 +14,8 @@ use crate::types::{ListedPlugin, PartsToLoad, RunningPlugin};
 pub type ChangeAnswer = Result<Vec<ListedPlugin>, InstallError>;
 
 /// What Plugins mode is asked to do: a press in its views, the answer of
-/// its I/O, or news from the binary.
+/// its I/O, or news from the binary. The items of the menu of a plugin
+/// send the intents of the buttons of its page, and the menu closes.
 #[derive(Debug, Clone)]
 pub enum PluginsIntent {
     /// Show `PluginsPlace` in the mode: from Settings, from "Read by" or a
@@ -22,6 +23,11 @@ pub enum PluginsIntent {
     Open(PluginsPlace),
     /// A press on a plugin of the left panel: its page.
     Select(String),
+    /// A right click on a plugin of the left panel: its menu at the
+    /// pointer, with the actions of its page. What is selected stays.
+    OpenMenu(String),
+    /// A press away from the menu of a plugin, or Esc: it closes.
+    CloseMenu,
     /// The search field of the left panel was edited or cleared.
     SearchChanged(String),
     /// Cancel or the close cross of a dialog, or Esc: the dialog closes.

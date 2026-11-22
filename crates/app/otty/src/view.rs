@@ -34,8 +34,8 @@ use crate::screens::{
 ///
 /// The overlays of Containers mode (the row menu and the dialogs), of
 /// Agents mode (the menus and the profile, remove, statistics and New
-/// session dialogs) and of Plugins mode (its dialogs) lie in the mode
-/// overlays layer.
+/// session dialogs) and of Plugins mode (its dialogs and the menu of a
+/// plugin) lie in the mode overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();

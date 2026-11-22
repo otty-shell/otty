@@ -30,7 +30,12 @@ Anthropic, OpenAI, DeepSeek and OpenRouter. See
 
 One account can be used by several agents, and one agent can pay through several accounts. A
 profile's page lists its accounts under **Pays through**; an account's page lists its profiles
-under **Used by**.
+under **Used by**. An account chip looks the same everywhere: the logo of the provider, the login
+or the name you gave the account, and its number. In a narrow window the chips move to the next
+line, and a chip too wide for the line ends its name with "…"; the whole name is in its tooltip.
+
+Every page of the main area, a project's page too, keeps a minimum width. In a narrower window the
+page scrolls sideways, and a project's sessions table still scrolls up and down on its own.
 
 <figure class="not-content">
 <svg viewBox="0 0 680 230" width="100%" role="img" aria-labelledby="accounts-profiles-title" style="max-width: 680px; font-family: var(--sl-font); font-size: 13px;">
@@ -92,7 +97,7 @@ found and what needs you. All accounts → "⋯" → **Show Found by OTTY** open
 
 | Section      | Lists                                                                                     | "+" opens         |
 | ------------ | ----------------------------------------------------------------------------------------- | ----------------- |
-| **Accounts** | **All accounts**, then each account by the logo of its provider and its login, such as "you@example.com", "key ••••a1f3" or "unknown" for a login that names nothing, or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month", or only "$42.10" for an [estimate](#the-money), which its tooltip names. Everywhere else an account is named with its provider, such as "OpenAI · you@example.com". | Add account |
+| **Accounts** | **All accounts**, then each account by the logo of its provider and its login, such as "you@example.com", "key ••••a1f3" or "unknown" for a login that names nothing, or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month", or only "$42.10" for an [estimate](#the-money), which its tooltip names. The account chips (**Pays through** and the accounts of a project) and the title of an account's page name it the same way, beside the same logo, and the chip's tooltip gives the whole name, such as "OpenAI · you@example.com". Everywhere else an account is named with its provider. | Add account |
 | **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
 | **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
@@ -104,7 +109,7 @@ found and what needs you. All accounts → "⋯" → **Show Found by OTTY** open
 | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit); **Used by**; **Account info**: provider, email or key, plan, where it was found, **Read by** (the plugin and its version). |
 | **Profile** | Needs from you; the usage block; **Pays through**; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
-| **Project** | Path, profiles and accounts, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab; the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
+| **Project** | The folder name as the title, then **Project info** with the path, profiles and accounts, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab; the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
 The **usage block** has a period (Today, 7 days, 30 days), a measure (Tokens or Money) and the tabs
 **By project**, **By model** and **By account**. A choice that makes no sense is off and says why,

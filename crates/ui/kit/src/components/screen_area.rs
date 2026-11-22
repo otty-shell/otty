@@ -14,6 +14,13 @@
 //! and no area inside another, so this does not multiply. `responsive`, which
 //! `DataTable` uses, does not fit here: it builds its content again for each
 //! width, and a screen holds elements it was handed once.
+//!
+//! A screen with a table that scrolls on its own under its sticky header,
+//! such as a page with a header over a sessions table, needs a height it can
+//! fill. [`ScreenArea::filling_height`] gives it the same minimum width and
+//! the same sideways scrolling, but a scroller that scrolls only sideways:
+//! its content then gets the room's height as its upper limit, and the table
+//! fills what the header leaves.
 
 use iced::advanced::layout::{self, Layout, Limits};
 use iced::advanced::widget::{Operation, Tree, tree};
@@ -46,8 +53,10 @@ use crate::size;
 /// keyed column would not do this: with one child it only compares the keys and
 /// still hands the old state on.
 ///
-/// Not for what scrolls on its own and needs a height it can fill: a terminal
-/// or a table with its sticky header.
+/// Not for what scrolls on its own and needs a height it can fill: a terminal,
+/// or a table with its sticky header, unless the screen around the table
+/// keeps the minimum width too: then it goes in
+/// [`ScreenArea::filling_height`].
 ///
 /// # Example
 ///
@@ -73,6 +82,49 @@ impl<'a, Message: 'a, Key> ScreenArea<'a, Message, Key> {
         content: impl Into<Element<'a, Message>>,
         palette: &UiPalette,
     ) -> Self {
+        let direction = scrollbar::both();
+
+        Self::with_direction(key, content, direction, palette)
+    }
+
+    /// Puts `content`, the screen named `key`, in an area that scrolls only
+    /// sideways: the screen keeps the minimum width and always gets the
+    /// room's height, which a table in it fills and scrolls down on its own.
+    /// A screen taller than the room is cut, so give it something that
+    /// scrolls down itself.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::widget::{column, scrollable, text};
+    /// use iced::{Element, Length};
+    /// use otty_ui_kit::components::screen_area::ScreenArea;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let rows =
+    ///     scrollable(column![text("row 1"), text("row 2")]).height(Length::Fill);
+    /// let page = column![text("Header"), rows].height(Length::Fill);
+    /// let screen: Element<'_, ()> =
+    ///     ScreenArea::filling_height("project", page, &palette).into();
+    /// ```
+    pub fn filling_height(
+        key: Key,
+        content: impl Into<Element<'a, Message>>,
+        palette: &UiPalette,
+    ) -> Self {
+        let direction = scrollbar::horizontal();
+
+        Self::with_direction(key, content, direction, palette)
+    }
+
+    /// The area of `content` with a scroller in `direction`.
+    fn with_direction(
+        key: Key,
+        content: impl Into<Element<'a, Message>>,
+        direction: scrollable::Direction,
+        palette: &UiPalette,
+    ) -> Self {
         let centered = container(content)
             .center_x(Length::Fill)
             .align_y(Alignment::Center);
@@ -82,7 +134,7 @@ impl<'a, Message: 'a, Key> ScreenArea<'a, Message, Key> {
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollbar::both())
+        .direction(direction)
         .style(scrollbar::style(palette))
         .into();
 
@@ -561,6 +613,75 @@ mod tests {
         assert_eq!(hidden.visible_bounds(), None);
         let shown = shown.visible_bounds().expect("it should come into view");
         assert!(shown.y + shown.height <= 300.0);
+    }
+
+    /// A screen whose list scrolls on its own under a line: the list fills
+    /// what the line leaves.
+    fn with_own_list(rows: usize) -> Element<'static, Message> {
+        let mut list = column![];
+        for index in 0..rows {
+            list = list.push(text(format!("row {index}")));
+        }
+
+        column![
+            text("header").width(Length::Fill),
+            scrollable(list).height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn in_filling_area(
+        content: impl Into<Element<'static, Message>>,
+        window: Size,
+    ) -> Simulator<'static, Message> {
+        Simulator::with_size(
+            iced::Settings::default(),
+            window,
+            ScreenArea::filling_height(
+                SCREEN,
+                content,
+                &UiPalette::otty_dark(),
+            ),
+        )
+    }
+
+    /// Issue 38: a screen whose list scrolls on its own keeps the minimum
+    /// width and scrolls sideways below it, as every screen does, but it
+    /// gets the room's height: its list fills it and scrolls down on its
+    /// own, and the area never scrolls down.
+    #[test]
+    fn given_a_screen_that_scrolls_on_its_own_then_it_gets_the_room_height_and_scrolls_only_sideways()
+     {
+        let mut ui = in_filling_area(with_own_list(100), SMALL);
+
+        let header = ui.find("header").expect("the header").bounds();
+        let (_, content, showing) = scroller(&mut ui);
+        wheel(&mut ui, FAR, 0.0);
+        let (offset, _, _) = scroller(&mut ui);
+
+        assert_eq!(header.width, size::SCREEN_MIN);
+        assert_eq!(content.width, size::SCREEN_MIN);
+        assert_eq!(
+            content.height, showing.height,
+            "the area does not scroll down"
+        );
+        assert_eq!(showing.height, SMALL.height);
+        assert_eq!(offset.x, size::SCREEN_MIN - SMALL.width);
+        assert_eq!(offset.y, 0.0);
+    }
+
+    /// With room, the screen takes it and nothing scrolls sideways.
+    #[test]
+    fn given_room_then_a_screen_that_scrolls_on_its_own_takes_it() {
+        let mut ui = in_filling_area(with_own_list(100), ROOMY);
+
+        let header = ui.find("header").expect("the header").bounds();
+        let (_, content, showing) = scroller(&mut ui);
+
+        assert_eq!(header.width, ROOMY.width);
+        assert_eq!(content, showing);
     }
 
     #[test]

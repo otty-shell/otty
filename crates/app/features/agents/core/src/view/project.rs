@@ -1,4 +1,4 @@
-//! The project screen of Agents mode: the title row with the folder,
+//! The project screen of Agents mode: the title row with the folder name,
 //! Project statistics, Open the folder in a terminal tab and New session;
 //! Project info with the path, the profiles and accounts as chips, the
 //! sessions and the first and the last activity; the toolbar with the
@@ -8,7 +8,7 @@
 //! canvas "Project: sessions table"; spec 2026-11-19, Decision 6).
 
 use iced::widget::{Column, Id, container, row, svg};
-use iced::{Alignment, Element, Length, Padding};
+use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::DataTable;
@@ -21,7 +21,6 @@ use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
-use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, spacing, typography};
 
@@ -43,8 +42,10 @@ const SEARCH_ID: &str = "agents_sessions_search";
 /// statistics of the project; the tests of the binary press it by it.
 pub(crate) const PROJECT_STATS_BUTTON_ID: &str = "agents_project_stats";
 
-/// Render the project screen. It fills the main area: the table scrolls on
-/// its own under its fixed header.
+/// Render the project screen. It fills the height of the main area: the
+/// table scrolls down on its own under its fixed header. The main area
+/// keeps the screen at the minimum width of a screen and scrolls it
+/// sideways in less room.
 pub(crate) fn view<'a>(
     vm: ProjectViewModel<'a>,
     palette: &UiPalette,
@@ -87,46 +88,23 @@ pub(crate) fn view<'a>(
         .into()
 }
 
-/// The folder name and its short path, then Project statistics, Open the
-/// folder in a terminal tab and New session. The path sits on the baseline
-/// of the name and shows the whole path in its tooltip. The buttons keep
-/// their size at the right; in too little room the path gives way first,
-/// and the name ends with "…" only when it alone does not fit. The last two
-/// buttons do nothing while the folder is gone.
+/// The folder name, then Project statistics, Open the folder in a terminal
+/// tab and New session. The path of the folder is in Project info only
+/// (issue 38). The buttons keep their size at the right; the name ends
+/// with "…" when it does not fit. The last two buttons do nothing while
+/// the folder is gone.
 fn title_row<'a>(
     vm: &ProjectViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let title = typography::TITLE;
-    let small = typography::SMALL;
 
-    // The name takes its room first; the path gets what is left.
-    let name = EllipsisText::new(
+    let heading = EllipsisText::new(
         vm.name.clone(),
         title.size(),
         fonts::UI_SEMIBOLD,
         palette.text_strong(),
-    )
-    .shrink(0.0);
-    let path = EllipsisText::new(
-        vm.path.clone(),
-        small.size(),
-        fonts::MONO,
-        palette.text_muted(),
-    )
-    .shrink(0.0);
-    // Sharing the middle of the name draws the smaller path higher than
-    // the name. The row centres the path's box, so a padding above it of
-    // twice the gap between the two baselines moves it down onto the
-    // name's baseline.
-    let baseline_gap = fonts::ui_baseline_below_middle(title.size())
-        - fonts::mono_baseline_below_middle(small.size());
-    let path = container(tooltip(path, vm.full_path.clone(), palette))
-        .padding(Padding::ZERO.top(2.0 * baseline_gap));
-    let heading = row![name, path]
-        .spacing(spacing::SPACE_3)
-        .align_y(Alignment::Center)
-        .width(Length::Fill);
+    );
 
     // The history of a gone folder is still there, so its statistics open.
     let statistics = IconButton::new(
@@ -272,11 +250,9 @@ fn table<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use iced::Point;
     use iced_test::simulator;
-    use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::data_table::TableCell;
     use otty_ui_kit::components::tag_search::{
@@ -286,7 +262,7 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        FactViewModel, PaysThroughViewModel, ProjectViewModel, session_columns,
+        AccountChipViewModel, FactViewModel, ProjectViewModel, session_columns,
     };
     use crate::session_sort::newest_first;
     use crate::sessions_table;
@@ -301,8 +277,6 @@ mod tests {
     fn vm(search: &TagSearch, is_missing: bool) -> ProjectViewModel<'_> {
         ProjectViewModel {
             name: String::from("otty"),
-            path: String::from("/work/otty"),
-            full_path: String::from("/work/otty"),
             is_missing,
             can_start: !is_missing,
             is_new_session_menu_open: false,
@@ -350,10 +324,11 @@ mod tests {
                 icon: crate::testing::agent_icon("codex"),
                 name: String::from("Codex · Main"),
             }],
-            accounts: vec![PaysThroughViewModel {
+            accounts: vec![AccountChipViewModel {
                 account: chatgpt_login(),
                 icon: crate::testing::provider_icon("openai"),
-                name: String::from("OpenAI · you@example.com"),
+                name: String::from("you@example.com"),
+                full_name: String::from("OpenAI · you@example.com"),
                 number: None,
             }],
             facts: vec![
@@ -433,7 +408,6 @@ mod tests {
 
         for label in [
             "otty",
-            "/work/otty",
             i18n::t(Key::AgentsColumnTitle),
             i18n::t(Key::AgentsColumnUpdated),
             "Fix the tabs",
@@ -443,95 +417,6 @@ mod tests {
             assert!(ui.find(label).is_ok(), "{label:?} should show");
         }
         assert!(ui.find(i18n::t(Key::AgentsFolderMissing)).is_err());
-    }
-
-    /// The short path of a deep folder in the home and its whole path.
-    const SHORT_PATH: &str = "~/…/ottyrun/otty";
-    const FULL_PATH: &str = "/home/user/projects/main/ottyrun/otty";
-
-    fn deep(search: &TagSearch) -> ProjectViewModel<'_> {
-        ProjectViewModel {
-            path: String::from(SHORT_PATH),
-            full_path: String::from(FULL_PATH),
-            ..vm(search, false)
-        }
-    }
-
-    /// Says whether the screen whose short path stands for `full_path`
-    /// draws the picture at `reference`, with the pointer over the short
-    /// path or away; the first call saves the picture.
-    fn path_draws(full_path: &str, is_over: bool, reference: &Path) -> bool {
-        let search = TagSearch::default();
-        let themes = ThemeManager::new();
-        let vm = ProjectViewModel {
-            full_path: full_path.to_string(),
-            ..deep(&search)
-        };
-        let mut ui = simulator(screen(vm, &themes));
-        if is_over {
-            let path = ui.find(SHORT_PATH).expect("the path shows").bounds();
-            let position = path.center();
-            ui.point_at(position);
-            let _ = ui.simulate([iced::Event::Mouse(
-                iced::mouse::Event::CursorMoved { position },
-            )]);
-        }
-
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("the screen should draw")
-            .matches_hash(reference)
-            .expect("the reference should be readable")
-    }
-
-    /// Owner, issue 34: the short path shows the whole path in its tooltip
-    /// while the pointer is over it, and nowhere else.
-    #[test]
-    fn the_short_path_shows_the_whole_path_in_its_tooltip() {
-        let folder = TempDir::new("agents-project-path");
-        let away = folder.path().join("away");
-        let over = folder.path().join("over");
-
-        assert!(path_draws(FULL_PATH, false, &away), "save");
-        assert!(
-            path_draws("/srv/otty", false, &away),
-            "the whole path shows only in the tooltip"
-        );
-        assert!(path_draws(FULL_PATH, true, &over), "save");
-        assert!(
-            !path_draws("/srv/otty", true, &over),
-            "the tooltip shows the whole path"
-        );
-        assert!(
-            !path_draws(FULL_PATH, true, &away),
-            "the tooltip shows under the pointer"
-        );
-    }
-
-    /// Owner, issue 34: the path looked higher than the folder name, as
-    /// the two texts shared one middle. The smaller path sits on the
-    /// baseline of the name instead, as the muted plan sat on the name in
-    /// the dashboard header (issue 31).
-    #[test]
-    fn the_path_sits_on_the_baseline_of_the_name() {
-        let search = TagSearch::default();
-        let themes = ThemeManager::new();
-        let mut ui = simulator(screen(deep(&search), &themes));
-
-        let name = ui.find("otty").expect("the name shows").bounds();
-        let path = ui.find(SHORT_PATH).expect("the path shows").bounds();
-
-        let name_line = name.center_y()
-            + fonts::ui_baseline_below_middle(typography::TITLE.size());
-        let path_line = path.center_y()
-            + fonts::mono_baseline_below_middle(typography::SMALL.size());
-        assert!(
-            (path_line - name_line).abs() < 0.5,
-            "{path:?} should sit on the baseline of {name:?}"
-        );
-        assert!(
-            path.center_y() > name.center_y() + 1.0,
-            "the smaller path sits lower than the middle: {path:?} {name:?}"
-        );
     }
 
     #[test]
@@ -577,10 +462,24 @@ mod tests {
         drop(ui);
 
         let profile = sent(vm(&search, false), "Codex · Main");
-        let account = sent(vm(&search, false), "OpenAI · you@example.com");
+        let account = sent(vm(&search, false), "you@example.com");
 
         assert_eq!(profile, vec![AgentsIntent::SelectProfile(codex())]);
         assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt_login())]);
+    }
+
+    /// Owner, issue 38: the path of the folder shows once, in Project
+    /// info, not under the title.
+    #[test]
+    fn the_path_shows_in_project_info_and_not_by_the_title() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(vm(&search, false), &themes));
+
+        let title = ui.find("otty").expect("the name shows").bounds();
+        let path = ui.find("~/work/otty").expect("the path shows").bounds();
+
+        assert!(path.y > title.y + title.height, "{path:?} under {title:?}");
     }
 
     #[test]
@@ -734,52 +633,34 @@ mod tests {
         );
     }
 
-    /// The screen in a main area `width` wide, with a long path.
-    fn narrow_screen<'a>(
-        search: &'a TagSearch,
-        width: f32,
-        themes: &ThemeManager,
-    ) -> Element<'a, AgentsIntent> {
-        let vm = ProjectViewModel {
-            path: String::from("/home/user/work/clients/acme/otty"),
-            ..vm(search, false)
-        };
-
-        container(view(vm, themes.current().ui()))
-            .width(width)
-            .height(600.0)
-            .into()
-    }
-
+    /// In a narrow main area the name gives way and the buttons of the
+    /// title row keep their place.
     #[test]
-    fn in_a_narrow_main_area_the_path_gives_way_first_and_the_buttons_stay() {
+    fn in_a_narrow_main_area_the_buttons_of_the_title_row_stay() {
         let search = TagSearch::default();
         let themes = ThemeManager::new();
         let narrow = 300.0;
-        let mut wide = simulator(narrow_screen(&search, WIDTH, &themes));
-        let wide_name = wide.find("otty").expect("the name shows").bounds();
-        let wide_path = wide
-            .find("/home/user/work/clients/acme/otty")
-            .expect("the path shows")
-            .bounds();
-        drop(wide);
+        let vm = ProjectViewModel {
+            name: String::from("a-folder-with-a-rather-long-name"),
+            ..vm(&search, false)
+        };
+        let screen = container(view(vm, themes.current().ui()))
+            .width(narrow)
+            .height(600.0);
+        let mut ui = simulator(screen);
 
-        let mut ui = simulator(narrow_screen(&search, narrow, &themes));
-        let name = ui.find("otty").expect("the name shows").bounds();
-        let path = ui
-            .find("/home/user/work/clients/acme/otty")
-            .expect("the path shows")
+        let name = ui
+            .find("a-folder-with-a-rather-long-name")
+            .expect("the name shows")
             .bounds();
         let right_end = narrow - spacing::SPACE_5;
         ui.point_at(Point::new(right_end - open_folder(), name.center_y()));
         let _ = ui.simulate(iced_test::simulator::click());
 
-        assert!((name.width - wide_name.width).abs() < 0.5, "{name:?}");
-        assert!(path.width < wide_path.width, "{path:?} gives way");
         assert!(
-            path.x + path.width
-                <= right_end - open_folder() - size::CONTROL_MD / 2.0,
-            "the path ends before the buttons: {path:?}"
+            name.x + name.width
+                <= right_end - statistics() - size::CONTROL_MD / 2.0,
+            "the name ends before the buttons: {name:?}"
         );
         let messages: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(messages, vec![AgentsIntent::OpenProjectFolder]);
@@ -802,17 +683,33 @@ mod tests {
         title.x + title.width
     }
 
-    /// Without the Branch column (issue 34) the table fits even the
-    /// smallest main area; below it, the minimum widths keep it readable
-    /// and it scrolls sideways.
+    /// Issue 38: the whole table, its "⋯" column too, fits the smallest
+    /// screen, so the table never scrolls sideways itself: in less room
+    /// the main area keeps the page at that width and scrolls it sideways,
+    /// as every screen, and nothing scrolls twice.
     #[test]
-    fn the_table_fits_the_smallest_main_area_and_scrolls_sideways_below_it() {
+    fn the_whole_table_fits_the_smallest_screen() {
         let smallest = size::SCREEN_MIN;
-        let narrower = smallest - 100.0;
+        let menu_column = size::CONTROL_SM + 2.0 * spacing::SPACE_2;
+        let updated_min = 96.0;
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let screen = container(view(vm(&search, false), themes.current().ui()))
+            .width(smallest)
+            .height(600.0);
+        let mut ui = simulator(screen);
 
+        let title = ui
+            .find(i18n::t(Key::AgentsColumnUpdated))
+            .expect("the column shows")
+            .bounds();
+
+        let column_end = title.x - spacing::SPACE_4 + updated_min;
+        assert!(
+            column_end <= smallest - spacing::SPACE_5 - menu_column + 0.5,
+            "the Updated column ends at {column_end}"
+        );
         assert!(updated_title_end(800.0) <= 800.0 - spacing::SPACE_5);
-        assert!(updated_title_end(smallest) <= smallest - spacing::SPACE_5);
-        assert!(updated_title_end(narrower) > narrower - spacing::SPACE_5);
     }
 
     #[test]
@@ -820,7 +717,10 @@ mod tests {
         let search = TagSearch::default();
         let themes = ThemeManager::new();
         let smallest = size::SCREEN_MIN;
-        let mut ui = simulator(narrow_screen(&search, smallest, &themes));
+        let screen = container(view(vm(&search, false), themes.current().ui()))
+            .width(smallest)
+            .height(600.0);
+        let mut ui = simulator(screen);
         let field = ui
             .find(Id::new(SEARCH_ID))
             .expect("the search field should show")

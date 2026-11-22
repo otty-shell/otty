@@ -3,8 +3,10 @@ use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::screen_area::ScreenArea;
 
 /// What fills the main area. A feature that fills it has to say which of the
-/// two it is, so a new screen can not miss the rule of [`ScreenArea`]:
-/// anything that is not a terminal or a table is a [`MainContent::Screen`].
+/// three it is, so a new screen can not miss the rule of [`ScreenArea`]:
+/// anything that is not a terminal or a table is a [`MainContent::Screen`],
+/// and a page around a table that scrolls on its own is a
+/// [`MainContent::TableScreen`].
 ///
 /// `Screen` is the feature's own type that names its screens, such as an
 /// enum with a start card and one value per tab. Each value is one screen to
@@ -43,6 +45,16 @@ pub enum MainContent<'a, Message, Screen> {
         /// What the screen shows.
         content: Element<'a, Message>,
     },
+    /// A screen with a table that fills the rest of its height and scrolls
+    /// down on its own under its sticky header, such as the sessions of a
+    /// project. It keeps the minimum width of a screen and scrolls sideways
+    /// below it, by the same [`ScreenArea`], which then never scrolls down.
+    TableScreen {
+        /// Which screen this is.
+        id: Screen,
+        /// What the screen shows: its table fills the height that is left.
+        content: Element<'a, Message>,
+    },
     /// The panes of a terminal or the table of a Containers list. They
     /// scroll on their own and fill a height they are given: a table's
     /// sticky header and its rows can not work in an outer scroller, where
@@ -56,11 +68,15 @@ where
     Screen: Clone + PartialEq + 'static,
 {
     /// The element that fills the main area: a screen in its
-    /// [`ScreenArea`], or content that scrolls on its own as it is.
+    /// [`ScreenArea`], one with a table in an area that scrolls only
+    /// sideways, or content that scrolls on its own as it is.
     pub fn into_element(self, theme: ThemeProps<'a>) -> Element<'a, Message> {
         match self {
             Self::Screen { id, content } => {
                 ScreenArea::new(id, content, theme.theme.ui()).into()
+            },
+            Self::TableScreen { id, content } => {
+                ScreenArea::filling_height(id, content, theme.theme.ui()).into()
             },
             Self::ScrollsOnItsOwn(content) => content,
         }

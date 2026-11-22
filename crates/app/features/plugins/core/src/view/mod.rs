@@ -1,13 +1,14 @@
-//! The views of Plugins mode: the left panel of the installed plugins
-//! and the Add plugin menu under its chevron, the page of the selected
-//! plugin in the main area, and the dialogs over
-//! the window.
+//! The views of Plugins mode: the left panel of the installed plugins,
+//! the Add plugin menu under its chevron and the menu of a plugin, the
+//! page of the selected plugin in the main area, and the dialogs over the
+//! window.
 
 pub(crate) mod add_menu;
 mod can_access;
 pub(crate) mod details;
 mod forms;
 mod permissions;
+pub(crate) mod plugin_menu;
 pub(crate) mod side_panel;
 
 pub(crate) use forms::{FOLDER_FIELD, URL_FIELD};

@@ -99,6 +99,8 @@ pub(crate) enum Overlay {
     /// A dialog of Plugins mode: Add plugin…, the install or update
     /// dialog, the log of a plugin or the question before Remove.
     PluginsDialog,
+    /// The menu of a plugin in the left panel of Plugins mode.
+    PluginsMenu,
 }
 
 impl Overlay {
@@ -132,7 +134,8 @@ impl Overlay {
             | Overlay::LaunchContextMenu
             | Overlay::FilesContextMenu
             | Overlay::ContainersRowMenu
-            | Overlay::AgentsMenu => Some(OverlayKind::Menu),
+            | Overlay::AgentsMenu
+            | Overlay::PluginsMenu => Some(OverlayKind::Menu),
             Overlay::InlineEdit | Overlay::FilesInlineEdit => None,
         }
     }
@@ -213,6 +216,7 @@ impl Overlay {
             },
             Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
             Overlay::PluginsDialog => AppEvent::Plugins(PluginsIntent::Back),
+            Overlay::PluginsMenu => AppEvent::Plugins(PluginsIntent::CloseMenu),
         }
     }
 }
@@ -294,6 +298,16 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
             | AgentsIntent::ShowFoundReport
             | AgentsIntent::CloseMenu,
         ) => Allow,
+        // The items and the dismiss layer of the menu of a plugin: the items
+        // send the intents of the buttons of its page.
+        AppEvent::Plugins(
+            PluginsIntent::Reload(_)
+            | PluginsIntent::CheckForUpdates(_)
+            | PluginsIntent::Review(_)
+            | PluginsIntent::ShowLog(_)
+            | PluginsIntent::AskRemove(_)
+            | PluginsIntent::CloseMenu,
+        ) => Allow,
         // The first press on a panel button, the palette button or the bell
         // only closes the menu; opening settings closes it and goes on.
         AppEvent::TitleBar(intent) => match intent {
@@ -372,8 +386,8 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// mode a create dialog, the confirmation dialog and the row menu, in Agents
 /// mode the profile dialog, the Rename dialog, the remove dialog, the
 /// statistics dialog, the New session dialog, the Found by OTTY report and
-/// a menu, in Plugins mode its dialog. Those of the other modes are not on
-/// screen, so they do not count.
+/// a menu, in Plugins mode its dialog and the menu of a plugin. Those of
+/// the other modes are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -398,9 +412,7 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
         Mode::Terminal => terminal_overlay(app),
         Mode::Containers => containers_overlay(app),
         Mode::Agents => agents_overlay(app),
-        Mode::Plugins => {
-            app.plugins.has_dialog().then_some(Overlay::PluginsDialog)
-        },
+        Mode::Plugins => plugins_overlay(app),
     }
 }
 
@@ -492,6 +504,16 @@ pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
     };
 
     Some(overlay)
+}
+
+/// The open overlay of Plugins mode on top: its dialog lies over the
+/// menu of a plugin.
+fn plugins_overlay(app: &App) -> Option<Overlay> {
+    if app.plugins.has_dialog() {
+        return Some(Overlay::PluginsDialog);
+    }
+
+    app.plugins.has_menu().then_some(Overlay::PluginsMenu)
 }
 
 /// The open overlay of Agents mode on top, as the agents feature stacks
@@ -1817,6 +1839,37 @@ mod tests {
         ));
 
         assert_eq!(guard, MenuGuard::Dismiss);
+    }
+
+    /// Issue 37: the items of the menu of a plugin send the intents of the
+    /// buttons of its page, and they pass under the menu with its dismiss
+    /// layer; a press on another plugin only closes the menus, and Esc
+    /// closes the menu.
+    #[test]
+    fn the_items_of_the_menu_of_a_plugin_pass_under_it() {
+        let id = || String::from("example");
+        let items = [
+            PluginsIntent::Reload(id()),
+            PluginsIntent::CheckForUpdates(id()),
+            PluginsIntent::Review(id()),
+            PluginsIntent::ShowLog(id()),
+            PluginsIntent::AskRemove(id()),
+            PluginsIntent::CloseMenu,
+        ];
+
+        for item in items {
+            let guard = context_menu_guard(&AppEvent::Plugins(item));
+            assert_eq!(guard, MenuGuard::Allow);
+        }
+        assert_eq!(
+            context_menu_guard(&AppEvent::Plugins(PluginsIntent::Select(id()))),
+            MenuGuard::Dismiss
+        );
+        assert_eq!(Overlay::PluginsMenu.kind(), Some(OverlayKind::Menu));
+        assert!(matches!(
+            Overlay::PluginsMenu.escape_event(),
+            AppEvent::Plugins(PluginsIntent::CloseMenu)
+        ));
     }
 
     #[test]

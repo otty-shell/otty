@@ -1,3 +1,4 @@
+use iced::{Point, Size};
 use otty_app_domain::plugins::{PluginNotes, WaitingUpdate};
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_host::fixtures::paused_health;
@@ -7,6 +8,7 @@ use otty_plugin_releases::InstallPlan;
 use otty_plugin_releases::fixtures::{
     example_manifest, install_plan, pending_update, report, with_part_on,
 };
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use super::*;
 use crate::model::{DialogViewModel, MainViewModel, PluginPageViewModel};
@@ -14,6 +16,25 @@ use crate::testing::{
     agent, fork, official_example, provider, released_example,
 };
 use crate::types::RunningPlugin;
+
+/// Where the pointer is in the tests of the menu of a plugin.
+const POINTER: Point = Point::new(40.0, 120.0);
+/// The size of the main area in the tests of the menu of a plugin.
+const SCREEN: Size = Size::new(1024.0, 768.0);
+
+/// The reducer with the pointer at [`POINTER`] in a main area of
+/// [`SCREEN`].
+fn reduce(
+    state: &mut PluginsState,
+    intent: PluginsIntent,
+) -> Vec<PluginsOutcome> {
+    let ctx = PluginsCtx {
+        cursor: POINTER,
+        screen_size: SCREEN,
+    };
+
+    super::reduce(state, intent, &ctx)
+}
 
 /// Plugins mode with `plugins` installed and the plugin `example`
 /// selected.
@@ -801,4 +822,135 @@ fn can_access_of_a_part_opens_its_dialog() {
     );
     assert_eq!(state.dialog(), None);
     assert_eq!(state.selected(), Some("example"));
+}
+
+/// Issue 37: a right click on a plugin of the left panel opens its menu
+/// at the pointer, and what is selected stays.
+#[test]
+fn a_right_click_opens_the_menu_of_the_plugin_at_the_pointer() {
+    let mut state = open_state(vec![official_example(), fork()]);
+
+    let outcomes = reduce(
+        &mut state,
+        PluginsIntent::OpenMenu(String::from("example-fork")),
+    );
+
+    let menu = state.menu().expect("the menu should open");
+    assert!(outcomes.is_empty());
+    assert_eq!(menu.plugin(), "example-fork");
+    assert_eq!(menu.place(), MenuPlace::new(POINTER, SCREEN));
+    assert_eq!(state.selected(), Some("example"));
+}
+
+/// A plugin that is gone, as after a removal elsewhere, opens no menu.
+#[test]
+fn a_plugin_that_is_not_installed_opens_no_menu() {
+    let mut state = open_state(vec![official_example()]);
+
+    let _ = reduce(&mut state, PluginsIntent::OpenMenu(String::from("gone")));
+
+    assert!(state.menu().is_none());
+}
+
+/// A press away from the menu, or Esc, closes it.
+#[test]
+fn close_menu_closes_the_menu() {
+    let mut state = open_state(vec![official_example()]);
+    let _ =
+        reduce(&mut state, PluginsIntent::OpenMenu(String::from("example")));
+
+    let outcomes = reduce(&mut state, PluginsIntent::CloseMenu);
+
+    assert!(outcomes.is_empty());
+    assert!(state.menu().is_none());
+}
+
+/// Issue 37: each item of the menu sends the intent of the button of the
+/// page, which does what the button does, and the menu closes.
+#[test]
+fn an_item_of_the_menu_does_what_the_page_does_and_closes_the_menu() {
+    let id = || String::from("example");
+    let items = [
+        (
+            PluginsIntent::Reload(id()),
+            vec![PluginsOutcome::Reload(id())],
+        ),
+        (
+            PluginsIntent::CheckForUpdates(id()),
+            vec![PluginsOutcome::CheckUpdate(id())],
+        ),
+        (PluginsIntent::ShowLog(id()), Vec::new()),
+        (PluginsIntent::AskRemove(id()), Vec::new()),
+    ];
+
+    for (intent, expected) in items {
+        let mut state = open_state(vec![official_example()]);
+        let _ = reduce(&mut state, PluginsIntent::OpenMenu(id()));
+
+        let outcomes = reduce(&mut state, intent);
+
+        assert_eq!(outcomes, expected);
+        assert!(state.menu().is_none());
+    }
+}
+
+/// Issue 37: Remove… of the menu asks first, as Remove of the page.
+#[test]
+fn remove_of_the_menu_asks_first() {
+    let mut state = open_state(vec![official_example(), fork()]);
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::OpenMenu(String::from("example-fork")),
+    );
+
+    let outcomes = reduce(
+        &mut state,
+        PluginsIntent::AskRemove(String::from("example-fork")),
+    );
+
+    assert!(outcomes.is_empty());
+    assert_eq!(
+        state.dialog(),
+        Some(&Dialog::Remove(String::from("example-fork")))
+    );
+    assert!(state.menu().is_none());
+}
+
+/// Issue 37: Review update… of the menu opens the update dialog, as
+/// Review of the page, which shows the page of the plugin too.
+#[test]
+fn review_update_of_the_menu_opens_the_update_dialog() {
+    let (plugin, update) = waiting_example();
+    let mut state = PluginsState::new(vec![plugin, fork()]);
+    state.set_news("example", PluginNews::Waiting(Box::new(update)));
+    let _ =
+        reduce(&mut state, PluginsIntent::OpenMenu(String::from("example")));
+
+    let _ = reduce(&mut state, PluginsIntent::Review(String::from("example")));
+
+    assert_eq!(
+        state.dialog(),
+        Some(&Dialog::Update {
+            plugin: String::from("example")
+        })
+    );
+    assert_eq!(state.selected(), Some("example"));
+    assert!(state.menu().is_none());
+}
+
+/// The menu of a plugin removed elsewhere closes with it.
+#[test]
+fn the_menu_of_a_removed_plugin_closes() {
+    let mut state = open_state(vec![official_example(), fork()]);
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::OpenMenu(String::from("example-fork")),
+    );
+
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::Changed(Ok(vec![official_example()])),
+    );
+
+    assert!(state.menu().is_none());
 }

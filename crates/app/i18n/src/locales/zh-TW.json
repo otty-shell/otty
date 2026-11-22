@@ -865,6 +865,8 @@
     "plugins_show_log": "顯示記錄",
     "plugins_remove": "移除",
     "plugins_review": "檢視",
+    "plugins_menu_review_update": "檢視更新…",
+    "plugins_menu_remove": "移除…",
     "tpl_plugins_too_new": "{version} 需要較新版本的 OTTY",
     "tpl_plugins_update_waits": "{version} 要求新的權限",
     "tpl_plugins_reloaded": "外掛程式 {name} 已重新載入",

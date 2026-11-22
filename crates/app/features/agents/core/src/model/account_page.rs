@@ -11,7 +11,7 @@ use otty_agents::{Account, AccountLogin};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::state::AgentsState;
-use super::account_name::account_name;
+use super::account_name::short_account_name;
 use super::account_numbers::AccountNumbersViewModel;
 use super::add_account_dialog::key_place_text;
 use super::entry_icon::EntryIcon;
@@ -26,7 +26,9 @@ use super::{FactViewModel, UNKNOWN};
 pub(crate) struct AccountPageViewModel {
     /// The account.
     pub(crate) account: Account,
-    /// The provider and the login, such as "Example Cloud · you@example.com".
+    /// The login without the provider the logo beside it shows, such as
+    /// "you@example.com", or the name the user gave the account (issue 38
+    /// of spec 2026-11-19-agent-plugins). Account info names the provider.
     pub(crate) name: String,
     /// The icon of the provider.
     pub(crate) icon: EntryIcon,
@@ -54,7 +56,7 @@ impl AccountPageViewModel {
         now: SystemTime,
     ) -> Self {
         let page = Self {
-            name: account_name(
+            name: short_account_name(
                 state.registry(),
                 state.profiles().saved(),
                 &account,
@@ -226,7 +228,7 @@ mod tests {
 
         let page = page_of(&state, chatgpt_login());
 
-        assert_eq!(page.name, "OpenAI · you@example.com");
+        assert_eq!(page.name, "you@example.com", "the logo says OpenAI");
         assert_eq!(page.icon, crate::testing::provider_icon("openai"));
         assert!(page.needs.is_empty());
         assert!(matches!(

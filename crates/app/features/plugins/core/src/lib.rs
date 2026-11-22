@@ -8,7 +8,9 @@
 //! of each part, the update dialog with the permission changes, and the
 //! daily update check. Settings and the links and needs of Agents mode
 //! open the mode at a [`PluginsPlace`]. Two plugins may serve one id:
-//! every part that is on reads, and nothing is asked (issue 29).
+//! every part that is on reads, and nothing is asked (issue 29). A right
+//! click on a plugin in the left panel opens its menu with the actions of
+//! its page (issue 37).
 //!
 //! The mode touches no network and no disk. It reports what it needs as
 //! a [`PluginsOutcome`]; `otty-app-plugins-io` does it and answers with a
@@ -26,20 +28,23 @@
 //! use std::path::PathBuf;
 //!
 //! use otty_app_domain::plugins::PluginsPlace;
-//! use otty_app_plugins::{Plugins, PluginsIntent, PluginsOutcome, URL_FIELD};
+//! use otty_app_plugins::{
+//!     Plugins, PluginsCtx, PluginsIntent, PluginsOutcome, URL_FIELD,
+//! };
 //! use otty_app_slots::Component;
 //!
 //! let mut plugins = Plugins::new(Vec::new(), PathBuf::from("/home/user"));
+//! let ctx = PluginsCtx::default();
 //!
 //! let opened =
-//!     plugins.reduce(PluginsIntent::Open(PluginsPlace::AddPlugin), ());
+//!     plugins.reduce(PluginsIntent::Open(PluginsPlace::AddPlugin), ctx);
 //! let _ = plugins.reduce(
 //!     PluginsIntent::UrlChanged(String::from(
 //!         "https://github.com/otty-shell/otty-plugin-example",
 //!     )),
-//!     (),
+//!     ctx,
 //! );
-//! let find = plugins.reduce(PluginsIntent::Find, ());
+//! let find = plugins.reduce(PluginsIntent::Find, ctx);
 //!
 //! assert_eq!(opened, vec![PluginsOutcome::FocusField(URL_FIELD)]);
 //! assert!(plugins.has_dialog());
@@ -51,6 +56,7 @@
 //! );
 //! ```
 
+mod ctx;
 mod event;
 mod model;
 mod notes;
@@ -65,10 +71,13 @@ mod words;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+pub use ctx::PluginsCtx;
 pub use event::{ChangeAnswer, PluginsIntent, PluginsOutcome};
 use iced::widget::Id;
 use iced::{Element, Subscription};
-use model::{DialogViewModel, MainViewModel, SidePanelViewModel};
+use model::{
+    DialogViewModel, MainViewModel, PluginMenuViewModel, SidePanelViewModel,
+};
 use otty_app_domain::plugins::PluginNotes;
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, SectionMessage,
@@ -98,6 +107,11 @@ impl Plugins {
     /// Add plugin…, the log or the question before Remove.
     pub fn has_dialog(&self) -> bool {
         self.state.dialog().is_some()
+    }
+
+    /// Whether the menu of a plugin in the left panel is open.
+    pub fn has_menu(&self) -> bool {
+        PluginMenuViewModel::from_state(&self.state).is_some()
     }
 
     /// What Agents mode shows of the installed plugins: the parts that are
@@ -151,14 +165,14 @@ impl Plugins {
 impl Component for Plugins {
     type Intent = PluginsIntent;
     type Outcome = PluginsOutcome;
-    type Ctx<'a> = ();
+    type Ctx<'a> = PluginsCtx;
 
     fn reduce(
         &mut self,
         intent: PluginsIntent,
-        _ctx: (),
+        ctx: PluginsCtx,
     ) -> Vec<PluginsOutcome> {
-        reducer::reduce(&mut self.state, intent)
+        reducer::reduce(&mut self.state, intent, &ctx)
     }
 
     /// The timer of the daily update check: once an hour the mode asks
@@ -193,15 +207,21 @@ impl MainArea for Plugins {
 }
 
 impl Overlays for Plugins {
-    /// The open dialog, in the middle of the window over a dimmed layer.
-    /// Esc and Cancel close it.
+    /// The open dialog, in the middle of the window over a dimmed layer,
+    /// or else the menu of a plugin at the pointer. Esc closes either, and
+    /// Cancel the dialog.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,
     ) -> Option<Overlay<'a, PluginsIntent>> {
-        let vm = DialogViewModel::from_state(&self.state)?;
+        let palette = theme.theme.ui();
 
-        Some(Overlay::dialog(view::dialog(vm, theme.theme.ui())))
+        if let Some(vm) = DialogViewModel::from_state(&self.state) {
+            return Some(Overlay::dialog(view::dialog(vm, palette)));
+        }
+
+        let vm = PluginMenuViewModel::from_state(&self.state)?;
+        Some(Overlay::menu(view::plugin_menu::view(vm, palette)))
     }
 }
 
@@ -235,7 +255,7 @@ mod tests {
             Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
         let _ = plugins.reduce(
             PluginsIntent::Open(PluginsPlace::Plugin(String::from("example"))),
-            (),
+            PluginsCtx::default(),
         );
 
         let mut panel = simulator(
@@ -255,13 +275,42 @@ mod tests {
         let theme = ThemeProps::new(themes.current());
         let mut plugins = Plugins::new(Vec::new(), PathBuf::from("/home/user"));
 
-        let _ = plugins.reduce(PluginsIntent::AddPlugin, ());
+        let _ = plugins.reduce(PluginsIntent::AddPlugin, PluginsCtx::default());
 
         let dialog = plugins.overlay(theme).expect("the dialog");
         assert!(plugins.has_dialog());
         assert_eq!(dialog.kind(), OverlayKind::Dialog);
         let mut ui = simulator(dialog.into_content());
         assert!(ui.find(i18n::t(Key::PluginsAddPluginTitle)).is_ok());
+    }
+
+    /// Issue 37: the menu of a plugin lies over the window as a menu, and
+    /// a dialog it opens lies over it in its place.
+    #[test]
+    fn the_menu_of_a_plugin_is_an_overlay() {
+        let themes = ThemeManager::new();
+        let theme = ThemeProps::new(themes.current());
+        let mut plugins =
+            Plugins::new(vec![official_example()], PathBuf::from("/home/user"));
+
+        let _ = plugins.reduce(
+            PluginsIntent::OpenMenu(String::from("example")),
+            PluginsCtx::default(),
+        );
+        let menu = plugins.overlay(theme).map(|overlay| overlay.kind());
+        let has_menu = plugins.has_menu();
+        let _ = plugins.reduce(
+            PluginsIntent::ShowLog(String::from("example")),
+            PluginsCtx::default(),
+        );
+
+        assert_eq!(menu, Some(OverlayKind::Menu));
+        assert!(has_menu);
+        assert!(!plugins.has_menu());
+        assert_eq!(
+            plugins.overlay(theme).map(|overlay| overlay.kind()),
+            Some(OverlayKind::Dialog)
+        );
     }
 
     #[test]

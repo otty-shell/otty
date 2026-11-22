@@ -1,18 +1,20 @@
 //! The screen of Plugins mode (issue 30). The plugins feature fills it:
 //! the installed plugins with the search and the Add plugin split button
 //! in the left panel, the page of the selected plugin or a card that says
-//! what to do in the main area, and its dialogs as the mode overlays. The
-//! menu under the chevron of Add plugin is a header menu of the frame, as
-//! in Terminal mode. The mode has no right panel: the frame hides it.
+//! what to do in the main area, and its dialogs and the menu of a plugin
+//! as the mode overlays. The menu under the chevron of Add plugin is a
+//! header menu of the frame, as in Terminal mode. The mode has no right panel: the frame hides it.
 
-use iced::widget::Space;
+use iced::widget::{Space, mouse_area};
 use iced::{Element, Length};
 use otty_app_plugins::PluginsIntent;
-use otty_app_slots::{MainArea, Overlays, SectionMessage, SectionState};
+use otty_app_slots::{
+    MainArea, OverlayKind, Overlays, SectionMessage, SectionState,
+};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::menu::Menu;
 
-use super::bar_with_sessions;
+use super::{bar_with_sessions, over_main_area};
 use crate::app::App;
 use crate::frame::sidebar::types::HeaderMenu;
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
@@ -58,16 +60,30 @@ pub(crate) fn status_bar<'a>(
     bar_with_sessions(theme.theme.ui(), app.tabs.len(), Vec::new)
 }
 
-/// Overlays of Plugins mode: its open dialog, over the whole window.
+/// Overlays of Plugins mode: its open dialog, over the whole window, or
+/// the menu of a plugin, at the pointer in the main area, where the
+/// pointer is measured.
 pub(crate) fn overlays<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
 ) -> Vec<Element<'a, AppEvent>> {
-    app.plugins
-        .overlay(theme)
-        .map(|dialog| dialog.into_content().map(AppEvent::Plugins))
-        .into_iter()
-        .collect()
+    let Some(overlay) = app.plugins.overlay(theme) else {
+        return Vec::new();
+    };
+
+    let kind = overlay.kind();
+    let content = overlay.into_content().map(AppEvent::Plugins);
+    if kind == OverlayKind::Dialog {
+        return vec![content];
+    }
+
+    // The menu layer covers the main area, so it reports where the pointer
+    // is in place of the main area: the next menu opens at the right spot.
+    let layer = mouse_area(over_main_area(content)).on_move(|position| {
+        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { position })
+    });
+
+    vec![layer.into()]
 }
 
 /// The Add plugin menu under the chevron of the Installed header: Add

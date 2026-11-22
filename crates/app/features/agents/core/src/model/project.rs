@@ -1,9 +1,7 @@
 use std::time::SystemTime;
 
 use otty_agents::{Account, Profile, Project};
-use otty_app_domain::folder_path::{
-    folder_name, short_folder_path, tilde_path,
-};
+use otty_app_domain::folder_path::{folder_name, tilde_path};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::{ColumnSort, TableCell, TableColumn};
@@ -14,26 +12,20 @@ use super::super::profile_state::ProfileState;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::can_show_project_stats;
-use super::account_name::account_name;
+use super::account_chip::{AccountChipViewModel, account_chip};
 use super::age::age_text;
 use super::entry_icon::EntryIcon;
-use super::profile_page::PaysThroughViewModel;
 use super::reset_time::date_time_text;
-use super::short_number::account_number;
 use super::{FactViewModel, UNKNOWN};
 
-/// The project screen: the title row with the folder and New session,
-/// Project info, the search over the sessions table, and the table (spec
-/// Decision 6, spec 2026-11-19 Decision 6).
+/// The project screen: the title row with the folder name and New
+/// session, Project info, the search over the sessions table, and the
+/// table (spec Decision 6, spec 2026-11-19 Decision 6). The path of the
+/// folder is in Project info only (issue 38).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProjectViewModel<'a> {
     /// The last part of the folder path.
     pub(crate) name: String,
-    /// The folder path, written short as a terminal prompt writes it,
-    /// such as `~/…/ottyrun/otty`.
-    pub(crate) path: String,
-    /// The whole folder path, shown in the tooltip of `path`.
-    pub(crate) full_path: String,
     /// Whether the folder no longer exists: nothing can open in it.
     pub(crate) is_missing: bool,
     /// Whether New session can start: the folder exists and a profile can
@@ -106,8 +98,6 @@ impl<'a> ProjectViewModel<'a> {
 
         Self {
             name: folder_name(folder, Some(state.env().home())),
-            path: short_folder_path(folder, Some(state.env().home())),
-            full_path: folder.to_string_lossy().into_owned(),
             is_missing,
             can_start: state.can_start_in_selected_project(),
             is_new_session_menu_open,
@@ -134,8 +124,8 @@ pub(crate) struct ProjectInfoViewModel {
     pub(crate) path: String,
     /// The profiles with a session in the project, in their order.
     pub(crate) profiles: Vec<ProjectProfileViewModel>,
-    /// The accounts those profiles pay through, each once.
-    pub(crate) accounts: Vec<PaysThroughViewModel>,
+    /// The chips of the accounts those profiles pay through, each once.
+    pub(crate) accounts: Vec<AccountChipViewModel>,
     /// Sessions, First activity and Last activity.
     pub(crate) facts: Vec<FactViewModel>,
 }
@@ -172,16 +162,7 @@ impl ProjectInfoViewModel {
             .accounts()
             .into_iter()
             .filter(|account| is_paid_through(account, &shown))
-            .map(|account| PaysThroughViewModel {
-                icon: state.provider_icon(account.provider()),
-                name: account_name(
-                    state.registry(),
-                    state.profiles().saved(),
-                    &account,
-                ),
-                number: account_number(state, &account),
-                account,
-            })
+            .map(|account| account_chip(state, &account))
             .collect();
         let changes = sessions.iter().map(|entry| entry.session().changed_at());
         let first = changes.clone().min();
@@ -228,8 +209,10 @@ pub(crate) struct ProjectProfileViewModel {
 
 /// The columns of the sessions table with their width shares and minimum
 /// widths, as the canvas draws them; every column sorts. A minimum keeps
-/// the title and a typical value readable; on a narrow window the table
-/// scrolls sideways instead of going below the minimums.
+/// the title and a typical value readable. The minimums and the "⋯"
+/// column fit the smallest screen less the page padding (issue 38), so
+/// the table never scrolls sideways itself: below that width the whole
+/// page scrolls sideways, as every screen does.
 pub(crate) fn session_columns() -> Vec<TableColumn> {
     let column = |key: Key, share: u16, min: u16| {
         TableColumn::new(i18n::t(key), share)
@@ -238,7 +221,7 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
     };
 
     vec![
-        column(Key::AgentsColumnTitle, 5, 220),
+        column(Key::AgentsColumnTitle, 5, 198),
         // The agent icon and "Coder · Work".
         column(Key::AgentsProfile, 2, 130),
         column(Key::AgentsAgent, 2, 100),
@@ -332,8 +315,6 @@ mod tests {
         let project = project(&state);
 
         assert_eq!(project.name, "otty");
-        assert_eq!(project.path, "/work/otty");
-        assert_eq!(project.full_path, "/work/otty");
         assert!(!project.is_missing);
         assert!(project.can_start);
         assert_eq!(project.columns, session_columns());
@@ -445,9 +426,14 @@ mod tests {
             .iter()
             .map(|chip| chip.name.as_str())
             .collect();
+        assert_eq!(accounts, ["dev@example.com", "you@example.com"]);
         assert_eq!(
-            accounts,
-            ["Anthropic · dev@example.com", "OpenAI · you@example.com"]
+            info.accounts,
+            [
+                account_chip(&state, &organization()),
+                account_chip(&state, &chatgpt_login())
+            ],
+            "a project shows the same chips as a profile"
         );
         let utc = jiff::tz::TimeZone::UTC;
         let when = |seconds| date_time_text(at(seconds), Some(&utc));
@@ -465,24 +451,6 @@ mod tests {
                 ),
             ]
         );
-    }
-
-    /// Owner, issue 34: the path is short, as a terminal prompt writes it,
-    /// and the whole path goes to its tooltip.
-    #[test]
-    fn a_deep_project_in_the_home_folder_has_a_short_path_and_its_full_one() {
-        let folder = "/home/user/projects/main/ottyrun/otty";
-        let mut state = with_profiles(&[(claude(), connected())]);
-        read(&mut state, &claude(), vec![session("c1", folder, 1)]);
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::SelectProject(PathBuf::from(folder)),
-        );
-
-        let project = project(&state);
-
-        assert_eq!(project.path, "~/…/ottyrun/otty");
-        assert_eq!(project.full_path, folder);
     }
 
     #[test]

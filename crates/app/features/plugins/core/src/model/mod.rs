@@ -1,10 +1,11 @@
 //! What Plugins mode shows, built from its state: the list of the left
-//! panel, the page of the selected plugin in the main area, and the dialog
-//! open over the window.
+//! panel and the menu of a plugin in it, the page of the selected plugin
+//! in the main area, and the dialog open over the window.
 
 mod details;
 mod dialogs;
 pub(crate) mod permissions;
+mod plugin_menu;
 mod side_panel;
 
 #[cfg(test)]
@@ -20,6 +21,7 @@ pub(crate) use dialogs::{
     UpdateDialogViewModel,
 };
 use otty_app_i18n::{self as i18n, Key};
+pub(crate) use plugin_menu::PluginMenuViewModel;
 #[cfg(test)]
 pub(crate) use side_panel::PluginSign;
 pub(crate) use side_panel::{PluginListRowViewModel, SidePanelViewModel};

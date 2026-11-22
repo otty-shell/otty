@@ -1,6 +1,6 @@
 # 37 A plugin in the list has a context menu
 
-Status: ready
+Status: done
 Blocked by: 36
 
 ## Why
@@ -38,3 +38,22 @@ does: show the log, remove, update.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-22, done. A right click on a plugin row of the left panel sends
+`PluginsIntent::OpenMenu`, and the menu opens at the pointer in the kit's
+`context_menu`, as the menus of Files and Quick Launch. Plugins mode now
+takes a `PluginsCtx` (the pointer and the size of the main area), as
+Explorer and Agents mode do. The items are Check for updates (Reload for
+a local plugin), Review update… while an update waits, Show log, a
+separator and Remove… (danger). Each sends the intent of the page's
+button (`CheckForUpdates`, `Reload`, `Review`, `ShowLog`, `AskRemove`),
+and the reducer closes the menu before it does what the page does, so
+the notifications and dialogs come the same way and Remove… asks first.
+While a change runs (`is_busy`) every item but Show log is disabled. The
+right click does not change the selection (as the menus of the left
+panel of Agents mode), and Review update… selects the plugin, as Review
+of the page does. Esc, a press outside the menu and any other input of
+the window close it: the binary knows it as `Overlay::PluginsMenu`, lets
+its items pass under it and closes it with the other menus. A dialog
+lies over it. The menu of a plugin removed elsewhere closes with it. New
+words: "Review update…" and "Remove…" in ten locales. Docs: Plugins.mdx.

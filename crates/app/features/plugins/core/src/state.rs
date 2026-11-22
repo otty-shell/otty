@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallPlan, PendingUpdate};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::types::{ListedPlugin, RunningPlugin};
 
@@ -54,11 +55,37 @@ pub(crate) enum PluginNews {
     Failed(String),
 }
 
+/// The menu of a plugin in the left panel, open at the pointer (issue
+/// 37).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PluginMenu {
+    plugin: String,
+    place: MenuPlace,
+}
+
+impl PluginMenu {
+    /// The id of the plugin the menu acts on.
+    pub(crate) fn plugin(&self) -> &str {
+        &self.plugin
+    }
+
+    /// Where the menu opens: at the pointer, inside the main area.
+    pub(crate) fn place(&self) -> MenuPlace {
+        self.place
+    }
+
+    /// The menu of the plugin `plugin` at `place`.
+    pub(crate) fn new(plugin: String, place: MenuPlace) -> Self {
+        Self { plugin, place }
+    }
+}
+
 /// The state of Plugins mode: the installed plugins, the parts that run,
-/// what the checks said, the selected plugin, the search and the open
-/// dialog.
+/// what the checks said, the selected plugin, the search, the open dialog
+/// and the open menu of a plugin.
 pub(crate) struct PluginsState {
     dialog: Option<Dialog>,
+    menu: Option<PluginMenu>,
     plugins: Vec<ListedPlugin>,
     running: Vec<RunningPlugin>,
     news: BTreeMap<String, PluginNews>,
@@ -74,6 +101,11 @@ impl PluginsState {
     /// The open dialog, if any.
     pub(crate) fn dialog(&self) -> Option<&Dialog> {
         self.dialog.as_ref()
+    }
+
+    /// The open menu of a plugin in the left panel, if any.
+    pub(crate) fn menu(&self) -> Option<&PluginMenu> {
+        self.menu.as_ref()
     }
 
     /// The installed plugins.
@@ -140,6 +172,7 @@ impl PluginsState {
     pub(crate) fn new(plugins: Vec<ListedPlugin>) -> Self {
         Self {
             dialog: None,
+            menu: None,
             plugins,
             running: Vec::new(),
             news: BTreeMap::new(),
@@ -172,16 +205,34 @@ impl PluginsState {
         self.is_busy = false;
     }
 
+    /// Opens the menu `menu` of a plugin in the left panel.
+    pub(crate) fn open_menu(&mut self, menu: PluginMenu) {
+        self.menu = Some(menu);
+    }
+
+    /// Closes the menu of a plugin, if one is open.
+    pub(crate) fn close_menu(&mut self) {
+        self.menu = None;
+    }
+
     pub(crate) fn dialog_mut(&mut self) -> Option<&mut Dialog> {
         self.dialog.as_mut()
     }
 
-    /// Keeps `plugins`; the selection goes when its plugin is gone.
+    /// Keeps `plugins`; the selection and the menu go when their plugin is
+    /// gone.
     pub(crate) fn set_plugins(&mut self, plugins: Vec<ListedPlugin>) {
         self.plugins = plugins;
 
         let selected = self.selected.take();
         self.select(selected);
+        let is_menu_gone = self
+            .menu
+            .as_ref()
+            .is_some_and(|menu| self.plugin(menu.plugin()).is_none());
+        if is_menu_gone {
+            self.menu = None;
+        }
     }
 
     pub(crate) fn set_running(&mut self, running: Vec<RunningPlugin>) {

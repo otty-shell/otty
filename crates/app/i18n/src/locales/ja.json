@@ -865,6 +865,8 @@
     "plugins_show_log": "ログを表示",
     "plugins_remove": "削除",
     "plugins_review": "確認",
+    "plugins_menu_review_update": "更新を確認…",
+    "plugins_menu_remove": "削除…",
     "tpl_plugins_too_new": "{version} には新しい OTTY が必要です",
     "tpl_plugins_update_waits": "{version} は新しい権限を求めています",
     "tpl_plugins_reloaded": "プラグイン {name} を再読み込みしました",
