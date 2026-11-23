@@ -941,6 +941,8 @@
     "agents_log_in_again": "Erneut anmelden",
     "agents_remove_account_title": "Dieses Konto entfernen?",
     "tpl_agents_remove_account_text": "OTTY löscht seinen privaten Ordner {path}. Ihre Agenten und ihre eigenen Anmeldungen bleiben, wie sie sind.",
+    "agents_error_folder_is_own_login": "Dies ist ein privater Anmeldeordner von OTTY, er kann kein Profil sein.",
+    "tpl_plugins_remove_own_logins": "OTTYs eigene Anmeldungen dieses Plugins werden ebenfalls entfernt: {count}",
     "agents_no_log_in": "das Plugin gibt keinen Anmeldebefehl",
     "tpl_agents_own_folder_not_made": "Der Ordner {path} konnte nicht angelegt werden: {error}",
     "tpl_agents_own_folder_not_removed": "Der Ordner {path} konnte nicht entfernt werden: {error}",

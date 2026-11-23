@@ -101,9 +101,13 @@ impl FoundIn {
     ///
     /// use otty_agents::FoundIn;
     ///
-    /// let own = FoundIn::own_login("a1", "/data/otty/accounts/a1");
+    /// let own =
+    ///     FoundIn::own_login("a1", "/data/otty/plugins/example/accounts/a1");
     ///
-    /// assert_eq!(own.folder(), Path::new("/data/otty/accounts/a1"));
+    /// assert_eq!(
+    ///     own.folder(),
+    ///     Path::new("/data/otty/plugins/example/accounts/a1")
+    /// );
     /// ```
     pub fn own_login(
         id: impl Into<String>,
@@ -293,7 +297,7 @@ mod tests {
     /// account tells it was found in OTTY's own login.
     #[test]
     fn an_account_tells_the_own_login_it_was_found_in() {
-        let folder = "/home/user/.local/share/otty/accounts/a1";
+        let folder = "/home/user/.local/share/otty/plugins/example/accounts/a1";
         let account = Account::new(
             "openai",
             ProviderId::new("openai"),

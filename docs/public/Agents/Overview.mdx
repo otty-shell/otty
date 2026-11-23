@@ -214,8 +214,9 @@ work in, such as the limits of a Claude plan with no Claude Code profile.
 2. Under **How**, **Log in with *agent***, such as "Log in with Codex" or "Log in with Claude Code",
    names the command it runs. **Paste a key** is shown but off ("Coming later"). A provider with no
    agent login, such as DeepSeek, says so, and **Continue** stays off.
-3. **Continue** makes an empty folder of OTTY's own, `~/.local/share/otty/accounts/<id>/` (with a
-   new random id, under `XDG_DATA_HOME` when it is set), and runs the agent's own login command
+3. **Continue** makes an empty folder of OTTY's own in the folder of the provider's plugin,
+   `~/.local/share/otty/plugins/<plugin>/accounts/<id>/` (with a new random id, under
+   `XDG_DATA_HOME` when it is set), and runs the agent's own login command
    there in a terminal tab titled "Log in with *agent*", such as `codex login` with `CODEX_HOME` set
    to that folder, or `claude auth login --claudeai` with `CLAUDE_CONFIG_DIR`. You log in as you
    would in the agent. OTTY never sees a password and runs no login flow itself.
@@ -224,7 +225,9 @@ work in, such as the limits of a Claude plan with no Claude Code profile.
    account is logged in to a profile. When none is found, OTTY removes the folder and says "The
    login did not finish".
 
-The folder is never a profile: its sessions and projects never show. OTTY reads its account on the
+The folder is never a profile: its sessions and projects never show, and **Add profile** refuses a
+folder inside it ("This is a private login folder of OTTY, it can not be a profile."), since
+**Remove** deletes it. OTTY reads its account on the
 usual schedule while it runs, and runs nothing when it is closed. To read the numbers, the plugin
 starts the agent in that folder, such as `codex app-server` or Claude Code's `/usage`, and the agent
 renews its own login there as it always does.
@@ -236,8 +239,10 @@ renews its own login there as it always does.
   with "Found in ~/.codex" only, else it leaves the list. Its name and hidden flag stay in
   `agents.json`.
 
-When a plugin is removed, the folders of its own logins stay until you remove the account, so adding
-the plugin again brings the account back.
+The folder lives next to the version folders of its plugin, so an update of the plugin keeps it.
+Removing the plugin removes its own logins with it: the Remove dialog of Plugins mode says how many
+go ("OTTY's own logins of this plugin are removed too: 2"), and their entries leave `agents.json`.
+To see the account again after you add the plugin back, log in again with **Add account**.
 
 ### The system keyring
 

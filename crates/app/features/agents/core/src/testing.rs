@@ -748,9 +748,13 @@ pub(crate) fn codex_own_login() -> OwnLogin {
     OwnLogin::new("6f0c1e2a", "openai", ProviderId::new("openai"), codex_id())
 }
 
-/// The folder of [`codex_own_login`] under OTTY's data folder.
+/// The folder of the installed plugins of the tests, which holds OTTY's
+/// own logins.
+pub(crate) const PLUGINS_FOLDER: &str = "/home/user/.local/share/otty/plugins";
+
+/// The folder of [`codex_own_login`] in the folder of the OpenAI plugin.
 pub(crate) const OWN_LOGIN_FOLDER: &str =
-    "/home/user/.local/share/otty/accounts/6f0c1e2a";
+    "/home/user/.local/share/otty/plugins/openai/accounts/6f0c1e2a";
 
 /// The [`chatgpt_login`] as found in OTTY's own login only.
 pub(crate) fn chatgpt_own_login() -> Account {

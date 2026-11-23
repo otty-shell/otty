@@ -941,6 +941,8 @@
     "agents_log_in_again": "Fazer login novamente",
     "agents_remove_account_title": "Remover esta conta?",
     "tpl_agents_remove_account_text": "O OTTY exclui a pasta privada {path}. Seus agentes e os logins deles ficam como estão.",
+    "agents_error_folder_is_own_login": "Esta é uma pasta de login privada do OTTY, ela não pode ser um perfil.",
+    "tpl_plugins_remove_own_logins": "Os logins próprios do OTTY deste plugin também são removidos: {count}",
     "agents_no_log_in": "o plugin não dá nenhum comando de login",
     "tpl_agents_own_folder_not_made": "Não foi possível criar a pasta {path}: {error}",
     "tpl_agents_own_folder_not_removed": "Não foi possível remover a pasta {path}: {error}",

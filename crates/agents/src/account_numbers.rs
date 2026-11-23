@@ -63,24 +63,24 @@ impl FoundAccounts {
 }
 
 /// The accounts each provider part of `providers` finds in the folders of
-/// `profiles`, the shown profiles: only in those of the agent parts of its
-/// own plugin it names in its `logins`, as `agents` tell; and in the
-/// folders in OTTY's data folder `data_dir` of the own logins of
-/// `own_logins` it made (spec 2026-11-23-accounts-apart-from-profiles,
-/// Decision 6). A part that failed finds none this time; its failure
-/// counts in its health. It blocks.
+/// `profiles`, the shown profiles: only in those of the agent parts of its own
+/// plugin it names in its `logins`, as `agents` tell; and in the folders in the
+/// folder of the installed plugins `plugins_folder` of the own logins of
+/// `own_logins` it made (spec 2026-11-23-accounts-apart-from-profiles, Decision
+/// 6). A part that failed finds none this time; its failure counts in its
+/// health. It blocks.
 pub fn find_accounts(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     profiles: &[Profile],
     own_logins: &[OwnLogin],
-    data_dir: &Path,
+    plugins_folder: &Path,
 ) -> FoundAccounts {
     let mut found = FoundAccounts::default();
 
     for provider in providers {
         let Ok((accounts, needs)) =
-            provider.accounts(agents, profiles, own_logins, data_dir)
+            provider.accounts(agents, profiles, own_logins, plugins_folder)
         else {
             continue;
         };
@@ -230,7 +230,7 @@ mod tests {
             &[part("one-cloud"), part("other-cloud")],
             &[profile],
             &[],
-            std::path::Path::new("/home/user/.local/share/otty"),
+            std::path::Path::new("/home/user/.local/share/otty/plugins"),
         );
 
         let providers: Vec<&str> = found
@@ -267,7 +267,7 @@ mod tests {
             ],
             &[profile],
             &[],
-            std::path::Path::new("/home/user/.local/share/otty"),
+            std::path::Path::new("/home/user/.local/share/otty/plugins"),
         );
 
         assert_eq!(found.accounts(), [chatgpt_login("made-up")]);

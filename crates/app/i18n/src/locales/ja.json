@@ -941,6 +941,8 @@
     "agents_log_in_again": "もう一度ログイン",
     "agents_remove_account_title": "このアカウントを削除しますか？",
     "tpl_agents_remove_account_text": "OTTY は専用の非公開フォルダー {path} を削除します。お使いのエージェントとそれぞれのログインはそのまま残ります。",
+    "agents_error_folder_is_own_login": "これは OTTY の非公開のログインフォルダーなので、プロファイルにはできません。",
+    "tpl_plugins_remove_own_logins": "このプラグインの OTTY 独自のログインも削除されます: {count}",
     "agents_no_log_in": "プラグインがログインコマンドを返しません",
     "tpl_agents_own_folder_not_made": "フォルダー {path} を作成できませんでした: {error}",
     "tpl_agents_own_folder_not_removed": "フォルダー {path} を削除できませんでした: {error}",

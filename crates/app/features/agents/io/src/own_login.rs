@@ -1,13 +1,13 @@
 //! OTTY's own login on disk (spec 2026-11-23-accounts-apart-from-profiles,
 //! Decision 6): a new own login with a fresh id and the login command its
 //! provider part gives for its folder, the empty folder
-//! `<data dir>/accounts/<id>/` made on Continue, the question to the part
-//! whether the folder holds an account once the login tab closed, and the
-//! removal of that folder when it holds none or the user removed its
-//! account. Log in again asks the part for the login command of a folder
-//! already made. They touch files or call a plugin part, so each runs on
-//! a thread of its own. Only the folder of an own login is ever removed,
-//! never a profile folder.
+//! `<plugins folder>/<plugin>/accounts/<id>/` made on Continue (issue 13),
+//! the question to the part whether the folder holds an account once the
+//! login tab closed, and the removal of that folder when it holds none or
+//! the user removed its account. Log in again asks the part for the login
+//! command of a folder already made. They touch files or call a plugin
+//! part, so each runs on a thread of its own. Only the folder of an own
+//! login is ever removed, never a profile folder.
 
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -26,8 +26,9 @@ use crate::plugin_parts::ProviderList;
 /// Make a new own login of the provider part `provider` of the plugin
 /// `plugin`, logged in with its agent part `agent`, with a fresh id, and
 /// ask the part in the background for the agent's login command pointed
-/// at its folder in OTTY's data folder `data_dir`. Nothing is made on
-/// disk. The answer comes back as [`AgentsIntent::OwnLoginPrepared`].
+/// at its folder in the folder of the installed plugins `plugins_folder`.
+/// Nothing is made on disk. The answer comes back as
+/// [`AgentsIntent::OwnLoginPrepared`].
 ///
 /// # Example
 ///
@@ -40,7 +41,7 @@ use crate::plugin_parts::ProviderList;
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let asked = otty_app_agents_io::prepare_own_login(
 ///     &providers,
-///     Path::new("/home/user/.local/share/otty"),
+///     Path::new("/home/user/.local/share/otty/plugins"),
 ///     String::from("example"),
 ///     ProviderId::new("example-cloud"),
 ///     AgentId::new("coder"),
@@ -50,7 +51,7 @@ use crate::plugin_parts::ProviderList;
 /// ```
 pub fn prepare_own_login(
     providers: &ProviderList,
-    data_dir: &Path,
+    plugins_folder: &Path,
     plugin: String,
     provider: ProviderId,
     agent: AgentId,
@@ -59,7 +60,7 @@ pub fn prepare_own_login(
 
     ask_login_command(
         providers,
-        data_dir,
+        plugins_folder,
         login,
         AgentsIntent::OwnLoginPrepared,
     )
@@ -67,7 +68,7 @@ pub fn prepare_own_login(
 
 /// Ask the provider part of `providers` that made `login`, in the
 /// background, for the agent's login command pointed at its folder in
-/// `data_dir`, for Log in again (issue 09 of spec
+/// `plugins_folder`, for Log in again (issue 09 of spec
 /// 2026-11-23-accounts-apart-from-profiles). The answer comes back as
 /// [`AgentsIntent::LogInAgainPrepared`].
 ///
@@ -88,7 +89,7 @@ pub fn prepare_own_login(
 /// );
 /// let asked = otty_app_agents_io::log_in_again(
 ///     &providers,
-///     Path::new("/home/user/.local/share/otty"),
+///     Path::new("/home/user/.local/share/otty/plugins"),
 ///     login,
 /// );
 ///
@@ -96,31 +97,31 @@ pub fn prepare_own_login(
 /// ```
 pub fn log_in_again(
     providers: &ProviderList,
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: OwnLogin,
 ) -> Task<AgentsIntent> {
     ask_login_command(
         providers,
-        data_dir,
+        plugins_folder,
         login,
         AgentsIntent::LogInAgainPrepared,
     )
 }
 
-/// Make the empty folder of `login` in OTTY's data folder `data_dir` in
-/// the background. The answer comes back as
-/// [`AgentsIntent::OwnLoginFolderMade`] with the error ready to show, in
-/// the user's language.
+/// Make the empty folder of `login` in the folder of the installed plugins
+/// `plugins_folder` in the background. The answer comes back as
+/// [`AgentsIntent::OwnLoginFolderMade`] with the error ready to show, in the
+/// user's language.
 pub fn make_own_login_folder(
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: OwnLogin,
 ) -> Task<AgentsIntent> {
-    let data_dir = data_dir.to_path_buf();
+    let plugins_folder = plugins_folder.to_path_buf();
     let answer = login.clone();
 
     on_own_thread(
         String::from("making the folder of an own login"),
-        move || make_folder(&data_dir, &login),
+        move || make_folder(&plugins_folder, &login),
         || Err(i18n::t(Key::AgentsSaveStopped).to_string()),
         move |made| AgentsIntent::OwnLoginFolderMade {
             login: answer,
@@ -130,21 +131,21 @@ pub fn make_own_login_folder(
 }
 
 /// Ask the provider part of `providers` that made `login`, in the
-/// background, whether its folder in `data_dir` holds an account now. The
-/// answer comes back as [`AgentsIntent::OwnLoginChecked`].
+/// background, whether its folder in `plugins_folder` holds an account
+/// now. The answer comes back as [`AgentsIntent::OwnLoginChecked`].
 pub fn check_own_login(
     providers: &ProviderList,
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: OwnLogin,
 ) -> Task<AgentsIntent> {
     let providers = Arc::clone(providers);
-    let data_dir = data_dir.to_path_buf();
+    let plugins_folder = plugins_folder.to_path_buf();
     let fallback = login.clone();
 
     on_own_thread(
         String::from("asking for the accounts of an own login"),
         move || {
-            let found = has_account(&providers, &data_dir, &login);
+            let found = has_account(&providers, &plugins_folder, &login);
             CheckedOwnLogin { login, found }
         },
         move || CheckedOwnLogin {
@@ -155,18 +156,18 @@ pub fn check_own_login(
     )
 }
 
-/// Remove the folder of `login` in `data_dir` in the background, with
+/// Remove the folder of `login` in `plugins_folder` in the background, with
 /// everything in it, and nothing else. The answer comes back as
 /// [`AgentsIntent::OwnLoginFolderRemoved`] with the error ready to show.
 pub fn remove_own_login_folder(
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: OwnLogin,
 ) -> Task<AgentsIntent> {
-    let data_dir = data_dir.to_path_buf();
+    let plugins_folder = plugins_folder.to_path_buf();
 
     on_own_thread(
         String::from("removing the folder of an own login"),
-        move || remove_folder(&data_dir, &login),
+        move || remove_folder(&plugins_folder, &login),
         || Err(i18n::t(Key::AgentsSaveStopped).to_string()),
         AgentsIntent::OwnLoginFolderRemoved,
     )
@@ -176,19 +177,22 @@ pub fn remove_own_login_folder(
 /// background; `answer` makes the intent of the answer.
 fn ask_login_command(
     providers: &ProviderList,
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: OwnLogin,
     answer: fn(PreparedOwnLogin) -> AgentsIntent,
 ) -> Task<AgentsIntent> {
     let providers = Arc::clone(providers);
-    let data_dir = data_dir.to_path_buf();
+    let plugins_folder = plugins_folder.to_path_buf();
     let fallback = login.clone();
 
     on_own_thread(
         format!("asking {} for its login", login.provider().as_str()),
         move || {
-            let command =
-                otty_agents::log_in_command(&providers, &login, &data_dir);
+            let command = otty_agents::log_in_command(
+                &providers,
+                &login,
+                &plugins_folder,
+            );
             PreparedOwnLogin { login, command }
         },
         move || PreparedOwnLogin {
@@ -212,10 +216,10 @@ fn new_login_id() -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// Make the empty folder of `login` in `data_dir`, and `accounts/` before
-/// it. A folder that is there already is not taken.
-fn make_folder(data_dir: &Path, login: &OwnLogin) -> Result<(), String> {
-    let folder = login.folder_in(data_dir);
+/// Make the empty folder of `login` in `plugins_folder`, and the folders
+/// before it. A folder that is there already is not taken.
+fn make_folder(plugins_folder: &Path, login: &OwnLogin) -> Result<(), String> {
+    let folder = login.folder_in(plugins_folder);
     let not_made = |error: std::io::Error| {
         folder_text(Key::TplAgentsOwnFolderNotMade, &folder, &error)
     };
@@ -227,21 +231,25 @@ fn make_folder(data_dir: &Path, login: &OwnLogin) -> Result<(), String> {
 }
 
 /// Whether the part of `providers` that made `login` finds an account in
-/// its folder in `data_dir`.
+/// its folder in `plugins_folder`.
 fn has_account(
     providers: &[PluginProvider],
-    data_dir: &Path,
+    plugins_folder: &Path,
     login: &OwnLogin,
 ) -> Result<bool, SourceError> {
-    let accounts = otty_agents::own_login_accounts(providers, login, data_dir)?;
+    let accounts =
+        otty_agents::own_login_accounts(providers, login, plugins_folder)?;
 
     Ok(!accounts.is_empty())
 }
 
-/// Remove the folder of `login` in `data_dir` with what it holds. A
+/// Remove the folder of `login` in `plugins_folder` with what it holds. A
 /// folder that is gone already is removed.
-fn remove_folder(data_dir: &Path, login: &OwnLogin) -> Result<(), String> {
-    let folder = login.folder_in(data_dir);
+fn remove_folder(
+    plugins_folder: &Path,
+    login: &OwnLogin,
+) -> Result<(), String> {
+    let folder = login.folder_in(plugins_folder);
 
     match std::fs::remove_dir_all(&folder) {
         Ok(()) => Ok(()),
@@ -283,16 +291,21 @@ mod tests {
         )
     }
 
-    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: Continue
-    /// makes an empty folder `<data dir>/accounts/<id>/`.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6 and issue
+    /// 13: Continue makes an empty folder
+    /// `<plugins folder>/<plugin>/accounts/<id>/`.
     #[test]
-    fn the_folder_of_a_new_own_login_is_made_empty_under_accounts() {
-        let data = TempDir::new("own-login-make");
+    fn the_folder_of_a_new_own_login_is_made_empty_under_its_plugin() {
+        let plugins = TempDir::new("own-login-make");
         let login = claude_login("6f0c1e2a");
 
-        let made = make_folder(data.path(), &login);
+        let made = make_folder(plugins.path(), &login);
 
-        let folder = data.path().join("accounts").join("6f0c1e2a");
+        let folder = plugins
+            .path()
+            .join("anthropic")
+            .join("accounts")
+            .join("6f0c1e2a");
         assert_eq!(made, Ok(()));
         assert!(folder.is_dir());
         assert_eq!(std::fs::read_dir(&folder).expect("a folder").count(), 0);
@@ -302,14 +315,11 @@ mod tests {
     /// login.
     #[test]
     fn a_folder_that_is_there_already_is_not_made_again() {
-        let data = TempDir::new("own-login-there");
+        let plugins = TempDir::new("own-login-there");
         let login = claude_login("6f0c1e2a");
-        write(
-            &data.path().join("accounts").join("6f0c1e2a").join("a.json"),
-            "{}",
-        );
+        write(&login.folder_in(plugins.path()).join("a.json"), "{}");
 
-        let made = make_folder(data.path(), &login);
+        let made = make_folder(plugins.path(), &login);
 
         assert!(made.is_err(), "{made:?}");
     }
@@ -334,12 +344,12 @@ mod tests {
     #[test]
     fn the_part_tells_whether_the_folder_holds_an_account() {
         let home = TempDir::new("own-login-check");
-        let data = home.path().join("data");
+        let plugins = home.path().join("data").join("plugins");
         let providers = providers_with_plugins(home.path());
         let empty = claude_login("a1");
         let logged_in = claude_login("b2");
-        std::fs::create_dir_all(empty.folder_in(&data)).expect("a folder");
-        let folder = logged_in.folder_in(&data);
+        std::fs::create_dir_all(empty.folder_in(&plugins)).expect("a folder");
+        let folder = logged_in.folder_in(&plugins);
         write(
             &folder.join(".claude.json"),
             r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"own@example.com"}}"#,
@@ -349,27 +359,27 @@ mod tests {
             r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000}}"#,
         );
 
-        let nothing = has_account(&providers, &data, &empty);
-        let found = has_account(&providers, &data, &logged_in);
+        let nothing = has_account(&providers, &plugins, &empty);
+        let found = has_account(&providers, &plugins, &logged_in);
 
         assert_eq!(nothing, Ok(false));
         assert_eq!(found, Ok(true));
     }
 
     /// Only the folder of the own login goes: the other own logins and the
-    /// data folder stay.
+    /// folder of the plugin stay.
     #[test]
     fn removing_the_folder_of_an_own_login_removes_it_only() {
-        let data = TempDir::new("own-login-remove");
+        let plugins = TempDir::new("own-login-remove");
         let gone = claude_login("a1");
         let kept = claude_login("b2");
-        write(&gone.folder_in(data.path()).join("x.json"), "{}");
-        write(&kept.folder_in(data.path()).join("y.json"), "{}");
+        write(&gone.folder_in(plugins.path()).join("x.json"), "{}");
+        write(&kept.folder_in(plugins.path()).join("y.json"), "{}");
 
-        let removed = remove_folder(data.path(), &gone);
+        let removed = remove_folder(plugins.path(), &gone);
 
         assert_eq!(removed, Ok(()));
-        assert!(!gone.folder_in(data.path()).exists());
-        assert!(kept.folder_in(data.path()).join("y.json").exists());
+        assert!(!gone.folder_in(plugins.path()).exists());
+        assert!(kept.folder_in(plugins.path()).join("y.json").exists());
     }
 }

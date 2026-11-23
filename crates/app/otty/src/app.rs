@@ -50,10 +50,11 @@ pub(crate) struct App {
     /// Agents mode and the folder its hidden terminals run in. It is found
     /// once at start, next to `config_dir`.
     pub(crate) cache_dir: PathBuf,
-    /// OTTY's data folder (`~/.local/share/otty`): the installed plugins
-    /// and the folders of OTTY's own logins of Agents mode,
-    /// `accounts/<id>/`. It is found once at start.
-    pub(crate) data_dir: PathBuf,
+    /// The folder of the installed plugins in OTTY's data folder
+    /// (`~/.local/share/otty/plugins`). It holds the folders of OTTY's own
+    /// logins of Agents mode too, `<plugin>/accounts/<id>/`, so they go
+    /// with their plugin. It is found once at start.
+    pub(crate) plugins_folder: PathBuf,
     /// The system shell, read from `SHELL` at start: the default shell of
     /// the settings, used when the saved shell is missing or empty.
     pub(crate) default_shell: String,
@@ -214,6 +215,8 @@ impl App {
     ) -> Self {
         let mut theme_manager = ThemeManager::new();
         theme_manager.set_theme(saved.theme());
+        let plugins_folder =
+            otty_app_plugins_io::places(&config_dir, &data_dir).plugins_folder;
         // The startup work writes the shell integration files and replaces
         // this session before the first tab can open.
         let shell_session =
@@ -234,7 +237,7 @@ impl App {
             home,
             config_dir,
             cache_dir,
-            data_dir,
+            plugins_folder: plugins_folder.clone(),
             screen_size,
             title_bar: TitleBar::new(),
             sidebar: SidebarWidget::new(),
@@ -249,7 +252,8 @@ impl App {
             default_shell,
             containers,
             plugins: Plugins::new(Vec::new(), agent_env.home().to_path_buf()),
-            agents: Agents::new(agents, registry, agent_env),
+            agents: Agents::new(agents, registry, agent_env)
+                .with_plugins_folder(plugins_folder),
             plugin_providers: Arc::from(Vec::new()),
             language_receivers: Arc::from(Vec::new()),
             plugin_io,
@@ -462,7 +466,7 @@ mod tests {
         assert_ne!(app.config_dir, config_dir(&files_home));
         assert!(app.cache_dir.starts_with(std::env::temp_dir()));
         assert_ne!(app.cache_dir, cache_dir(&files_home));
-        assert!(app.data_dir.starts_with(std::env::temp_dir()));
+        assert!(app.plugins_folder.starts_with(std::env::temp_dir()));
     }
 
     #[test]

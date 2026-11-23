@@ -52,41 +52,42 @@ impl Delivery for AgentsIntent {
                 &app.plugin_providers,
                 app.agents.env(),
                 &app.config_dir,
-                &app.data_dir,
+                &app.plugins_folder,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
-            // OTTY's own logins live in its data folder, `accounts/<id>/`
-            // (spec 2026-11-23-accounts-apart-from-profiles, Decision 6).
+            // OTTY's own logins live in the folder of their plugin,
+            // `<plugin>/accounts/<id>/` (spec
+            // 2026-11-23-accounts-apart-from-profiles, issue 13).
             AgentsOutcome::PrepareOwnLogin {
                 plugin,
                 provider,
                 agent,
             } => agents_io::prepare_own_login(
                 &app.plugin_providers,
-                &app.data_dir,
+                &app.plugins_folder,
                 plugin,
                 provider,
                 agent,
             )
             .map(AppEvent::Agents),
             AgentsOutcome::MakeOwnLoginFolder(login) => {
-                agents_io::make_own_login_folder(&app.data_dir, login)
+                agents_io::make_own_login_folder(&app.plugins_folder, login)
                     .map(AppEvent::Agents)
             },
             AgentsOutcome::CheckOwnLogin(login) => agents_io::check_own_login(
                 &app.plugin_providers,
-                &app.data_dir,
+                &app.plugins_folder,
                 login,
             )
             .map(AppEvent::Agents),
             AgentsOutcome::RemoveOwnLoginFolder(login) => {
-                agents_io::remove_own_login_folder(&app.data_dir, login)
+                agents_io::remove_own_login_folder(&app.plugins_folder, login)
                     .map(AppEvent::Agents)
             },
             AgentsOutcome::PrepareLogInAgain(login) => agents_io::log_in_again(
                 &app.plugin_providers,
-                &app.data_dir,
+                &app.plugins_folder,
                 login,
             )
             .map(AppEvent::Agents),

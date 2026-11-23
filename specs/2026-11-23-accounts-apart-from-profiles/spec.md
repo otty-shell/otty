@@ -51,8 +51,9 @@ A plugin fills either side or both, and OTTY draws no line between them.
   such as Codex in `~/.codex`. It has sessions, projects and tokens, and is
   listed under Profiles.
 - **Hidden profile**: a config folder that OTTY makes for itself to keep
-  its own login of an agent, under OTTY's data folder, such as
-  `~/.local/share/otty/accounts/<id>/`. Only the provider part of the
+  its own login of an agent, in the folder of the plugin that made it,
+  such as `~/.local/share/otty/plugins/openai/accounts/<id>/` (issue
+  13). Only the provider part of the
   plugin that made it reads it. It never shows as a profile, and its
   projects and sessions never show anywhere.
   Built as: the screen calls it **OTTY's own login**, the code `OwnLogin`,
@@ -173,8 +174,8 @@ Add account lists, for each provider part that offers it, **Log in with
 <agent>** (such as "Log in with Codex", "Log in with Claude Code"). OTTY
 then:
 
-1. Makes an empty folder `<data dir>/accounts/<id>/`, where `<id>` is a
-   new random id.
+1. Makes an empty folder `<plugins folder>/<plugin>/accounts/<id>/`
+   (issue 13), where `<id>` is a new random id.
 2. Runs the agent's official login command in a terminal tab, pointed at
    that folder: `codex login` with `CODEX_HOME=<folder>`, `claude login`
    with `CLAUDE_CONFIG_DIR=<folder>` (the provider part gives the command).
@@ -599,11 +600,12 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
   a name, Hide, and the keys given for `ask-key` needs with a slot. No
   provider reference, no key place, no fingerprint.
 - `own_logins` lists the hidden profiles. The folder is always
-  `<data dir>/accounts/<id>/` and is not stored. The login inside it is
-  written by the agent program, never by OTTY.
-- Removing a plugin keeps its entries, as today. Its hidden profile
-  folders stay until the user removes the account, so reinstalling the
-  plugin brings the account back.
+  `<plugins folder>/<plugin>/accounts/<id>/` (issue 13) and is not
+  stored. The login inside it is written by the agent program, never by
+  OTTY.
+- Removing a plugin removes its hidden profile folders with the plugin's
+  folder, and their entries leave `own_logins` (issue 13). An update of
+  the plugin keeps them.
 
 ## What it supersedes
 

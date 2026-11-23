@@ -110,7 +110,8 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     let Some(dialog) = state.dialog() else {
         return Vec::new();
     };
-    let checks = dialog.checks(home, &state.profiles().all());
+    let checks =
+        dialog.checks(home, &state.profiles().all(), state.plugins_folder());
     let Ok(config_dir) = checks.folder().map(Path::to_path_buf) else {
         return Vec::new();
     };

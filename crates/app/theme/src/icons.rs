@@ -60,8 +60,8 @@ pub const MODE_CONTAINERS: &[u8] =
 /// Also the icon of a session table row whose agent has no entry.
 pub const MODE_AGENTS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-agents.svg");
-/// Plugins mode in the mode switcher and the All modes menu: a puzzle
-/// piece. Also the icon of its card when nothing is selected.
+/// Plugins mode in the mode switcher and the All modes menu: a plug.
+/// Also the icon of its card when nothing is selected.
 pub const MODE_PLUGINS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-plugins.svg");
 /// All accounts in Agents mode: two cards, one behind the other.
@@ -158,6 +158,20 @@ mod tests {
         for mode in [Mode::Terminal, Mode::Containers, Mode::Agents] {
             assert_ne!(mode_icon(Mode::Plugins), mode_icon(mode));
         }
+    }
+
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: the owner
+    /// chose a plug for Plugins mode: two prongs, the body and the cord.
+    #[test]
+    fn the_plugins_mode_icon_is_a_plug() {
+        let svg = std::str::from_utf8(MODE_PLUGINS).expect("an SVG text");
+
+        assert!(svg.contains(r#"<path d="M9 3v4M15 3v4"/>"#), "{svg}");
+        assert!(
+            svg.contains(r#"<path d="M6 7h12v3a6 6 0 0 1-12 0z"/>"#),
+            "{svg}"
+        );
+        assert!(svg.contains(r#"<path d="M12 16v5"/>"#), "{svg}");
     }
 
     #[test]

@@ -28,12 +28,34 @@ fn reduce(
     state: &mut PluginsState,
     intent: PluginsIntent,
 ) -> Vec<PluginsOutcome> {
+    reduce_with_own_logins(state, intent, &[])
+}
+
+/// The reducer as [`reduce`], with OTTY's own logins `own_logins` in
+/// `agents.json`, each as its plugin and how many it made.
+fn reduce_with_own_logins(
+    state: &mut PluginsState,
+    intent: PluginsIntent,
+    own_logins: &[(&str, usize)],
+) -> Vec<PluginsOutcome> {
     let ctx = PluginsCtx {
         cursor: POINTER,
         screen_size: SCREEN,
+        own_logins: own_logins
+            .iter()
+            .map(|(plugin, count)| (plugin.to_string(), *count))
+            .collect(),
     };
 
     super::reduce(state, intent, &ctx)
+}
+
+/// The line of the Remove dialog about OTTY's own logins, if any.
+fn own_logins_line(state: &PluginsState) -> Option<String> {
+    match DialogViewModel::from_state(state) {
+        Some(DialogViewModel::Remove { own_logins, .. }) => own_logins,
+        other => panic!("the Remove dialog: {other:?}"),
+    }
 }
 
 /// Plugins mode with `plugins` installed and the plugin `example`
@@ -728,6 +750,75 @@ fn remove_asks_first_then_removes() {
     assert_eq!(state.dialog(), None);
 }
 
+/// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: the Remove
+/// dialog says how many of OTTY's own logins go with the plugin.
+#[test]
+fn the_remove_dialog_says_how_many_own_logins_go_with_the_plugin() {
+    let mut state = open_state(vec![released_example(), fork()]);
+
+    let _ = reduce_with_own_logins(
+        &mut state,
+        PluginsIntent::AskRemove(String::from("example")),
+        &[("example", 2), ("example-fork", 1)],
+    );
+
+    assert_eq!(
+        own_logins_line(&state),
+        Some(i18n::filled(
+            Key::TplPluginsRemoveOwnLogins,
+            &[("count", "2")]
+        ))
+    );
+    assert_eq!(
+        own_logins_line(&state).as_deref(),
+        Some("OTTY's own logins of this plugin are removed too: 2")
+    );
+}
+
+/// Issue 13: a plugin with no own login has no such line.
+#[test]
+fn the_remove_dialog_names_no_own_logins_when_there_are_none() {
+    let mut state = open_state(vec![released_example(), fork()]);
+
+    let _ = reduce_with_own_logins(
+        &mut state,
+        PluginsIntent::AskRemove(String::from("example")),
+        &[("example-fork", 1)],
+    );
+
+    assert_eq!(own_logins_line(&state), None);
+}
+
+/// Issue 13: once the plugin is removed, the binary is told, so the own
+/// login entries of the plugin leave `agents.json`. A failed removal
+/// tells nothing.
+#[test]
+fn a_removed_plugin_is_told_once_it_is_gone() {
+    let mut state = open_state(vec![released_example()]);
+    let _ = reduce(
+        &mut state,
+        PluginsIntent::AskRemove(String::from("example")),
+    );
+    let _ = reduce(&mut state, PluginsIntent::Remove);
+    let failed = reduce(
+        &mut state,
+        PluginsIntent::Changed(Err(InstallError::NotInstalled(String::from(
+            "example",
+        )))),
+    );
+    let _ = reduce(&mut state, PluginsIntent::Remove);
+
+    let removed = reduce(&mut state, PluginsIntent::Changed(Ok(Vec::new())));
+
+    let told = |outcomes: &[PluginsOutcome]| {
+        outcomes.iter().any(|outcome| {
+            *outcome == PluginsOutcome::Removed(String::from("example"))
+        })
+    };
+    assert!(!told(&failed), "{failed:?}");
+    assert!(told(&removed), "{removed:?}");
+}
+
 #[test]
 fn open_repository_opens_the_repository_it_came_from() {
     let mut state = open_state(vec![official_example()]);
@@ -885,7 +976,10 @@ fn remove_of_the_menu_asks_first() {
     assert!(outcomes.is_empty());
     assert_eq!(
         state.dialog(),
-        Some(&Dialog::Remove(String::from("example-fork")))
+        Some(&Dialog::Remove {
+            plugin: String::from("example-fork"),
+            own_logins: 0,
+        })
     );
     assert!(state.menu().is_none());
 }

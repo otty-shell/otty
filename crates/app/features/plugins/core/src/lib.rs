@@ -36,13 +36,13 @@
 //! let mut plugins = Plugins::new(Vec::new(), PathBuf::from("/home/user"));
 //! let ctx = PluginsCtx::default();
 //!
-//! let opened =
-//!     plugins.reduce(PluginsIntent::Open(PluginsPlace::AddPlugin), ctx);
+//! let opened = plugins
+//!     .reduce(PluginsIntent::Open(PluginsPlace::AddPlugin), ctx.clone());
 //! let _ = plugins.reduce(
 //!     PluginsIntent::UrlChanged(String::from(
 //!         "https://github.com/otty-shell/otty-plugin-example",
 //!     )),
-//!     ctx,
+//!     ctx.clone(),
 //! );
 //! let find = plugins.reduce(PluginsIntent::Find, ctx);
 //!

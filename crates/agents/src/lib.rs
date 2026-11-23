@@ -189,7 +189,9 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::MoneyTotal;
-pub use crate::own_login::{OwnLogin, log_in_command, own_login_accounts};
+pub use crate::own_login::{
+    OwnLogin, is_own_login_folder, log_in_command, own_login_accounts,
+};
 pub use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;

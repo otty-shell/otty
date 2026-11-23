@@ -2012,12 +2012,18 @@ pub enum Key {
     /// Line of the dialog that asks before OTTY's own login of an account is
     /// removed: `{path}` is its private folder, the only one deleted.
     TplAgentsRemoveAccountText,
+    /// Check of the config folder of a profile: it is inside OTTY's own
+    /// login folders of a plugin, which Remove deletes.
+    AgentsErrorFolderIsOwnLogin,
+    /// Line of the dialog before Remove of a plugin with OTTY's own logins:
+    /// `{count}` is how many go with it.
+    TplPluginsRemoveOwnLogins,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 941] = [
+    pub(super) const ALL: [Self; 943] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2959,5 +2965,7 @@ impl Key {
         Self::AgentsLogInAgain,
         Self::AgentsRemoveAccountTitle,
         Self::TplAgentsRemoveAccountText,
+        Self::AgentsErrorFolderIsOwnLogin,
+        Self::TplPluginsRemoveOwnLogins,
     ];
 }

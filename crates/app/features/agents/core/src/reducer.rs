@@ -342,6 +342,9 @@ pub(super) fn reduce(
         AgentsIntent::LogInAgainPrepared(answer) => {
             own_login_actions::log_in_again_prepared(state, answer)
         },
+        AgentsIntent::PluginRemoved(plugin) => {
+            own_login_actions::forget_plugin(state, &plugin)
+        },
         AgentsIntent::ToggleAccountsSection => {
             state.toggle_accounts_section();
             Vec::new()

@@ -52,6 +52,11 @@ pub(crate) fn first_start_profiles_loaded(
     loaded(profiles, otty_agents::SavedProfiles::default())
 }
 
+/// The news that no profile was read, with `saved` in `agents.json`.
+pub(crate) fn saved_loaded(saved: otty_agents::SavedProfiles) -> AgentsIntent {
+    loaded(Vec::new(), saved)
+}
+
 /// The news that `profile` has one session, `id`, titled
 /// [`SESSION_TITLE`] in [`PROJECT`].
 pub(crate) fn one_session_loaded(profile: Profile, id: &str) -> AgentsIntent {

@@ -142,6 +142,9 @@ pub enum PluginsOutcome {
     },
     /// Remove a plugin; answer [`PluginsIntent::Changed`].
     Remove(String),
+    /// The plugin with this id was removed, its own login folders with it:
+    /// Agents mode forgets those own logins.
+    Removed(String),
     /// Check the releases of a plugin; answer [`PluginsIntent::Checked`].
     CheckUpdate(String),
     /// Run the daily update check when a day has passed since the last

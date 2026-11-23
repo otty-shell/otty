@@ -318,7 +318,8 @@ so OTTY can tell a changed format from fewer tokens.
 ### OTTY's own login
 
 A `logins` entry with `log_in = true` offers Add account → "Log in with *agent*". OTTY makes an
-empty folder of its own, `<data dir>/accounts/<id>/`, asks your `log_in(provider, folder)` for the
+empty folder of its own in your plugin's folder, `<plugins folder>/<plugin>/accounts/<id>/`, asks
+your `log_in(provider, folder)` for the
 agent's official login command pointed at it, such as `codex login` with `CODEX_HOME=<folder>`, and
 runs it in a terminal tab the user sees. When the tab closes, OTTY calls `accounts` with that folder
 alone, as `LoginFolder::OwnLogin`, read with the rules of that entry. With no account there, OTTY

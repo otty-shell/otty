@@ -133,7 +133,8 @@ pub(crate) fn reduce(
             .into_iter()
             .collect(),
         PluginsIntent::AskRemove(plugin) => {
-            state.show(Dialog::Remove(plugin));
+            let own_logins = ctx.own_logins.get(&plugin).copied().unwrap_or(0);
+            state.show(Dialog::Remove { plugin, own_logins });
             Vec::new()
         },
         PluginsIntent::Remove => remove(state),
@@ -318,7 +319,7 @@ fn remove(state: &mut PluginsState) -> Vec<PluginsOutcome> {
     if state.is_busy() {
         return Vec::new();
     }
-    let Some(Dialog::Remove(plugin)) = state.dialog() else {
+    let Some(Dialog::Remove { plugin, .. }) = state.dialog() else {
         return Vec::new();
     };
 
@@ -347,6 +348,7 @@ fn changed(
     };
 
     let mut told = None;
+    let mut removed = None;
     let installed = match state.dialog().cloned() {
         Some(Dialog::Update { plugin }) => {
             told = state
@@ -356,8 +358,9 @@ fn changed(
             state.forget_news(&plugin);
             None
         },
-        Some(Dialog::Remove(plugin)) => {
+        Some(Dialog::Remove { plugin, .. }) => {
             state.forget_news(&plugin);
+            removed = Some(PluginsOutcome::Removed(plugin));
             None
         },
         Some(Dialog::Install { plan }) => {
@@ -372,6 +375,7 @@ fn changed(
         state.select(installed);
     }
     outcomes.extend(told);
+    outcomes.extend(removed);
 
     outcomes
 }

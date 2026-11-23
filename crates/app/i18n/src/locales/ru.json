@@ -941,6 +941,8 @@
     "agents_log_in_again": "Войти снова",
     "agents_remove_account_title": "Удалить этот аккаунт?",
     "tpl_agents_remove_account_text": "OTTY удалит свою личную папку {path}. Ваши агенты и их собственные входы останутся как есть.",
+    "agents_error_folder_is_own_login": "Это личная папка входа OTTY, она не может быть профилем.",
+    "tpl_plugins_remove_own_logins": "Собственные входы OTTY этого плагина тоже удаляются: {count}",
     "agents_no_log_in": "плагин не даёт команду входа",
     "tpl_agents_own_folder_not_made": "Не удалось создать папку {path}: {error}",
     "tpl_agents_own_folder_not_removed": "Не удалось удалить папку {path}: {error}",

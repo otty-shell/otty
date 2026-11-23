@@ -36,6 +36,7 @@ pub(crate) struct AgentsState {
     plugin_notes: PluginNotes,
     stats_agents: Vec<AgentId>,
     env: AgentEnv,
+    plugins_folder: Option<PathBuf>,
     is_active: bool,
     told: ToldProblems,
     profiles: Profiles,
@@ -91,6 +92,13 @@ impl AgentsState {
     /// for the folder proposed to a new profile.
     pub(crate) fn env(&self) -> &AgentEnv {
         &self.env
+    }
+
+    /// The folder of the installed plugins, which holds OTTY's own login
+    /// folders: a profile folder inside one is refused. `None` when the
+    /// binary gave none, and then no folder is refused for it.
+    pub(crate) fn plugins_folder(&self) -> Option<&Path> {
+        self.plugins_folder.as_deref()
     }
 
     /// The profiles and what was read of them.
@@ -256,6 +264,7 @@ impl AgentsState {
             plugin_notes: PluginNotes::default(),
             stats_agents,
             env,
+            plugins_folder: None,
             is_active: false,
             told: ToldProblems::default(),
             profiles,
@@ -288,6 +297,16 @@ impl AgentsState {
             local_folder: None,
             menu: None,
         }
+    }
+
+    /// The same state, with the folder of the installed plugins
+    /// `plugins_folder`, which holds OTTY's own login folders.
+    pub(crate) fn with_plugins_folder(
+        mut self,
+        plugins_folder: PathBuf,
+    ) -> Self {
+        self.plugins_folder = Some(plugins_folder);
+        self
     }
 
     /// Read with `readers` from now on, as when the installed plugins

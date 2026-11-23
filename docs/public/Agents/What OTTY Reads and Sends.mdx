@@ -140,7 +140,7 @@ environment variables the part lists are passed to them.
 | `~/.config/otty/agents.json`                | Your names, hidden items, the profiles you added, OTTY's own logins (an id and the plugin, provider part and agent of each, never the login), the keys you gave for a need (path or variable name), whether the keyring may be read. |
 | `~/.config/otty/plugins.json`               | The installed plugins, their sources, file hashes, granted permissions, parts on or off, your choices. |
 | `~/.local/share/otty/plugins/`              | The files of the installed plugins.                                       |
-| `~/.local/share/otty/accounts/<id>/`        | OTTY's own logins, one folder each. OTTY makes it empty, the agent's login command writes the login, and OTTY deletes it on **Remove** or when the login did not finish. |
+| `~/.local/share/otty/plugins/<plugin>/accounts/<id>/` | OTTY's own logins, one folder each, in the folder of the plugin that made it. OTTY makes it empty, the agent's login command writes the login, and OTTY deletes it on **Remove**, when the login did not finish, or with its plugin. |
 | `~/.cache/otty/plugins/`                    | The compiled plugins.                                                     |
 | `~/.cache/otty/prices/litellm.json`         | The last good copy of the LiteLLM prices.                                 |
 | `~/.cache/otty/agent-probe/`                | The working folder of hidden terminals.                                   |

@@ -24,7 +24,8 @@ use crate::app::{App, hidden_entries, installed_parts, read_variable};
 use crate::message::AppEvent;
 
 /// Plugins mode gets the pointer and the size of the main area for the
-/// menu of a plugin, and reads what it reports.
+/// menu of a plugin, and how many of OTTY's own logins each plugin made,
+/// which its Remove dialog names, and reads what it reports.
 impl Delivery for PluginsIntent {
     type Component = Plugins;
 
@@ -32,6 +33,7 @@ impl Delivery for PluginsIntent {
         let ctx = PluginsCtx {
             cursor: app.sidebar.cursor(),
             screen_size: app.screen_size,
+            own_logins: app.agents.own_logins_by_plugin(),
         };
 
         (&mut app.plugins, ctx)
@@ -57,6 +59,12 @@ impl Delivery for PluginsIntent {
             },
             PluginsOutcome::Remove(plugin) => {
                 plugins_io::remove(installer, plugin).map(AppEvent::Plugins)
+            },
+            // The plugin's folder held its own logins: Agents mode forgets
+            // them in `agents.json` (issue 13 of spec
+            // 2026-11-23-accounts-apart-from-profiles).
+            PluginsOutcome::Removed(plugin) => {
+                deliver(app, AgentsIntent::PluginRemoved(plugin))
             },
             PluginsOutcome::CheckUpdate(plugin) => {
                 plugins_io::check_update(installer, plugin)
@@ -203,6 +211,52 @@ mod tests {
                 .is_ok()
         );
         assert_eq!(app.notifications.unseen_count(), 2);
+    }
+
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: Plugins
+    /// mode is told how many own logins each plugin made, and once a
+    /// plugin is removed its own logins leave Agents mode and
+    /// `agents.json`.
+    #[test]
+    fn a_removed_plugin_takes_its_own_logins_out_of_agents_mode() {
+        use std::collections::BTreeMap;
+
+        use otty_agents::{AgentId, OwnLogin, ProviderId, SavedProfiles};
+
+        use crate::testing::agents::saved_loaded;
+
+        let login = |id: &str, plugin: &str| {
+            OwnLogin::new(
+                id,
+                plugin,
+                ProviderId::new(plugin),
+                AgentId::new("coder"),
+            )
+        };
+        let saved = SavedProfiles::default()
+            .with_found_report_shown()
+            .with_own_login(login("a1", "openai"))
+            .with_own_login(login("b2", "anthropic"));
+        let mut app = app();
+        let _ = deliver(&mut app, saved_loaded(saved));
+        let (_, asked) = PluginsIntent::parts(&mut app);
+
+        let _ = PluginsIntent::read(
+            &mut app,
+            PluginsOutcome::Removed(String::from("openai")),
+        );
+
+        assert_eq!(
+            asked.own_logins,
+            BTreeMap::from([
+                (String::from("anthropic"), 1),
+                (String::from("openai"), 1),
+            ])
+        );
+        assert_eq!(
+            app.agents.own_logins_by_plugin(),
+            BTreeMap::from([(String::from("anthropic"), 1)])
+        );
     }
 
     /// A dialog of Plugins mode is not on screen in another mode, so it

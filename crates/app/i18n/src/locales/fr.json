@@ -941,6 +941,8 @@
     "agents_log_in_again": "Se reconnecter",
     "agents_remove_account_title": "Supprimer ce compte ?",
     "tpl_agents_remove_account_text": "OTTY supprime son dossier privé {path}. Vos agents et leurs propres connexions restent tels quels.",
+    "agents_error_folder_is_own_login": "Ceci est un dossier de connexion privé d'OTTY, il ne peut pas être un profil.",
+    "tpl_plugins_remove_own_logins": "Les connexions propres à OTTY de ce plugin sont aussi supprimées : {count}",
     "agents_no_log_in": "le plugin ne donne aucune commande de connexion",
     "tpl_agents_own_folder_not_made": "Impossible de créer le dossier {path} : {error}",
     "tpl_agents_own_folder_not_removed": "Impossible de supprimer le dossier {path} : {error}",

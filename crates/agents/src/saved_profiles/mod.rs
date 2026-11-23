@@ -316,6 +316,14 @@ impl SavedProfiles {
         self
     }
 
+    /// The same content without the own logins of the plugin `plugin`,
+    /// as after the plugin was removed with their folders (issue 13 of
+    /// spec 2026-11-23-accounts-apart-from-profiles).
+    pub fn without_own_logins_of(mut self, plugin: &str) -> Self {
+        self.own_logins.retain(|login| login.plugin() != plugin);
+        self
+    }
+
     /// The same content with one more profile the user added.
     pub fn with_added(mut self, profile: Profile) -> Self {
         self.added.push(profile);

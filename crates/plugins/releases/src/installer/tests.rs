@@ -17,6 +17,8 @@ use crate::testing::{
 
 const REPO: &str = "someone/otty-plugin-example";
 const FORK: &str = "other/otty-plugin-example-fork";
+/// What an own login folder holds in the tests.
+const OWN_LOGIN_TEXT: &str = r#"{"tokens":"made-up"}"#;
 
 fn url(repo: &str) -> String {
     format!("https://github.com/{repo}")
@@ -72,6 +74,22 @@ fn version_of(installer: &Installer, plugin: &str) -> String {
         .expect("installed")
         .version()
         .to_string()
+}
+
+/// A file of OTTY's own login `6f0c1e2a` of the plugin `plugin` installed
+/// under `folder`.
+fn own_login_file(folder: &Path, plugin: &str) -> PathBuf {
+    folder
+        .join("data/plugins")
+        .join(plugin)
+        .join("accounts/6f0c1e2a/auth.json")
+}
+
+fn write_own_login(file: &Path) {
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).expect("the own login folder");
+    }
+    std::fs::write(file, OWN_LOGIN_TEXT).expect("the own login");
 }
 
 #[test]
@@ -268,6 +286,84 @@ fn remove_deletes_the_folder_and_the_compiled_copy() {
     assert!(installer.plugins().is_empty());
     assert!(!folder.path().join("data/plugins/example").exists());
     assert!(test_installer(folder.path(), &github).plugins().is_empty());
+}
+
+/// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: OTTY's own
+/// logins of a plugin live in `<plugin>/accounts/`, so removing the plugin
+/// removes them with it.
+#[test]
+fn remove_deletes_the_own_logins_of_the_plugin_too() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    let own_login = own_login_file(folder.path(), "example");
+    write_own_login(&own_login);
+
+    installer.remove("example").expect("removed");
+
+    assert!(!own_login.exists());
+    assert!(!folder.path().join("data/plugins/example/accounts").exists());
+}
+
+/// Issue 13: an update replaces only `<plugin>/<version>/`, so the own
+/// logins in `<plugin>/accounts/` stay as they are, and `accounts` is
+/// never taken for the old version folder.
+#[test]
+fn an_update_keeps_the_own_logins_of_the_plugin() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    let own_login = own_login_file(folder.path(), "example");
+    write_own_login(&own_login);
+    github.publish(
+        REPO,
+        vec![
+            FakeRelease::example("v0.1.0", "0.1.0"),
+            FakeRelease::example("v0.2.0", "0.2.0")
+                .with_file("example.wasm", b"rebuilt"),
+        ],
+    );
+
+    let report = installer.check_update("example");
+
+    assert!(
+        matches!(report.outcome(), Ok(UpdateOutcome::Updated { .. })),
+        "{report:?}"
+    );
+    assert!(!folder.path().join("data/plugins/example/0.1.0").exists());
+    assert_eq!(
+        std::fs::read_to_string(&own_login).expect("the own login stays"),
+        OWN_LOGIN_TEXT
+    );
+}
+
+/// Issue 13: Reload of a local plugin replaces its version folder and
+/// keeps its own logins.
+#[test]
+fn a_reload_keeps_the_own_logins_of_the_plugin() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    let local = TempDir::new();
+    write_folder(local.path(), &example_files("0.1.0"));
+    let mut installer = test_installer(folder.path(), &github);
+    let plan = installer.find_local(local.path()).expect("a plan");
+    installer.install(&plan).expect("installed");
+    let own_login = own_login_file(folder.path(), "example");
+    write_own_login(&own_login);
+    std::fs::write(local.path().join("example.wasm"), b"rebuilt")
+        .expect("rebuild");
+
+    let reload = installer.reload_local("example");
+
+    assert!(matches!(reload, Ok(UpdateOutcome::Updated { .. })));
+    assert_eq!(
+        std::fs::read_to_string(&own_login).expect("the own login stays"),
+        OWN_LOGIN_TEXT
+    );
 }
 
 /// A part the user turned off stays off when another plugin is removed.

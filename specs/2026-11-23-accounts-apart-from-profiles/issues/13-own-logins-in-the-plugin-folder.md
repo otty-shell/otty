@@ -1,6 +1,6 @@
 # 13 OTTY's own logins live in their plugin's folder; the Plugins icon is a plug
 
-Status: ready
+Status: done
 Blocked by: 12
 
 ## Why
@@ -64,3 +64,67 @@ folder already has files: the current error stays.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-24, done. OTTY's own login folder is now
+  `<plugins folder>/<plugin>/accounts/<id>/`, such as
+  `~/.local/share/otty/plugins/openai/accounts/<id>/`.
+
+  Folder: `OwnLogin::folder_in(plugins_folder)` builds it from the plugin
+  and the id. The plugins folder is the one of the installer
+  (`otty_app_plugins_io::places(..).plugins_folder`), which the app now
+  keeps as `App::plugins_folder` in place of the data folder and gives to
+  every read and write of own logins. `agents.json` still keeps `id`,
+  `plugin`, `provider` and `agent`, and now an entry whose plugin is no
+  plain name is not read either, as for the id, so the folder can never
+  point elsewhere. The old place is not read.
+
+  Updates and removal: the installer only ever replaces
+  `<plugin>/<version>/` and `<plugin>/.staging/`, and removes the whole
+  `<plugin>/` on Remove, so it needed no change. Plugins mode tells the
+  app `PluginsOutcome::Removed(plugin)` once a removal worked, and the
+  app tells Agents mode `AgentsIntent::PluginRemoved(plugin)`, which drops
+  the `own_logins` entries of that plugin and saves (nothing when it had
+  none). The count of the Remove dialog comes from `agents.json`: the app
+  gives Plugins mode `PluginsCtx::own_logins` (own logins by plugin, from
+  `Agents::own_logins_by_plugin`), the dialog keeps the count when it
+  opens, and shows "OTTY's own logins of this plugin are removed too: 2"
+  only when there are any. Counting entries and not folders keeps the
+  count right without a disk read, since entries and folders are made and
+  removed together.
+
+  Profiles: `otty_agents::is_own_login_folder(folder, plugins_folder)` is
+  true for `<plugins folder>/<plugin>/accounts` and anything below it.
+  The profile dialog refuses such a folder, added or edited, with "This
+  is a private login folder of OTTY, it can not be a profile."
+  (`FolderProblem::OwnLogin`), as it refuses a folder another profile
+  uses. Agents mode gets the plugins folder with
+  `Agents::with_plugins_folder`.
+
+  Icon: `assets/svg/mode-plugins.svg` is the plug of variant B. It is
+  used only through `icons::MODE_PLUGINS` (mode switcher, All modes menu,
+  the Plugins hint card), and no copy of the old icon is left in this
+  repository.
+
+  Two texts in all ten locales (`agents_error_folder_is_own_login`,
+  `tpl_plugins_remove_own_logins`). Docs: Overview (Add account, the
+  folder, refused as a profile, removed with its plugin), Plugins
+  (Remove, the table, where plugins are kept), What OTTY Reads and Sends
+  (the folder in "What OTTY writes"), Write a Plugin (the folder), and the
+  spec's mentions of the folder. No official plugin changed: they get the
+  folder from the call.
+
+  Tests first, each seen failing: the folder of an own login under its
+  plugin and the own login folder check (`otty-agents`, failing to
+  build), and the plug icon. Written before the code and failing to build
+  until it was there: a plugin that is no plain name is not read,
+  forgetting the own logins of a plugin, the Remove dialog with and
+  without own logins and `Removed` told only after a removal that worked
+  (Plugins mode), a removed plugin's entries leave `agents.json` and one
+  with none saves nothing, a profile inside an own login folder refused
+  in Add and Edit (Agents mode), and the io tests of the new folder (made,
+  made once, checked with the real Anthropic plugin, removed alone, found
+  by a read). These passed at once, since the installer already worked
+  so: an update and a reload keep `<plugin>/accounts/`, and Remove
+  removes it. Written with the code: the count by plugin of `Agents`, and
+  the app test that the count reaches Plugins mode and that a removed
+  plugin's own logins leave Agents mode.

@@ -52,7 +52,11 @@ impl<'a> ProfileDialogViewModel<'a> {
     pub(crate) fn from_state(state: &'a AgentsState) -> Option<Self> {
         let dialog = state.dialog()?;
         let home = state.env().home();
-        let checks = dialog.checks(home, &state.profiles().all());
+        let checks = dialog.checks(
+            home,
+            &state.profiles().all(),
+            state.plugins_folder(),
+        );
         let is_adding = dialog.editing().is_none();
 
         let agent_options: Vec<AgentOption> = state
@@ -90,6 +94,9 @@ impl<'a> ProfileDialogViewModel<'a> {
             },
             Err(FolderProblem::Taken) => {
                 Some(i18n::t(Key::AgentsErrorFolderTaken))
+            },
+            Err(FolderProblem::OwnLogin) => {
+                Some(i18n::t(Key::AgentsErrorFolderIsOwnLogin))
             },
             _ => None,
         };
@@ -163,6 +170,8 @@ impl fmt::Display for FolderChoiceOption {
 #[cfg(test)]
 mod tests {
 
+    use std::path::PathBuf;
+
     use otty_agents::SavedProfiles;
 
     use super::*;
@@ -171,8 +180,8 @@ mod tests {
     use crate::profile_dialog::ProfileDialogIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, claude_id, codex, connected, folder_looked_up, folder_query,
-        with_saved_profiles,
+        PLUGINS_FOLDER, claude, claude_id, codex, connected, folder_looked_up,
+        folder_query, with_saved_profiles,
     };
     use crate::types::FolderAsker;
 
@@ -180,7 +189,8 @@ mod tests {
         let mut state = with_saved_profiles(
             &[(claude(), connected()), (codex(), connected())],
             SavedProfiles::default(),
-        );
+        )
+        .with_plugins_folder(PathBuf::from(PLUGINS_FOLDER));
         let _ = reduce(&mut state, AgentsIntent::OpenAddProfile);
         state
     }
@@ -250,6 +260,58 @@ mod tests {
         assert_eq!(vm.path_error, Some(i18n::t(Key::AgentsErrorFolderTaken)));
         assert_eq!(vm.path_hint, Some(i18n::t(Key::AgentsTypedFolderHint)));
         assert!(!vm.can_submit);
+    }
+
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: Remove of
+    /// an own login deletes its folder, so a folder inside
+    /// `<plugins folder>/*/accounts/` can not be a profile, added or
+    /// edited.
+    #[test]
+    fn a_folder_inside_an_own_login_folder_can_not_be_a_profile() {
+        let own = "~/.local/share/otty/plugins/openai/accounts/6f0c1e2a";
+        let mut adding = open_add();
+        send(
+            &mut adding,
+            ProfileDialogIntent::NameChanged(String::from("Codex · Own")),
+        );
+        send(
+            &mut adding,
+            ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
+        );
+        send(
+            &mut adding,
+            ProfileDialogIntent::Folder(FolderFieldIntent::Changed(
+                own.to_string(),
+            )),
+        );
+        let mut editing = open_add();
+        send(&mut editing, ProfileDialogIntent::Cancelled);
+        let _ = reduce(&mut editing, AgentsIntent::EditProfile(codex()));
+        send(
+            &mut editing,
+            ProfileDialogIntent::Folder(FolderFieldIntent::Changed(format!(
+                "{own}/.codex"
+            ))),
+        );
+
+        let pressed = reduce(
+            &mut adding,
+            AgentsIntent::Dialog(ProfileDialogIntent::Submitted),
+        );
+
+        for state in [&adding, &editing] {
+            let vm = ProfileDialogViewModel::from_state(state).expect("open");
+            assert_eq!(
+                vm.path_error,
+                Some(i18n::t(Key::AgentsErrorFolderIsOwnLogin))
+            );
+            assert!(!vm.can_submit);
+        }
+        assert_eq!(
+            i18n::t(Key::AgentsErrorFolderIsOwnLogin),
+            "This is a private login folder of OTTY, it can not be a profile."
+        );
+        assert!(pressed.is_empty(), "{pressed:?}");
     }
 
     #[test]

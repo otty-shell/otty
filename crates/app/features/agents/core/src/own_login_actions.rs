@@ -6,7 +6,9 @@
 //! are read again once it closes. Remove asks first, then forgets the own
 //! login in `agents.json` and deletes its folder, never a profile folder.
 //! The account's name and Hide stay, and the next read shows the account
-//! again when the plugin still finds it in a profile.
+//! again when the plugin still finds it in a profile. A removed plugin
+//! took its own login folders with it, so their entries leave too (issue
+//! 13).
 
 use otty_agents::{Account, OwnLogin};
 
@@ -81,6 +83,30 @@ pub(crate) fn ask_removal(state: &mut AgentsState, account: Account) {
     }
 
     state.ask_own_login_removal(account);
+}
+
+/// Forget the own logins of the removed plugin `plugin` in `agents.json`:
+/// their folders went with the plugin's folder. Nothing is saved when it
+/// had none, or before `agents.json` is read.
+pub(crate) fn forget_plugin(
+    state: &mut AgentsState,
+    plugin: &str,
+) -> Vec<AgentsOutcome> {
+    let Some(saved) = state.profiles().saved() else {
+        return Vec::new();
+    };
+    let had_own_logins = saved
+        .own_logins()
+        .iter()
+        .any(|login| login.plugin() == plugin);
+    if !had_own_logins {
+        return Vec::new();
+    }
+
+    let changed = saved.clone().without_own_logins_of(plugin);
+    state.profiles_mut().apply_saved(changed.clone());
+
+    vec![save(changed)]
 }
 
 /// Remove the own logins of the account the user confirmed: their entries
@@ -252,7 +278,10 @@ mod tests {
                 title: i18n::t(Key::AgentsRemoveAccountTitle).to_string(),
                 text: i18n::filled(
                     Key::TplAgentsRemoveAccountText,
-                    &[("path", "~/.local/share/otty/accounts/6f0c1e2a")]
+                    &[(
+                        "path",
+                        "~/.local/share/otty/plugins/openai/accounts/6f0c1e2a"
+                    )]
                 ),
                 confirm_label: i18n::t(Key::ButtonRemove),
             })
@@ -407,5 +436,45 @@ mod tests {
             }),
             "{outcomes:?}"
         );
+    }
+
+    /// Issue 13: removing a plugin removed its folder with its own logins
+    /// in it, so their entries leave `agents.json`; the own logins of
+    /// other plugins and the rest of the file stay, and no folder is
+    /// removed here.
+    #[test]
+    fn a_removed_plugin_takes_its_own_login_entries_with_it() {
+        let claude = otty_agents::OwnLogin::new(
+            "b2",
+            "anthropic",
+            otty_agents::ProviderId::new("anthropic"),
+            otty_agents::AgentId::new("claude-code"),
+        );
+        let kept = SavedProfiles::default()
+            .with_added(codex_work())
+            .with_own_login(claude);
+        let mut state =
+            with_own_login_in(vec![chatgpt_own_login()], kept.clone());
+
+        let outcomes = reduce(
+            &mut state,
+            AgentsIntent::PluginRemoved(String::from("openai")),
+        );
+
+        assert_eq!(outcomes, [save(kept.clone())]);
+        assert_eq!(state.profiles().saved(), Some(&kept));
+    }
+
+    /// Issue 13: a removed plugin with no own login changes nothing.
+    #[test]
+    fn a_removed_plugin_with_no_own_login_saves_nothing() {
+        let mut state = with_own_login(vec![chatgpt_own_login()]);
+
+        let outcomes = reduce(
+            &mut state,
+            AgentsIntent::PluginRemoved(String::from("anthropic")),
+        );
+
+        assert!(outcomes.is_empty(), "{outcomes:?}");
     }
 }

@@ -186,8 +186,9 @@ impl PluginProvider {
 
     /// The accounts the part finds in the folders of `profiles` it reads:
     /// the profiles of the agent parts its manifest names in `logins`, of
-    /// its own plugin, as `agents` tell; and in the folders in `data_dir`
-    /// of the own logins of `own_logins` it made (spec Decision 6). With
+    /// its own plugin, as `agents` tell; and in the folders in
+    /// `plugins_folder` of the own logins of `own_logins` it made (spec
+    /// Decision 6). With
     /// them come its needs that belong to no account. A part with no such
     /// folder is not called and finds none (spec Decision 11).
     pub(crate) fn accounts(
@@ -195,7 +196,7 @@ impl PluginProvider {
         agents: &[Box<dyn Agent>],
         profiles: &[Profile],
         own_logins: &[OwnLogin],
-        data_dir: &Path,
+        plugins_folder: &Path,
     ) -> Result<(Vec<Account>, Vec<PartNeed>), SourceError> {
         let profile_folders = profiles
             .iter()
@@ -212,7 +213,7 @@ impl PluginProvider {
             .map(|login| {
                 LoginFolder::OwnLogin((
                     login.id().to_string(),
-                    login.folder_in(data_dir).display().to_string(),
+                    login.folder_in(plugins_folder).display().to_string(),
                 ))
             });
         let folders: Vec<LoginFolder> =
@@ -691,7 +692,7 @@ mod tests {
             .collect()
     }
 
-    const DATA_DIR: &str = "/home/dev/.local/share/otty";
+    const PLUGINS_FOLDER: &str = "/home/dev/.local/share/otty/plugins";
 
     /// An own login of the part `provider` of the plugin `plugin`.
     fn own_login_of(id: &str, plugin: &str, provider: &str) -> OwnLogin {
@@ -705,8 +706,8 @@ mod tests {
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the part
     /// gets the folders of its own logins next to its profile folders,
-    /// each under OTTY's data folder; the own logins of another part or
-    /// plugin are not its.
+    /// each under the folder of its plugin; the own logins of another part
+    /// or plugin are not its.
     #[test]
     fn the_part_gets_its_own_logins_next_to_its_profile_folders() {
         let mut calls = MockProviderPartCalls::new();
@@ -716,7 +717,10 @@ mod tests {
                 folders_of(folders)
                     == [
                         ("coder", "/home/dev/.coder"),
-                        ("a1", "/home/dev/.local/share/otty/accounts/a1"),
+                        (
+                            "a1",
+                            "/home/dev/.local/share/otty/plugins/example/accounts/a1",
+                        ),
                     ]
             })
             .times(1)
@@ -733,7 +737,7 @@ mod tests {
             &[coder_of("example")],
             &[profile_of("coder", "/home/dev/.coder")],
             &own_logins,
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));
@@ -755,7 +759,7 @@ mod tests {
             &[],
             &[],
             &[own_login_of("a1", "example", "example-cloud")],
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));
@@ -777,7 +781,8 @@ mod tests {
                 )),
                 LoginFolder::OwnLogin((
                     "a1".to_string(),
-                    "/home/dev/.local/share/otty/accounts/a1".to_string(),
+                    "/home/dev/.local/share/otty/plugins/example/accounts/a1"
+                        .to_string(),
                 )),
             ],
             needs: Vec::new(),
@@ -791,7 +796,7 @@ mod tests {
                 FoundIn::profile(AgentId::new("coder"), "/home/dev/.coder"),
                 FoundIn::own_login(
                     "a1",
-                    "/home/dev/.local/share/otty/accounts/a1"
+                    "/home/dev/.local/share/otty/plugins/example/accounts/a1"
                 ),
             ]
         );
@@ -830,7 +835,7 @@ mod tests {
             &[coder_of("example")],
             &profiles,
             &[],
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok((vec![subscription()], Vec::new())));
@@ -851,7 +856,7 @@ mod tests {
             &[coder_of("another")],
             &profiles,
             &[],
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));
@@ -870,7 +875,7 @@ mod tests {
             &[coder_of("example")],
             &profiles,
             &[],
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));

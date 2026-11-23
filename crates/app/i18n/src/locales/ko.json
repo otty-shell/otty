@@ -941,6 +941,8 @@
     "agents_log_in_again": "다시 로그인",
     "agents_remove_account_title": "이 계정을 제거할까요?",
     "tpl_agents_remove_account_text": "OTTY가 비공개 폴더 {path}를 삭제합니다. 사용 중인 에이전트와 그 로그인은 그대로 유지됩니다.",
+    "agents_error_folder_is_own_login": "OTTY의 비공개 로그인 폴더이므로, 프로필로 쓸 수 없습니다.",
+    "tpl_plugins_remove_own_logins": "이 플러그인의 OTTY 전용 로그인도 삭제됩니다: {count}",
     "agents_no_log_in": "플러그인이 로그인 명령을 주지 않습니다",
     "tpl_agents_own_folder_not_made": "폴더 {path}을(를) 만들 수 없습니다: {error}",
     "tpl_agents_own_folder_not_removed": "폴더 {path}을(를) 지울 수 없습니다: {error}",

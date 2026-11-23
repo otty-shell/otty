@@ -66,6 +66,9 @@ pub(crate) enum DialogViewModel<'a> {
     Remove {
         /// "Remove Example?".
         title: String,
+        /// "OTTY's own logins of this plugin are removed too: 2", only
+        /// when it made any.
+        own_logins: Option<String>,
         /// Why the removal failed.
         error: Option<&'a str>,
         /// Whether the removal runs.
@@ -119,11 +122,17 @@ impl<'a> DialogViewModel<'a> {
                     text,
                 }
             },
-            Dialog::Remove(plugin) => Self::Remove {
+            Dialog::Remove { plugin, own_logins } => Self::Remove {
                 title: i18n::filled(
                     Key::TplPluginsRemoveTitle,
                     &[("name", state.plugin(plugin)?.installed.name())],
                 ),
+                own_logins: (*own_logins > 0).then(|| {
+                    i18n::filled(
+                        Key::TplPluginsRemoveOwnLogins,
+                        &[("count", &own_logins.to_string())],
+                    )
+                }),
                 error,
                 is_busy,
             },

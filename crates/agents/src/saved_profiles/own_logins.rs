@@ -1,12 +1,12 @@
 //! OTTY's own logins in `agents.json` (spec
 //! 2026-11-23-accounts-apart-from-profiles, "What OTTY stores"): each by
 //! its id, the plugin, the provider part and the agent part. The folder
-//! is not written: it is always `<data dir>/accounts/<id>/`, so an id
-//! that is not a plain name is not read, or its folder would be another
-//! place.
+//! is not written: it is always `<plugins folder>/<plugin>/accounts/<id>/`
+//! (issue 13), so an id or a plugin that is not a plain name is not read,
+//! or its folder would be another place.
 
-/// Whether `id` can name the folder of an own login: letters, digits,
-/// `-` and `_` only, not empty.
+/// Whether `id` can name a folder of the path of an own login: letters,
+/// digits, `-` and `_` only, not empty.
 pub(super) fn is_plain_id(id: &str) -> bool {
     !id.is_empty()
         && id.chars().all(|char| {
@@ -78,6 +78,39 @@ mod tests {
 
             assert!(load(&text).own_logins().is_empty(), "{id:?}");
         }
+    }
+
+    /// Issue 13: the plugin names a folder of the path too, so an own
+    /// login whose plugin is no plain name is not read.
+    #[test]
+    fn an_own_login_whose_plugin_is_no_plain_name_is_not_read() {
+        for plugin in ["..", "../x", "a/b", ".hidden"] {
+            let text = format!(
+                r#"{{"own_logins": [{{ "id": "a1", "plugin": "{plugin}", "provider": "openai", "agent": "codex" }}]}}"#
+            );
+
+            assert!(load(&text).own_logins().is_empty(), "{plugin:?}");
+        }
+    }
+
+    /// Issue 13: a removed plugin takes its own logins with it, so their
+    /// entries leave; the own logins of other plugins stay.
+    #[test]
+    fn forgetting_the_own_logins_of_a_plugin_keeps_the_others() {
+        let claude = OwnLogin::new(
+            "b2",
+            "anthropic",
+            ProviderId::new("anthropic"),
+            AgentId::new("claude-code"),
+        );
+        let saved = SavedProfiles::default()
+            .with_own_login(codex_login("6f0c1e2a"))
+            .with_own_login(claude.clone())
+            .with_own_login(codex_login("7a1d2b3c"));
+
+        let forgotten = saved.without_own_logins_of("openai");
+
+        assert_eq!(forgotten.own_logins(), [claude]);
     }
 
     #[test]

@@ -941,6 +941,8 @@
     "agents_log_in_again": "重新登入",
     "agents_remove_account_title": "移除此帳戶？",
     "tpl_agents_remove_account_text": "OTTY 會刪除它的私人資料夾 {path}。你的代理及其自己的登入維持不變。",
+    "agents_error_folder_is_own_login": "這是 OTTY 的私人登入資料夾，不能作為設定檔。",
+    "tpl_plugins_remove_own_logins": "此外掛程式的 OTTY 自己的登入也會被移除：{count}",
     "agents_no_log_in": "外掛沒有給出登入指令",
     "tpl_agents_own_folder_not_made": "無法建立資料夾 {path}：{error}",
     "tpl_agents_own_folder_not_removed": "無法刪除資料夾 {path}：{error}",

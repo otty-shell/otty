@@ -395,12 +395,12 @@ impl LoginFolder {
 
     /// OTTY's own login folder `folder` of the part (spec
     /// 2026-11-23-accounts-apart-from-profiles, Decision 6), such as
-    /// `~/.local/share/otty/accounts/<id>`.
+    /// `~/.local/share/otty/plugins/<plugin>/accounts/<id>`.
     ///
     /// ```
     /// use otty_plugin_manifest::LoginFolder;
     ///
-    /// let folder = LoginFolder::own("/home/user/.local/share/otty/accounts/1");
+    /// let folder = LoginFolder::own("/data/otty/plugins/x/accounts/1");
     ///
     /// assert_eq!(folder.agent(), None);
     /// ```

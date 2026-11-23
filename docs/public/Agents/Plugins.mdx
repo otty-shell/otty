@@ -224,8 +224,9 @@ reloaded: …".
 ## Remove
 
 **Remove** deletes the plugin's files and its compiled copy. The names and hidden items of Agents
-mode stay, and so do the folders of OTTY's own logins made with the plugin, until you remove their
-accounts. They come back if you add the plugin again.
+mode stay. OTTY's own logins made with the plugin live in its folder, so they are removed too, and
+the dialog says how many: "OTTY's own logins of this plugin are removed too: 2". Their entries leave
+`agents.json`. An update keeps them.
 
 ## When a plugin or part is missing
 
@@ -236,12 +237,14 @@ the provider part that finds it.
 | --------------------------------- | ------------------------------------------------------------------------------------- |
 | No provider part for a provider   | No accounts of that provider. The profiles still show their tokens and their money at API prices. |
 | A provider part is off            | Its accounts leave the lists. Names, hidden items and OTTY's own logins are kept and come back when it is on. |
+| A plugin is removed               | OTTY's own logins made with it are removed with its folder. Names and hidden items are kept. |
 | An agent part is off, or its plugin removed | Its profiles leave the lists, and accounts found only there leave too. Names and hidden items are kept. |
 | A plugin is updated               | Nothing moves. "Read by" shows the new version.                                       |
 | A part fails                      | The last good numbers stay, greyed. Need "*Plugin version* could not read …" with **Copy report**. |
 | A plugin needs a newer OTTY       | At install: "Needs a newer OTTY (agents.agent contract 0.2)". Installed plugins keep running. |
 
 <Aside title="Where plugins are kept">
-The installed files are in `~/.local/share/otty/plugins/<id>/<version>/`, the compiled copies in
+The installed files are in `~/.local/share/otty/plugins/<id>/<version>/`, OTTY's own logins made
+with the plugin in `~/.local/share/otty/plugins/<id>/accounts/`, the compiled copies in
 `~/.cache/otty/plugins/`, and the list with your grants and choices in `~/.config/otty/plugins.json`.
 </Aside>

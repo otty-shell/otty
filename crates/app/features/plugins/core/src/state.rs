@@ -39,8 +39,13 @@ pub(crate) enum Dialog {
     },
     /// The log of the plugin with this id.
     Log(String),
-    /// The dialog that asks before the plugin with this id is removed.
-    Remove(String),
+    /// The dialog that asks before a plugin is removed.
+    Remove {
+        /// The plugin id.
+        plugin: String,
+        /// How many of OTTY's own logins go with it.
+        own_logins: usize,
+    },
 }
 
 /// What the latest update check or reload left to show about one plugin.

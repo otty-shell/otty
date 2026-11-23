@@ -230,6 +230,10 @@ pub enum AgentsIntent {
     /// The provider part of an own login gave the agent's login command
     /// for its folder for Log in again, or why it could not.
     LogInAgainPrepared(PreparedOwnLogin),
+    /// The plugin with this id was removed in Plugins mode, and its own
+    /// login folders with it: their entries leave `agents.json` (issue 13
+    /// of spec 2026-11-23-accounts-apart-from-profiles).
+    PluginRemoved(String),
     /// Edit of a profile's menu was pressed: open the profile dialog with
     /// it.
     EditProfile(Profile),

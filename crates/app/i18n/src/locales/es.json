@@ -941,6 +941,8 @@
     "agents_log_in_again": "Volver a iniciar sesión",
     "agents_remove_account_title": "¿Quitar esta cuenta?",
     "tpl_agents_remove_account_text": "OTTY borra su carpeta privada {path}. Sus agentes y sus propios inicios de sesión quedan como están.",
+    "agents_error_folder_is_own_login": "Esta es una carpeta privada de inicio de sesión de OTTY, no puede ser un perfil.",
+    "tpl_plugins_remove_own_logins": "Los inicios de sesión propios de OTTY de este plugin también se eliminan: {count}",
     "agents_no_log_in": "el plugin no da ninguna orden de inicio de sesión",
     "tpl_agents_own_folder_not_made": "No se pudo crear la carpeta {path}: {error}",
     "tpl_agents_own_folder_not_removed": "No se pudo quitar la carpeta {path}: {error}",

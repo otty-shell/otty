@@ -179,17 +179,19 @@ impl ProfileDialog {
     }
 
     /// What the checks of the name and the config folder find against
-    /// every other profile, `profiles`, with `~` standing for `home`, and
-    /// whether Add or Save can be pressed.
+    /// every other profile, `profiles`, and OTTY's own login folders in
+    /// `plugins_folder`, with `~` standing for `home`, and whether Add or
+    /// Save can be pressed.
     pub(crate) fn checks(
         &self,
         home: &Path,
         profiles: &[&Profile],
+        plugins_folder: Option<&Path>,
     ) -> DialogChecks {
         let name_problem =
             check_profile_name(&self.name, self.editing.as_ref(), profiles)
                 .err();
-        let folder = self.folder(home, profiles);
+        let folder = self.folder(home, profiles, plugins_folder);
         let can_submit =
             !self.is_saving && name_problem.is_none() && folder.is_ok();
 
@@ -230,11 +232,18 @@ impl ProfileDialog {
         &self,
         home: &Path,
         profiles: &[&Profile],
+        plugins_folder: Option<&Path>,
     ) -> Result<PathBuf, FolderProblem> {
         let folder =
             full_folder(self.path_text(), home).map_err(FolderProblem::from)?;
 
-        check_folder(&self.agent, &folder, self.editing.as_ref(), profiles)?;
+        check_folder(
+            &self.agent,
+            &folder,
+            self.editing.as_ref(),
+            profiles,
+            plugins_folder,
+        )?;
         Ok(folder)
     }
 

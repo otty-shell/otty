@@ -1,16 +1,19 @@
 //! OTTY's own login of a provider part (spec
 //! 2026-11-23-accounts-apart-from-profiles, Decision 6): Add account →
 //! "Log in with <agent>" makes an empty folder of OTTY's own,
-//! `<data dir>/accounts/<id>/`, runs the agent's official login command
-//! there in a terminal tab, and then asks the provider part for the
-//! accounts in that folder. OTTY never handles a password or a login
-//! flow itself, and the folder is never a profile: no session or project
-//! of it is read.
+//! `<plugins folder>/<plugin>/accounts/<id>/` (issue 13), runs the agent's
+//! official login command there in a terminal tab, and then asks the
+//! provider part for the accounts in that folder. OTTY never handles a
+//! password or a login flow itself, and the folder is never a profile: no
+//! session or project of it is read.
 //!
-//! `agents.json` keeps each own login by its id, the plugin, the provider
-//! part and the agent part; the folder is always found from the id.
+//! The folder belongs to the plugin that made the login: it sits next to
+//! the plugin's version folders, so an update of the plugin keeps it and
+//! removing the plugin removes it. `agents.json` keeps each own login by
+//! its id, the plugin, the provider part and the agent part; the folder is
+//! always found from the plugin and the id.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::account::Account;
 use crate::agent::AgentId;
@@ -19,7 +22,8 @@ use crate::error::{SourceError, Unavailable};
 use crate::plugin_provider::PluginProvider;
 use crate::provider::ProviderId;
 
-/// The folder under OTTY's data folder that holds the own logins.
+/// The folder of a plugin's folder that holds the own logins its provider
+/// parts made.
 const ACCOUNTS_FOLDER: &str = "accounts";
 
 /// One own login: which provider part made it, with which agent part, and
@@ -38,8 +42,8 @@ const ACCOUNTS_FOLDER: &str = "accounts";
 /// );
 ///
 /// assert_eq!(
-///     login.folder_in(Path::new("/data/otty")),
-///     PathBuf::from("/data/otty/accounts/6f0c1e2a")
+///     login.folder_in(Path::new("/data/otty/plugins")),
+///     PathBuf::from("/data/otty/plugins/example/accounts/6f0c1e2a")
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,9 +92,13 @@ impl OwnLogin {
         }
     }
 
-    /// Its folder: `accounts/<id>` in OTTY's data folder `data_dir`.
-    pub fn folder_in(&self, data_dir: &Path) -> PathBuf {
-        data_dir.join(ACCOUNTS_FOLDER).join(&self.id)
+    /// Its folder: `<plugin>/accounts/<id>` in the folder of the installed
+    /// plugins `plugins_folder`.
+    pub fn folder_in(&self, plugins_folder: &Path) -> PathBuf {
+        plugins_folder
+            .join(&self.plugin)
+            .join(ACCOUNTS_FOLDER)
+            .join(&self.id)
     }
 
     /// Whether the provider part `provider` of the plugin `plugin` made
@@ -100,9 +108,40 @@ impl OwnLogin {
     }
 }
 
+/// Whether `folder` is inside the own login folders of a plugin in the
+/// folder of the installed plugins `plugins_folder`, at
+/// `<plugin>/accounts/` or below it. Such a folder can not be a profile:
+/// Remove of an own login, and removing its plugin, delete it.
+///
+/// ```
+/// use std::path::Path;
+///
+/// let plugins = Path::new("/data/otty/plugins");
+///
+/// assert!(otty_agents::is_own_login_folder(
+///     Path::new("/data/otty/plugins/openai/accounts/6f0c1e2a"),
+///     plugins,
+/// ));
+/// assert!(!otty_agents::is_own_login_folder(
+///     Path::new("/home/user/.codex"),
+///     plugins,
+/// ));
+/// ```
+pub fn is_own_login_folder(folder: &Path, plugins_folder: &Path) -> bool {
+    let Ok(inside) = folder.strip_prefix(plugins_folder) else {
+        return false;
+    };
+
+    let mut parts = inside.components();
+    let plugin = parts.next();
+    let accounts = parts.next();
+    matches!(plugin, Some(Component::Normal(_)))
+        && accounts == Some(Component::Normal(ACCOUNTS_FOLDER.as_ref()))
+}
+
 /// The agent's official login command for `login`, pointed at its folder
-/// in `data_dir`, as the provider part of `providers` that made it gives
-/// it. It blocks.
+/// in `plugins_folder`, as the provider part of `providers` that made it
+/// gives it. It blocks.
 ///
 /// # Errors
 ///
@@ -111,7 +150,7 @@ impl OwnLogin {
 pub fn log_in_command(
     providers: &[PluginProvider],
     login: &OwnLogin,
-    data_dir: &Path,
+    plugins_folder: &Path,
 ) -> Result<AgentCommand, SourceError> {
     let no_log_in = || SourceError::NotAvailable(Unavailable::NoLogIn);
     let provider = providers
@@ -120,13 +159,13 @@ pub fn log_in_command(
         .ok_or_else(no_log_in)?;
 
     provider
-        .log_in(&login.folder_in(data_dir))?
+        .log_in(&login.folder_in(plugins_folder))?
         .ok_or_else(no_log_in)
 }
 
 /// The accounts the provider part of `providers` that made `login` finds
-/// in its folder in `data_dir` alone, as after its login tab closed. Only
-/// the accounts found in that folder count. It blocks.
+/// in its folder in `plugins_folder` alone, as after its login tab closed.
+/// Only the accounts found in that folder count. It blocks.
 ///
 /// # Errors
 ///
@@ -135,15 +174,19 @@ pub fn log_in_command(
 pub fn own_login_accounts(
     providers: &[PluginProvider],
     login: &OwnLogin,
-    data_dir: &Path,
+    plugins_folder: &Path,
 ) -> Result<Vec<Account>, SourceError> {
     let provider = providers
         .iter()
         .find(|part| part.made(login))
         .ok_or(SourceError::NotAvailable(Unavailable::NoAccountSource))?;
 
-    let (mut accounts, _) =
-        provider.accounts(&[], &[], std::slice::from_ref(login), data_dir)?;
+    let (mut accounts, _) = provider.accounts(
+        &[],
+        &[],
+        std::slice::from_ref(login),
+        plugins_folder,
+    )?;
 
     accounts.retain(|account| account.is_found_in_own_login(login.id()));
     Ok(accounts)
@@ -157,7 +200,7 @@ mod tests {
     use crate::account::{AccountKind, FoundIn};
     use crate::plugin_provider::MockProviderPartCalls;
 
-    const DATA_DIR: &str = "/home/user/.local/share/otty";
+    const PLUGINS_FOLDER: &str = "/home/user/.local/share/otty/plugins";
 
     fn own_login() -> OwnLogin {
         OwnLogin::new(
@@ -169,7 +212,9 @@ mod tests {
     }
 
     fn own_folder() -> PathBuf {
-        PathBuf::from("/home/user/.local/share/otty/accounts/6f0c1e2a")
+        PathBuf::from(
+            "/home/user/.local/share/otty/plugins/example/accounts/6f0c1e2a",
+        )
     }
 
     /// The account the part finds in OTTY's own login folder.
@@ -188,11 +233,50 @@ mod tests {
         PluginProvider::made_up("example-cloud", &["coder"], calls)
     }
 
-    /// Spec 2026-11-23-accounts-apart-from-profiles, "What OTTY stores":
-    /// the folder of an own login is always `<data dir>/accounts/<id>/`.
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// folder of an own login belongs to the plugin that made it,
+    /// `<plugins folder>/<plugin>/accounts/<id>/`, next to its version
+    /// folders.
     #[test]
-    fn the_folder_of_an_own_login_is_its_id_under_accounts() {
-        assert_eq!(own_login().folder_in(Path::new(DATA_DIR)), own_folder());
+    fn the_folder_of_an_own_login_is_under_its_plugin() {
+        assert_eq!(
+            own_login().folder_in(Path::new(PLUGINS_FOLDER)),
+            own_folder()
+        );
+    }
+
+    /// Issue 13: a folder inside `<plugins folder>/*/accounts/` is an own
+    /// login folder, or the folder that holds them; a version folder of a
+    /// plugin, the plugins folder itself and a folder elsewhere are not.
+    #[test]
+    fn a_folder_inside_the_accounts_of_a_plugin_is_an_own_login_folder() {
+        let plugins = Path::new(PLUGINS_FOLDER);
+        let inside = [
+            "/home/user/.local/share/otty/plugins/openai/accounts",
+            "/home/user/.local/share/otty/plugins/openai/accounts/6f0c1e2a",
+            "/home/user/.local/share/otty/plugins/openai/accounts/a1/.codex",
+        ];
+        let outside = [
+            "/home/user/.local/share/otty/plugins",
+            "/home/user/.local/share/otty/plugins/openai",
+            "/home/user/.local/share/otty/plugins/openai/0.2.13",
+            "/home/user/.local/share/otty/plugins/accounts",
+            "/home/user/.local/share/otty/accounts/6f0c1e2a",
+            "/home/user/.codex",
+        ];
+
+        for folder in inside {
+            assert!(
+                is_own_login_folder(Path::new(folder), plugins),
+                "{folder}"
+            );
+        }
+        for folder in outside {
+            assert!(
+                !is_own_login_folder(Path::new(folder), plugins),
+                "{folder}"
+            );
+        }
     }
 
     #[test]
@@ -225,14 +309,14 @@ mod tests {
         let command = log_in_command(
             &[example_cloud(calls)],
             &own_login(),
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(
             command,
             Ok(AgentCommand::new("coder").with_arg("login").with_env(
                 "CODER_HOME",
-                "/home/user/.local/share/otty/accounts/6f0c1e2a"
+                "/home/user/.local/share/otty/plugins/example/accounts/6f0c1e2a"
             ))
         );
     }
@@ -243,11 +327,12 @@ mod tests {
         let mut silent = MockProviderPartCalls::new();
         silent.expect_log_in().returning(|_| Ok(None));
 
-        let no_part = log_in_command(&[], &own_login(), Path::new(DATA_DIR));
+        let no_part =
+            log_in_command(&[], &own_login(), Path::new(PLUGINS_FOLDER));
         let no_command = log_in_command(
             &[example_cloud(silent)],
             &own_login(),
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         let refused = Err(SourceError::NotAvailable(Unavailable::NoLogIn));
@@ -273,7 +358,7 @@ mod tests {
         let found = own_login_accounts(
             &[example_cloud(calls)],
             &own_login(),
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok(vec![own_account()]));
@@ -299,7 +384,7 @@ mod tests {
         let found = own_login_accounts(
             &[example_cloud(calls)],
             &own_login(),
-            Path::new(DATA_DIR),
+            Path::new(PLUGINS_FOLDER),
         );
 
         assert_eq!(found, Ok(Vec::new()));

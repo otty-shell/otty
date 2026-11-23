@@ -46,8 +46,9 @@ pub(crate) fn dialog<'a>(
         },
         DialogViewModel::Remove {
             title,
+            own_logins,
             error,
             is_busy,
-        } => forms::remove(title, error, is_busy, palette),
+        } => forms::remove(title, own_logins, error, is_busy, palette),
     }
 }

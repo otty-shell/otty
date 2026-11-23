@@ -25,8 +25,8 @@ use crate::time_zone::user_time_zone;
 /// `config_dir` and the default profile of each of `agents`, each with its
 /// state, and the accounts each provider part of `providers` finds in the
 /// shown profiles of its own plugin and in the folders of its own logins
-/// in OTTY's data folder `data_dir`. A program is looked up through the
-/// user's shell at `shell`. The answer comes back as
+/// in the folder of the installed plugins `plugins_folder`. A program is
+/// looked up through the user's shell at `shell`. The answer comes back as
 /// [`AgentsIntent::ProfilesLoaded`], or as
 /// [`AgentsIntent::ProfilesReadStopped`] when the read stops before it
 /// answers, so the profiles shown stay.
@@ -47,7 +47,7 @@ use crate::time_zone::user_time_zone;
 ///     &providers,
 ///     &AgentEnv::new(PathBuf::from("/home/user")),
 ///     Path::new("/home/user/.config/otty"),
-///     Path::new("/home/user/.local/share/otty"),
+///     Path::new("/home/user/.local/share/otty/plugins"),
 ///     "/bin/zsh",
 /// );
 ///
@@ -58,14 +58,14 @@ pub fn load_profiles(
     providers: &ProviderList,
     env: &AgentEnv,
     config_dir: &Path,
-    data_dir: &Path,
+    plugins_folder: &Path,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
     let env = env.clone();
     let config_dir = config_dir.to_path_buf();
-    let data_dir = data_dir.to_path_buf();
+    let plugins_folder = plugins_folder.to_path_buf();
     let shell = shell.to_string();
 
     on_own_thread(
@@ -76,7 +76,7 @@ pub fn load_profiles(
                 &providers,
                 &env,
                 &config_dir,
-                &data_dir,
+                &plugins_folder,
                 &shell,
             );
             AgentsIntent::ProfilesLoaded(loaded)
@@ -116,7 +116,7 @@ fn read_profiles(
     providers: &[PluginProvider],
     env: &AgentEnv,
     config_dir: &Path,
-    data_dir: &Path,
+    plugins_folder: &Path,
     shell: &str,
 ) -> LoadedProfiles {
     let (saved, problem) = read_saved(config_dir);
@@ -154,7 +154,7 @@ fn read_profiles(
         providers,
         &shown,
         saved.own_logins(),
-        data_dir,
+        plugins_folder,
     );
 
     LoadedProfiles {
@@ -732,16 +732,19 @@ mod tests {
         assert!(loaded.saved.is_some(), "the file was read");
     }
 
-    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the
-    /// provider part finds the account of OTTY's own login in its folder
-    /// under the data folder, and that folder is never a profile, so none
-    /// of its sessions is read.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6 and issue
+    /// 13: the provider part finds the account of OTTY's own login in its
+    /// folder under the folder of its plugin, and that folder is never a
+    /// profile, so none of its sessions is read.
     #[test]
     fn an_own_login_gives_its_account_and_is_never_a_profile() {
         let home = TempDir::new("agents-read-own-login");
         let config_dir = home.path().join("otty");
-        let data_dir = home.path().join("data");
-        let own = data_dir.join("accounts").join("6f0c1e2a");
+        let plugins_folder = home.path().join("data").join("plugins");
+        let own = plugins_folder
+            .join("anthropic")
+            .join("accounts")
+            .join("6f0c1e2a");
         write(
             &own.join(".claude.json"),
             r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"own@example.com"}}"#,
@@ -766,7 +769,7 @@ mod tests {
             &providers_with_plugins(home.path()),
             &env,
             &config_dir,
-            &data_dir,
+            &plugins_folder,
             &finds,
         );
 

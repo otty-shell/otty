@@ -941,6 +941,8 @@
     "agents_log_in_again": "Log in again",
     "agents_remove_account_title": "Remove this account?",
     "tpl_agents_remove_account_text": "OTTY deletes its private folder {path}. Your agents and their own logins stay as they are.",
+    "agents_error_folder_is_own_login": "This is a private login folder of OTTY, it can not be a profile.",
+    "tpl_plugins_remove_own_logins": "OTTY's own logins of this plugin are removed too: {count}",
     "agents_no_log_in": "the plugin gives no login command",
     "tpl_agents_own_folder_not_made": "Could not make the folder {path}: {error}",
     "tpl_agents_own_folder_not_removed": "Could not remove the folder {path}: {error}",

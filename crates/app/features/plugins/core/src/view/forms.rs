@@ -95,9 +95,11 @@ pub(super) fn log<'a>(
         .into()
 }
 
-/// The question before Remove: what goes and what stays.
+/// The question before Remove: what goes and what stays, and how many of
+/// OTTY's own logins go with the plugin, if any.
 pub(super) fn remove<'a>(
     title: String,
+    own_logins: Option<String>,
     error: Option<&'a str>,
     is_busy: bool,
     palette: &UiPalette,
@@ -107,6 +109,9 @@ pub(super) fn remove<'a>(
         palette.text_body()
     )]
     .spacing(spacing::SPACE_2);
+    if let Some(own_logins) = own_logins {
+        body = body.push(small_text(own_logins, palette.text_body()));
+    }
     if let Some(error) = error {
         body = body.push(small_text(error, palette.status_error()));
     }

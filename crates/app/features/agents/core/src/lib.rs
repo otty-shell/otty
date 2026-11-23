@@ -163,6 +163,8 @@ mod types;
 mod usage;
 mod view;
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -369,6 +371,32 @@ impl Agents {
         Self {
             state: AgentsState::new(agents, registry, env),
         }
+    }
+
+    /// The same feature, told the folder of the installed plugins
+    /// `plugins_folder`, which holds OTTY's own login folders
+    /// (`<plugin>/accounts/<id>/`): the profile dialog refuses a folder
+    /// inside one, since Remove of an own login deletes it. Without it no
+    /// folder is refused for that.
+    pub fn with_plugins_folder(self, plugins_folder: PathBuf) -> Self {
+        Self {
+            state: self.state.with_plugins_folder(plugins_folder),
+        }
+    }
+
+    /// Return how many of OTTY's own logins `agents.json` keeps for each
+    /// plugin, by plugin id: the Remove dialog of Plugins mode says how
+    /// many go with a plugin. None before `agents.json` is read.
+    pub fn own_logins_by_plugin(&self) -> BTreeMap<String, usize> {
+        let mut counts = BTreeMap::new();
+        let Some(saved) = self.state.profiles().saved() else {
+            return counts;
+        };
+
+        for login in saved.own_logins() {
+            *counts.entry(login.plugin().to_string()).or_insert(0) += 1;
+        }
+        counts
     }
 
     /// The left panel of Agents mode: the Accounts section, the Profiles
@@ -661,6 +689,44 @@ mod tests {
         }
 
         feature
+    }
+
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: Plugins
+    /// mode is told how many own logins each plugin made, from
+    /// `agents.json`, none before it is read.
+    #[test]
+    fn the_own_logins_are_counted_by_plugin() {
+        let login = |id: &str, plugin: &str| {
+            otty_agents::OwnLogin::new(
+                id,
+                plugin,
+                otty_agents::ProviderId::new(plugin),
+                otty_agents::AgentId::new("coder"),
+            )
+        };
+        let saved = SavedProfiles::default()
+            .with_own_login(login("a1", "openai"))
+            .with_own_login(login("b2", "anthropic"))
+            .with_own_login(login("c3", "openai"));
+        let mut feature =
+            Agents::new(agents(), crate::testing::registry(), env());
+        let unread = feature.own_logins_by_plugin();
+
+        for intent in [
+            AgentsIntent::Enter,
+            profiles_loaded_from(&[(claude(), connected())], saved),
+        ] {
+            let _ = feature.reduce(intent, AgentsCtx::default());
+        }
+
+        assert!(unread.is_empty());
+        assert_eq!(
+            feature.own_logins_by_plugin(),
+            BTreeMap::from([
+                (String::from("anthropic"), 1),
+                (String::from("openai"), 2),
+            ])
+        );
     }
 
     #[test]

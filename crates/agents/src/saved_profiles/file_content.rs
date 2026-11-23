@@ -260,14 +260,17 @@ impl OwnLoginEntry {
         }
     }
 
-    /// The own login, of any plugin; `None` when its id is no plain name,
-    /// so its folder would be another place than `accounts/<id>`, or when
-    /// it names no plugin, provider part or agent part.
+    /// The own login, of any plugin; `None` when its id or its plugin is
+    /// no plain name, so its folder would be another place than
+    /// `<plugin>/accounts/<id>`, or when it names no provider part or agent
+    /// part.
     fn into_login(self) -> Option<OwnLogin> {
-        let names_its_parts = !self.plugin.is_empty()
-            && !self.provider.is_empty()
-            && !self.agent.is_empty();
-        if !is_plain_id(&self.id) || !names_its_parts {
+        let names_its_parts =
+            !self.provider.is_empty() && !self.agent.is_empty();
+        if !is_plain_id(&self.id)
+            || !is_plain_id(&self.plugin)
+            || !names_its_parts
+        {
             return None;
         }
 
