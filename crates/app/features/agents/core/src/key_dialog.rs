@@ -187,7 +187,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
         dialog.error = None;
     }
     state.profiles_mut().apply_saved(changed.clone());
-    state.profiles_mut().forget_own_read(&account);
+    state.profiles_mut().forget_account_read(&account);
     vec![save(changed)]
 }
 
@@ -200,7 +200,7 @@ mod tests {
     use crate::need::NeedAction;
     use crate::reducer::reduce as reduce_all;
     use crate::testing::{
-        api_key, bill_key_needed, claude, key_ask, now, organization,
+        bill_key_needed, claude, connected, key_ask, now, organization,
         profiles_with_accounts_loaded, with_accounts,
     };
     use crate::types::LoadedBill;
@@ -222,12 +222,12 @@ mod tests {
     /// The state of an organization whose bill needs the admin key, with
     /// the key dialog of its need open.
     fn asking_for_the_admin_key() -> AgentsState {
-        let profiles = [(claude(), api_key(), vec![organization()])];
+        let profiles = [(claude(), connected(), vec![organization()])];
         let mut state = with_accounts(&profiles, SavedProfiles::default());
         let _ = reduce_all(
             &mut state,
             AgentsIntent::BillLoaded(LoadedBill {
-                profile: claude(),
+                organization: organization(),
                 given: Vec::new(),
                 bill: Err(bill_key_needed()),
                 read_at: now(),
@@ -250,7 +250,7 @@ mod tests {
     /// bill gets it with that slot.
     #[test]
     fn a_key_given_for_a_slot_reaches_the_next_bill_read() {
-        let profiles = [(claude(), api_key(), vec![organization()])];
+        let profiles = [(claude(), connected(), vec![organization()])];
         let mut state = asking_for_the_admin_key();
         let variable = KeyRef::EnvVar(String::from("ANTHROPIC_ORG_KEY"));
         let _ = send(
@@ -276,7 +276,6 @@ mod tests {
         assert_eq!(state.key_dialog(), None);
         assert_eq!(reload, [AgentsOutcome::LoadProfiles]);
         assert!(reloaded.contains(&AgentsOutcome::LoadBill {
-            profile: claude(),
             organization: organization(),
             given,
         }));
@@ -292,7 +291,7 @@ mod tests {
             Some(variable),
         );
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             saved,
         );
 

@@ -18,7 +18,6 @@ use super::profile_dialog::ProfileDialog;
 use super::profile_state::ProfileState;
 use super::profiles::Profiles;
 use super::project_search::ProjectSearch;
-use super::reads::StartWait;
 use super::real_failures::ToldProblems;
 use super::rename_dialog::RenameDialog;
 use super::sessions_table::{self, SessionsTable, TableSession};
@@ -38,7 +37,6 @@ pub(crate) struct AgentsState {
     stats_agents: Vec<AgentId>,
     env: AgentEnv,
     is_active: bool,
-    start_wait: Option<StartWait>,
     told: ToldProblems,
     profiles: Profiles,
     selection: Option<Selection>,
@@ -171,12 +169,6 @@ impl AgentsState {
         self.is_active
     }
 
-    /// What the start of OTTY waits for while the mode is away; `None`
-    /// once the start is read through or the mode opened.
-    pub(crate) fn start_wait(&self) -> Option<StartWait> {
-        self.start_wait
-    }
-
     /// The folder of the selected project, if one was selected.
     pub(crate) fn selected_folder(&self) -> Option<&Path> {
         match &self.selection {
@@ -265,7 +257,6 @@ impl AgentsState {
             stats_agents,
             env,
             is_active: false,
-            start_wait: None,
             told: ToldProblems::default(),
             profiles,
             selection: None,
@@ -608,11 +599,6 @@ impl AgentsState {
     /// Close the open menu; `false` when none was open.
     pub(crate) fn close_menu(&mut self) -> bool {
         self.menu.take().is_some()
-    }
-
-    /// Wait at the start of OTTY for `wait`; `None` ends the start.
-    pub(crate) fn set_start_wait(&mut self, wait: Option<StartWait>) {
-        self.start_wait = wait;
     }
 
     /// The real failures already told, to tell the new ones.

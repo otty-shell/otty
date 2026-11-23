@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version} 无法读取{what}",
     "tpl_agents_need_plugin_failed_text": "{reason}。最后一次正确的数字会保留。请复制报告给插件作者。",
     "agents_plugin_read_sessions": "会话",
-    "agents_plugin_read_limits": "限额",
     "agents_plugin_read_tokens": "令牌",
     "agents_plugin_read_numbers": "账户的数字",
     "agents_open_plugin_repository": "打开插件仓库"

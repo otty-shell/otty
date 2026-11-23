@@ -247,8 +247,8 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         agents, at, chatgpt_login, chatgpt_login_in, claude, codex, connected,
-        env, five_hour_limits, limits_answer, limits_loaded, now, organization,
-        spend_loaded, spend_of, with_accounts, with_profiles,
+        env, five_hour_limits, limits_numbers, now, numbers_loaded,
+        organization, spend_loaded, spend_of, with_accounts, with_profiles,
     };
     use crate::types::SpendCount;
 
@@ -268,12 +268,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
                 at(10),
             ),
         );

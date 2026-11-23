@@ -70,7 +70,7 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, connected, open_fix_tab, organization,
+        claude, codex, connected, open_fix_tab, organization,
         profiles_loaded_from, profiles_loaded_with_problem, with_accounts,
         with_saved_profiles,
     };
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn ask_key_of_a_need_closes_the_report_and_opens_the_key_dialog() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             SavedProfiles::default(),
         );
 

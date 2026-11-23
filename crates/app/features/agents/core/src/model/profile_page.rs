@@ -167,15 +167,16 @@ fn usage_block(
 }
 
 /// The line of a plain fact once the sessions were read and there are
-/// none: the agent is installed but not used yet when no one logged in,
-/// else it has no sessions yet.
+/// none: the agent is installed but not used yet when its agent part says
+/// no one logged in, else it has no sessions yet. Whatever accounts were
+/// found in its folder change nothing (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 1).
 fn info(agent: &str, shown: &ProfileState) -> Option<String> {
     if !shown.sessions().is_some_and(<[_]>::is_empty) {
         return None;
     }
 
-    let is_unused = shown.accounts().is_empty()
-        && matches!(shown.status(), ProfileStatus::NotLoggedIn(_));
+    let is_unused = matches!(shown.status(), ProfileStatus::NotLoggedIn(_));
     let key = if is_unused {
         Key::TplAgentsInstalledNotUsed
     } else {
@@ -249,9 +250,9 @@ mod tests {
     use crate::need::NeedAction;
     use crate::reducer::reduce;
     use crate::testing::{
-        SESSION_VERSION, api_key, at_list_prices, chatgpt_login, claude, codex,
-        connected, month_spend, now, price_table, read, session, set_prices,
-        spend_loaded, with_accounts,
+        SESSION_VERSION, at_list_prices, chatgpt_login, claude, codex,
+        connected, month_spend, not_logged_in, now, numbers_loaded,
+        price_table, read, session, set_prices, spend_loaded, with_accounts,
     };
     use crate::types::SpendCount;
     use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
@@ -350,6 +351,43 @@ mod tests {
         );
     }
 
+    /// Codex of `status` with no sessions, `accounts` found in its folder
+    /// and the numbers of each of them read and failed, selected.
+    fn unused_codex_with(
+        status: ProfileStatus,
+        accounts: Vec<Account>,
+    ) -> AgentsState {
+        let mut state = with_accounts(
+            &[(codex(), status, accounts.clone())],
+            SavedProfiles::default(),
+        );
+        read(&mut state, &codex(), Vec::new());
+        for account in &accounts {
+            let down = otty_agents::SourceError::Network(String::from("down"));
+            let _ =
+                reduce(&mut state, numbers_loaded(account, Err(down), now()));
+        }
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
+
+        state
+    }
+
+    /// Issue 11 of spec 2026-11-23-accounts-apart-from-profiles: nothing
+    /// of a profile's page depends on the accounts found in its folder or
+    /// on what was read of them, logged in or not.
+    #[test]
+    fn a_profile_page_is_the_same_with_and_without_accounts() {
+        for status in [connected(), not_logged_in(&codex())] {
+            let with = unused_codex_with(
+                status.clone(),
+                vec![chatgpt_login(), crate::testing::key_account()],
+            );
+            let without = unused_codex_with(status.clone(), Vec::new());
+
+            assert_eq!(page(&with), page(&without), "{status:?}");
+        }
+    }
+
     /// The last good numbers stay greyed after a failed count; a count
     /// that never ended well shows only its failure.
     #[test]
@@ -386,7 +424,7 @@ mod tests {
         let mut subscription =
             codex_with(connected(), vec![chatgpt_login()], spend());
         set_prices(&mut subscription, price_table());
-        let mut key = codex_with(api_key(), Vec::new(), spend());
+        let mut key = codex_with(connected(), Vec::new(), spend());
         set_prices(&mut key, price_table());
 
         assert_eq!(
@@ -496,7 +534,7 @@ mod tests {
     /// its mark; Tokens writes them in tokens again.
     #[test]
     fn money_and_tokens_switch_the_numbers_of_the_page() {
-        let mut state = codex_with(api_key(), Vec::new(), month_spend());
+        let mut state = codex_with(connected(), Vec::new(), month_spend());
         set_prices(&mut state, price_table());
 
         let shown = usage_after(
@@ -535,8 +573,8 @@ mod tests {
     fn the_choices_stay_when_another_profile_shows() {
         let mut state = with_accounts(
             &[
-                (codex(), api_key(), Vec::new()),
-                (claude(), api_key(), Vec::new()),
+                (codex(), connected(), Vec::new()),
+                (claude(), connected(), Vec::new()),
             ],
             SavedProfiles::default(),
         );

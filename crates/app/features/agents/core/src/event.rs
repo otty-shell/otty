@@ -17,9 +17,9 @@ use super::project_filter::ProjectFilterChange;
 use super::rename_dialog::RenameIntent;
 use super::types::{
     AgentReaders, CheckedOwnLogin, FolderQuery, LoadedAccountNumbers,
-    LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices, LoadedProfiles,
-    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
-    LoadedVersion, PreparedOwnLogin,
+    LoadedBill, LoadedFolder, LoadedPrices, LoadedProfiles, LoadedProjectStats,
+    LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
+    PreparedOwnLogin,
 };
 use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
@@ -67,21 +67,17 @@ pub enum AgentsIntent {
     AllowKeyring,
     /// Not now of the keyring dialog, or Esc, was pressed: nothing is read.
     KeyringNotNow,
-    /// The limits of one profile were read.
-    LimitsLoaded(LoadedLimits),
     /// The tokens one profile spent were counted.
     SpendLoaded(LoadedSpend),
-    /// The bill of one API key profile was read.
+    /// The bill of one organization was read.
     BillLoaded(LoadedBill),
     /// The list prices of the money at API prices were read.
     PricesLoaded(LoadedPrices),
-    /// The numbers of one account were read with its own key: its money
-    /// left, the limit of its key, the bill of its organization or the
-    /// limits of its login.
+    /// The numbers of one account were read: its money left, the limit
+    /// of its key or the limits of its subscription.
     AccountNumbersLoaded(LoadedAccountNumbers),
-    /// Five minutes passed while Agents mode is on screen: read the limits
-    /// of the connected profiles and the bills of the API key profiles
-    /// again.
+    /// Five minutes passed while Agents mode is on screen: read the
+    /// numbers of the accounts and the bills of the organizations again.
     LimitsTick,
     /// A project of the left panel was pressed: show its sessions.
     SelectProject(PathBuf),
@@ -328,26 +324,13 @@ pub enum AgentsOutcome {
     /// ask the user to unlock it. Asked once Agents mode is on screen. No
     /// answer: the next profiles read finds the keys there.
     AllowPluginKeyring,
-    /// Read the limits of this profile while Agents mode is on screen:
-    /// the provider part of the account whose limits it shows reads them,
-    /// and may start the agent's program, as is or in a hidden terminal.
-    /// The read stands for every profile of the same account, which is
-    /// read once (spec Decision 5); [`Agents::limits_to_read`] tells the
-    /// account. Answer [`AgentsIntent::LimitsLoaded`].
-    LoadLimits(Profile),
-    /// Read the limits of this profile while Agents mode is away: no
-    /// part starts the agent's program. Answer
-    /// [`AgentsIntent::LimitsLoaded`].
-    LoadLimitsInBackground(Profile),
     /// Count the tokens this profile spent; answer
     /// [`AgentsIntent::SpendLoaded`].
     LoadSpend(Profile),
-    /// Read the bill of `organization`, which `profile` pays through, once
-    /// for every profile of it, with the keys the user gave for it; answer
-    /// [`AgentsIntent::BillLoaded`].
+    /// Read the bill of `organization` through the provider part that
+    /// found it, in the folders it was found in, with the keys the user
+    /// gave for it; answer [`AgentsIntent::BillLoaded`].
     LoadBill {
-        /// The profile the organization was found in.
-        profile: Profile,
         /// The organization, whose provider part reads the bill.
         organization: Account,
         /// The keys the user gave for it, each under its slot.
@@ -355,8 +338,10 @@ pub enum AgentsOutcome {
     },
     /// Read the numbers of `account` through the provider part that
     /// found it, in the folders it was found in: the money of a key or an
-    /// organization, or the limits of a subscription no profile reads.
-    /// Answer [`AgentsIntent::AccountNumbersLoaded`].
+    /// organization, or the limits of a subscription, which the part may
+    /// read by starting the agent's program, as is or in a hidden
+    /// terminal, while Agents mode is on screen. Answer
+    /// [`AgentsIntent::AccountNumbersLoaded`].
     LoadAccountNumbers {
         /// The account to read.
         account: Account,

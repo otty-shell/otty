@@ -5,7 +5,7 @@ use otty_agents::{Billing, Credits, ExtraUsage, LimitWindow, Percent};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::failure_text::failure_reasons;
-use super::super::limits::ProfileLimits;
+use super::super::limits::AccountLimits;
 use super::age::age_text;
 use super::kept_answer::KeptAnswer;
 use super::numbers::{credits_text, money_text};
@@ -42,7 +42,7 @@ impl LimitsViewModel {
     /// there is nothing to draw: nothing was read yet, or the agent has no
     /// way to read limits.
     pub(crate) fn from_limits(
-        limits: &ProfileLimits,
+        limits: &AccountLimits,
         now: SystemTime,
         time_zone: Option<&TimeZone>,
     ) -> Option<Self> {
@@ -276,7 +276,8 @@ mod tests {
     use std::time::Duration;
 
     use otty_agents::{
-        Limits, SourceError, SourceId, Unavailable, UsageWindows, WindowId,
+        Account, Limits, Profile, SavedProfiles, SourceError, Unavailable,
+        UsageWindows, WindowId,
     };
 
     use super::*;
@@ -284,28 +285,41 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        claude, codex, connected, five_hour_limits, limits_answer,
-        limits_loaded, moscow, now, with_profiles,
+        chatgpt_login, claude, claude_login, codex, connected,
+        five_hour_limits, limits_numbers, moscow, now, numbers_loaded,
+        with_accounts,
     };
 
     const HOUR_LATER: Duration = Duration::from_secs(HOUR);
 
-    /// Agents mode with Claude Code connected and its limits read at
-    /// `read_at` from `sources`.
-    fn read_limits(
-        state: &mut AgentsState,
-        sources: Vec<(SourceId, Result<Limits, SourceError>)>,
-        read_at: SystemTime,
-    ) {
-        let _ = reduce(
-            state,
-            limits_loaded(&claude(), limits_answer(sources), read_at),
-        );
+    /// Agents mode with `profile` connected and `login` found in it.
+    fn with_login(profile: Profile, login: Account) -> AgentsState {
+        with_accounts(
+            &[(profile, connected(), vec![login])],
+            SavedProfiles::default(),
+        )
     }
 
+    /// The limits of the Claude login read at `read_at`: what its
+    /// provider part answered, or why it failed.
+    fn read_limits(
+        state: &mut AgentsState,
+        answer: Result<Limits, SourceError>,
+        read_at: SystemTime,
+    ) {
+        let numbers = answer.map(limits_numbers);
+
+        let _ =
+            reduce(state, numbers_loaded(&claude_login(), numbers, read_at));
+    }
+
+    /// The limits of the first account listed.
     fn limits_of(state: &AgentsState) -> Option<LimitsViewModel> {
+        let profiles = state.profiles();
+        let account = profiles.accounts().into_iter().next()?;
+
         LimitsViewModel::from_limits(
-            state.profiles().shown()[0].limits(),
+            &profiles.account_limits(&account)?,
             now(),
             Some(&moscow()),
         )
@@ -341,7 +355,7 @@ mod tests {
 
     #[test]
     fn an_answer_gives_one_bar_for_each_window_and_when_it_was_updated() {
-        let mut state = with_profiles(&[(claude(), connected())]);
+        let mut state = with_login(claude(), claude_login());
         let five_hours = LimitWindow::new(
             WindowId::hours(5),
             41.6,
@@ -356,11 +370,7 @@ mod tests {
             Some(String::from("Plus")),
         );
         let two_minutes_ago = now() - Duration::from_secs(2 * MINUTE);
-        read_limits(
-            &mut state,
-            vec![(otty_agents::SourceId::ProviderPart, Ok(limits))],
-            two_minutes_ago,
-        );
+        read_limits(&mut state, Ok(limits), two_minutes_ago);
 
         let vm = limits_of(&state).expect("the limits show");
 
@@ -413,18 +423,14 @@ mod tests {
 
     #[test]
     fn the_extra_usage_shows_its_money_and_a_bar_only_with_a_limit() {
-        let mut state = with_profiles(&[(claude(), connected())]);
+        let mut state = with_login(claude(), claude_login());
         let extra =
             ExtraUsage::new(Some(4.2), Some(50.0), Some(String::from("USD")));
         let limits = Limits::new(
             Billing::UsageWindows(UsageWindows::new(Vec::new(), Some(extra))),
             None,
         );
-        read_limits(
-            &mut state,
-            vec![(otty_agents::SourceId::ProviderPart, Ok(limits))],
-            now(),
-        );
+        read_limits(&mut state, Ok(limits), now());
         let with_limit = limits_of(&state).expect("the limits show");
 
         let spent_only =
@@ -448,18 +454,15 @@ mod tests {
 
     #[test]
     fn numbers_from_a_session_file_say_how_old_they_are() {
-        let mut state = with_profiles(&[(codex(), connected())]);
+        let mut state = with_login(codex(), chatgpt_login());
         let half_an_hour_ago = now() - Duration::from_secs(30 * MINUTE);
         let recorded =
             five_hour_limits(42.0).with_recorded_at(half_an_hour_ago);
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::AgentPart,
-                    Ok(recorded),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(recorded)),
                 now(),
             ),
         );
@@ -478,22 +481,12 @@ mod tests {
 
     #[test]
     fn the_last_good_answer_is_kept_greyed_with_its_time_after_a_failure() {
-        let mut state = with_profiles(&[(claude(), connected())]);
+        let mut state = with_login(claude(), claude_login());
         let ten_minutes_ago = now() - Duration::from_secs(10 * MINUTE);
+        read_limits(&mut state, Ok(five_hour_limits(42.0)), ten_minutes_ago);
         read_limits(
             &mut state,
-            vec![(
-                otty_agents::SourceId::ProviderPart,
-                Ok(five_hour_limits(42.0)),
-            )],
-            ten_minutes_ago,
-        );
-        read_limits(
-            &mut state,
-            vec![(
-                otty_agents::SourceId::ProviderPart,
-                Err(SourceError::Network(String::from("timed out"))),
-            )],
+            Err(SourceError::Network(String::from("timed out"))),
             now(),
         );
 
@@ -517,23 +510,8 @@ mod tests {
 
     #[test]
     fn with_no_answer_ever_the_reasons_show() {
-        let mut state = with_profiles(&[(claude(), connected())]);
-        read_limits(
-            &mut state,
-            vec![
-                (
-                    otty_agents::SourceId::ProviderPart,
-                    Err(crate::testing::login_expired()),
-                ),
-                (
-                    otty_agents::SourceId::AgentPart,
-                    Err(SourceError::NotAvailable(
-                        Unavailable::ProgramNotFound("claude"),
-                    )),
-                ),
-            ],
-            now(),
-        );
+        let mut state = with_login(claude(), claude_login());
+        read_limits(&mut state, Err(crate::testing::login_expired()), now());
 
         let vm = limits_of(&state).expect("the reasons show");
 
@@ -545,8 +523,7 @@ mod tests {
             Some(i18n::with_error(
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
-                    "{}: The login expired · {}: not available: claude is not found",
-                    i18n::t(Key::AgentsSourcePlugin),
+                    "{}: The login expired",
                     i18n::t(Key::AgentsSourcePlugin)
                 )
             ))
@@ -554,23 +531,17 @@ mod tests {
     }
 
     #[test]
-    fn nothing_shows_before_a_read_or_for_an_agent_with_no_sources() {
-        let mut state =
-            with_profiles(&[(claude(), connected()), (codex(), connected())]);
+    fn nothing_shows_before_a_read_or_for_an_account_no_part_reads() {
+        let before = with_login(claude(), claude_login());
+        let mut unread = with_login(codex(), chatgpt_login());
+        let no_part = SourceError::NotAvailable(Unavailable::NoAccountSource);
         let _ = reduce(
-            &mut state,
-            limits_loaded(&codex(), crate::types::LimitsRead::NoSources, now()),
+            &mut unread,
+            numbers_loaded(&chatgpt_login(), Err(no_part), now()),
         );
 
-        assert_eq!(limits_of(&state), None);
-        assert_eq!(
-            LimitsViewModel::from_limits(
-                state.profiles().shown()[1].limits(),
-                now(),
-                Some(&moscow())
-            ),
-            None
-        );
+        assert_eq!(limits_of(&before), None);
+        assert_eq!(limits_of(&unread), None);
     }
 
     #[test]
@@ -656,7 +627,7 @@ mod tests {
 
     #[test]
     fn a_workspace_pool_has_its_used_part_a_bar_and_the_renewal() {
-        let mut state = with_profiles(&[(codex(), connected())]);
+        let mut state = with_login(codex(), chatgpt_login());
         let renews_at = now() + Duration::from_secs(14 * DAY);
         let pool = Limits::new(
             Billing::Credits(Credits::new(
@@ -669,14 +640,7 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(pool),
-                )]),
-                now(),
-            ),
+            numbers_loaded(&chatgpt_login(), Ok(limits_numbers(pool)), now()),
         );
 
         let vm = limits_of(&state).expect("the credits show");
@@ -697,21 +661,14 @@ mod tests {
 
     #[test]
     fn a_credits_answer_has_credits_and_no_windows() {
-        let mut state = with_profiles(&[(codex(), connected())]);
+        let mut state = with_login(codex(), chatgpt_login());
         let limits = Limits::new(
             Billing::Credits(Credits::new(Some(10.0), None, None, None)),
             None,
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::AgentPart,
-                    Ok(limits),
-                )]),
-                now(),
-            ),
+            numbers_loaded(&chatgpt_login(), Ok(limits_numbers(limits)), now()),
         );
 
         let vm = limits_of(&state).expect("the credits show");

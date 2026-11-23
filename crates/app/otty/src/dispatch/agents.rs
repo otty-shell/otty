@@ -126,22 +126,6 @@ impl Delivery for AgentsIntent {
                 agents_io::load_sessions(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)
             },
-            // The account the profile shows the limits of, which the
-            // provider part that found it reads.
-            AgentsOutcome::LoadLimits(profile) => {
-                let account = app.agents.limits_to_read(&profile);
-                agents_io::load_limits(&app.plugin_providers, profile, account)
-                    .map(AppEvent::Agents)
-            },
-            AgentsOutcome::LoadLimitsInBackground(profile) => {
-                let account = app.agents.limits_to_read(&profile);
-                agents_io::load_limits_in_background(
-                    &app.plugin_providers,
-                    profile,
-                    account,
-                )
-                .map(AppEvent::Agents)
-            },
             // The list prices the agent part prices the tokens at.
             AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
                 app.agents.known_agents(),
@@ -150,12 +134,10 @@ impl Delivery for AgentsIntent {
             )
             .map(AppEvent::Agents),
             AgentsOutcome::LoadBill {
-                profile,
                 organization,
                 given,
             } => agents_io::load_bill(
                 &app.plugin_providers,
-                profile,
                 organization,
                 given,
                 app.shell_session.program(),
@@ -401,40 +383,6 @@ mod tests {
         assert_eq!(task.units(), 1);
     }
 
-    #[test]
-    fn the_limits_of_a_profile_are_read_in_the_background() {
-        let mut app = app();
-        let profile = otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/no/such/.stranger"),
-        );
-
-        let task =
-            AgentsIntent::read(&mut app, AgentsOutcome::LoadLimits(profile));
-
-        assert_eq!(task.units(), 1);
-    }
-
-    /// While Agents mode is away the limits are read without starting the
-    /// agent's program; the read is still one background task.
-    #[test]
-    fn the_limits_of_a_profile_are_read_with_the_mode_away() {
-        let mut app = app();
-        let profile = otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/no/such/.stranger"),
-        );
-
-        let task = AgentsIntent::read(
-            &mut app,
-            AgentsOutcome::LoadLimitsInBackground(profile),
-        );
-
-        assert_eq!(task.units(), 1);
-    }
-
     /// At the start of OTTY, with Terminal mode on screen, Agents mode
     /// starts reading the profiles and Containers mode looking for the
     /// engines; neither mode shows.
@@ -470,14 +418,8 @@ mod tests {
     }
 
     #[test]
-    fn the_bill_of_a_profile_is_read_in_the_background() {
+    fn the_bill_of_an_organization_is_read_in_the_background() {
         let mut app = app();
-        let profile = otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("stranger"),
-            "Stranger",
-            PathBuf::from("/no/such/.stranger"),
-        );
-
         let given = otty_agents::GivenKey::new(
             "admin",
             otty_agents::KeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_KEY")),
@@ -489,15 +431,14 @@ mod tests {
             "Made-up org",
             otty_agents::AccountKind::Organization,
             vec![otty_agents::FoundIn::profile(
-                profile.agent().clone(),
-                profile.config_dir(),
+                otty_agents::AgentId::new("stranger"),
+                PathBuf::from("/no/such/.stranger"),
             )],
         );
 
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LoadBill {
-                profile,
                 organization,
                 given: vec![given],
             },

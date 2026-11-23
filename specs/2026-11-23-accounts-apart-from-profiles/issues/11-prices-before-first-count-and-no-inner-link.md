@@ -1,6 +1,6 @@
 # 11 Prices load before the first count; no profile↔account link inside OTTY
 
-Status: ready
+Status: done
 Blocked by: 07
 
 ## Why
@@ -42,3 +42,64 @@ Two leftovers of issue 06 (see its comment):
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-23, done. The first count waits for the first price read, and
+  a profile no longer knows the accounts found in its folder.
+
+  Prices before the first count: while the first read of the list prices
+  is on its way (none answered yet), a count of the tokens is not
+  started; the profile waits for the prices
+  (`ListPrices::is_first_read_on_its_way`,
+  `ProfileSpend::wait_for_prices`) and is counted once they answer, with
+  prices or without. Later new prices count again, as before. So a start
+  reads the session files once; a start with no prices at all counts
+  once, and once more when prices arrive. The start no longer waits for
+  the limits before the prices and the bills (`StartWait` is gone): the
+  profiles come first, then the sessions, the prices, the numbers of the
+  accounts and the bills together.
+
+  Inner links found and what became of them:
+
+  1. "Pays with an API key" (`ProfileState::accounts_say_api_key`,
+     `is_api_key`, `billing_kind`, `reads_limits`): gone, with
+     `BillingKind` and `Billing::kind` of `otty-agents`, which only it
+     used.
+  2. The limits of a profile: a profile read the limits of the first
+     subscription found in it (`limits_account`, `LoadLimits`,
+     `LoadLimitsInBackground`, `LimitsLoaded`, `load_limits` of the io
+     crate) and a profile not logged in read none. Now every account a
+     provider part reads has its numbers read by itself
+     (`AccountNumbersLoaded`, `account_reads.rs`, which replaces
+     `own_reads.rs`), in the folders it was found in, whatever the status
+     of a profile. The wait for the agent's program (a read while the
+     mode was away that gave nothing is read again on screen) moved with
+     it.
+  3. The bill of an organization: it was read through a profile that
+     "pays with an API key" and kept on the profile (`organization`,
+     `pays_through`, `bill`). Now each organization a part reads has its
+     bill read once, keyed by the organization (`LoadBill` and
+     `LoadedBill` carry the organization, no profile). Whether an account
+     is an organization with a bill is the provider part's call. An
+     account whose given keys change is read again.
+  4. The profile page said "installed, not used yet" only when no
+     account was found in the folder; now only the agent part's "not
+     logged in" decides.
+  5. A profile showed "the plugin could not read the limits" from the
+     limits read through it; now the failure of an account's read shows
+     on the account only, and the text `agents_plugin_read_limits` is
+     gone from the ten locales.
+  6. `ProfileState` held the accounts found in its folder and
+     `Account::is_found_in` existed to pick them: both are gone.
+
+  "Every limit source failed with an unexpected answer" is now told for
+  the read of an account's numbers, named after the account.
+
+  Tests first, each seen failing: a start with kept prices counts each
+  shown profile once, a start with no prices counts once and once more
+  when prices arrive, a profile page is the same with and without
+  accounts (logged in or not), a subscription is read as the numbers of
+  its account, an account that waits for its program is read again on
+  screen, the bill of an organization is read once whatever its folders
+  hold, and a part that could not read an account asks on the account
+  only. The tests of the removed profile reads were moved to the
+  accounts or removed with the concept. No plugin changed.

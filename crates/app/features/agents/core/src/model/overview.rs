@@ -173,8 +173,8 @@ mod tests {
     use crate::need::NeedAction;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, api_key, at, chatgpt_login_in, claude, codex, codex_work,
-        connected, env, five_hour_limits, limits_answer, limits_loaded,
+        agents, at, chatgpt_login, chatgpt_login_in, claude, codex, codex_work,
+        connected, env, five_hour_limits, limits_numbers, numbers_loaded,
         organization, profiles_with_accounts_loaded, spend_loaded, spend_of,
         with_versions,
     };
@@ -189,7 +189,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let loaded = profiles_with_accounts_loaded(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (
                     codex(),
                     connected(),
@@ -209,12 +209,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
                 at(10),
             ),
         );
@@ -328,7 +325,7 @@ mod tests {
         let _ = reduce(
             &mut state,
             AgentsIntent::BillLoaded(crate::types::LoadedBill {
-                profile: claude(),
+                organization: organization(),
                 given: Vec::new(),
                 bill: Err(crate::testing::bill_key_needed()),
                 read_at: crate::testing::now(),

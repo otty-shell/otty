@@ -87,9 +87,10 @@ mod tests {
     use crate::model::{account_needs, profile_needs};
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, chatgpt_login, claude, codex, connected, five_hour_limits,
-        key_ask, limits_answer, limits_loaded, open_fix_tab, organization,
-        profiles_with_accounts_loaded, with_accounts, with_saved_profiles,
+        asks_numbers_of, at, chatgpt_login, claude, codex, connected,
+        five_hour_limits, key_ask, limits_numbers, numbers_loaded,
+        open_fix_tab, organization, profiles_with_accounts_loaded,
+        with_accounts, with_saved_profiles,
     };
 
     fn report_shown() -> SavedProfiles {
@@ -163,6 +164,11 @@ mod tests {
                 &[crate::testing::codex_with_expired_login()],
                 report_shown(),
             );
+            let read = Ok(limits_numbers(five_hour_limits(10.0)));
+            let _ = reduce(
+                &mut state,
+                numbers_loaded(&chatgpt_login(), read, at(5)),
+            );
             let mut needs = match from_account {
                 true => account_needs(&state),
                 false => profile_needs(&state),
@@ -189,7 +195,7 @@ mod tests {
                 "{opened:?}"
             );
             assert_eq!(closed, [AgentsOutcome::LoadProfiles]);
-            assert!(read.contains(&AgentsOutcome::LoadLimits(codex())));
+            assert!(asks_numbers_of(&read, &chatgpt_login()), "{read:?}");
             assert_eq!(profile_needs(&state), []);
             assert_eq!(account_needs(&state), []);
         }
@@ -197,7 +203,7 @@ mod tests {
 
     /// Decision 9: a login the provider refused, which the files of the
     /// profile do not tell, shows on the account only. Once the tab of
-    /// its login closes, the limits are read again, and a good answer
+    /// its login closes, the account is read again, and a good answer
     /// takes the need away.
     #[test]
     fn a_refused_login_goes_from_its_account_at_the_next_read() {
@@ -205,11 +211,11 @@ mod tests {
             &[(codex(), connected(), vec![chatgpt_login()])],
             report_shown(),
         );
-        let refused = limits_answer(vec![(
-            otty_agents::SourceId::ProviderPart,
-            Err(crate::testing::login_expired()),
-        )]);
-        let _ = reduce(&mut state, limits_loaded(&codex(), refused, at(10)));
+        let refused = Err(crate::testing::login_expired());
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(&chatgpt_login(), refused, at(10)),
+        );
         let action = account_needs(&state)
             .remove(0)
             .fix
@@ -226,13 +232,11 @@ mod tests {
                 report_shown(),
             ),
         );
-        let good = limits_answer(vec![(
-            otty_agents::SourceId::ProviderPart,
-            Ok(five_hour_limits(10.0)),
-        )]);
-        let _ = reduce(&mut state, limits_loaded(&codex(), good, at(20)));
+        let good = Ok(limits_numbers(five_hour_limits(10.0)));
+        let _ =
+            reduce(&mut state, numbers_loaded(&chatgpt_login(), good, at(20)));
 
-        assert!(read.contains(&AgentsOutcome::LoadLimits(codex())));
+        assert!(asks_numbers_of(&read, &chatgpt_login()), "{read:?}");
         assert_eq!(account_needs(&state), []);
         assert_eq!(profile_needs(&state), []);
     }
@@ -242,7 +246,7 @@ mod tests {
     #[test]
     fn ask_key_of_a_need_opens_the_key_dialog_of_the_account() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             report_shown(),
         );
         let ask = |account| NeedAction::AskKey {

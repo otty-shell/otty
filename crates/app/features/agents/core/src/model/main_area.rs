@@ -97,7 +97,7 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         agents, at, chatgpt_login, claude, codex, connected, env,
-        five_hour_limits, limits_answer, limits_loaded, no_agents, now,
+        five_hour_limits, limits_numbers, no_agents, now, numbers_loaded,
         profiles_loaded, profiles_with_accounts_loaded,
         two_agents_with_sessions, with_accounts, with_profiles,
     };
@@ -127,7 +127,7 @@ mod tests {
         let shown = [(codex(), connected(), vec![chatgpt_login()])];
         let mut state =
             with_accounts(&shown, otty_agents::SavedProfiles::default());
-        let _ = reduce(&mut state, limits_at(&codex(), 42.0, at(10)));
+        let _ = reduce(&mut state, limits_at(42.0, at(10)));
         let _ =
             reduce(&mut state, AgentsIntent::SelectAccount(chatgpt_login()));
         let before = account_page(&state);
@@ -142,7 +142,7 @@ mod tests {
             ),
         );
         let profiles_read = account_page(&state);
-        let _ = reduce(&mut state, limits_at(&codex(), 80.0, at(20)));
+        let _ = reduce(&mut state, limits_at(80.0, at(20)));
         let limits_read = account_page(&state);
 
         assert!(before.is_some(), "the page of the login shows");
@@ -161,19 +161,14 @@ mod tests {
         }
     }
 
-    /// The limits of `profile` with `percent` of five hours used, read at
-    /// `read_at`.
-    fn limits_at(
-        profile: &otty_agents::Profile,
-        percent: f64,
-        read_at: SystemTime,
-    ) -> AgentsIntent {
-        let answer = limits_answer(vec![(
-            otty_agents::SourceId::ProviderPart,
-            Ok(five_hour_limits(percent)),
-        )]);
-
-        limits_loaded(profile, answer, read_at)
+    /// The limits of the ChatGPT subscription with `percent` of five
+    /// hours used, read at `read_at`.
+    fn limits_at(percent: f64, read_at: SystemTime) -> AgentsIntent {
+        numbers_loaded(
+            &crate::testing::chatgpt_login(),
+            Ok(limits_numbers(five_hour_limits(percent))),
+            read_at,
+        )
     }
 
     /// Issue 28: OTTY ships no plugin, so on first start no agent part is
@@ -341,7 +336,7 @@ mod tests {
         let mut state = with_accounts(
             &[(
                 claude(),
-                crate::testing::api_key(),
+                crate::testing::connected(),
                 vec![crate::testing::organization()],
             )],
             saved,

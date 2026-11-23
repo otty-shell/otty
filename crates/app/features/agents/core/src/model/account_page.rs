@@ -144,15 +144,15 @@ fn plan(state: &AgentsState, account: &Account) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{AccountKind, ProviderId, SavedProfiles, SourceId};
+    use otty_agents::{AccountKind, ProviderId, SavedProfiles};
 
     use super::*;
     use crate::need::NeedAction;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, chatgpt_login, chatgpt_login_in, claude, codex,
-        codex_work, connected, five_hour_limits, limits_answer, limits_loaded,
-        now, organization, with_accounts,
+        at, chatgpt_login, chatgpt_login_in, claude, codex, codex_work,
+        connected, five_hour_limits, limits_numbers, now, numbers_loaded,
+        organization, with_accounts,
     };
 
     fn fact(key: Key, value: &str) -> FactViewModel {
@@ -188,12 +188,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
                 at(10),
             ),
         );
@@ -291,7 +288,7 @@ mod tests {
             )],
         );
         let state = with_accounts(
-            &[(claude(), api_key(), vec![key.clone()])],
+            &[(claude(), connected(), vec![key.clone()])],
             SavedProfiles::default(),
         );
 
@@ -309,26 +306,17 @@ mod tests {
         );
     }
 
-    /// Issue 19 and 20 of spec 2026-11-19-agent-plugins: a read no part
-    /// answered shows what the parts ask, the agent part's need first,
-    /// and the last numbers stay, greyed, with why under them.
+    /// Issue 19 and 20 of spec 2026-11-19-agent-plugins: a read the part
+    /// did not answer shows what the part asks, and the last numbers stay,
+    /// greyed, with why under them.
     #[test]
-    fn a_read_no_part_answered_shows_the_needs_of_the_parts() {
+    fn a_read_the_part_did_not_answer_shows_its_need() {
         let mut state = shared_chatgpt();
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![
-                    (
-                        SourceId::ProviderPart,
-                        Err(crate::testing::login_expired()),
-                    ),
-                    (
-                        SourceId::AgentPart,
-                        Err(crate::testing::refused_key_need()),
-                    ),
-                ]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(20),
             ),
         );
@@ -343,15 +331,10 @@ mod tests {
             .collect();
         assert_eq!(
             actions,
-            vec![
-                NeedAction::OpenPage(String::from(
-                    "https://platform.deepseek.com/api_keys"
-                )),
-                NeedAction::Run {
-                    title: String::from("OpenAI · you@example.com"),
-                    command: otty_agents::AgentCommand::new("codex"),
-                },
-            ]
+            vec![NeedAction::Run {
+                title: String::from("OpenAI · you@example.com"),
+                command: otty_agents::AgentCommand::new("codex"),
+            }]
         );
         let Some(AccountNumbersViewModel::Limits(limits)) = page.numbers else {
             panic!("the limits block stays");
@@ -366,15 +349,12 @@ mod tests {
     #[test]
     fn an_organization_whose_part_asks_for_a_key_shows_the_need() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             crate::testing::saved_with_given_key(),
         );
         let _ = reduce(
             &mut state,
-            crate::testing::bill_loaded(
-                &claude(),
-                Err(crate::testing::bill_key_needed()),
-            ),
+            crate::testing::bill_loaded(Err(crate::testing::bill_key_needed())),
         );
 
         let page = page_of(&state, organization());

@@ -3,8 +3,9 @@
 //!
 //! A real failure is one that is not an expected state: `agents.json` that
 //! can not be read, a config or session folder that is there but can not
-//! be read, every limit source failing with at least one answer OTTY does
-//! not expect (the agent probably changed), and a price table that is
+//! be read, a provider part that could not read the numbers of an account
+//! from an answer OTTY does not expect (the agent probably changed), and a
+//! price table that is
 //! broken or not what OTTY expects. Not logged in, not available and a
 //! plan without numbers are expected and never told.
 //!
@@ -13,13 +14,13 @@
 //! forgotten, so it is told again when it comes back. A failed save of
 //! `agents.json` is not here: it answers the user's own press every time.
 
-use otty_agents::{Profile, SourceError, SourceFailure};
+use otty_agents::{AccountKey, Profile, SourceError, SourceFailure, SourceId};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::event::AgentsOutcome;
 use super::failure_text::failure_reasons;
 use super::types::{
-    LimitsRead, LoadedLimits, LoadedPrices, LoadedSessions, SessionsRead,
+    LoadedAccountNumbers, LoadedPrices, LoadedSessions, SessionsRead,
 };
 
 /// The problems the user was told of and that are still there.
@@ -59,7 +60,7 @@ pub(crate) struct Check {
     text: Option<String>,
 }
 
-/// A real failure, by what failed and for which profile.
+/// A real failure, by what failed and for which profile or account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Problem {
     /// `agents.json` could not be read.
@@ -67,9 +68,9 @@ enum Problem {
     /// A config or session folder of the profile is there but could not
     /// be read.
     FolderUnreadable(Profile),
-    /// Every limit source of the profile failed, one with an answer OTTY
-    /// does not expect.
-    LimitsChanged(Profile),
+    /// The provider part of the account could not read its numbers from
+    /// an answer OTTY does not expect.
+    NumbersChanged(AccountKey),
     /// The LiteLLM price table or its kept copy is broken or not what OTTY
     /// expects.
     PricesUnreadable,
@@ -121,22 +122,28 @@ pub(crate) fn sessions(loaded: &LoadedSessions) -> Check {
     }
 }
 
-/// The check of a read of the limits: every source failing with one
-/// unexpected answer.
-pub(crate) fn limits(loaded: &LoadedLimits) -> Check {
-    let failures = loaded.limits.failures();
-    let has_answer = matches!(loaded.limits, LimitsRead::Answered(_));
-
-    let is_unexpected =
-        |error: &SourceError| matches!(error, SourceError::UnexpectedAnswer(_));
-    let has_unexpected = failures.iter().any(|f| is_unexpected(f.error()));
-    let changed = (!has_answer && has_unexpected).then(|| {
-        problem_text(Key::TplAgentsLimitsChanged, &loaded.profile, failures)
-    });
+/// The check of a read of the numbers of an account named `name`: its
+/// provider part failed with an answer OTTY does not expect.
+pub(crate) fn account_numbers(
+    loaded: &LoadedAccountNumbers,
+    name: &str,
+) -> Check {
+    let text = match &loaded.numbers {
+        Err(error @ SourceError::UnexpectedAnswer(_)) => {
+            let failure =
+                SourceFailure::new(SourceId::ProviderPart, error.clone());
+            let reasons = failure_reasons(&[failure]);
+            Some(i18n::filled(
+                Key::TplAgentsLimitsChanged,
+                &[("name", name), ("error", &reasons)],
+            ))
+        },
+        _ => None,
+    };
 
     Check {
-        problem: Problem::LimitsChanged(loaded.profile.clone()),
-        text: changed,
+        problem: Problem::NumbersChanged(loaded.account.key().clone()),
+        text,
     }
 }
 
@@ -193,16 +200,17 @@ fn problem_text(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{SourceError, SourceId, Unavailable, Unexpected};
+    use otty_agents::{SavedProfiles, Unavailable, Unexpected};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        agents, api_key, at, claude, codex, connected, env, five_hour_limits,
-        limits_answer, limits_loaded, prices_answer, prices_loaded,
-        profiles_loaded_with_problem, sessions_loaded, with_profiles,
+        agents, at, chatgpt_login, claude, codex, connected, env,
+        numbers_loaded, prices_answer, prices_loaded,
+        profiles_loaded_with_problem, sessions_loaded, with_accounts,
+        with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -220,12 +228,10 @@ mod tests {
     /// The failures of one read in which each of `errors` failed its
     /// source.
     fn failures(errors: Vec<(SourceId, SourceError)>) -> Vec<SourceFailure> {
-        let sources = errors
+        errors
             .into_iter()
-            .map(|(source, error)| (source, Err(error)))
-            .collect();
-
-        limits_answer(sources).failures().to_vec()
+            .map(|(source, error)| SourceFailure::new(source, error))
+            .collect()
     }
 
     fn sessions_failed(errors: Vec<(SourceId, SourceError)>) -> AgentsIntent {
@@ -311,27 +317,29 @@ mod tests {
         assert_eq!(broken_again, [expected]);
     }
 
+    /// The ChatGPT subscription found in Codex, with nothing hidden.
+    fn with_chatgpt() -> AgentsState {
+        with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            SavedProfiles::default(),
+        )
+    }
+
     #[test]
-    fn every_part_failing_with_an_unexpected_answer_is_told_once() {
-        let mut state = with_profiles(&[(codex(), connected())]);
-        let changed = || {
-            limits_answer(vec![
-                (SourceId::ProviderPart, Err(unexpected())),
-                (SourceId::AgentPart, Err(not_available())),
-            ])
-        };
+    fn a_part_that_reads_an_account_from_an_unexpected_answer_is_told_once() {
+        let mut state = with_chatgpt();
 
         let first = told(reduce(
             &mut state,
-            limits_loaded(&codex(), changed(), at(10)),
+            numbers_loaded(&chatgpt_login(), Err(unexpected()), at(10)),
         ));
         let again = told(reduce(
             &mut state,
-            limits_loaded(&codex(), changed(), at(20)),
+            numbers_loaded(&chatgpt_login(), Err(unexpected()), at(20)),
         ));
 
         assert_eq!(first.len(), 1);
-        assert!(first[0].contains("Codex"), "{first:?}");
+        assert!(first[0].contains("you@example.com"), "{first:?}");
         assert!(
             first[0]
                 .contains("unexpected answer: the answer is not a JSON object")
@@ -339,40 +347,23 @@ mod tests {
         assert!(again.is_empty());
     }
 
-    /// Not logged in, not available, an agent part that answered after an
-    /// unexpected answer of the provider part and a folder that is not
-    /// there are expected.
+    /// An expired login, a part that is not available and a folder that
+    /// is not there are expected.
     #[test]
     fn an_expected_state_is_never_told() {
-        let mut state = with_profiles(&[
-            (claude(), connected()),
-            (codex(), crate::testing::not_logged_in(&codex())),
-        ]);
+        let mut state = with_chatgpt();
 
         let logged_out = told(reduce(
             &mut state,
-            limits_loaded(
-                &claude(),
-                limits_answer(vec![
-                    (
-                        SourceId::ProviderPart,
-                        Err(crate::testing::login_expired()),
-                    ),
-                    (SourceId::AgentPart, Err(not_available())),
-                ]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(10),
             ),
         ));
-        let answered_later = told(reduce(
+        let not_read = told(reduce(
             &mut state,
-            limits_loaded(
-                &claude(),
-                limits_answer(vec![
-                    (SourceId::ProviderPart, Err(unexpected())),
-                    (SourceId::AgentPart, Ok(five_hour_limits(10.0))),
-                ]),
-                at(20),
-            ),
+            numbers_loaded(&chatgpt_login(), Err(not_available()), at(20)),
         ));
         let no_folder = told(reduce(
             &mut state,
@@ -380,13 +371,13 @@ mod tests {
         ));
 
         assert!(logged_out.is_empty());
-        assert!(answered_later.is_empty());
+        assert!(not_read.is_empty());
         assert!(no_folder.is_empty());
     }
 
     #[test]
     fn a_broken_price_file_is_told_once_until_it_reads() {
-        let mut state = with_profiles(&[(claude(), api_key())]);
+        let mut state = with_profiles(&[(claude(), connected())]);
         let broken = SourceError::UnexpectedAnswer(Unexpected::NotJsonObject);
         let mut read = |failures: &[(SourceId, SourceError)]| {
             told(reduce(

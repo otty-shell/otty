@@ -330,7 +330,7 @@ mod tests {
     use crate::model::UsageTableRowViewModel;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, chatgpt_login, claude, codex, connected, month_spend, now,
+        at, chatgpt_login, claude, codex, connected, month_spend, now,
         organization, read, session, set_prices, spend_loaded, with_accounts,
         with_profiles,
     };
@@ -436,7 +436,7 @@ mod tests {
     fn state_with_accounts() -> AgentsState {
         let mut state = with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (codex(), connected(), vec![chatgpt_login()]),
             ],
             SavedProfiles::default(),
@@ -705,8 +705,8 @@ mod tests {
     /// subscription as of a key, once the prices are known.
     #[test]
     fn money_shows_for_every_session_once_the_prices_are_known() {
-        let mut priced = state_with(api_key());
-        let mut no_prices = state_with_no_prices(api_key());
+        let mut priced = state_with(connected());
+        let mut no_prices = state_with_no_prices(connected());
         let mut plan = state_with(connected());
         let stats = SessionStats::new(None, None, vec![million_in("opus", 3)]);
         let money_reason = |state: &mut AgentsState| {
@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn with_no_prices_a_project_shows_a_dash_for_its_money() {
-        let mut state = state_with_no_prices(api_key());
+        let mut state = state_with_no_prices(connected());
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
         let part = ProjectStats::new(None, None, vec![million_in("opus", 1)]);
 
@@ -803,7 +803,7 @@ mod tests {
     /// 2026-11-23, Decision 3).
     #[test]
     fn a_project_shows_its_facts_and_prices_every_profile() {
-        let mut state = state_with(api_key());
+        let mut state = state_with(connected());
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
         let claude_part = ProjectStats::new(
             Some(at(NOW - 3600)),
@@ -941,7 +941,7 @@ mod tests {
     /// dollars.
     #[test]
     fn the_switches_of_the_session_popup_change_its_numbers() {
-        let mut state = state_with(api_key());
+        let mut state = state_with(connected());
         session_dialog(&mut state);
         let stats =
             SessionStats::new(None, None, Vec::new()).with_spend(month_spend());
@@ -973,7 +973,7 @@ mod tests {
     /// the sums in dollars.
     #[test]
     fn the_switches_of_the_project_popup_change_its_numbers() {
-        let mut state = state_with(api_key());
+        let mut state = state_with(connected());
         let _ = reduce(
             &mut state,
             spend_loaded(

@@ -15,8 +15,8 @@ use otty_agents::{
 };
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::account_reads::AccountRead;
 use super::super::failure_text::{named_failure, source_error_text};
-use super::super::own_reads::OwnRead;
 use super::super::state::AgentsState;
 use super::limits::{
     LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
@@ -95,8 +95,8 @@ fn money(
     account: &Account,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
-    let own = state.profiles().own_reads().of(account);
-    let spent = spent_money(state, account, own, now);
+    let own = state.profiles().account_reads().of(account);
+    let spent = spent_money(own, now);
     let Some(own) = own else {
         return spent;
     };
@@ -201,36 +201,24 @@ fn own_failure_text(
     }
 }
 
-/// The money spent this month: from the bill when one of the account's
-/// profiles read it, else as the provider counted it for the account's
-/// key; with neither, only why the bill could not be read with the admin
-/// key, if it could not.
+/// The money spent this month, from `own`, what was read of the account:
+/// from the bill of the organization when it was read, else as the
+/// provider counted it for the account's key; with neither, only why the
+/// bill could not be read with the admin key, if it could not.
 fn spent_money(
-    state: &AgentsState,
-    account: &Account,
-    own: Option<&OwnRead>,
+    own: Option<&AccountRead>,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
-    let paying = || {
-        state
-            .profiles()
-            .shown()
-            .iter()
-            .filter(|shown| shown.pays_through(account))
-    };
-    let bill = paying().find_map(|shown| {
-        let bill = shown.bill();
-        bill.answer().zip(bill.reads().read_at())
-    });
+    let account_bill = own.map(AccountRead::bill);
+    let bill =
+        account_bill.and_then(|bill| bill.answer().zip(bill.reads().read_at()));
     let bill_failure =
-        paying()
-            .find_map(|shown| shown.bill().failure())
-            .map(|error| {
-                i18n::with_error(
-                    Key::TplAgentsBillReadFailed,
-                    &source_error_text(error),
-                )
-            });
+        account_bill.and_then(|bill| bill.failure()).map(|error| {
+            i18n::with_error(
+                Key::TplAgentsBillReadFailed,
+                &source_error_text(error),
+            )
+        });
 
     let counted = own.and_then(|own| {
         let (balance, read_at) = own.balance()?;
@@ -271,10 +259,10 @@ mod tests {
     use super::*;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, bill_loaded, bill_of, chatgpt_login, claude, codex,
-        connected, five_hour_limits, limits_answer, limits_loaded, now,
-        organization, price_table, saved_with_given_key, set_prices,
-        spend_loaded, with_accounts,
+        at, bill_loaded, bill_of, chatgpt_login, claude, codex, connected,
+        five_hour_limits, limits_numbers, now, numbers_loaded, organization,
+        price_table, saved_with_given_key, set_prices, spend_loaded,
+        with_accounts,
     };
     use crate::types::SpendCount;
 
@@ -287,12 +275,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(limits),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(limits)),
                 at(10),
             ),
         );
@@ -347,12 +332,9 @@ mod tests {
         let mut state = chatgpt_with(five_hour_limits(42.0));
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Err(crate::testing::login_expired()),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(20),
             ),
         );
@@ -400,10 +382,10 @@ mod tests {
     #[test]
     fn an_organization_shows_the_money_of_its_bill_this_month() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             saved_with_given_key(),
         );
-        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(40, 2))));
+        let _ = reduce(&mut state, bill_loaded(Ok(bill_of(40, 2))));
 
         let numbers =
             AccountNumbersViewModel::of(&state, &organization(), now());
@@ -426,7 +408,7 @@ mod tests {
     #[test]
     fn with_no_bill_the_tokens_of_its_profiles_make_no_money() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             SavedProfiles::default(),
         );
         set_prices(&mut state, price_table());
@@ -450,12 +432,12 @@ mod tests {
     #[test]
     fn a_bill_that_failed_says_why() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             saved_with_given_key(),
         );
         let _ = reduce(
             &mut state,
-            bill_loaded(&claude(), Err(crate::testing::refused_key_need())),
+            bill_loaded(Err(crate::testing::refused_key_need())),
         );
 
         let numbers =
@@ -481,7 +463,7 @@ mod tests {
             SavedProfiles::default(),
         );
         let organization_state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             SavedProfiles::default(),
         );
 

@@ -184,8 +184,7 @@ pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
 pub use crate::limits::{
-    Billing, BillingKind, Credits, ExtraUsage, LimitWindow, Limits,
-    UsageWindows, WindowId,
+    Billing, Credits, ExtraUsage, LimitWindow, Limits, UsageWindows, WindowId,
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::MoneyTotal;

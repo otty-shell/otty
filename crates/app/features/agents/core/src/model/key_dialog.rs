@@ -114,7 +114,7 @@ mod tests {
         let mut state = crate::testing::with_accounts(
             &[(
                 crate::testing::claude(),
-                crate::testing::api_key(),
+                crate::testing::connected(),
                 vec![organization.clone()],
             )],
             SavedProfiles::default(),

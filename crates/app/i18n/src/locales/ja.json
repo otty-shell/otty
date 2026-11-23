@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version} は{what}を読み取れませんでした",
     "tpl_agents_need_plugin_failed_text": "{reason}。最後に正しく読めた数値は残ります。プラグインの作者向けにレポートをコピーしてください。",
     "agents_plugin_read_sessions": "セッション",
-    "agents_plugin_read_limits": "上限",
     "agents_plugin_read_tokens": "トークン",
     "agents_plugin_read_numbers": "アカウントの数値",
     "agents_open_plugin_repository": "プラグインのリポジトリを開く"

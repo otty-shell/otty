@@ -6,6 +6,7 @@ use otty_app_domain::plugins::PluginsPlace;
 
 use super::event::{AgentsIntent, AgentsOutcome};
 use super::menus::AgentsMenu;
+use super::model::account_name;
 use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
@@ -104,18 +105,6 @@ pub(super) fn reduce(
 
             state.told_mut().tell(vec![check])
         },
-        AgentsIntent::LimitsLoaded(loaded) => {
-            if !is_still_shown(state, &loaded.profile, "limits") {
-                return Vec::new();
-            }
-
-            let check = real_failures::limits(&loaded);
-            state.profiles_mut().apply_limits(loaded);
-
-            let mut outcomes = state.told_mut().tell(vec![check]);
-            outcomes.extend(reads::after_limits(state, SystemTime::now()));
-            outcomes
-        },
         AgentsIntent::SpendLoaded(loaded) => {
             if !is_still_shown(state, &loaded.profile, "tokens") {
                 return Vec::new();
@@ -126,10 +115,8 @@ pub(super) fn reduce(
         },
         AgentsIntent::BillLoaded(loaded) => {
             let profiles = state.profiles();
-            if !profiles
-                .is_shown_with_given_keys(&loaded.profile, &loaded.given)
-            {
-                let name = loaded.profile.name();
+            if !profiles.has_given_keys(&loaded.organization, &loaded.given) {
+                let name = loaded.organization.name();
                 log::debug!(
                     "a bill read with keys no longer given dropped: {name}"
                 );
@@ -148,8 +135,17 @@ pub(super) fn reduce(
             outcomes
         },
         AgentsIntent::AccountNumbersLoaded(loaded) => {
-            state.profiles_mut().apply_own_numbers(loaded);
-            Vec::new()
+            let name = account_name(
+                state.registry(),
+                state.profiles().saved(),
+                &loaded.account,
+            );
+            let check = real_failures::account_numbers(&loaded, &name);
+            state.profiles_mut().apply_account_numbers(loaded);
+
+            let mut outcomes = state.told_mut().tell(vec![check]);
+            outcomes.extend(reads::after_account_numbers(state));
+            outcomes
         },
         AgentsIntent::LimitsTick => reads::on_tick(state),
         AgentsIntent::SelectProject(folder) => {
@@ -489,10 +485,10 @@ mod tests {
     use super::*;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
-        agents, api_key, at, bill_loaded, bill_of, claude, claude_login,
+        agents, at, bill_loaded, bill_of, chatgpt_login, claude, claude_login,
         claude_work, codex, codex_work, connected, env, five_hour_limits,
-        folders, key_account, limits_answer, limits_loaded, load_bill,
-        no_files, now, open_menu, open_tab, organization, profiles_loaded,
+        folders, limits_numbers, load_bill, no_files, now, numbers_loaded,
+        open_menu, open_tab, organization, profiles_loaded,
         profiles_with_accounts_loaded, read, select_project, session,
         sessions_loaded, spend_loaded, spend_of, two_agents_with_sessions,
         with_accounts, with_billed_claude, with_profiles,
@@ -529,8 +525,8 @@ mod tests {
     }
 
     #[test]
-    fn each_shown_profile_has_its_sessions_read_and_a_connected_one_its_limits()
-    {
+    fn each_shown_profile_has_its_sessions_read_and_its_tokens_after_the_prices()
+     {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -543,20 +539,34 @@ mod tests {
                 (claude_work(), ProfileStatus::ConfigDirNotFound),
             ]),
         );
+        let prices = reduce(
+            &mut state,
+            crate::testing::prices_loaded(
+                crate::testing::prices_answer(
+                    &[],
+                    Some(crate::testing::fetched_prices(at(1))),
+                ),
+                at(1),
+            ),
+        );
 
         assert_eq!(
             outcomes,
             vec![
                 AgentsOutcome::LoadSessions(claude()),
                 AgentsOutcome::LoadSessions(codex()),
-                AgentsOutcome::LoadLimits(claude()),
-                AgentsOutcome::LoadSpend(claude()),
-                AgentsOutcome::LoadSpend(codex()),
                 AgentsOutcome::LoadPrices { fetch_again: false },
             ],
-            "only a connected profile has its limits read, every profile \
-             with a config folder its tokens counted, and the prices are \
-             read for the money of every profile"
+            "the prices are read for the money of every profile, and the \
+             tokens wait for them"
+        );
+        assert_eq!(
+            prices,
+            vec![
+                AgentsOutcome::LoadSpend(claude()),
+                AgentsOutcome::LoadSpend(codex()),
+            ],
+            "every profile with a config folder has its tokens counted"
         );
         assert!(state.profiles().is_loaded());
         assert!(!state.profiles().is_loading());
@@ -826,65 +836,89 @@ mod tests {
         assert!(state.profiles().projects().is_empty());
     }
 
-    // Reading the limits.
+    // Reading the numbers of the accounts.
+
+    /// Claude Code with the Claude login, Codex with the ChatGPT login and
+    /// a second Codex nobody is logged in with.
+    fn with_two_logins() -> AgentsState {
+        with_accounts(
+            &[
+                (claude(), connected(), vec![claude_login()]),
+                (codex(), connected(), vec![chatgpt_login()]),
+                (
+                    codex_work(),
+                    crate::testing::not_logged_in(&codex_work()),
+                    Vec::new(),
+                ),
+            ],
+            SavedProfiles::default(),
+        )
+    }
 
     #[test]
-    fn the_tick_reads_the_limits_again_unless_a_read_is_on_its_way() {
-        let mut state = with_profiles(&[
-            (claude(), connected()),
-            (codex(), connected()),
-            (codex_work(), crate::testing::not_logged_in(&codex_work())),
-        ]);
+    fn the_tick_reads_the_accounts_again_unless_a_read_is_on_its_way() {
+        let mut state = with_two_logins();
 
         let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &claude(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+            numbers_loaded(
+                &claude_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
                 at(10),
             ),
         );
         let after_one_answer = reduce(&mut state, AgentsIntent::LimitsTick);
 
         assert!(while_reading.is_empty(), "both reads are on their way");
-        assert_eq!(after_one_answer, vec![AgentsOutcome::LoadLimits(claude())]);
+        assert_eq!(
+            after_one_answer,
+            vec![AgentsOutcome::LoadAccountNumbers {
+                account: claude_login(),
+                given: Vec::new(),
+                may_start_programs: true,
+            }]
+        );
     }
 
     #[test]
-    fn the_limits_are_kept_by_their_profile_and_survive_a_refresh() {
-        let mut state =
-            with_profiles(&[(claude(), connected()), (codex(), connected())]);
-        let answer = limits_answer(vec![(
-            otty_agents::SourceId::ProviderPart,
-            Ok(five_hour_limits(42.0)),
-        )]);
+    fn the_numbers_are_kept_by_their_account_and_survive_a_refresh() {
+        let mut state = with_two_logins();
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
+                at(10),
+            ),
+        );
 
-        let _ =
-            reduce(&mut state, limits_loaded(&codex(), answer.clone(), at(10)));
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let refreshed = reduce(
             &mut state,
-            profiles_loaded(&[(claude(), connected()), (codex(), connected())]),
+            profiles_with_accounts_loaded(
+                &[
+                    (claude(), connected(), vec![claude_login()]),
+                    (codex(), connected(), vec![chatgpt_login()]),
+                ],
+                SavedProfiles::default(),
+            ),
         );
 
-        let crate::types::LimitsRead::Answered(expected) = answer else {
-            panic!("the source answers");
+        let read_at = |account: &otty_agents::Account| {
+            state
+                .profiles()
+                .account_limits(account)
+                .and_then(|limits| limits.last_good().map(|(_, at)| at))
         };
-        assert_eq!(state.profiles().shown()[0].limits().last_good(), None);
-        assert_eq!(
-            state.profiles().shown()[1].limits().last_good(),
-            Some((&expected, at(10)))
+        assert_eq!(read_at(&claude_login()), None);
+        assert_eq!(read_at(&chatgpt_login()), Some(at(10)));
+        assert!(
+            crate::testing::asks_numbers_of(&refreshed, &chatgpt_login()),
+            "Refresh reads the account again"
         );
         assert!(
-            refreshed.contains(&AgentsOutcome::LoadLimits(codex())),
-            "Refresh reads the limits again"
-        );
-        assert!(
-            !refreshed.contains(&AgentsOutcome::LoadLimits(claude())),
+            !crate::testing::asks_numbers_of(&refreshed, &claude_login()),
             "a read is still on its way"
         );
     }
@@ -895,6 +929,16 @@ mod tests {
     fn the_tokens_are_kept_by_their_profile_and_counted_again_on_refresh() {
         let mut state =
             with_profiles(&[(claude(), connected()), (codex(), connected())]);
+        let _ = reduce(
+            &mut state,
+            crate::testing::prices_loaded(
+                crate::testing::prices_answer(
+                    &[],
+                    Some(crate::testing::fetched_prices(at(1))),
+                ),
+                at(1),
+            ),
+        );
 
         let _ = reduce(
             &mut state,
@@ -973,7 +1017,7 @@ mod tests {
             "Claude Code · Home",
             claude().config_dir().to_path_buf(),
         );
-        let mut state = with_profiles(&[(claude(), api_key())]);
+        let mut state = with_profiles(&[(claude(), connected())]);
         read(
             &mut state,
             &claude(),
@@ -991,7 +1035,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let _ = reduce(
             &mut state,
-            profiles_loaded(&[(renamed.clone(), api_key())]),
+            profiles_loaded(&[(renamed.clone(), connected())]),
         );
 
         let shown = &state.profiles().shown()[0];
@@ -1036,14 +1080,14 @@ mod tests {
     fn a_new_given_key_forgets_the_bill_of_the_old_one() {
         let other_key = KeyRef::EnvVar(String::from("OTHER_ORG_KEY"));
         let mut state = with_billed_claude();
-        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
+        let _ = reduce(&mut state, bill_loaded(Ok(bill_of(12, 3))));
         let _ = reduce(&mut state, AgentsIntent::LimitsTick);
 
         let _ = reduce(&mut state, AgentsIntent::Refresh);
         let reloaded = reduce(
             &mut state,
             profiles_with_accounts_loaded(
-                &[(claude(), api_key(), vec![organization()])],
+                &[(claude(), connected(), vec![organization()])],
                 SavedProfiles::default().with_given_key_of(
                     &organization(),
                     "admin",
@@ -1051,16 +1095,14 @@ mod tests {
                 ),
             ),
         );
-        let late =
-            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(1, 2))));
+        let late = reduce(&mut state, bill_loaded(Ok(bill_of(1, 2))));
 
         assert!(reloaded.contains(&AgentsOutcome::LoadBill {
-            profile: claude(),
             organization: organization(),
             given: vec![otty_agents::GivenKey::new("admin", other_key)],
         }));
         assert!(late.is_empty(), "the bill of the old key is dropped");
-        assert_eq!(state.profiles().shown()[0].bill().answer(), None);
+        assert_eq!(bill_answer(&state), None);
     }
 
     #[test]
@@ -1108,9 +1150,17 @@ mod tests {
 
     // Reading the bill.
 
+    /// The bill of the [`organization`] as it was read.
+    fn bill_answer(state: &AgentsState) -> Option<otty_agents::Bill> {
+        state
+            .profiles()
+            .account_reads()
+            .of(&organization())
+            .and_then(|read| read.bill().answer().cloned())
+    }
+
     #[test]
-    fn an_api_key_profile_whose_organization_has_a_given_key_has_its_bill_read()
-    {
+    fn an_organization_found_in_two_profiles_has_its_bill_read_once() {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -1119,9 +1169,9 @@ mod tests {
             &mut state,
             profiles_with_accounts_loaded(
                 &[
-                    (claude(), api_key(), vec![organization()]),
-                    (claude_work(), api_key(), Vec::new()),
-                    (codex(), api_key(), vec![organization()]),
+                    (claude(), connected(), vec![organization()]),
+                    (claude_work(), connected(), Vec::new()),
+                    (codex(), connected(), vec![organization()]),
                 ],
                 crate::testing::saved_with_given_key(),
             ),
@@ -1133,60 +1183,36 @@ mod tests {
             .collect();
         assert_eq!(
             bills,
-            [(claude(), organization().key().clone())],
-            "a profile with no organization, or of an agent with no bill, \
-             has no bill read"
+            [organization().key().clone()],
+            "one organization, one read, whatever profiles it was found in"
         );
     }
 
     #[test]
-    fn a_subscription_with_a_given_key_has_no_bill_read() {
-        let mut state =
-            AgentsState::new(agents(), crate::testing::registry(), env());
-        let _ = reduce(&mut state, AgentsIntent::Enter);
-
-        let outcomes = reduce(
-            &mut state,
-            profiles_with_accounts_loaded(
-                &[(
-                    claude(),
-                    connected(),
-                    vec![claude_login(), organization()],
-                )],
-                crate::testing::saved_with_given_key(),
-            ),
-        );
-
-        assert!(!outcomes.contains(&load_bill(&claude())));
-    }
-
-    #[test]
-    fn the_bill_is_kept_by_its_profile_and_read_again_on_the_tick() {
+    fn the_bill_is_kept_by_its_organization_and_read_again_on_the_tick() {
         let mut state = with_billed_claude();
         let while_reading = reduce(&mut state, AgentsIntent::LimitsTick);
 
-        let applied =
-            reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
+        let applied = reduce(&mut state, bill_loaded(Ok(bill_of(12, 3))));
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
 
         assert!(while_reading.is_empty(), "a read is on its way");
         assert!(applied.is_empty());
-        assert_eq!(
-            state.profiles().shown()[0].bill().answer(),
-            Some(&bill_of(12, 3))
-        );
-        assert_eq!(ticked, vec![load_bill(&claude())]);
+        assert_eq!(bill_answer(&state), Some(bill_of(12, 3)));
+        assert_eq!(ticked, vec![load_bill()]);
     }
 
     #[test]
-    fn a_bill_of_a_profile_no_longer_shown_is_dropped() {
-        let mut state = with_billed_claude();
+    fn a_bill_of_an_organization_no_longer_listed_is_dropped() {
+        let mut state = with_accounts(
+            &[(claude(), connected(), Vec::new())],
+            crate::testing::saved_with_given_key(),
+        );
 
-        let outcomes =
-            reduce(&mut state, bill_loaded(&codex(), Ok(bill_of(1, 2))));
+        let outcomes = reduce(&mut state, bill_loaded(Ok(bill_of(1, 2))));
 
         assert!(outcomes.is_empty());
-        assert_eq!(state.profiles().shown()[0].bill().answer(), None);
+        assert_eq!(bill_answer(&state), None);
     }
 
     #[test]
@@ -1207,24 +1233,26 @@ mod tests {
     }
 
     #[test]
-    fn limits_of_a_profile_no_longer_shown_are_dropped() {
+    fn numbers_of_an_account_no_longer_listed_are_dropped() {
         let mut state = with_profiles(&[(claude(), connected())]);
 
         let outcomes = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(five_hour_limits(42.0))),
                 at(10),
             ),
         );
 
         assert!(outcomes.is_empty());
-        assert_eq!(state.profiles().shown()[0].limits().last_good(), None);
-        assert!(state.profiles().shown()[0].limits().reads().is_reading());
+        assert!(
+            state
+                .profiles()
+                .account_reads()
+                .of(&chatgpt_login())
+                .is_none()
+        );
     }
 
     #[test]
@@ -1260,35 +1288,6 @@ mod tests {
 
     fn place() -> MenuPlace {
         MenuPlace::new(Point::new(120.0, 300.0), Size::new(1200.0, 800.0))
-    }
-
-    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: the
-    /// accounts found in the profile, a key, tell it pays with an API key.
-    #[test]
-    fn an_api_key_profile_has_its_tokens_counted_and_no_limits_read() {
-        let mut state =
-            AgentsState::new(agents(), crate::testing::registry(), env());
-        let _ = reduce(&mut state, AgentsIntent::Enter);
-
-        let loaded = reduce(
-            &mut state,
-            profiles_with_accounts_loaded(
-                &[(codex(), api_key(), vec![key_account()])],
-                SavedProfiles::default(),
-            ),
-        );
-        let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
-
-        let is_limits = |outcome: &AgentsOutcome| {
-            matches!(
-                outcome,
-                AgentsOutcome::LoadLimits(_)
-                    | AgentsOutcome::LoadLimitsInBackground(_)
-            )
-        };
-        assert!(loaded.contains(&AgentsOutcome::LoadSpend(codex())));
-        assert!(!loaded.iter().any(is_limits), "{loaded:?}");
-        assert!(!ticked.iter().any(is_limits), "{ticked:?}");
     }
 
     #[test]

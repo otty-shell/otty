@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version} 無法讀取{what}",
     "tpl_agents_need_plugin_failed_text": "{reason}。最後一次正確的數字會保留。請複製報告給外掛程式作者。",
     "agents_plugin_read_sessions": "工作階段",
-    "agents_plugin_read_limits": "限額",
     "agents_plugin_read_tokens": "權杖",
     "agents_plugin_read_numbers": "帳戶的數字",
     "agents_open_plugin_repository": "開啟外掛程式存放庫"

@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version}이(가) {what}을(를) 읽지 못했습니다",
     "tpl_agents_need_plugin_failed_text": "{reason}. 마지막으로 정상이던 숫자는 유지됩니다. 플러그인 작성자에게 보낼 보고서를 복사하세요.",
     "agents_plugin_read_sessions": "세션",
-    "agents_plugin_read_limits": "한도",
     "agents_plugin_read_tokens": "토큰",
     "agents_plugin_read_numbers": "계정의 숫자",
     "agents_open_plugin_repository": "플러그인 저장소 열기"

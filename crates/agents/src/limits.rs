@@ -108,35 +108,6 @@ pub enum Billing {
     ApiKey,
 }
 
-impl Billing {
-    /// The kind of this billing, without its numbers.
-    ///
-    /// ```
-    /// use otty_agents::{Billing, BillingKind};
-    ///
-    /// assert_eq!(Billing::ApiKey.kind(), BillingKind::ApiKey);
-    /// ```
-    pub fn kind(&self) -> BillingKind {
-        match self {
-            Billing::UsageWindows(_) => BillingKind::UsageWindows,
-            Billing::Credits(_) => BillingKind::Credits,
-            Billing::ApiKey => BillingKind::ApiKey,
-        }
-    }
-}
-
-/// The kind of a billing, without its numbers, such as what a limits
-/// answer tells of how an account pays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BillingKind {
-    /// A subscription with usage windows.
-    UsageWindows,
-    /// A pool of credits.
-    Credits,
-    /// An API key charged per token.
-    ApiKey,
-}
-
 /// The usage windows of a subscription and its extra usage.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UsageWindows {
@@ -558,15 +529,5 @@ mod tests {
         assert!(!pool.is_only_available());
         assert!(!zero.is_only_available());
         assert!(!Credits::unlimited().is_only_available());
-    }
-
-    #[test]
-    fn each_billing_tells_its_kind() {
-        let credits = Billing::Credits(Credits::unlimited());
-        let windows = Billing::UsageWindows(UsageWindows::default());
-
-        assert_eq!(windows.kind(), BillingKind::UsageWindows);
-        assert_eq!(credits.kind(), BillingKind::Credits);
-        assert_eq!(Billing::ApiKey.kind(), BillingKind::ApiKey);
     }
 }

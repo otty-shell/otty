@@ -33,7 +33,7 @@ mod usage_groups;
 mod user_need;
 mod window_name;
 
-pub(crate) use account_name::own_account_name;
+pub(crate) use account_name::{account_name, own_account_name};
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
 pub(crate) use add_account_dialog::AddAccountDialogViewModel;

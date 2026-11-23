@@ -1,5 +1,5 @@
 //! The I/O of Agents mode: reading the profiles, the sessions and the
-//! limits, and writing `agents.json`.
+//! numbers of the accounts, and writing `agents.json`.
 //!
 //! The agents feature says what to read; this crate reads it on a thread of
 //! its own and answers with an [`AgentsIntent`](otty_app_agents::AgentsIntent).
@@ -10,20 +10,17 @@
 //! finds in the shown profiles of its own plugin and in the folders of its
 //! own logins. [`load_sessions`] reads
 //! the sessions of one profile and finds the project folders that no
-//! longer exist. [`load_limits`] reads the limits of one profile through
-//! the provider part that found the account whose limits it shows, in the
-//! folders it found it in, which may ask the provider's server, or start
-//! the agent's program and read its screen in a hidden terminal;
-//! [`load_limits_in_background`] does the same while Agents mode is away,
-//! without starting the agent's program. [`load_spend`] counts the tokens
+//! longer exist. [`load_spend`] counts the tokens
 //! one profile spent from its session files, by the days of the user's
 //! time zone, which it asks from the system. [`load_bill`] reads the real
 //! bill of an organization through the part that found it, with the admin
 //! key the user gave, read from its file or from a variable as the user's
 //! login shell sees it, and dropped right after the request.
 //! [`load_account_numbers`] reads the numbers of one account through the
-//! part that found it: the money left, a key limit or the limits of a
-//! subscription no profile reads.
+//! part that found it, in the folders it found it in: the money left, a
+//! key limit or the limits of a subscription, which may ask the
+//! provider's server, or start the agent's program and read its screen in
+//! a hidden terminal, only while Agents mode is on screen.
 //! [`load_prices`] reads the list prices of the money at API prices: the
 //! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
 //! folder.
@@ -61,7 +58,6 @@ mod browser;
 mod clipboard;
 mod folder_lookup;
 mod hidden_terminal;
-mod limits;
 mod load;
 mod login_shell;
 mod own_login;
@@ -86,7 +82,6 @@ pub use bill::load_bill;
 pub use browser::open_page;
 pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
-pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use own_login::{
     check_own_login, log_in_again, make_own_login_folder, prepare_own_login,

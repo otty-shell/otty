@@ -16,9 +16,8 @@
 use std::path::Path;
 
 use otty_agents::{
-    Account, AccountKind, AgentCommand, AgentEntry, AgentInstall, FormatChange,
-    PartNeed, PartNeedAction, ProfileStatus, ProviderId, SourceError,
-    SourceFailure,
+    Account, AgentCommand, AgentEntry, AgentInstall, FormatChange, PartNeed,
+    PartNeedAction, ProfileStatus, ProviderId, SourceError, SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
@@ -117,28 +116,19 @@ pub(crate) fn needs_of_profile(
 
 /// The needs the provider part gives for `account`, each once: the ones
 /// it gave when it found the account, such as an expired login, and the
-/// ones of the latest read of its limits when no part answered, of the
-/// read of its own numbers and of the bill of the organization it is. A
-/// key a part asks for is given for the account.
+/// ones of the latest read of its numbers and of the bill of the
+/// organization it is. A key a part asks for is given for the account.
 fn account_part_needs(
     state: &AgentsState,
     account: &Account,
 ) -> Vec<NeedViewModel> {
     let profiles = state.profiles();
-    let limits = profiles.account_limits(account);
-    let own = profiles
-        .own_reads()
-        .of(account)
-        .and_then(|own| need_in(own.failure()));
-    let bill = (account.kind() == AccountKind::Organization)
-        .then(|| profiles.first_with(account))
-        .flatten()
-        .and_then(|shown| need_in(shown.bill().failure()));
+    let read = profiles.account_reads().of(account);
+    let numbers = read.and_then(|read| need_in(read.failure()));
+    let bill = read.and_then(|read| need_in(read.bill().failure()));
 
     let mut needs: Vec<&PartNeed> = Vec::new();
-    let read = limits.iter().flat_map(|limits| limits.needs());
-    let found = account.needs().iter().chain(read);
-    for need in found.chain(own).chain(bill) {
+    for need in account.needs().iter().chain(numbers).chain(bill) {
         if !needs.iter().any(|shown| shown.is_same_need(need)) {
             needs.push(need);
         }
@@ -349,7 +339,7 @@ fn account_plugin_failed_need(
     state: &AgentsState,
     account: &Account,
 ) -> Option<NeedViewModel> {
-    let own = state.profiles().own_reads().of(account)?;
+    let own = state.profiles().account_reads().of(account)?;
     let SourceError::PluginFailed(failure) = own.failure()? else {
         return None;
     };
@@ -363,8 +353,8 @@ fn account_plugin_failed_need(
     ))
 }
 
-/// The needs of a profile whose sessions, limits or tokens a plugin part
-/// could not read, one per kind.
+/// The needs of a profile whose sessions or tokens a plugin part could
+/// not read, one per kind.
 fn profile_plugin_failed_needs(shown: &ProfileState) -> Vec<NeedViewModel> {
     let plugin_failure = |error: &SourceError| match error {
         SourceError::PluginFailed(failure) => Some(failure.as_ref().clone()),
@@ -378,10 +368,6 @@ fn profile_plugin_failed_needs(shown: &ProfileState) -> Vec<NeedViewModel> {
 
     let found = [
         (in_failures(shown.failures()), Key::AgentsPluginReadSessions),
-        (
-            in_failures(shown.limits().failures()),
-            Key::AgentsPluginReadLimits,
-        ),
         (
             shown.spend().failure().and_then(plugin_failure),
             Key::AgentsPluginReadTokens,
@@ -667,11 +653,10 @@ mod tests {
     use crate::model::reset_time::date_time_text;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, bill_loaded, chatgpt_login, claude, claude_work, codex,
-        codex_work, connected, limits_answer, limits_loaded, organization,
-        registry_with_codex, saved_with_given_key, spend_loaded, spend_of,
-        with_accounts, with_accounts_in, with_profiles,
-        with_registry_and_profiles,
+        at, bill_loaded, chatgpt_login, claude, claude_work, codex, codex_work,
+        connected, numbers_loaded, organization, registry_with_codex,
+        saved_with_given_key, spend_loaded, spend_of, with_accounts,
+        with_accounts_in, with_profiles, with_registry_and_profiles,
     };
     use crate::types::SpendCount;
 
@@ -728,7 +713,7 @@ mod tests {
     fn the_needs_of_the_accounts_and_of_the_profiles_are_apart() {
         let mut state = with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (codex(), crate::testing::not_logged_in(&codex()), Vec::new()),
                 (codex_work(), ProfileStatus::ProgramNotFound, Vec::new()),
             ],
@@ -736,7 +721,7 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            bill_loaded(&claude(), Err(crate::testing::bill_key_needed())),
+            bill_loaded(Err(crate::testing::bill_key_needed())),
         );
 
         let accounts = account_needs(&state);
@@ -937,12 +922,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Err(crate::testing::login_expired()),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(10),
             ),
         );
@@ -970,28 +952,20 @@ mod tests {
         assert!(profile_needs(&state).is_empty());
     }
 
-    /// Issue 20: the same need of the same plugin from two reads, the
-    /// limits through a profile and the account's own read, shows once.
+    /// Issue 20: the same need of the same plugin, given when the part
+    /// found the account and again when it read its numbers, shows once.
     #[test]
-    fn the_same_need_from_two_reads_shows_once() {
+    fn the_same_need_from_the_find_and_the_read_shows_once() {
+        let expired = chatgpt_login().with_needs(vec![expired_need()]);
         let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
+            &[(codex(), connected(), vec![expired])],
             SavedProfiles::default(),
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![
-                    (
-                        otty_agents::SourceId::ProviderPart,
-                        Err(crate::testing::login_expired()),
-                    ),
-                    (
-                        otty_agents::SourceId::AgentPart,
-                        Err(crate::testing::login_expired()),
-                    ),
-                ]),
+            crate::testing::numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(10),
             ),
         );
@@ -999,42 +973,6 @@ mod tests {
         let needs = account_needs(&state);
 
         assert_eq!(needs.len(), 1, "{needs:?}");
-    }
-
-    /// Issue 20: a ChatGPT login Codex keeps, refused by the provider
-    /// part: OTTY asked Codex's part, which gave its need about the
-    /// profile, and Codex's own read of the limits gave the same need.
-    /// The user sees it once.
-    #[test]
-    fn a_refused_login_codex_keeps_shows_one_need_not_two() {
-        let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            SavedProfiles::default(),
-        );
-        let of_codex = || {
-            let SourceError::NeedsUser(need) = crate::testing::login_expired()
-            else {
-                panic!("a need");
-            };
-            let need = need.about_profile(codex().config_dir());
-            SourceError::NeedsUser(Box::new(need))
-        };
-        let _ = reduce(
-            &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![
-                    (otty_agents::SourceId::ProviderPart, Err(of_codex())),
-                    (otty_agents::SourceId::AgentPart, Err(of_codex())),
-                ]),
-                at(10),
-            ),
-        );
-
-        let needs = account_needs(&state);
-
-        assert_eq!(needs.len(), 1, "{needs:?}");
-        assert_eq!(needs[0].plugin, plugin_label("Openai"));
     }
 
     /// The need of the OpenAI part whose login expired, as the part gives
@@ -1255,13 +1193,11 @@ mod tests {
     #[test]
     fn an_organization_whose_bill_was_read_needs_nothing() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             saved_with_given_key(),
         );
-        let _ = reduce(
-            &mut state,
-            bill_loaded(&claude(), Ok(crate::testing::bill_of(1, 2))),
-        );
+        let _ =
+            reduce(&mut state, bill_loaded(Ok(crate::testing::bill_of(1, 2))));
 
         assert!(account_needs(&state).is_empty());
         assert!(profile_needs(&state).is_empty());
@@ -1273,14 +1209,14 @@ mod tests {
     fn an_organization_of_two_profiles_needs_its_key_once() {
         let mut state = with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
-                (claude_work(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
+                (claude_work(), connected(), vec![organization()]),
             ],
             saved_with_given_key(),
         );
         let _ = reduce(
             &mut state,
-            bill_loaded(&claude(), Err(crate::testing::bill_key_needed())),
+            bill_loaded(Err(crate::testing::bill_key_needed())),
         );
 
         assert_eq!(account_needs(&state).len(), 1);
@@ -1372,6 +1308,32 @@ mod tests {
             }]
         );
         assert!(account_needs(&state).is_empty(), "it leaves once updated");
+    }
+
+    /// Issue 11 of spec 2026-11-23-accounts-apart-from-profiles: a
+    /// provider part that could not read the numbers of an account found
+    /// in a profile asks on the account, never on the profile.
+    #[test]
+    fn a_part_that_could_not_read_an_account_asks_on_the_account_only() {
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            SavedProfiles::default(),
+        );
+        let part = PluginPart::new("openai", "OpenAI", "0.1.0", "", "openai");
+        let failure =
+            PluginFailure::new(part, "numbers", PluginFailureKind::TooSlow);
+        let error = SourceError::PluginFailed(Box::new(failure));
+        let _ = reduce(
+            &mut state,
+            crate::testing::numbers_loaded(
+                &chatgpt_login(),
+                Err(error),
+                at(20),
+            ),
+        );
+
+        assert!(profile_needs(&state).is_empty());
+        assert_eq!(needs_of_account(&state, &chatgpt_login()).len(), 1);
     }
 
     /// Spec "What the UI shows": a part that could not read says which

@@ -1997,8 +1997,6 @@ pub enum Key {
     TplAgentsNeedPluginFailedText,
     /// What a plugin could not read: the sessions.
     AgentsPluginReadSessions,
-    /// What a plugin could not read: the limits.
-    AgentsPluginReadLimits,
     /// What a plugin could not read: the tokens.
     AgentsPluginReadTokens,
     /// What a plugin could not read: the numbers of an account.
@@ -2019,7 +2017,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 942] = [
+    pub(super) const ALL: [Self; 941] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2955,7 +2953,6 @@ impl Key {
         Self::TplAgentsNeedPluginFailedTitle,
         Self::TplAgentsNeedPluginFailedText,
         Self::AgentsPluginReadSessions,
-        Self::AgentsPluginReadLimits,
         Self::AgentsPluginReadTokens,
         Self::AgentsPluginReadNumbers,
         Self::AgentsOpenPluginRepository,

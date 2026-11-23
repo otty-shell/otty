@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version} konnte {what} nicht lesen",
     "tpl_agents_need_plugin_failed_text": "{reason}. Die letzten guten Zahlen bleiben. Kopieren Sie den Bericht für den Autor des Plugins.",
     "agents_plugin_read_sessions": "die Sitzungen",
-    "agents_plugin_read_limits": "die Limits",
     "agents_plugin_read_tokens": "die Tokens",
     "agents_plugin_read_numbers": "die Zahlen des Kontos",
     "agents_open_plugin_repository": "Plugin-Repository öffnen"

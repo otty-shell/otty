@@ -953,7 +953,6 @@
     "tpl_agents_need_plugin_failed_title": "{plugin} {version} не смог прочитать {what}",
     "tpl_agents_need_plugin_failed_text": "{reason}. Последние верные цифры остаются. Скопируйте отчёт для автора плагина.",
     "agents_plugin_read_sessions": "сессии",
-    "agents_plugin_read_limits": "лимиты",
     "agents_plugin_read_tokens": "токены",
     "agents_plugin_read_numbers": "цифры аккаунта",
     "agents_open_plugin_repository": "Открыть репозиторий плагина"

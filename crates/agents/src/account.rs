@@ -185,18 +185,6 @@ impl Account {
         &self.needs
     }
 
-    /// Whether the account was found in the profile folder `folder` of the
-    /// agent `agent`. An own login folder is never a profile folder.
-    pub fn is_found_in(&self, agent: &AgentId, folder: &Path) -> bool {
-        self.found_in.iter().any(|place| match place {
-            FoundIn::ProfileFolder {
-                agent: found_by,
-                folder: found_at,
-            } => found_by == agent && found_at == folder,
-            FoundIn::OwnLogin { .. } => false,
-        })
-    }
-
     /// Whether the account was found in OTTY's own login `id`.
     pub fn is_found_in_own_login(&self, id: &str) -> bool {
         self.found_in.iter().any(|place| {
@@ -301,11 +289,10 @@ mod tests {
         assert!(!one.is_same_account(&account("openai", "chatgpt:other")));
     }
 
-    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: OTTY's
-    /// own login folder is never a profile folder, and the account tells
-    /// it was found in that own login.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the
+    /// account tells it was found in OTTY's own login.
     #[test]
-    fn an_own_login_folder_is_no_profile_folder() {
+    fn an_account_tells_the_own_login_it_was_found_in() {
         let folder = "/home/user/.local/share/otty/accounts/a1";
         let account = Account::new(
             "openai",
@@ -316,9 +303,6 @@ mod tests {
             vec![FoundIn::own_login("a1", folder)],
         );
 
-        assert!(
-            !account.is_found_in(&AgentId::new("codex"), Path::new(folder))
-        );
         assert!(account.is_found_in_own_login("a1"));
         assert!(!account.is_found_in_own_login("b2"));
         assert_eq!(account.found_in()[0].folder(), Path::new(folder));
@@ -330,20 +314,5 @@ mod tests {
 
     fn account_of_codex() -> Account {
         account("openai", "chatgpt:made-up")
-    }
-
-    #[test]
-    fn an_account_is_found_in_the_folder_of_its_agent_only() {
-        let account = account("openai", "chatgpt:made-up");
-
-        let codex = AgentId::new("codex");
-        assert!(account.is_found_in(&codex, Path::new("/home/user/.codex")));
-        assert!(
-            !account.is_found_in(&codex, Path::new("/home/user/.codex-work"))
-        );
-        assert!(!account.is_found_in(
-            &AgentId::new("other"),
-            Path::new("/home/user/.codex")
-        ));
     }
 }

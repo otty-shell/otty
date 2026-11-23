@@ -70,8 +70,8 @@ mod tests {
     use crate::reducer::reduce;
     use crate::state::AgentsState;
     use crate::testing::{
-        agents, api_key, chatgpt_login, claude, codex, codex_work, connected,
-        env, now, open_account_menu, open_profile_menu, organization,
+        agents, chatgpt_login, claude, codex, codex_work, connected, env, now,
+        open_account_menu, open_profile_menu, organization,
         profiles_with_accounts_loaded, profiles_with_hidden_loaded, save,
         saved_with_given_key, session, sessions_loaded,
         two_agents_with_sessions, with_accounts, with_accounts_in,
@@ -86,7 +86,7 @@ mod tests {
     fn two_accounts(saved: SavedProfiles) -> AgentsState {
         with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (codex(), connected(), vec![chatgpt_login()]),
             ],
             saved,
@@ -114,8 +114,7 @@ mod tests {
     fn is_read(outcome: &AgentsOutcome) -> bool {
         matches!(
             outcome,
-            AgentsOutcome::LoadLimits(_)
-                | AgentsOutcome::LoadLimitsInBackground(_)
+            AgentsOutcome::LoadAccountNumbers { .. }
                 | AgentsOutcome::LoadBill { .. }
         )
     }
@@ -154,10 +153,10 @@ mod tests {
         assert!(state.menu().is_none());
     }
 
-    /// Hidden means OTTY does not read it: no limits and no bill are
+    /// Hidden means OTTY does not read it: no numbers and no bill are
     /// asked for a hidden account, while its profiles are read as usual.
     #[test]
-    fn a_hidden_account_has_no_limits_and_no_bill_read() {
+    fn a_hidden_account_has_no_numbers_and_no_bill_read() {
         let first_read = |saved: SavedProfiles| {
             let mut state =
                 AgentsState::new(agents(), crate::testing::registry(), env());
@@ -166,7 +165,7 @@ mod tests {
                 &mut state,
                 profiles_with_accounts_loaded(
                     &[
-                        (claude(), api_key(), vec![organization()]),
+                        (claude(), connected(), vec![organization()]),
                         (codex(), connected(), vec![chatgpt_login()]),
                     ],
                     saved,
@@ -183,9 +182,10 @@ mod tests {
         assert!(shown_reads.iter().any(is_read), "{shown_reads:?}");
         assert!(!reads.iter().any(is_read), "{reads:?}");
         assert!(
-            reads
-                .iter()
-                .any(|outcome| matches!(outcome, AgentsOutcome::LoadSpend(_))),
+            reads.iter().any(|outcome| matches!(
+                outcome,
+                AgentsOutcome::LoadSessions(_)
+            )),
             "the profiles are read: {reads:?}"
         );
     }
@@ -257,7 +257,7 @@ mod tests {
             (codex(), connected(), vec![chatgpt_login()]),
             (
                 crate::testing::claude(),
-                crate::testing::api_key(),
+                crate::testing::connected(),
                 vec![deepseek_copy("deepseek"), deepseek_copy("deepseek-fork")],
             ),
         ]
@@ -325,11 +325,15 @@ mod tests {
         );
         assert!(same_accounts(
             &own_reads_at_start(report_shown()),
-            &[deepseek_copy("deepseek"), deepseek_copy("deepseek-fork")]
+            &[
+                chatgpt_login(),
+                deepseek_copy("deepseek"),
+                deepseek_copy("deepseek-fork")
+            ]
         ));
         assert!(same_accounts(
             &own_reads_at_start(fork_hidden),
-            &[deepseek_copy("deepseek")]
+            &[chatgpt_login(), deepseek_copy("deepseek")]
         ));
     }
 

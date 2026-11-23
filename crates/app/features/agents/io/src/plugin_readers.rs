@@ -16,7 +16,6 @@ use otty_plugin_host::{EngineError, PluginEngine};
 use crate::agent_program::LoginShellPrograms;
 use crate::background::wait_for_thread;
 use crate::hidden_terminal::LoginShellTerminals;
-use crate::limits::PROBE_FOLDER;
 use crate::plugin_language::LanguageReceivers;
 use crate::plugin_parts::{
     InstalledParts, PluginParts, ProviderList, RunningParts,
@@ -24,6 +23,11 @@ use crate::plugin_parts::{
 
 /// The folder of `cache_dir` the compiled plugins are kept in.
 const COMPILED_FOLDER: &str = "plugins";
+
+/// The folder in OTTY's cache folder that an agent's program started in a
+/// hidden terminal runs in, so it never shows up as a session of a real
+/// project.
+const PROBE_FOLDER: &str = "agent-probe";
 
 /// How a variable of the environment is read: the binary gives
 /// `std::env::var_os`, a test a made-up one.

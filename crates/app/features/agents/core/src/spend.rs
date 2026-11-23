@@ -20,7 +20,7 @@ pub(crate) struct ProfileSpend {
     failure: Option<SourceError>,
     has_counter: bool,
     reads: ReadState,
-    is_priced_at_old_prices: bool,
+    waits_for_prices: bool,
 }
 
 impl ProfileSpend {
@@ -57,10 +57,11 @@ impl ProfileSpend {
         &self.reads
     }
 
-    /// Whether the list prices changed since the latest count started: its
-    /// money is priced at the old ones, so a new count is wanted.
-    pub(crate) fn is_priced_at_old_prices(&self) -> bool {
-        self.is_priced_at_old_prices
+    /// Whether a count waits for the list prices: they changed since the
+    /// latest count started, so its money is priced at the old ones, or
+    /// the first count waits for the first read of them.
+    pub(crate) fn waits_for_prices(&self) -> bool {
+        self.waits_for_prices
     }
 
     /// Start a count, at the list prices of now; `false` when one is on
@@ -68,16 +69,17 @@ impl ProfileSpend {
     pub(crate) fn start_reading(&mut self) -> bool {
         let started = self.reads.start();
         if started {
-            self.is_priced_at_old_prices = false;
+            self.waits_for_prices = false;
         }
 
         started
     }
 
-    /// The list prices changed: the money counted so far, and that of a
-    /// count on its way, is priced at the old ones.
-    pub(crate) fn prices_changed(&mut self) {
-        self.is_priced_at_old_prices = true;
+    /// Count once the list prices are read: they changed, so the money
+    /// counted so far, and that of a count on its way, is priced at the old
+    /// ones, or the first count waits for the first read of them.
+    pub(crate) fn wait_for_prices(&mut self) {
+        self.waits_for_prices = true;
     }
 
     /// Take the result of a count that ended at `counted_at`. A count
@@ -111,7 +113,7 @@ impl Default for ProfileSpend {
             failure: None,
             has_counter: true,
             reads: ReadState::default(),
-            is_priced_at_old_prices: false,
+            waits_for_prices: false,
         }
     }
 }

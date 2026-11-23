@@ -3,8 +3,8 @@
 //! in, in the left panel; the sessions table of the selected project with
 //! Continue, its row menu and New session, the page of a profile and
 //! the All accounts and All profiles pages, in the main area; and the counts in the left side of the status bar (spec
-//! Decisions 2, 3 and 6). Each connected profile shows its limits, and each
-//! profile the tokens it spent and their money at API prices. Nothing links
+//! Decisions 2, 3 and 6). Each account shows its limits or its money, and
+//! each profile the tokens it spent and their money at API prices. Nothing links
 //! a profile to an account: a profile page has no accounts, and an account
 //! page no profiles (spec 2026-11-23-accounts-apart-from-profiles,
 //! Decisions 1 and 3). The `+` of the Accounts section opens Add account,
@@ -15,13 +15,13 @@
 //! which asks first and deletes only OTTY's own folder.
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
-//! profiles first, then the sessions, the limits, the tokens and the money
-//! together, the list prices of the money at API prices and the bills once
-//! the limits are read, and never with
+//! profiles first, then the sessions, the list prices of the money at API
+//! prices, the numbers of the accounts and the bills together, the tokens
+//! once the first read of the prices answered, and never with
 //! the agent's program running, as is or in a hidden terminal. Until the
 //! first read of the profiles ends the main area shows a spinner; then the
 //! first profile is selected, unless the user selected something. On
-//! screen, Refresh reads everything again and the limits are read every
+//! screen, Refresh reads everything again and the accounts are read every
 //! five minutes; opening the mode reads again only what is older than that
 //! (spec Decision 10). What was read stays on screen until a new answer
 //! takes its place, so a later read never brings the spinner back. A real failure, such as an `agents.json` that can
@@ -49,8 +49,8 @@
 //! # Example
 //!
 //! Entering Agents mode reads the profiles; each profile has its sessions
-//! read and its tokens counted, and the list prices are read for their
-//! money.
+//! read, the list prices are read for the money of its tokens, and its
+//! tokens are counted once the prices answered.
 //!
 //! ```
 //! use std::path::PathBuf;
@@ -60,8 +60,8 @@
 //!     AgentEnv, AgentId, FoundAccounts, Profile, ProfileStatus, SavedProfiles,
 //! };
 //! use otty_app_agents::{
-//!     Agents, AgentsCtx, AgentsIntent, AgentsOutcome, LoadedProfile,
-//!     LoadedProfiles,
+//!     Agents, AgentsCtx, AgentsIntent, AgentsOutcome, LoadedPrices,
+//!     LoadedProfile, LoadedProfiles,
 //! };
 //! use otty_app_slots::Component;
 //!
@@ -100,12 +100,23 @@
 //!     loaded,
 //!     vec![
 //!         AgentsOutcome::LoadSessions(coder.clone()),
-//!         AgentsOutcome::LoadSpend(coder),
 //!         AgentsOutcome::LoadPrices { fetch_again: false },
 //!     ]
 //! );
+//!
+//! // No price source answered, say offline on a first run: the tokens
+//! // are counted anyway, and again once prices arrive.
+//! let priced = agents.reduce(
+//!     AgentsIntent::PricesLoaded(LoadedPrices {
+//!         prices: Err(Vec::new()),
+//!         read_at: std::time::SystemTime::UNIX_EPOCH,
+//!     }),
+//!     AgentsCtx::default(),
+//! );
+//! assert_eq!(priced, vec![AgentsOutcome::LoadSpend(coder)]);
 //! ```
 
+mod account_reads;
 mod add_account_dialog;
 mod bill;
 mod ctx;
@@ -126,7 +137,6 @@ mod model;
 mod need;
 mod new_session_dialog;
 mod own_login_actions;
-mod own_reads;
 mod prices;
 mod profile_actions;
 mod profile_changes;
@@ -175,7 +185,7 @@ use model::{
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
 use new_session_dialog::NewSessionDialogViewModel;
-use otty_agents::{Account, AgentEnv, ApiPrices, Profile, Registry};
+use otty_agents::{AgentEnv, ApiPrices, Registry};
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
 };
@@ -189,10 +199,10 @@ pub use rename_dialog::RenameIntent;
 use state::AgentsState;
 pub use types::{
     AgentList, AgentReaders, CheckedOwnLogin, FolderAsker, FolderQuery,
-    LimitsRead, LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits,
-    LoadedPrices, LoadedProfile, LoadedProfiles, LoadedProjectStats,
-    LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
-    PreparedOwnLogin, ProjectStatsFailure, SessionsRead, SpendCount,
+    LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedPrices,
+    LoadedProfile, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
+    LoadedSessions, LoadedSpend, LoadedVersion, PreparedOwnLogin,
+    ProjectStatsFailure, SessionsRead, SpendCount,
 };
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
@@ -283,13 +293,6 @@ impl Agents {
     /// `otty-app-agents-io`, so every read uses the same agents.
     pub fn known_agents(&self) -> &AgentList {
         self.state.agents()
-    }
-
-    /// Return what a read of the limits of the shown `profile` reads
-    /// ([`AgentsOutcome::LoadLimits`]): the account whose limits it
-    /// shows, `None` when it has none.
-    pub fn limits_to_read(&self, profile: &Profile) -> Option<Account> {
-        self.state.profiles().limits_to_read(profile)
     }
 
     /// Return the list prices the agent parts price the tokens at in a
@@ -410,7 +413,7 @@ impl Component for Agents {
         reducer::reduce(&mut self.state, intent)
     }
 
-    /// The timer of the limits while Agents mode is active, none while it
+    /// The timer of the accounts while Agents mode is active, none while it
     /// is away; the reads themselves are I/O, so `otty-app-agents-io` runs
     /// them.
     fn subscription(&self) -> Subscription<AgentsIntent> {

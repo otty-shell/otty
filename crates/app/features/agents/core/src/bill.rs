@@ -1,6 +1,6 @@
-//! What was read of the real bill of one API key profile (spec Decision
-//! 9). The bill is the first source of the money of its organization: when
-//! its latest read failed, the money shows why (spec Decision 5).
+//! What was read of the real bill of one organization (spec Decision 9).
+//! The bill is the first source of the money of the organization: when its
+//! latest read failed, the money shows why (spec Decision 5).
 
 use std::time::SystemTime;
 
@@ -8,15 +8,15 @@ use otty_agents::{Bill, SourceError};
 
 use super::freshness::ReadState;
 
-/// The bill of one profile: the answer of its latest read and the
+/// The bill of one organization: the answer of its latest read and the
 /// bookkeeping of its reads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct ProfileBill {
+pub(crate) struct AccountBill {
     latest: Option<Result<Bill, SourceError>>,
     reads: ReadState,
 }
 
-impl ProfileBill {
+impl AccountBill {
     /// The bill, when the latest read gave one.
     pub(crate) fn answer(&self) -> Option<&Bill> {
         self.latest.as_ref()?.as_ref().ok()
@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn a_failed_read_leaves_no_bill_and_says_why() {
-        let mut bill = ProfileBill::default();
+        let mut bill = AccountBill::default();
 
         bill.apply(Ok(bill_of(1, 2)), at(10));
         let answered = bill.answer().cloned();
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn nothing_is_known_before_the_first_read() {
-        let bill = ProfileBill::default();
+        let bill = AccountBill::default();
 
         assert_eq!(bill.answer(), None);
         assert_eq!(bill.failure(), None);

@@ -142,9 +142,9 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, api_key, chatgpt_login_in, claude, codex, codex_work,
-        connected, env, organization, profiles_with_accounts_loaded,
-        with_accounts, with_versions,
+        agents, chatgpt_login_in, claude, codex, codex_work, connected, env,
+        organization, profiles_with_accounts_loaded, with_accounts,
+        with_versions,
     };
 
     fn report(state: &AgentsState) -> FoundReportViewModel {
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn a_key_is_shown_by_the_name_its_part_gives() {
         let state = with_accounts(
-            &[(codex(), api_key(), vec![key_account()])],
+            &[(codex(), connected(), vec![key_account()])],
             SavedProfiles::default(),
         );
 
@@ -287,17 +287,14 @@ mod tests {
     fn the_report_lists_the_needs_of_the_accounts_and_of_the_profiles_apart() {
         let mut state = with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (codex(), crate::testing::not_logged_in(&codex()), Vec::new()),
             ],
             crate::testing::saved_with_given_key(),
         );
         let _ = reduce(
             &mut state,
-            crate::testing::bill_loaded(
-                &claude(),
-                Err(crate::testing::bill_key_needed()),
-            ),
+            crate::testing::bill_loaded(Err(crate::testing::bill_key_needed())),
         );
 
         let vm = report(&state);

@@ -154,67 +154,18 @@ impl SessionsRead {
     }
 }
 
-/// The answer of the limits read of one profile.
+/// What a read of the limits of one subscription gave, as its account
+/// keeps them.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LoadedLimits {
-    /// The profile the limits belong to.
-    pub profile: Profile,
-    /// The limits with the part that answered, why each part failed, or
-    /// that nothing reads the limits of the profile.
-    pub limits: LimitsRead,
-    /// When the read ended.
-    pub read_at: SystemTime,
-}
-
-/// What a read of the limits of one profile gave.
-///
-/// # Example
-///
-/// A read that no part answered and no part failed: nothing reads the
-/// limits of the profile, or the provider part that reads its account had
-/// no way to read them (spec 2026-11-19-agent-plugins, issue 29).
-///
-/// ```
-/// use otty_app_agents::LimitsRead;
-///
-/// assert_eq!(
-///     LimitsRead::from_walk(Err(Vec::new())),
-///     LimitsRead::NoSources
-/// );
-/// ```
-#[derive(Debug, Clone, PartialEq)]
-pub enum LimitsRead {
+pub(crate) enum LimitsRead {
     /// The limits with the part that answered: the provider part of the
-    /// account whose limits the profile shows.
+    /// account.
     Answered(Answer<Limits>),
-    /// Every part failed, each with why.
+    /// The part failed, with why.
     Failed(Vec<SourceFailure>),
-    /// Nothing reads the limits: the profile has no subscription login,
-    /// no plugin reads it, or its part had no way to read them.
+    /// Nothing reads the limits: no plugin reads the account, or its part
+    /// had no way to read them.
     NoSources,
-}
-
-impl LimitsRead {
-    /// What a walk over the parts that read the limits gave, `walk`: no
-    /// failures at all means nothing reads the limits.
-    pub fn from_walk(walk: Result<Answer<Limits>, Vec<SourceFailure>>) -> Self {
-        match walk {
-            Ok(answer) => Self::Answered(answer),
-            Err(failures) if failures.is_empty() => Self::NoSources,
-            Err(failures) => Self::Failed(failures),
-        }
-    }
-
-    /// The failures of the parts the read asked before the one that
-    /// answered, or of every part when none did; empty when nothing reads
-    /// the limits.
-    pub fn failures(&self) -> &[SourceFailure] {
-        match self {
-            Self::Answered(answer) => answer.earlier_failures(),
-            Self::Failed(failures) => failures,
-            Self::NoSources => &[],
-        }
-    }
 }
 
 /// What a count of the tokens one profile spent gave.
@@ -251,12 +202,12 @@ pub struct LoadedSpend {
     pub counted_at: SystemTime,
 }
 
-/// The answer of the read of the bill of one organization, read through
-/// one profile that pays through it.
+/// The answer of the read of the bill of one organization, by the
+/// provider part that found it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedBill {
-    /// The profile the bill was read through.
-    pub profile: Profile,
+    /// The organization the bill belongs to.
+    pub organization: Account,
     /// The keys given for the organization the bill was read with: an
     /// answer read with keys since changed is dropped.
     pub given: Vec<GivenKey>,
@@ -266,9 +217,9 @@ pub struct LoadedBill {
     pub read_at: SystemTime,
 }
 
-/// The answer of the read of the numbers of one account with its own key
-/// (spec 2026-11-19, Decision 5): its money left, the limit of its key, the
-/// bill of its organization or the limits of its login.
+/// The answer of the read of the numbers of one account (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 5): its money left,
+/// the limit of its key or the limits of its subscription.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedAccountNumbers {
     /// The account the numbers belong to.

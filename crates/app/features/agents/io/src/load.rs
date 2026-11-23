@@ -615,12 +615,15 @@ mod tests {
             &finds,
         );
 
-        let claude_code = AgentId::new("claude-code");
+        let place = otty_agents::FoundIn::profile(
+            AgentId::new("claude-code"),
+            work.clone(),
+        );
         let in_work: Vec<_> = loaded
             .accounts
             .accounts()
             .iter()
-            .filter(|account| account.is_found_in(&claude_code, &work))
+            .filter(|account| account.found_in().contains(&place))
             .collect();
         assert_eq!(in_work.len(), 1, "{:?}", loaded.accounts);
         assert_eq!(in_work[0].plugin(), "anthropic");

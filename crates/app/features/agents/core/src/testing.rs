@@ -8,14 +8,14 @@ use std::time::{Duration, SystemTime};
 use jiff::ToSpan;
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountKind, AgentCommand, AgentEnv, AgentId, AgentSession,
-    Answer, Bill, Billing, DayCost, DaySpend, Dollars, FetchedPrices,
-    FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow, Limits,
-    LogInWith, ModelPrice, ModelTokens, MoneyTotal, OwnLogin, PriceTable,
-    Profile, ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId,
-    ProviderRef, Registry, SavedProfiles, SessionId, SourceError,
-    SourceFailure, SourceId, Spend, TokenCount, TokenPrices, Unavailable,
-    UsageWindows, WindowId,
+    Account, AccountKind, AccountNumbers, AgentCommand, AgentEnv, AgentId,
+    AgentSession, Answer, Bill, Billing, DayCost, DaySpend, Dollars,
+    FetchedPrices, FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef,
+    LimitWindow, Limits, LogInWith, ModelPrice, ModelTokens, MoneyTotal,
+    OwnLogin, PriceTable, Profile, ProfileStatus, ProjectModelTokens,
+    ProviderEntry, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
+    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
+    Unavailable, UsageWindows, WindowId,
 };
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -29,9 +29,9 @@ use crate::model::{
 use crate::reducer::reduce;
 use crate::state::AgentsState;
 use crate::types::{
-    AgentList, FolderAsker, FolderQuery, LimitsRead, LoadedBill, LoadedFolder,
-    LoadedLimits, LoadedPrices, LoadedProfile, LoadedProfiles, LoadedSessions,
-    LoadedSpend, SessionsRead, SpendCount,
+    AgentList, FolderAsker, FolderQuery, LoadedBill, LoadedFolder,
+    LoadedPrices, LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend,
+    SessionsRead, SpendCount,
 };
 use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
@@ -212,13 +212,6 @@ pub(crate) fn codex_work() -> Profile {
 
 /// The status of a profile that can be used.
 pub(crate) fn connected() -> ProfileStatus {
-    ProfileStatus::Connected
-}
-
-/// The status of a profile that pays per token with an API key: it can be
-/// used, and the accounts found in it, a key or an organization, tell how
-/// it pays (spec 2026-11-23-accounts-apart-from-profiles, Decision 2).
-pub(crate) fn api_key() -> ProfileStatus {
     ProfileStatus::Connected
 }
 
@@ -505,25 +498,37 @@ pub(crate) fn five_hour_limits(percent: f64) -> Limits {
     )
 }
 
-/// What a read of the limits whose parts, the provider part and the agent
-/// part, gave `answers` in order gives: the answer of the first one that
-/// answers, or every failure.
-pub(crate) fn limits_answer(
-    answers: Vec<(SourceId, Result<Limits, SourceError>)>,
-) -> LimitsRead {
-    LimitsRead::from_walk(otty_agents::fixtures::walked(answers))
+/// The numbers of a subscription whose provider part read `limits`.
+pub(crate) fn limits_numbers(limits: Limits) -> AccountNumbers {
+    let answer =
+        otty_agents::fixtures::walked([(SourceId::ProviderPart, Ok(limits))])
+            .expect("the provider part answered");
+
+    AccountNumbers::Limits(answer)
 }
 
-/// The answer of a limits read of `profile` that ended at `read_at`.
-pub(crate) fn limits_loaded(
-    profile: &Profile,
-    limits: LimitsRead,
+/// The answer of a read of the numbers of `account` that ended at
+/// `read_at`.
+pub(crate) fn numbers_loaded(
+    account: &Account,
+    numbers: Result<AccountNumbers, SourceError>,
     read_at: SystemTime,
 ) -> AgentsIntent {
-    AgentsIntent::LimitsLoaded(LoadedLimits {
-        profile: profile.clone(),
-        limits,
+    AgentsIntent::AccountNumbersLoaded(crate::types::LoadedAccountNumbers {
+        account: account.clone(),
+        numbers,
         read_at,
+    })
+}
+
+/// Whether `outcomes` ask for the numbers of `account`.
+pub(crate) fn asks_numbers_of(
+    outcomes: &[AgentsOutcome],
+    account: &Account,
+) -> bool {
+    outcomes.iter().any(|outcome| {
+        matches!(outcome, AgentsOutcome::LoadAccountNumbers { account: read, .. }
+            if read.is_same_account(account))
     })
 }
 
@@ -703,7 +708,7 @@ pub(crate) fn with_key_read(
     numbers: Result<otty_agents::AccountNumbers, SourceError>,
 ) -> AgentsState {
     let mut state = with_accounts(
-        &[(claude(), api_key(), vec![account.clone()])],
+        &[(claude(), connected(), vec![account.clone()])],
         SavedProfiles::default(),
     );
     let _ = reduce(
@@ -900,12 +905,11 @@ pub(crate) fn with_versions(
     AgentsIntent::ProfilesLoaded(loaded)
 }
 
-/// The default Claude Code profile paying per token through the
-/// [`organization`], with its [`given_key`] saved, as a profiles read
-/// found it.
+/// The default Claude Code profile with the [`organization`] found in its
+/// folder, with its [`given_key`] saved, as a profiles read found it.
 pub(crate) fn billed_claude_loaded() -> AgentsIntent {
     profiles_with_accounts_loaded(
-        &[(claude(), api_key(), vec![organization()])],
+        &[(claude(), connected(), vec![organization()])],
         saved_with_given_key(),
     )
 }
@@ -920,27 +924,22 @@ pub(crate) fn with_billed_claude() -> AgentsState {
     state
 }
 
-/// The read of the bill of the [`organization`] through `profile`, with
-/// its [`given_key`].
-pub(crate) fn load_bill(profile: &Profile) -> AgentsOutcome {
+/// The read of the bill of the [`organization`] with its [`given_key`].
+pub(crate) fn load_bill() -> AgentsOutcome {
     AgentsOutcome::LoadBill {
-        profile: profile.clone(),
         organization: organization(),
         given: vec![given_key()],
     }
 }
 
-/// The profile and the organization of a read of a bill, `None` for any
-/// other outcome.
+/// The organization of a read of a bill, `None` for any other outcome.
 pub(crate) fn bill_read_of(
     outcome: &AgentsOutcome,
-) -> Option<(Profile, otty_agents::AccountKey)> {
+) -> Option<otty_agents::AccountKey> {
     match outcome {
-        AgentsOutcome::LoadBill {
-            profile,
-            organization,
-            ..
-        } => Some((profile.clone(), organization.key().clone())),
+        AgentsOutcome::LoadBill { organization, .. } => {
+            Some(organization.key().clone())
+        },
         _ => None,
     }
 }
@@ -959,14 +958,11 @@ pub(crate) fn bill_of(today: u64, earlier: u64) -> Bill {
     ])
 }
 
-/// The answer of a read of the bill through `profile` with the
+/// The answer of a read of the bill of the [`organization`] with the
 /// [`given_key`], that ended at [`now`].
-pub(crate) fn bill_loaded(
-    profile: &Profile,
-    bill: Result<Bill, SourceError>,
-) -> AgentsIntent {
+pub(crate) fn bill_loaded(bill: Result<Bill, SourceError>) -> AgentsIntent {
     AgentsIntent::BillLoaded(LoadedBill {
-        profile: profile.clone(),
+        organization: organization(),
         given: vec![given_key()],
         bill,
         read_at: now(),

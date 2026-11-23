@@ -58,6 +58,14 @@ impl ListPrices {
         !has_fresh_fetch && self.reads.is_wanted(which)
     }
 
+    /// Whether the first read of the prices is on its way: none answered
+    /// yet. The first count of the tokens waits for it, so a start reads
+    /// the session files once (issue 11 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    pub(crate) fn is_first_read_on_its_way(&self) -> bool {
+        self.latest.is_none() && self.reads.is_reading()
+    }
+
     /// Whether the next read must fetch the file even within the day: the
     /// fetch of the latest read failed. Before the first read the kept
     /// file of the day is used.
@@ -128,6 +136,25 @@ mod tests {
         assert!(!prices.fetch_again());
         assert_eq!(prices.table(), None);
         assert!(!has_failed(&prices));
+    }
+
+    #[test]
+    fn only_the_read_before_any_answer_is_the_first_read() {
+        let mut prices = ListPrices::default();
+        let before = prices.is_first_read_on_its_way();
+
+        let _ = prices.start_reading();
+        let first = prices.is_first_read_on_its_way();
+        prices.apply(
+            prices_answer(&[(SourceId::LiteLlmPrices, network())], None),
+            at(10),
+        );
+        let _ = prices.start_reading();
+        let second = prices.is_first_read_on_its_way();
+
+        assert!(!before, "no read is on its way");
+        assert!(first);
+        assert!(!second, "a read answered, even with no prices");
     }
 
     #[test]

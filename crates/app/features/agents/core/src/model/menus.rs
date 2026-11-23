@@ -280,10 +280,9 @@ mod tests {
     use crate::project_filter::ProjectFilterChange;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, api_key, chatgpt_login, claude, claude_id, claude_work, codex,
-        codex_id, codex_work, connected, env, organization,
-        profiles_with_hidden_loaded, read, session, two_agents_with_sessions,
-        with_accounts, with_profiles,
+        agents, chatgpt_login, claude, claude_id, claude_work, codex, codex_id,
+        codex_work, connected, env, organization, profiles_with_hidden_loaded,
+        read, session, two_agents_with_sessions, with_accounts, with_profiles,
     };
     use crate::types::LoadedSessions;
 
@@ -547,7 +546,7 @@ mod tests {
     fn the_account_menu_of_a_login_and_of_an_organization_is_the_same() {
         let mut state = with_accounts(
             &[
-                (claude(), api_key(), vec![organization()]),
+                (claude(), connected(), vec![organization()]),
                 (codex(), connected(), vec![chatgpt_login()]),
             ],
             SavedProfiles::default(),

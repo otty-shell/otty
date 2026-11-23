@@ -149,7 +149,8 @@ fn balance_now(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
-    let (balance, _) = state.profiles().own_reads().of(account)?.balance()?;
+    let (balance, _) =
+        state.profiles().account_reads().of(account)?.balance()?;
 
     if let Some(left) = balance.left() {
         let amount = amount_text(left);
@@ -171,13 +172,8 @@ fn money_this_month(
     state: &AgentsState,
     account: &Account,
 ) -> Option<(String, SessionTone)> {
-    let own = state.profiles().own_reads().of(account);
-    let bill = state
-        .profiles()
-        .shown()
-        .iter()
-        .filter(|shown| shown.pays_through(account))
-        .find_map(|shown| shown.bill().answer());
+    let own = state.profiles().account_reads().of(account);
+    let bill = own.and_then(|own| own.bill().answer());
 
     let amount = match bill {
         Some(bill) => dollars_text(bill.this_month()),
@@ -204,9 +200,9 @@ mod tests {
     use super::*;
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, at, bill_loaded, bill_of, chatgpt_login, chatgpt_login_in,
-        claude, codex, codex_work, connected, five_hour_limits, limits_answer,
-        limits_loaded, organization, price_table, read, saved_with_given_key,
+        at, bill_loaded, bill_of, chatgpt_login, chatgpt_login_in, claude,
+        codex, codex_work, connected, five_hour_limits, limits_numbers,
+        numbers_loaded, organization, price_table, read, saved_with_given_key,
         session, set_prices, spend_loaded, spend_of, with_accounts,
         with_profiles,
     };
@@ -239,12 +235,9 @@ mod tests {
         );
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(limits),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Ok(limits_numbers(limits)),
                 at(10),
             ),
         );
@@ -336,12 +329,12 @@ mod tests {
     #[test]
     fn an_organization_with_a_bill_shows_the_month_of_the_bill() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             saved_with_given_key(),
         );
         let before = number_of(&state, &organization());
 
-        let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(40, 2))));
+        let _ = reduce(&mut state, bill_loaded(Ok(bill_of(40, 2))));
 
         assert_eq!(before, None, "nothing was read yet");
         assert_eq!(
@@ -359,7 +352,7 @@ mod tests {
     #[test]
     fn a_key_account_with_no_money_read_has_no_number() {
         let mut state = with_accounts(
-            &[(claude(), api_key(), vec![organization()])],
+            &[(claude(), connected(), vec![organization()])],
             SavedProfiles::default(),
         );
         set_prices(&mut state, price_table());
@@ -398,12 +391,9 @@ mod tests {
 
         let _ = reduce(
             &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Err(crate::testing::login_expired()),
-                )]),
+            numbers_loaded(
+                &chatgpt_login(),
+                Err(crate::testing::login_expired()),
                 at(20),
             ),
         );

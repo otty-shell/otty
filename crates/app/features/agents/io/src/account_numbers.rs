@@ -1,9 +1,11 @@
 //! The read of the numbers of one account (spec
 //! 2026-11-23-accounts-apart-from-profiles, Decision 5): the money left, a
-//! key limit, or the limits of a subscription no profile reads. The
-//! provider part that found the account reads it in the folders it found
-//! it in, with handles to the keys the user gave for it, which OTTY reads
-//! again and drops, so it runs on a thread of its own.
+//! key limit, or the limits of a subscription. The provider part that
+//! found the account reads it in the folders it found it in, any way it
+//! can (spec 2026-11-19-agent-plugins, issue 29), with handles to the keys
+//! the user gave for it, which OTTY reads again and drops. It may ask a
+//! server over the network or start the agent's program, so it runs on a
+//! thread of its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -116,12 +118,109 @@ mod tests {
     use std::path::Path;
 
     use otty_agents::{
-        AccountKind, AgentId, FoundIn, ProviderId, SourceError, Unavailable,
+        AccountKind, AccountNumbers, AgentId, FoundIn, ProviderId, SourceError,
+        Unavailable,
     };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{providers_with_plugins, run};
+    use crate::testing::{
+        agents_and_providers_with_shell, executable_script,
+        providers_with_plugins, run, write,
+    };
+
+    /// The made-up id of the Claude account of the tests.
+    const ACCOUNT_ID: &str = "00000000-0000-4000-8000-0000000000a1";
+
+    /// The Claude login the Anthropic plugin found in a made-up Claude
+    /// Code folder under `home`, whose `.credentials.json` holds no token
+    /// while `.claude.json` names its account: Claude Code still works
+    /// with it (the owner's Semrush profile, issue 29).
+    fn claude_login_without_token(home: &TempDir) -> Account {
+        let config_dir = home.path().join(".claude-test");
+        write(&config_dir.join(".credentials.json"), "{}");
+        write(
+            &config_dir.join(".claude.json"),
+            &format!(
+                r#"{{"oauthAccount":{{"accountUuid":"{ACCOUNT_ID}","emailAddress":"dev@example.com"}}}}"#
+            ),
+        );
+
+        Account::new(
+            "anthropic",
+            ProviderId::new("anthropic"),
+            format!("claude:{ACCOUNT_ID}"),
+            "dev@example.com",
+            AccountKind::Subscription,
+            vec![FoundIn::profile(AgentId::new("claude-code"), config_dir)],
+        )
+    }
+
+    /// A shell in `home` that only counts its starts, so no real `claude`
+    /// ever runs.
+    fn counting_shell(home: &TempDir) -> String {
+        let starts = home.path().join("starts");
+
+        executable_script(
+            home.path(),
+            "counting-shell",
+            &format!("echo started >> '{}'\nexit 1", starts.display()),
+        )
+        .display()
+        .to_string()
+    }
+
+    fn started(home: &TempDir) -> bool {
+        home.path().join("starts").exists()
+    }
+
+    /// Issue 29, the owner's case: no token in the login's files, so the
+    /// Anthropic provider part reads the limits with `claude /usage` in
+    /// the Claude Code folder the account was found in. The shell here
+    /// only counts its starts, so the made-up `claude` never shows its
+    /// panel; the plugin's own tests read the panel.
+    #[test]
+    fn a_login_with_no_token_is_read_with_usage_in_its_folder() {
+        let home = TempDir::new("agents-numbers-semrush");
+        let account = claude_login_without_token(&home);
+        let shell = counting_shell(&home);
+        let (_, providers) =
+            agents_and_providers_with_shell(home.path(), &shell);
+
+        let loaded = read_account_numbers(
+            &providers,
+            account.clone(),
+            &[],
+            true,
+            |_| None,
+        );
+
+        assert!(started(&home), "`claude /usage` was not started");
+        assert_eq!(loaded.account, account);
+    }
+
+    /// While Agents mode is away the provider part starts no hidden
+    /// terminal: the read gives nothing, and the next read on screen
+    /// starts it.
+    #[test]
+    fn a_read_in_the_background_starts_no_hidden_terminal() {
+        let home = TempDir::new("agents-numbers-background");
+        let account = claude_login_without_token(&home);
+        let shell = counting_shell(&home);
+        let (_, providers) =
+            agents_and_providers_with_shell(home.path(), &shell);
+
+        let loaded =
+            read_account_numbers(&providers, account, &[], false, |_| None);
+
+        assert!(!started(&home), "the shell was started");
+        assert!(
+            !matches!(&loaded.numbers, Ok(AccountNumbers::Limits(answer))
+                if !answer.value().is_nothing()),
+            "{:?}",
+            loaded.numbers
+        );
+    }
 
     /// An Anthropic organization the Anthropic plugin found in the Claude
     /// Code folder under `home`, which holds no login now.
