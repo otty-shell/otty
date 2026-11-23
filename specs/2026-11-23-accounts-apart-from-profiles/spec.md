@@ -86,8 +86,11 @@ they pay, and both stand on their own.
 
 An agent part gives profiles, projects, sessions and tokens, and the
 launch and resume commands. It knows nothing about accounts: `logins`,
-`login-refused`, the `login` of an answer, the `connection` of a profile
-and the `not-logged-in` status leave the agent contract.
+`login-refused`, the `login` of an answer and the `connection` of a
+profile leave the agent contract. It keeps the `not-logged-in` status
+with its need ("No login", "Login expired", and the command that fixes
+it): whether its own agent can log in is the agent's business, not whose
+account it is (Decision 9).
 
 Why: the agent's job is its own files. Logins were in the agent contract
 only to feed the links of Decision 1.
@@ -194,17 +197,32 @@ provider. A stable id the plugin chooses keeps names and Hide across
 token refreshes, which a key fingerprint could not (the reason for issue
 43).
 
-### 9. Login needs belong to accounts
+### 9. A login need shows wherever it is met, and is fixed from any of them
 
-"Run login" and "Login expired" are needs of an account, shown on its page
-and in All accounts → Needs you. A profile shows no login needs: an agent
-may work with no login (local models, or OpenCode's free models). A
-profile folder of the same plugin with no login in it gives at most one
-need in All accounts → Needs you, such as "Nobody is logged in to
-`~/.codex-work` [Run codex login]".
+A login need ("No login", "Login expired", with its fix command such as
+`codex login` in that folder) is shown on every page it concerns, and the
+user may act from any of them; once fixed it goes from all of them.
 
-Why: whether the user can pay is the account's business. The profile still
-has its own needs (format changed, folder not found, agent missing).
+- **A profile with no login.** The agent part says so, as today's "not
+  logged in" ("No login in `~/.codex-work` [Run login]"), on the profile
+  page, as a mark on its row and in All profiles → Needs you. There is no
+  account, so nothing shows in Accounts. Once the user logs in, the need
+  goes and the provider part finds the account. An agent that works with
+  no login (local models, OpenCode's free models) reports no such need:
+  the plugin decides.
+- **A profile whose login expired.** The agent part shows the need on the
+  profile, and the provider part shows it on the account found in that
+  profile ("Login expired [Run login]"). Both run the same command in the
+  same folder, from either place.
+- **An account with no profile** (OTTY's own login in a hidden profile).
+  The need shows only on the account, as "Log in again".
+
+Why (owner, 2026-11-23): "if a profile is found and its account is not
+logged in, both get this need from you, and I can act in either place";
+"it may also show on an account, for example one I added with no
+profile". Showing a profile's missing login in Accounts would not be
+understood: there is no account yet. The profile also keeps its own needs
+(format changed, folder not found, agent missing).
 
 ### 10. Accounts added by hand are removed, "paste a key" comes later
 
@@ -279,9 +297,10 @@ Two more that follow from the decisions:
 
 - Before: Needs from you (with "Run login"), usage block, **Pays through**
   chips, Profile info, Read by.
-- After: Needs from you (profile needs only), usage block, Profile info
-  (Agent, Version, Folder, Projects, Sessions), Read by. No Pays through,
-  no login need.
+- After: Needs from you (profile needs, with "No login" and "Login
+  expired" when the agent part says so, Decision 9), usage block, Profile
+  info (Agent, Version, Folder, Projects, Sessions), Read by. No Pays
+  through.
 
 ### Project page
 
@@ -315,7 +334,7 @@ Two more that follow from the decisions:
 
 - Before: table Profile, Agent, Version, Today, with found extra folders.
 - After: same table with default and added profiles only. Needs you holds
-  no login needs.
+  the profiles' needs, login needs included (Decision 9).
 
 ### Usage block and statistics popup
 
@@ -340,9 +359,11 @@ Two more that follow from the decisions:
   part's `not-logged-in` and `login-refused`. "Key for <host> found in
   <agent>: no provider plugin [Add plugin…]". "The login was refused" with
   no button.
-- After: login needs come from the provider part on the account (or, for
-  a folder with no login, in All accounts → Needs you). A hidden profile's
-  expired login is "Log in again". The "no provider plugin" need goes,
+- After: login needs show wherever they are met (Decision 9): a profile
+  with no login on the profile only, an expired login of a profile on the
+  profile (agent part) and on its account (provider part), an OTTY own
+  login on the account only as "Log in again". Acting in any place fixes
+  all. The "no provider plugin" need goes,
   since no agent part reports keys any more. The plugin needs (update
   waits, part off, plugin failed, format changed) stay. Found by OTTY lists
   profiles and accounts in two separate groups with no "found in" links.
@@ -366,7 +387,8 @@ interface types {
 interface agent {
   /// The agent's default config folder only (Decision 4).
   profiles: func(agent: string) -> list<profile-place>;
-  /// Found, or the folder is gone. No connection, no not-logged-in.
+  /// Found, not logged in (with its need), or the folder is gone. No
+  /// connection: whose login it is, is the provider part's business.
   detect: func(profile: profile) -> profile-status;
   version: func(profile: profile) -> option<string>;
   session-places: func(profile: profile) -> list<place>;
@@ -494,7 +516,7 @@ Issues of spec `2026-11-19-agent-plugins`:
   named by login): OpenCode has no provider part now.
 - **43** (a stable `user-id` for nameless logins), never started: the
   plugin's stable account id replaces it.
-- Parts of **20** (`not-logged-in`, `login-refused` in the agent contract),
+- Parts of **20** (`login-refused` in the agent contract),
   **26** (a refused key of an added account), **38** (account chips),
   **40** (the By account switch).
 
