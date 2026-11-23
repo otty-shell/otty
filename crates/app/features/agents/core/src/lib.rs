@@ -101,7 +101,6 @@
 //! );
 //! ```
 
-mod add_account_dialog;
 mod bill;
 mod ctx;
 mod event;
@@ -110,6 +109,7 @@ mod folder_field;
 mod found_report;
 mod freshness;
 mod hiding;
+mod key_dialog;
 mod key_place_field;
 mod keyring;
 mod limits;
@@ -148,7 +148,6 @@ mod view;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub use add_account_dialog::AddAccountIntent;
 pub use ctx::AgentsCtx;
 pub use event::{
     AccountAction, AgentsIntent, AgentsOutcome, ProfileAction, SessionAction,
@@ -156,9 +155,10 @@ pub use event::{
 pub use folder_field::FolderFieldIntent;
 use iced::widget::Id;
 use iced::{Element, Subscription};
+pub use key_dialog::KeyDialogIntent;
 pub use key_place_field::KeyPlaceChoice;
 use model::{
-    AddAccountDialogViewModel, FoundReportViewModel, KeyringDialogViewModel,
+    FoundReportViewModel, KeyDialogViewModel, KeyringDialogViewModel,
     LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
     RemoveDialogViewModel, RenameDialogViewModel, StatsDialogViewModel,
     StatusBarViewModel, own_account_name,
@@ -187,7 +187,7 @@ pub use types::{
 };
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
-    add_account_dialog as add_account_view, found_report as found_view,
+    found_report as found_view, key_dialog as key_view,
     keyring_dialog as keyring_view, left_panel, main_area, menus as menu_view,
     remove_dialog, rename_dialog as rename_view, stats_dialog as stats_view,
     status_bar,
@@ -296,7 +296,7 @@ impl Agents {
     }
 
     /// Return the open overlay of Agents mode on top: the profile dialog
-    /// lies over the Add account dialog, that over the Rename dialog, that over the remove dialog, that over
+    /// lies over the key dialog, that over the Rename dialog, that over the remove dialog, that over
     /// the keyring dialog, that over the statistics dialog, that over the New session dialog, that over
     /// the Found by OTTY report, and all over a menu. The overlay drawn is
     /// this one, and the binary gives it the user's input first.
@@ -304,8 +304,8 @@ impl Agents {
         if self.state.dialog().is_some() {
             return Some(AgentsOverlay::ProfileDialog);
         }
-        if self.state.add_account().is_some() {
-            return Some(AgentsOverlay::AddAccountDialog);
+        if self.state.key_dialog().is_some() {
+            return Some(AgentsOverlay::KeyDialog);
         }
         if self.state.rename().is_some() {
             return Some(AgentsOverlay::RenameDialog);
@@ -461,11 +461,10 @@ impl Overlays for Agents {
 
                 Some(Overlay::dialog(dialog))
             },
-            AgentsOverlay::AddAccountDialog => {
-                let vm = AddAccountDialogViewModel::from_state(&self.state)?;
-                let dialog = add_account_view::view(
-                    add_account_view::AddAccountDialogProps { vm, theme },
-                );
+            AgentsOverlay::KeyDialog => {
+                let vm = KeyDialogViewModel::from_state(&self.state)?;
+                let dialog =
+                    key_view::view(key_view::KeyDialogProps { vm, theme });
 
                 Some(Overlay::dialog(dialog))
             },
@@ -552,9 +551,8 @@ impl StatusBar for Agents {
 pub enum AgentsOverlay {
     /// The dialog that adds or edits a profile.
     ProfileDialog,
-    /// The dialog that adds an account, or edits the key of one the user
-    /// added.
-    AddAccountDialog,
+    /// The dialog of a key a plugin part asks for.
+    KeyDialog,
     /// The dialog that names an account or a profile.
     RenameDialog,
     /// The dialog that asks before a profile is removed.

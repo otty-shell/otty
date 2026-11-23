@@ -11,7 +11,7 @@
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountKind, Amount, Balance, KeyLimit, SourceError, own_reader_of,
+    Account, AccountKind, Amount, Balance, KeyLimit, SourceError,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -102,10 +102,7 @@ fn money(
     };
 
     let mut rows = balance_rows(own.balance().map(|(balance, _)| balance));
-    let own_read_at = own
-        .balance()
-        .map(|(_, read_at)| read_at)
-        .or(own.bill().map(|(_, read_at)| read_at));
+    let own_read_at = own.balance().map(|(_, read_at)| read_at);
     let failure = own
         .failure()
         .map(|error| own_failure_text(state, account, error));
@@ -198,16 +195,16 @@ fn own_failure_text(
 ) -> String {
     let reason = source_error_text(error);
 
-    match own_reader_of(account, state.registry()) {
+    match state.registry().reader_of(account) {
         Some(provider) => named_failure(provider.name(), &reason),
         None => reason,
     }
 }
 
 /// The money spent this month: from the bill when one of the account's
-/// profiles read it, or the account's own admin key did, else as the
-/// provider counted it for the account's key; with neither, only why the
-/// bill could not be read with the admin key, if it could not.
+/// profiles read it, else as the provider counted it for the account's
+/// key; with neither, only why the bill could not be read with the admin
+/// key, if it could not.
 fn spent_money(
     state: &AgentsState,
     account: &Account,
@@ -221,12 +218,10 @@ fn spent_money(
             .iter()
             .filter(|shown| shown.pays_through(account))
     };
-    let bill = paying()
-        .find_map(|shown| {
-            let bill = shown.bill();
-            bill.answer().zip(bill.reads().read_at())
-        })
-        .or_else(|| own?.bill());
+    let bill = paying().find_map(|shown| {
+        let bill = shown.bill();
+        bill.answer().zip(bill.reads().read_at())
+    });
     let bill_failure =
         paying()
             .find_map(|shown| shown.bill().failure())
@@ -270,7 +265,7 @@ fn spent_money(
 mod tests {
     use otty_agents::{
         Billing, Credits, DaySpend, Limits, ModelTokens, ProviderRef,
-        SavedProfiles, SourceError, Spend, TokenCount,
+        SavedProfiles, Spend, TokenCount,
     };
 
     use super::*;
@@ -504,43 +499,6 @@ mod tests {
         );
     }
 
-    /// A made-up account the user added at `provider`, its key in a
-    /// variable, read by the plugin of its provider.
-    fn added(provider: ProviderRef) -> Account {
-        crate::testing::read_by_its_plugin(Account::added(
-            provider,
-            otty_agents::KeyRef::EnvVar(String::from("MADE_UP_KEY")),
-        ))
-    }
-
-    /// Codex with its login, and `account` added by hand, whose own read
-    /// answered `numbers` at `at(10)`.
-    fn added_with(
-        account: &Account,
-        numbers: Result<otty_agents::AccountNumbers, SourceError>,
-    ) -> AgentsState {
-        let saved = SavedProfiles::default().with_account_added(
-            account.provider().clone(),
-            account.added_key().cloned().expect("an added account"),
-        );
-        let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            saved,
-        );
-        let _ = reduce(
-            &mut state,
-            crate::event::AgentsIntent::AccountNumbersLoaded(
-                crate::types::LoadedAccountNumbers {
-                    account: account.clone(),
-                    numbers,
-                    read_at: at(10),
-                },
-            ),
-        );
-
-        state
-    }
-
     fn balance(
         left: Option<otty_agents::Amount>,
         key_limit: Option<otty_agents::KeyLimit>,
@@ -557,12 +515,14 @@ mod tests {
         }
     }
 
-    /// The owner's check: a DeepSeek key added by hand shows Left.
+    /// The owner's check: a DeepSeek key shows Left.
     #[test]
-    fn an_added_key_shows_the_money_left_in_its_currency() {
-        let deepseek = added(ProviderRef::of_id("deepseek"));
-        let state =
-            added_with(&deepseek, Ok(balance(Amount::new(110.0, "CNY"), None)));
+    fn a_key_shows_the_money_left_in_its_currency() {
+        let deepseek = crate::testing::found_key("deepseek");
+        let state = crate::testing::with_key_read(
+            &deepseek,
+            Ok(balance(Amount::new(110.0, "CNY"), None)),
+        );
 
         let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
 
@@ -580,12 +540,15 @@ mod tests {
 
     #[test]
     fn an_openrouter_key_shows_its_limit_with_a_bar() {
-        let openrouter = added(ProviderRef::of_id("openrouter"));
+        let openrouter = crate::testing::found_key("openrouter");
         let limited = otty_agents::KeyLimit::new(
             Amount::new(12.3, "USD").expect("a number"),
             Amount::new(50.0, "USD"),
         );
-        let state = added_with(&openrouter, Ok(balance(None, Some(limited))));
+        let state = crate::testing::with_key_read(
+            &openrouter,
+            Ok(balance(None, Some(limited))),
+        );
 
         let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
 
@@ -599,28 +562,13 @@ mod tests {
         assert_eq!(money.rows, [row(Key::AgentsKeyLimit, &used, Some(25))]);
     }
 
-    /// An added organization reads its bill with its own admin key.
-    #[test]
-    fn an_added_organization_shows_its_bill() {
-        let openai = added(ProviderRef::of_id("openai"));
-        let state = added_with(
-            &openai,
-            Ok(otty_agents::AccountNumbers::Bill(bill_of(1, 2))),
-        );
-
-        let numbers = AccountNumbersViewModel::of(&state, &openai, now());
-
-        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
-            panic!("the bill: {numbers:?}");
-        };
-        assert_eq!(money.spent, Some(dollars_text(bill_of(1, 2).this_month())));
-    }
-
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
-        let openrouter = added(ProviderRef::of_id("openrouter"));
-        let state =
-            added_with(&openrouter, Err(crate::testing::refused_key_need()));
+        let openrouter = crate::testing::found_key("openrouter");
+        let state = crate::testing::with_key_read(
+            &openrouter,
+            Err(crate::testing::refused_key_need()),
+        );
 
         let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
 
@@ -643,7 +591,7 @@ mod tests {
     /// shows both, as the provider counted them.
     #[test]
     fn a_key_shows_the_money_spent_this_month_and_its_credits() {
-        let deepseek = added(ProviderRef::of_id("deepseek"));
+        let deepseek = crate::testing::found_key("deepseek");
         let numbers = otty_agents::AccountNumbers::Balance(
             Balance::new(Amount::new(110.0, "USD"), None)
                 .with_spent_this_month(Amount::new(4.2, "USD"))
@@ -654,7 +602,7 @@ mod tests {
                     None,
                 ))),
         );
-        let state = added_with(&deepseek, Ok(numbers));
+        let state = crate::testing::with_key_read(&deepseek, Ok(numbers));
 
         let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
 

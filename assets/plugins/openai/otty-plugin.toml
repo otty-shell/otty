@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.6"
+version = "0.2.7"
 description = "Codex, ChatGPT and OpenAI accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -54,8 +54,8 @@ fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
 # The numbers of OpenAI accounts: the limits and credits of a ChatGPT
 # login (also one only OpenCode keeps), else what Codex knows of them in a
 # profile the login was found in, and the costs of an organization read
-# with an admin key added by hand. A login behind a gateway is for the
-# gateway's host and is not read here.
+# with the admin key the user gives for it. A login behind a gateway is
+# for the gateway's host and is not read here.
 [[agents.provider]]
 id = "openai"
 name = "OpenAI"
@@ -64,7 +64,6 @@ icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"
 plan_usage_page = "https://chatgpt.com/codex/settings/usage"
-add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the `codex`
 # part are refused then, but for the session files, where Codex writes the

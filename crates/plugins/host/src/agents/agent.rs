@@ -253,8 +253,10 @@ mod tests {
         assert_eq!(version, Ok(Some("1.4.2".to_string())));
     }
 
+    /// Spec 2026-11-23, Decision 4: the template gives only its default
+    /// folder, even with another of its folders in the home folder.
     #[test]
-    fn the_template_finds_its_profiles_in_the_home_folder() {
+    fn the_template_gives_only_its_default_folder() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
@@ -273,14 +275,7 @@ mod tests {
             .iter()
             .map(|place| (place.folder.as_str(), place.is_default))
             .collect();
-        let work = template_env().home().join(".example-agent-work");
-        assert_eq!(
-            listed,
-            [
-                (default_profile().folder.as_str(), true),
-                (work.display().to_string().as_str(), false)
-            ]
-        );
+        assert_eq!(listed, [(default_profile().folder.as_str(), true)]);
     }
 
     #[test]

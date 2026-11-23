@@ -9,7 +9,7 @@ use otty_app_domain::plugins::{OffPart, PluginsPlace};
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
-use super::{add_account_dialog, keyring};
+use super::{key_dialog, keyring};
 
 /// What the button of a need does: the one thing the user can do about it
 /// (spec "Words").
@@ -69,7 +69,7 @@ pub(crate) fn act(
             account,
             plugin,
             ask,
-        } => add_account_dialog::open_ask(state, account, plugin, ask),
+        } => key_dialog::open(state, account, plugin, ask),
         NeedAction::CopyReport(report) => vec![AgentsOutcome::CopyText(report)],
         NeedAction::AllowKeyring => {
             keyring::open_dialog(state);
@@ -179,11 +179,11 @@ mod tests {
             ),
             otty_agents::AccountLogin::Key(None),
             otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::AddedByUser,
+            otty_agents::FoundIn::ProfileFolder("/home/user/.claude".into()),
         );
 
         let unsaved = reduce(&mut state, AgentsIntent::FixNeed(ask(key)));
-        let is_open_for_a_key = state.add_account().is_some();
+        let is_open_for_a_key = state.key_dialog().is_some();
         let outcomes =
             reduce(&mut state, AgentsIntent::FixNeed(ask(organization())));
 
@@ -192,9 +192,8 @@ mod tests {
         assert!(outcomes.is_empty());
         assert!(
             state
-                .add_account()
-                .and_then(|dialog| dialog.asked())
-                .is_some_and(|asked| asked.ask().slot() == Some("admin"))
+                .key_dialog()
+                .is_some_and(|dialog| dialog.ask().slot() == "admin")
         );
     }
 

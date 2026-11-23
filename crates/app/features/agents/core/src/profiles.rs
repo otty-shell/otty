@@ -26,9 +26,8 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountKind, AgentId, GivenKey, KeyPlace, PartNeedAction, Profile,
+    Account, AccountKind, AgentId, GivenKey, PartNeedAction, Profile,
     ProfileStatus, Project, Registry, SavedProfiles, merge_accounts,
-    own_reader_of,
 };
 
 use super::freshness::{ReadState, Which};
@@ -147,19 +146,12 @@ impl Profiles {
     }
 
     /// The accounts found in the shown profiles, hidden ones too, each
-    /// once, in the order of the profiles, then the accounts the user
-    /// added (spec 2026-11-19, Decision 7).
+    /// once, in the order of the profiles.
     pub(crate) fn all_accounts(&self) -> Vec<Account> {
-        let added = self
-            .saved
-            .as_ref()
-            .map(SavedProfiles::added_accounts)
-            .unwrap_or_default();
         let found = self
             .shown
             .iter()
             .flat_map(|shown| shown.accounts().iter().cloned())
-            .chain(added)
             .collect();
 
         merge_accounts(found, &self.registry)
@@ -181,7 +173,7 @@ impl Profiles {
             return Some(shown.limits().clone());
         }
 
-        own_reader_of(account, &self.registry)?;
+        self.registry.reader_of(account)?;
         self.own_reads.of(account)?.limits()
     }
 
@@ -787,20 +779,21 @@ impl Profiles {
 
     /// Start a read of the numbers of each listed account that tells its
     /// own (spec 2026-11-19, Decision 5) that `which` picks and that has
-    /// none on its way, and return those accounts with the place their key
-    /// is read again from and the profiles they were found in.
+    /// none on its way, and return those accounts with the shown profiles
+    /// they were found in, the first of which names the place of their key,
+    /// and the keys the user gave for them.
     pub(crate) fn start_own_reads(
         &mut self,
         which: Which,
-    ) -> Vec<(Account, KeyPlace, Vec<GivenKey>)> {
+    ) -> Vec<(Account, Vec<Profile>, Vec<GivenKey>)> {
         let wanted = self.own_read_places();
 
         self.own_reads
             .start(wanted, which)
             .into_iter()
-            .map(|(account, place)| {
+            .map(|(account, found_in)| {
                 let given = self.given_keys_of(&account);
-                (account, place, given)
+                (account, found_in, given)
             })
             .collect()
     }
@@ -817,29 +810,23 @@ impl Profiles {
     }
 
     /// The accounts not hidden whose own numbers OTTY reads, each with the
-    /// place its key is read again from: an account the user added, from
-    /// the place they gave; a key or a login, from the files of the shown
-    /// profiles it was found in, the first of which names the place of its
-    /// key. A subscription login whose limits a profile of it reads
+    /// shown profiles it was found in, the first of which names the place
+    /// of its key. A subscription login whose limits a profile of it reads
     /// already is left out: that profile reads them.
-    fn own_read_places(&self) -> Vec<(Account, KeyPlace)> {
+    fn own_read_places(&self) -> Vec<(Account, Vec<Profile>)> {
         self.accounts()
             .into_iter()
-            .filter(|account| own_reader_of(account, &self.registry).is_some())
+            .filter(|account| self.registry.reader_of(account).is_some())
             .filter_map(|account| {
-                let place = self.own_read_place(&account)?;
-                Some((account, place))
+                let found_in = self.own_read_profiles(&account)?;
+                Some((account, found_in))
             })
             .collect()
     }
 
-    /// The place the key of `account` is read again from; `None` when it
-    /// is not read by itself.
-    fn own_read_place(&self, account: &Account) -> Option<KeyPlace> {
-        if account.added_key().is_some() {
-            return Some(KeyPlace::Added);
-        }
-
+    /// The shown profiles `account` is read in, the first of which names
+    /// the place of its key; `None` when it is not read by itself.
+    fn own_read_profiles(&self, account: &Account) -> Option<Vec<Profile>> {
         let profiles: Vec<&ProfileState> = self.found_with(account).collect();
         if account.kind() != AccountKind::Money {
             let is_read_by_a_profile = profiles.iter().any(|shown| {
@@ -857,7 +844,7 @@ impl Profiles {
             .iter()
             .map(|shown| shown.profile().clone())
             .collect();
-        (!found_in.is_empty()).then_some(KeyPlace::ProfileFiles(found_in))
+        (!found_in.is_empty()).then_some(found_in)
     }
 
     /// Make the projects again from the sessions of every profile.

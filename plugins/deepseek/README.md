@@ -3,16 +3,14 @@
 The official DeepSeek plugin of OTTY. OTTY has no code for any provider
 by name: this plugin teaches it DeepSeek. Its provider part `deepseek`
 reads the money left on a DeepSeek account (`GET
-https://api.deepseek.com/user/balance`) with the account's key: a key the
-user added by hand, or one an agent part found for `deepseek.com`, such
-as the key of a Claude Code profile whose `ANTHROPIC_BASE_URL` is
-`https://api.deepseek.com/anthropic`. The plugin never sees the key:
+https://api.deepseek.com/user/balance`) with the account's key, one an
+agent part found for `deepseek.com`, such as the key of a Claude Code
+profile whose `ANTHROPIC_BASE_URL` is `https://api.deepseek.com/anthropic`. The plugin never sees the key:
 OTTY hands it a handle, which goes only into the request to
 `api.deepseek.com`. With no DeepSeek account found it does nothing.
 
-A refused key the part asks the user to replace where it sits: in a
-field of OTTY for a key added there, on the keys page for a key an agent
-keeps. Its texts are in OTTY's language, which it follows when the user
+A refused key the part asks the user to replace where the agent keeps
+it, with the keys page at hand. Its texts are in OTTY's language, which it follows when the user
 picks another.
 
 The icon is a letter icon ("D" on a rounded square) until a

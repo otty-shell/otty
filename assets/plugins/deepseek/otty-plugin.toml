@@ -3,7 +3,7 @@
 [plugin]
 id = "deepseek"
 name = "DeepSeek"
-version = "0.1.1"
+version = "0.1.2"
 description = "DeepSeek accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-deepseek"
 license = "Apache-2.0"
@@ -24,7 +24,6 @@ description = "Reads the money left on DeepSeek accounts."
 icon = "deepseek.svg"
 hosts = ["deepseek.com"]
 usage_page = "https://platform.deepseek.com/usage"
-add_by_hand = true
 
 # Apply only while a function of this part runs.
 [agents.provider.permissions]

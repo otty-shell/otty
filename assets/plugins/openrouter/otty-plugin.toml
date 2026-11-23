@@ -3,7 +3,7 @@
 [plugin]
 id = "openrouter"
 name = "OpenRouter"
-version = "0.1.1"
+version = "0.1.2"
 description = "OpenRouter keys in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openrouter"
 license = "Apache-2.0"
@@ -24,7 +24,6 @@ description = "Reads the limit of OpenRouter keys and how much of it was used."
 icon = "openrouter.svg"
 hosts = ["openrouter.ai"]
 usage_page = "https://openrouter.ai/activity"
-add_by_hand = true
 
 # Apply only while a function of this part runs.
 [agents.provider.permissions]

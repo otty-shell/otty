@@ -108,14 +108,16 @@ impl PartNeed {
     }
 
     /// The need a part gave, `None` when OTTY can not show it: a page to
-    /// open that is not an `https` page. The page of a key to ask for that
-    /// is not one is left out.
+    /// open that is not an `https` page, or a key to ask for with no slot,
+    /// as OTTY keeps no key of an account of its own (spec 2026-11-23,
+    /// Decision 10). The page of a key to ask for that is not an `https`
+    /// page is left out.
     pub(crate) fn of_part(part: &PluginPart, need: &Need) -> Option<Self> {
         let action = match &need.action {
             PartAction::Run(command) => {
                 PartNeedAction::Run(agent_command(command))
             },
-            PartAction::AskKey(ask) => PartNeedAction::AskKey(KeyAsk::of(ask)),
+            PartAction::AskKey(ask) => PartNeedAction::AskKey(KeyAsk::of(ask)?),
             PartAction::OpenPage(page) if is_https(page) => {
                 PartNeedAction::OpenPage(page.clone())
             },
@@ -167,11 +169,10 @@ pub enum PartNeedAction {
 }
 
 /// A key a part asks the user for: OTTY keeps only where the user keeps
-/// it and gives it back to the part under `slot`, or, with no slot, in
-/// place of the account's own key (issue 26).
+/// it and gives it back to the part under `slot`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyAsk {
-    slot: Option<String>,
+    slot: String,
     label: String,
     hint: String,
     prefix: Option<String>,
@@ -179,11 +180,9 @@ pub struct KeyAsk {
 }
 
 impl KeyAsk {
-    /// The part's own name for the key, such as `admin`; `None` for the
-    /// account's own key, the key of an account the user added, which the
-    /// new key replaces.
-    pub fn slot(&self) -> Option<&str> {
-        self.slot.as_deref()
+    /// The part's own name for the key, such as `admin`.
+    pub fn slot(&self) -> &str {
+        &self.slot
     }
 
     /// The name of the field, such as "Admin key".
@@ -213,30 +212,7 @@ impl KeyAsk {
         hint: impl Into<String>,
     ) -> Self {
         Self {
-            slot: Some(slot.into()),
-            label: label.into(),
-            hint: hint.into(),
-            prefix: None,
-            page: None,
-        }
-    }
-
-    /// A key asked for in place of the account's own key, with the
-    /// field's `label` and `hint`.
-    ///
-    /// ```
-    /// use otty_agents::KeyAsk;
-    ///
-    /// let ask = KeyAsk::for_account_key("API key", "Replaces the old key.");
-    ///
-    /// assert_eq!(ask.slot(), None);
-    /// ```
-    pub fn for_account_key(
-        label: impl Into<String>,
-        hint: impl Into<String>,
-    ) -> Self {
-        Self {
-            slot: None,
+            slot: slot.into(),
             label: label.into(),
             hint: hint.into(),
             prefix: None,
@@ -255,14 +231,13 @@ impl KeyAsk {
         self
     }
 
-    /// The ask a part gave.
-    fn of(ask: &PartKeyAsk) -> Self {
-        let ask_of_slot = match &ask.slot {
-            Some(slot) => Self::new(slot, &ask.label, &ask.hint),
-            None => Self::for_account_key(&ask.label, &ask.hint),
-        };
+    /// The ask a part gave; `None` for one with no slot.
+    fn of(ask: &PartKeyAsk) -> Option<Self> {
+        let slot = ask.slot.as_deref()?;
 
-        ask_of_slot.with_prefix_and_page(ask.prefix.clone(), ask.page.clone())
+        let asked = Self::new(slot, &ask.label, &ask.hint)
+            .with_prefix_and_page(ask.prefix.clone(), ask.page.clone());
+        Some(asked)
     }
 }
 
@@ -377,10 +352,11 @@ mod tests {
         assert_eq!(bad.page(), None);
     }
 
-    /// Issue 26: a key asked for with no slot replaces the account's own
-    /// key; one with a slot is kept under it.
+    /// Spec 2026-11-23, Decision 10: OTTY keeps no key of an account of
+    /// its own, so a key asked for with no slot is not shown; one with a
+    /// slot is kept under it.
     #[test]
-    fn a_key_asked_for_with_no_slot_is_the_accounts_own_key() {
+    fn a_key_asked_for_with_no_slot_is_not_shown() {
         let ask = |slot: Option<&str>| {
             need(PartAction::AskKey(PartKeyAsk {
                 slot: slot.map(str::to_string),
@@ -391,22 +367,18 @@ mod tests {
             }))
         };
 
-        let own = PartNeed::of_part(&part(), &ask(None)).expect("shown");
+        let own = PartNeed::of_part(&part(), &ask(None));
         let admin =
             PartNeed::of_part(&part(), &ask(Some("admin"))).expect("shown");
 
-        let PartNeedAction::AskKey(own) = own.action() else {
-            panic!("a key to ask for");
-        };
         let PartNeedAction::AskKey(admin) = admin.action() else {
             panic!("a key to ask for");
         };
-        assert_eq!(own.slot(), None);
+        assert_eq!(own, None);
         assert_eq!(
-            own,
-            &KeyAsk::for_account_key("API key", "Replaces the refused key.")
+            admin,
+            &KeyAsk::new("admin", "API key", "Replaces the refused key.")
         );
-        assert_eq!(admin.slot(), Some("admin"));
     }
 
     #[test]

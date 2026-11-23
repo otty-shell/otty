@@ -8,7 +8,6 @@
 
 use std::path::PathBuf;
 
-use crate::given_key::KeyRef;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::provider::{ProviderEntry, ProviderRef};
 use crate::registry::Registry;
@@ -29,10 +28,6 @@ pub enum AccountIdentity {
     Email(String),
     /// The fingerprint of a key.
     KeyFingerprint(KeyFingerprint),
-    /// An account the user added by hand, known by where its key is kept:
-    /// the file or the environment variable, never the key (spec
-    /// 2026-11-19, Decision 7).
-    AddedKey(KeyRef),
 }
 
 /// How an account is shown, so the user recognizes it.
@@ -43,9 +38,6 @@ pub enum AccountLogin {
     /// A key, shown by its last characters, such as `a1f3`; `None` for a
     /// key too short to show any of it.
     Key(Option<String>),
-    /// A key the user added, shown by the file or the variable it is kept
-    /// in.
-    KeyPlace(KeyRef),
     /// A login whose files name no email.
     Unnamed,
 }
@@ -61,13 +53,13 @@ pub enum AccountKind {
     Money,
 }
 
-/// Where an account was found.
+/// Where an account was found. Accounts are no longer added by hand
+/// (spec 2026-11-23, Decision 10); OTTY's own logins join as another place
+/// (spec 2026-11-23, Decision 8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundIn {
     /// The config folder of a profile, such as `~/.coder`.
     ProfileFolder(PathBuf),
-    /// The user added it.
-    AddedByUser,
 }
 
 /// One login or key at a provider, as one plugin reads it.
@@ -134,20 +126,10 @@ impl Account {
         }
     }
 
-    /// Where the key of an account the user added is kept; `None` for an
-    /// account OTTY found.
-    pub fn added_key(&self) -> Option<&KeyRef> {
-        match &self.identity {
-            AccountIdentity::AddedKey(key) => Some(key),
-            _ => None,
-        }
-    }
-
     /// Whether the user's choices for the account, its name and whether it
     /// is hidden, can be kept in `agents.json`: it is known by an id, an
-    /// organization, an email or, for an account the user added, the place
-    /// of its key. A key OTTY found is known only by its fingerprint, which
-    /// is kept in memory only, so it is never saved.
+    /// organization or an email. A key OTTY found is known only by its
+    /// fingerprint, which is kept in memory only, so it is never saved.
     pub fn can_be_saved(&self) -> bool {
         !matches!(self.identity, AccountIdentity::KeyFingerprint(_))
     }
@@ -192,32 +174,6 @@ impl Account {
         }
     }
 
-    /// The account the user added at `provider` with its key kept at `key`
-    /// (spec 2026-11-19, Decision 7): paid per token, found "added by
-    /// you". For a provider whose part offers Add account with an admin
-    /// key it is an organization whose bill the key reads.
-    ///
-    /// ```
-    /// use otty_agents::{Account, FoundIn, KeyRef, ProviderRef};
-    ///
-    /// let key = KeyRef::EnvVar("EXAMPLE_API_KEY".into());
-    /// let account =
-    ///     Account::added(ProviderRef::of_id("example-cloud"), key.clone());
-    ///
-    /// assert_eq!(account.added_key(), Some(&key));
-    /// assert_eq!(account.found_in(), [FoundIn::AddedByUser]);
-    /// assert!(account.can_be_saved());
-    /// ```
-    pub fn added(provider: ProviderRef, key: KeyRef) -> Self {
-        Self::new(
-            provider,
-            AccountIdentity::AddedKey(key.clone()),
-            AccountLogin::KeyPlace(key),
-            AccountKind::Money,
-            FoundIn::AddedByUser,
-        )
-    }
-
     /// The same account with a plan, or none.
     pub fn with_plan(mut self, plan: Option<String>) -> Self {
         self.plan = plan;
@@ -228,16 +184,24 @@ impl Account {
     /// or by none.
     ///
     /// ```
-    /// use otty_agents::{Account, KeyRef, ProviderRef};
+    /// use std::path::PathBuf;
     ///
-    /// let added = Account::added(
-    ///     ProviderRef::of_id("example-cloud"),
-    ///     KeyRef::EnvVar("EXAMPLE_API_KEY".into()),
+    /// use otty_agents::{
+    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+    ///     ProviderRef,
+    /// };
+    ///
+    /// let login = Account::new(
+    ///     ProviderRef::of_id("other-cloud"),
+    ///     AccountIdentity::AccountId("made-up-account".into()),
+    ///     AccountLogin::Unnamed,
+    ///     AccountKind::Limits,
+    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
     /// );
     ///
-    /// assert_eq!(added.read_by(), None);
+    /// assert_eq!(login.read_by(), None);
     /// assert_eq!(
-    ///     added.with_read_by(Some("example".into())).read_by(),
+    ///     login.with_read_by(Some("example".into())).read_by(),
     ///     Some("example")
     /// );
     /// ```
@@ -262,21 +226,14 @@ impl Account {
     /// One copy of the account for each provider part of `registry` that
     /// reads it, under the id of that part and read by its plugin: every
     /// part with its provider id or, for a key known by its host, every
-    /// part that serves the host, whatever its id (issue 31); for an
-    /// account the user added only those that offer Add account. An
-    /// account already read by a plugin, or one no part reads, stays as it
-    /// is.
+    /// part that serves the host, whatever its id (issue 31). An account
+    /// already read by a plugin, or one no part reads, stays as it is.
     fn read_by_each(self, registry: &Registry) -> Vec<Account> {
         if self.read_by.is_some() {
             return vec![self];
         }
 
-        let is_added = self.added_key().is_some();
-        let readers: Vec<&ProviderEntry> = registry
-            .readers_of(&self.provider)
-            .into_iter()
-            .filter(|entry| !is_added || entry.can_add_by_hand())
-            .collect();
+        let readers: Vec<&ProviderEntry> = registry.readers_of(&self.provider);
 
         if readers.is_empty() {
             return vec![self];
@@ -411,10 +368,7 @@ mod tests {
         account
             .found_in()
             .iter()
-            .filter_map(|place| match place {
-                FoundIn::ProfileFolder(folder) => Some(folder.as_path()),
-                _ => None,
-            })
+            .map(|FoundIn::ProfileFolder(folder)| folder.as_path())
             .collect()
     }
 
@@ -593,15 +547,9 @@ mod tests {
             FoundIn::ProfileFolder("/home/user/.claude".into()),
         );
 
-        let added = Account::added(
-            ProviderRef::of_id("deepseek"),
-            KeyRef::File("/home/user/.config/deepseek-key".into()),
-        );
-
         assert!(chatgpt("made-up-account", "/home/user/.codex").can_be_saved());
         assert!(email.can_be_saved());
         assert!(organization.can_be_saved());
-        assert!(added.can_be_saved());
         assert!(
             !key(
                 ProviderRef::of_id("deepseek"),
@@ -610,42 +558,6 @@ mod tests {
             )
             .can_be_saved()
         );
-    }
-
-    /// Spec 2026-11-19, Decision 7: an account added by hand is known by
-    /// where its key is kept, so two places are two accounts, and it is
-    /// never one with a key OTTY found.
-    #[test]
-    fn an_added_account_is_known_by_the_place_of_its_key() {
-        let in_file = || {
-            Account::added(
-                ProviderRef::of_id("deepseek"),
-                KeyRef::File("/home/user/.config/deepseek-key".into()),
-            )
-        };
-        let in_variable = Account::added(
-            ProviderRef::of_id("deepseek"),
-            KeyRef::EnvVar("DEEPSEEK_API_KEY".into()),
-        );
-        let found = key(
-            ProviderRef::of_id("deepseek"),
-            "sk-made-up",
-            "/home/user/.claude",
-        );
-
-        let accounts =
-            join_copies(vec![in_file(), in_variable, in_file(), found]);
-
-        assert_eq!(accounts.len(), 3);
-        assert_eq!(accounts[0].kind(), AccountKind::Money);
-        assert_eq!(accounts[0].found_in(), [FoundIn::AddedByUser]);
-        assert_eq!(
-            accounts[0].login(),
-            &AccountLogin::KeyPlace(KeyRef::File(
-                "/home/user/.config/deepseek-key".into()
-            ))
-        );
-        assert_eq!(accounts[2].added_key(), None);
     }
 
     fn deepseek_host() -> ProviderRef {
@@ -715,9 +627,9 @@ mod tests {
     }
 
     /// A registry with two plugins that both serve the provider
-    /// `anthropic`, and one that offers Add account for it.
+    /// `anthropic`.
     fn two_anthropic_readers() -> Registry {
-        let entry = |plugin: &str, add_by_hand: bool| {
+        let entry = |plugin: &str| {
             let part = otty_plugin_host::PluginPart::new(
                 plugin,
                 plugin,
@@ -725,21 +637,17 @@ mod tests {
                 "",
                 "anthropic",
             );
-            let entry = crate::provider::ProviderEntry::new(
+            crate::provider::ProviderEntry::new(
                 crate::provider::ProviderId::new("anthropic"),
                 "Anthropic",
                 part,
             )
-            .with_hosts(["anthropic.com"]);
-            match add_by_hand {
-                true => entry.with_add_by_hand(),
-                false => entry,
-            }
+            .with_hosts(["anthropic.com"])
         };
 
         Registry::new(
             Vec::new(),
-            vec![entry("anthropic", true), entry("anthropic-fork", false)],
+            vec![entry("anthropic"), entry("anthropic-fork")],
         )
     }
 
@@ -755,30 +663,20 @@ mod tests {
 
     /// Issue 29: two plugins that serve one provider each read its
     /// accounts, so one login found in two profiles is two accounts, one
-    /// per plugin, each found in both profiles; an account the user added
-    /// is read by each plugin that offers Add account for its provider.
+    /// per plugin, each found in both profiles.
     #[test]
     fn each_plugin_that_serves_an_account_reads_its_own_copy() {
-        let added = Account::added(
-            ProviderRef::of_id("anthropic"),
-            KeyRef::EnvVar("ANTHROPIC_ADMIN_KEY".into()),
-        );
-
         let accounts = merge_accounts(
             vec![
                 claude_login("/home/user/.claude"),
                 claude_login("/home/user/.claude-work"),
-                added,
             ],
             &two_anthropic_readers(),
         );
 
         let readers: Vec<Option<&str>> =
             accounts.iter().map(Account::read_by).collect();
-        assert_eq!(
-            readers,
-            [Some("anthropic"), Some("anthropic-fork"), Some("anthropic")]
-        );
+        assert_eq!(readers, [Some("anthropic"), Some("anthropic-fork")]);
         assert_eq!(accounts[0].found_in().len(), 2);
         assert_eq!(accounts[1].found_in().len(), 2);
         assert!(!accounts[0].is_same_account(&accounts[1]));

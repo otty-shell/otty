@@ -9,8 +9,8 @@ use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{
-    Account, AccountNumbers, Agent, KeyPlace, PluginProvider, Profile,
-    SourceError, SourceFailure, SourceId, Unavailable,
+    Account, AccountNumbers, Agent, PluginProvider, Profile, SourceError,
+    SourceFailure, SourceId, Unavailable,
 };
 use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
 
@@ -145,9 +145,8 @@ fn read_limits(
                 agents,
                 providers,
                 &account,
-                &KeyPlace::ProfileFiles(found_in),
+                &found_in,
                 &[],
-                SystemTime::now(),
                 starts_programs,
                 |_| None,
             );

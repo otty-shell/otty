@@ -164,8 +164,8 @@ fn balance_now(
 }
 
 /// The money an account paid per token spent this month, "$44.87 this
-/// month": its bill when one of its profiles, or its own admin key, read
-/// it, else what its provider counted for its key. `None` when the
+/// month": its bill when one of its profiles read it, else what its
+/// provider counted for its key. `None` when the
 /// provider told neither.
 fn money_this_month(
     state: &AgentsState,
@@ -177,8 +177,7 @@ fn money_this_month(
         .shown()
         .iter()
         .filter(|shown| shown.pays_through(account))
-        .find_map(|shown| shown.bill().answer())
-        .or_else(|| own?.bill().map(|(bill, _)| bill));
+        .find_map(|shown| shown.bill().answer());
 
     let amount = match bill {
         Some(bill) => dollars_text(bill.this_month()),
@@ -527,26 +526,10 @@ mod tests {
     /// left was read with its own key, "$12.30 used" for a key with a limit.
     #[test]
     fn a_key_shows_the_money_left_or_what_it_used() {
-        let number = |provider: ProviderRef, numbers| {
-            let key = otty_agents::KeyRef::EnvVar(String::from("KEY"));
-            let account = crate::testing::read_by_its_plugin(Account::added(
-                provider.clone(),
-                key.clone(),
-            ));
-            let mut state = with_accounts(
-                &[(codex(), connected(), vec![chatgpt_login()])],
-                SavedProfiles::default().with_account_added(provider, key),
-            );
-            let _ = reduce(
-                &mut state,
-                crate::event::AgentsIntent::AccountNumbersLoaded(
-                    crate::types::LoadedAccountNumbers {
-                        account: account.clone(),
-                        numbers: Ok(numbers),
-                        read_at: at(10),
-                    },
-                ),
-            );
+        let number = |provider: &str, numbers| {
+            let account = crate::testing::found_key(provider);
+            let state = crate::testing::with_key_read(&account, Ok(numbers));
+
             number_of(&state, &account)
         };
         let left = otty_agents::Balance::new(
@@ -562,17 +545,11 @@ mod tests {
         );
 
         assert_eq!(
-            number(
-                ProviderRef::of_id("deepseek"),
-                otty_agents::AccountNumbers::Balance(left)
-            ),
+            number("deepseek", otty_agents::AccountNumbers::Balance(left)),
             muted(credits_left("¥110.00"))
         );
         assert_eq!(
-            number(
-                ProviderRef::of_id("openrouter"),
-                otty_agents::AccountNumbers::Balance(used)
-            ),
+            number("openrouter", otty_agents::AccountNumbers::Balance(used)),
             muted(i18n::filled(
                 Key::TplAgentsAmountUsed,
                 &[("amount", "$12.30")]
@@ -584,28 +561,13 @@ mod tests {
     /// it spent this month shows that, as the provider counted it.
     #[test]
     fn a_key_shows_the_money_its_provider_counted_this_month() {
-        let key = otty_agents::KeyRef::EnvVar(String::from("KEY"));
-        let provider = ProviderRef::of_id("deepseek");
-        let account = crate::testing::read_by_its_plugin(Account::added(
-            provider.clone(),
-            key.clone(),
-        ));
-        let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            SavedProfiles::default().with_account_added(provider, key),
-        );
+        let account = crate::testing::found_key("deepseek");
         let spent = otty_agents::Balance::new(None, None)
             .with_spent_this_month(otty_agents::Amount::new(4.2, "USD"));
 
-        let _ = reduce(
-            &mut state,
-            crate::event::AgentsIntent::AccountNumbersLoaded(
-                crate::types::LoadedAccountNumbers {
-                    account: account.clone(),
-                    numbers: Ok(otty_agents::AccountNumbers::Balance(spent)),
-                    read_at: at(10),
-                },
-            ),
+        let state = crate::testing::with_key_read(
+            &account,
+            Ok(otty_agents::AccountNumbers::Balance(spent)),
         );
 
         assert_eq!(

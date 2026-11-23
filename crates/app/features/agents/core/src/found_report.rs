@@ -236,6 +236,6 @@ mod tests {
 
         assert_eq!(outcomes, vec![save_shown()]);
         assert!(!state.is_found_report_open());
-        assert!(state.add_account().is_some());
+        assert!(state.key_dialog().is_some());
     }
 }

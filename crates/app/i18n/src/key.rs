@@ -1452,8 +1452,6 @@ pub enum Key {
     AgentsAccountKey,
     /// A login whose files name no email, no key and no plan.
     AgentsAccountUnknown,
-    /// An account the user added.
-    AgentsFoundInUser,
     /// Title of the needs of the accounts.
     AgentsAccountsNeedYou,
     /// Title of the needs of the profiles.
@@ -1648,16 +1646,6 @@ pub enum Key {
     AgentsRename,
     /// Item of the account menu that opens the provider's usage page in the browser.
     AgentsOpenUsagePage,
-    /// Item of the menu of an account the user added that changes where its key is kept.
-    AgentsEditKeyItem,
-    /// Title of the dialog that adds an account by hand, and the tooltip of the plus of the Accounts section.
-    AgentsAddAccountTitle,
-    /// Title of the dialog that changes where the key of an account the user added is kept.
-    AgentsEditKeyTitle,
-    /// Text of the Add account dialog: what it is for and what OTTY saves.
-    AgentsAddAccountText,
-    /// Error of the Add account dialog: an account with this key place is already added.
-    AgentsErrorAccountAdded,
     /// Row of the Money block of an account page: the money left on the account.
     AgentsLeft,
     /// Row of the Money block of an account page: the limit of a key.
@@ -2014,7 +2002,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 941] = [
+    pub(super) const ALL: [Self; 935] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2681,7 +2669,6 @@ impl Key {
         Self::TplAgentsAccountOfPlugin,
         Self::AgentsAccountKey,
         Self::AgentsAccountUnknown,
-        Self::AgentsFoundInUser,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,
         Self::AgentsNeedNoProviderTitle,
@@ -2779,11 +2766,6 @@ impl Key {
         Self::TplAgentsWindowForModel,
         Self::AgentsRename,
         Self::AgentsOpenUsagePage,
-        Self::AgentsEditKeyItem,
-        Self::AgentsAddAccountTitle,
-        Self::AgentsEditKeyTitle,
-        Self::AgentsAddAccountText,
-        Self::AgentsErrorAccountAdded,
         Self::AgentsLeft,
         Self::AgentsKeyLimit,
         Self::TplAgentsKeyLimitUsed,

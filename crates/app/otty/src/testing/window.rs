@@ -402,7 +402,7 @@ fn test_agents() -> Vec<Box<dyn otty_agents::Agent>> {
 }
 
 /// The registry of a test app: the stand-in for Codex and a made-up
-/// provider part that Add account offers.
+/// provider part.
 fn test_registry() -> otty_agents::Registry {
     let agents = test_agents()
         .iter()
@@ -420,8 +420,7 @@ fn test_registry() -> otty_agents::Registry {
         "Example Cloud",
         part,
     )
-    .with_hosts(["example.com"])
-    .with_add_by_hand();
+    .with_hosts(["example.com"]);
 
     otty_agents::Registry::new(agents, vec![cloud])
 }

@@ -413,20 +413,14 @@ pub(crate) fn bill_key() -> Need {
 }
 
 /// Anthropic refused the admin key the bill was read with: the button asks
-/// for a new one under `slot`, or with no slot in place of the account's
-/// own key, which the user gave in OTTY.
-pub(crate) fn new_bill_key(slot: Option<&str>) -> Need {
-    let ask = KeyAsk {
-        slot: slot.map(str::to_string),
-        ..bill_key_ask()
-    };
-
+/// for a new one under [`ADMIN_SLOT`].
+pub(crate) fn new_bill_key() -> Need {
     Need {
         id: "new-bill-key".to_string(),
         title: in_language(NEW_BILL_KEY_TITLE).to_string(),
         text: in_language(NEW_BILL_KEY_TEXT)
             .replace("{provider}", PROVIDER_NAME),
-        action: NeedAction::AskKey(ask),
+        action: NeedAction::AskKey(bill_key_ask()),
     }
 }
 
@@ -471,7 +465,7 @@ mod tests {
                 not_logged_in(claude()),
                 login_expired(claude()),
                 bill_key(),
-                new_bill_key(Some(ADMIN_SLOT)),
+                new_bill_key(),
             ]
         })
     }

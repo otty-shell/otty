@@ -79,9 +79,8 @@ impl Provider for OpenAi {
     /// The costs of the organization over `days`, read with an admin
     /// key: the one the user gave under [`ADMIN_SLOT`], else the
     /// account's own key when it is one, else the part asks for one and
-    /// sends nothing. A refused key is asked for again where it sits: the
-    /// account's own key the user gave in OTTY in its place, any other
-    /// under [`ADMIN_SLOT`], which the next read takes first.
+    /// sends nothing. A refused key is asked for again under
+    /// [`ADMIN_SLOT`], which the next read takes first.
     fn read_bill(
         _provider: &str,
         _found: &LoginFacts,
@@ -91,7 +90,7 @@ impl Provider for OpenAi {
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
         if let Some(admin_key) = given_key(given, ADMIN_SLOT) {
-            return organization_costs::bill(admin_key, Some(ADMIN_SLOT), days);
+            return organization_costs::bill(admin_key, days);
         }
 
         let is_bill_key = is_bill_key(key)?;
@@ -99,13 +98,7 @@ impl Provider for OpenAi {
             return Err(ReadError::NeedsUser(needs::bill_key()));
         }
 
-        let is_given_in_otty =
-            key.is_given_in_otty().map_err(ReadError::Host)?;
-        let refused_slot = match is_given_in_otty {
-            true => None,
-            false => Some(ADMIN_SLOT),
-        };
-        organization_costs::bill(key, refused_slot, days)
+        organization_costs::bill(key, days)
     }
 }
 
@@ -539,19 +532,6 @@ mod tests {
         }
     }
 
-    /// Issue 26: the account's own admin key, which the user added by
-    /// hand, is refused: the new key takes its place, with no slot.
-    #[test]
-    fn a_refused_own_admin_key_given_in_otty_is_asked_for_in_its_place() {
-        let host = host();
-        let key = host.given_key(MADE_UP_ADMIN);
-
-        let need = refused_bill_need(&host, &key, &[]);
-
-        assert_eq!(need.id, "new-bill-key");
-        assert_eq!(asked_slot(need), None);
-    }
-
     /// Issue 26: an admin key an agent keeps is not OTTY's to replace: the
     /// new one is asked for under `admin`, and the next bill reads with it.
     #[test]
@@ -565,7 +545,7 @@ mod tests {
     }
 
     /// A refused admin key given under `admin` is asked for again under
-    /// it, never in place of the account's own key.
+    /// it.
     #[test]
     fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
         let host = host();

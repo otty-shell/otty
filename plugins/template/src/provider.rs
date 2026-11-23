@@ -73,8 +73,7 @@ impl Provider for Example {
             });
         }
 
-        let me: Me =
-            get_json(&format!("{API}/me"), key, || refused_key_need(key))?;
+        let me: Me = get_json(&format!("{API}/me"), key, refused_key_need)?;
 
         Ok(AccountFacts {
             identity: Identity {
@@ -102,7 +101,7 @@ impl Provider for Example {
         }
 
         let url = format!("{API}/balance");
-        let balance: Balance = get_json(&url, key, || refused_key_need(key))?;
+        let balance: Balance = get_json(&url, key, refused_key_need)?;
 
         Ok(AccountNumbers {
             left: Some(Money {
@@ -130,12 +129,12 @@ impl Provider for Example {
         let is_bill_key = is_bill_key(key)?;
 
         let answer: BillAnswer = match is_bill_key {
-            true => get_json(&url, key, || refused_key_need(key))?,
+            true => get_json(&url, key, refused_key_need)?,
             false => {
                 let bill_key = given_key(given, ADMIN_SLOT)
                     .ok_or_else(|| ReadError::NeedsUser(admin_key_need()))?;
 
-                get_json(&url, bill_key, || Ok(admin_key_need()))?
+                get_json(&url, bill_key, admin_key_need)?
             },
         };
 
@@ -194,17 +193,11 @@ fn admin_key_need() -> Need {
     needs::bill_key(ADMIN_SLOT, ADMIN_PREFIX, BILL_KEYS_PAGE)
 }
 
-/// What the user does about the account's own `key`, refused: a key
-/// given in OTTY is replaced in OTTY's field, one an agent keeps where the
-/// agent keeps it. A key given under a slot is also given in OTTY, but it
-/// is asked for again under its slot, never with this need.
-fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
-    let is_given_in_otty = key.is_given_in_otty().map_err(ReadError::Host)?;
-
-    Ok(match is_given_in_otty {
-        true => needs::replace_key(NAME, KEYS_PAGE),
-        false => needs::new_key(NAME, KEYS_PAGE),
-    })
+/// What the user does about the account's own key, refused: the agent
+/// keeps it, so a new one goes where the agent keeps it. A key given under
+/// a slot is asked for again under its slot, never with this need.
+fn refused_key_need() -> Need {
+    needs::new_key(NAME, KEYS_PAGE)
 }
 
 /// The JSON answer of a `GET` of `url` with `key`. A refused key is the
@@ -212,7 +205,7 @@ fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
 fn get_json<T: DeserializeOwned>(
     url: &str,
     key: &Key,
-    refused: impl FnOnce() -> Result<Need, ReadError>,
+    refused: impl FnOnce() -> Need,
 ) -> Result<T, ReadError> {
     let request = Request::get(url)
         .header("accept", "application/json")
@@ -226,7 +219,7 @@ fn get_json<T: DeserializeOwned>(
                 "the answer of {url} has another shape"
             ))
         }),
-        401 | 403 => Err(ReadError::NeedsUser(refused()?)),
+        401 | 403 => Err(ReadError::NeedsUser(refused())),
         status => Err(ReadError::Failed(format!("{url} answered {status}"))),
     }
 }
@@ -463,60 +456,24 @@ mod tests {
         }
     }
 
-    /// Issue 26: a refused key the user gave in OTTY, the account's own,
-    /// is replaced in OTTY: the field has no slot, so the new key takes
-    /// the old one's place.
+    /// The account's own admin key reads the bill; refused, it is
+    /// replaced where the agent keeps it: the button opens the keys page.
     #[test]
-    fn a_refused_key_given_in_otty_asks_for_a_new_one_in_its_place() {
+    fn a_refused_own_admin_key_is_replaced_where_the_agent_keeps_it() {
         let host = host();
-        host.answer("GET", "https://api.example.com/v1/balance", 401, b"{}");
-        let key = host.given_key(KEY);
-
-        let numbers = host.as_provider(PROVIDER, || {
-            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
-        });
-
-        let Err(ReadError::NeedsUser(need)) = numbers else {
-            panic!("a need: {numbers:?}");
-        };
-        assert_eq!(need.id, "replace-key");
-        assert!(need.text.starts_with("Example Cloud refused the key"));
-        let NeedAction::AskKey(ask) = need.action else {
-            panic!("a field for the key: {need:?}");
-        };
-        assert_eq!(ask.slot, None);
-        assert_eq!(ask.label, "Example Cloud key");
-        assert_eq!(ask.page.as_deref(), Some(KEYS_PAGE));
-    }
-
-    /// Issue 26: the account's own admin key reads the bill; refused, it
-    /// is replaced where it sits: in OTTY's field when the user gave it
-    /// there, else on the keys page for the agent that keeps it.
-    #[test]
-    fn a_refused_own_admin_key_is_replaced_where_it_sits() {
-        let host = host();
-        let given = host.given_key("ex-admin-made-up-01");
         let found = host.key("ex-admin-made-up-02");
 
-        let given_need = refused_bill_need(&host, &given, &[]);
-        let found_need = refused_bill_need(&host, &found, &[]);
+        let need = refused_bill_need(&host, &found, &[]);
 
-        let NeedAction::AskKey(ask) = given_need.action else {
-            panic!("a field for the key: {given_need:?}");
-        };
-        assert_eq!(ask.slot, None);
-        assert_eq!(
-            found_need.action,
-            NeedAction::OpenPage(KEYS_PAGE.to_string())
-        );
+        assert_eq!(need.action, NeedAction::OpenPage(KEYS_PAGE.to_string()));
     }
 
-    /// Issue 26: a refused admin key given under the slot is asked for
-    /// again under that slot, never in place of the account's own key.
+    /// A refused admin key given under the slot is asked for again under
+    /// that slot.
     #[test]
     fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
         let host = host();
-        let key = host.given_key(KEY);
+        let key = host.key(KEY);
         let given = [GivenKey::new(
             "admin",
             host.given_key("ex-admin-made-up-01"),

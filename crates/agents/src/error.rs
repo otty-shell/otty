@@ -89,9 +89,8 @@ pub enum Unavailable {
     /// The profile holds no login the part could read with.
     #[error("no login")]
     NoLogin,
-    /// A key the user gave, the key of an added account or one a part
-    /// asked for, is not where the user said: its file is missing or its
-    /// variable is not set.
+    /// A key the user gave after a part asked for it is not where the user
+    /// said: its file is missing or its variable is not set.
     #[error("{}", key_missing_text(.0))]
     KeyMissing(KeyRef),
     /// The file or the variable of a key the user gave is empty.

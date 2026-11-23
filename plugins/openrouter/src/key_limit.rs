@@ -9,7 +9,7 @@ use otty_plugin_sdk::agents::{
     Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, HostError, Key, Need};
+use otty_plugin_sdk::{GivenKey, HostError, Key};
 use serde_json::Value;
 
 use crate::{OpenRouter, needs};
@@ -126,9 +126,8 @@ fn number_in(value: &Value) -> Option<f64> {
 }
 
 /// The JSON answer of a `GET` of `url` with `key` as its bearer token. A
-/// refused key (401 or 403) asks the user for a new one where the old one
-/// sits: in OTTY when the user gave it there, else where the agent keeps
-/// it. The error never holds what the answer said.
+/// refused key (401 or 403) asks the user for a new one where the agent
+/// keeps it. The error never holds what the answer said.
 fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
     let request = Request::get(url)
         .header("accept", "application/json")
@@ -140,20 +139,9 @@ fn get_json(url: &str, key: &Key) -> Result<Value, ReadError> {
         200 => serde_json::from_slice(&response.body).map_err(|_| {
             ReadError::Unexpected(format!("the answer of {url} is not JSON"))
         }),
-        401 | 403 => Err(ReadError::NeedsUser(refused_key_need(key)?)),
+        401 | 403 => Err(ReadError::NeedsUser(needs::new_key(KEYS_PAGE))),
         status => Err(ReadError::Failed(format!("{url} answered {status}"))),
     }
-}
-
-/// What the user does about the refused `key`: a key given in OTTY is
-/// replaced in OTTY's field, one an agent keeps where the agent keeps it.
-fn refused_key_need(key: &Key) -> Result<Need, ReadError> {
-    let is_given_in_otty = key.is_given_in_otty().map_err(ReadError::Host)?;
-
-    Ok(match is_given_in_otty {
-        true => needs::replace_key(KEYS_PAGE),
-        false => needs::new_key(KEYS_PAGE),
-    })
 }
 
 #[cfg(test)]
@@ -355,61 +343,6 @@ mod tests {
                 "{status}"
             );
         }
-    }
-
-    /// Issue 26: a refused key the user gave in OTTY is replaced in OTTY:
-    /// the need's field takes the new key in place of the old one, with
-    /// the keys page at hand.
-    #[test]
-    fn a_refused_key_given_in_otty_asks_for_a_new_one_in_its_place() {
-        for status in [401, 403] {
-            let host = host();
-            let key = host.given_key(MADE_UP_KEY);
-
-            let numbers = numbers_with(&host, &key, status, "{}");
-
-            let Err(ReadError::NeedsUser(need)) = numbers else {
-                panic!("{status}: a need: {numbers:?}");
-            };
-            assert_eq!(need.id, "replace-key", "{status}");
-            assert_eq!(need.title, "The key was refused", "{status}");
-            assert!(
-                need.text.starts_with("OpenRouter refused the key"),
-                "{status}: {}",
-                need.text
-            );
-            let NeedAction::AskKey(ask) = need.action else {
-                panic!("{status}: a field for the key");
-            };
-            assert_eq!(ask.slot, None, "the account's own key");
-            assert_eq!(ask.label, "OpenRouter key");
-            assert_eq!(ask.prefix.as_deref(), Some("sk-or-"));
-            assert_eq!(ask.page.as_deref(), Some(KEYS_PAGE));
-        }
-    }
-
-    /// The field of a refused key given in OTTY is in the language of
-    /// OTTY's interface too.
-    #[test]
-    fn the_field_of_a_refused_key_given_in_otty_is_in_the_language_of_otty() {
-        let host = host().with_language("ru");
-        let key = host.given_key(MADE_UP_KEY);
-
-        let numbers = numbers_with(&host, &key, 401, "");
-
-        let Err(ReadError::NeedsUser(need)) = numbers else {
-            panic!("a need: {numbers:?}");
-        };
-        let NeedAction::AskKey(ask) = need.action else {
-            panic!("a field for the key");
-        };
-        assert_eq!(need.title, "Ключ отклонён");
-        assert!(
-            need.text.starts_with("OpenRouter отклонил ключ"),
-            "{}",
-            need.text
-        );
-        assert_eq!(ask.label, "Ключ OpenRouter");
     }
 
     /// The need is written in the language of OTTY's interface, and in

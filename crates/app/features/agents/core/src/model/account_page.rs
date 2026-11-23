@@ -15,7 +15,6 @@ use otty_app_i18n::{self as i18n, Key};
 use super::super::state::AgentsState;
 use super::account_name::short_account_name;
 use super::account_numbers::AccountNumbersViewModel;
-use super::add_account_dialog::key_place_text;
 use super::entry_icon::EntryIcon;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
@@ -106,10 +105,6 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
             );
             list.push(FactViewModel::new(i18n::t(Key::AgentsFieldKey), key));
         },
-        AccountLogin::KeyPlace(place) => list.push(FactViewModel::new(
-            i18n::t(Key::AgentsFieldKey),
-            key_place_text(place),
-        )),
         _ => {},
     }
     if let Some(plan) = plan(state, account) {

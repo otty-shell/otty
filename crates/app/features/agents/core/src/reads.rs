@@ -139,9 +139,9 @@ pub(crate) fn load_account_numbers(
         .start_own_reads(which)
         .into_iter()
         .map(
-            |(account, place, given)| AgentsOutcome::LoadAccountNumbers {
+            |(account, found_in, given)| AgentsOutcome::LoadAccountNumbers {
                 account,
-                place,
+                found_in,
                 given,
                 may_start_programs,
             },
@@ -955,32 +955,23 @@ mod tests {
 
     fn own_reads(
         outcomes: Vec<AgentsOutcome>,
-    ) -> Vec<(otty_agents::Account, otty_agents::KeyPlace)> {
+    ) -> Vec<(otty_agents::Account, Vec<otty_agents::Profile>)> {
         outcomes
             .into_iter()
             .filter_map(|outcome| match outcome {
                 AgentsOutcome::LoadAccountNumbers {
-                    account, place, ..
-                } => Some((account, place)),
+                    account, found_in, ..
+                } => Some((account, found_in)),
                 _ => None,
             })
             .collect()
     }
 
-    /// Spec 2026-11-19, Decision 5: an account the user added and a
-    /// subscription login only Coder keeps are read with their own key; the
-    /// login Codex reads the limits of is not read twice.
+    /// Spec 2026-11-19, Decision 5: a subscription login only Coder keeps
+    /// is read with its own key, in the profile it was found in; the login
+    /// Codex reads the limits of is not read twice.
     #[test]
     fn accounts_that_tell_their_own_numbers_are_read_with_their_own_key() {
-        let key = otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
-        let added = otty_agents::Account::added(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            key.clone(),
-        );
-        let saved = otty_agents::SavedProfiles::default().with_account_added(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            key,
-        );
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -992,24 +983,12 @@ mod tests {
                     (codex(), connected(), vec![chatgpt_login()]),
                     (coder(), connected(), vec![coder_login(&coder())]),
                 ],
-                saved,
+                otty_agents::SavedProfiles::default(),
             ),
         );
         let again = reduce(&mut state, AgentsIntent::LimitsTick);
 
-        assert_eq!(
-            own_reads(loaded),
-            [
-                (
-                    coder_login(&coder()),
-                    otty_agents::KeyPlace::ProfileFiles(vec![coder()])
-                ),
-                (
-                    crate::testing::read_by_its_plugin(added),
-                    otty_agents::KeyPlace::Added
-                ),
-            ]
-        );
+        assert_eq!(own_reads(loaded), [(coder_login(&coder()), vec![coder()])]);
         assert!(own_reads(again).is_empty(), "the reads are on their way");
     }
 
@@ -1075,18 +1054,20 @@ mod tests {
         );
     }
 
-    /// Issue 17: an account added by hand for a provider no plugin part
-    /// serves is listed with the others, and its numbers are not read.
+    /// Issue 17: an account of a provider no plugin part serves is listed
+    /// with the others, and its numbers are not read.
     #[test]
-    fn an_added_account_no_plugin_serves_is_listed_and_not_read() {
-        let key = otty_agents::KeyRef::EnvVar(String::from("EXAMPLE_API_KEY"));
-        let added = otty_agents::Account::added(
+    fn an_account_no_plugin_serves_is_listed_and_not_read() {
+        let unserved = otty_agents::Account::new(
             otty_agents::ProviderRef::of_id("example-cloud"),
-            key.clone(),
-        );
-        let saved = otty_agents::SavedProfiles::default().with_account_added(
-            otty_agents::ProviderRef::of_id("example-cloud"),
-            key,
+            otty_agents::AccountIdentity::KeyFingerprint(
+                otty_agents::KeyFingerprint::of("sk-made-up-example"),
+            ),
+            otty_agents::AccountLogin::Key(None),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
+                "/home/user/.codex",
+            )),
         );
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
@@ -1095,16 +1076,16 @@ mod tests {
         let loaded = reduce(
             &mut state,
             profiles_with_accounts_loaded(
-                &[(codex(), connected(), Vec::new())],
-                saved,
+                &[(codex(), connected(), vec![unserved.clone()])],
+                otty_agents::SavedProfiles::default(),
             ),
         );
 
-        assert!(state.profiles().accounts().contains(&added));
+        assert!(state.profiles().accounts().contains(&unserved));
         assert!(
             own_reads(loaded)
                 .iter()
-                .all(|(account, _)| *account != added),
+                .all(|(account, _)| *account != unserved),
             "an account no part serves is not read"
         );
     }

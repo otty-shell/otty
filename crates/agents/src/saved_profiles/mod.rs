@@ -62,34 +62,15 @@
 //! ids, each read its accounts, and each reading is an account of its own
 //! (spec 2026-11-19-agent-plugins, issues 29 and 31), so the choices for
 //! an account are kept with `plugin`, the plugin that reads it; without it
-//! they are of the account no plugin reads. An account the user added is
-//! the entry with its `key` and no `plugin`; the name, the hidden flag and
-//! the given keys of each copy of it a plugin reads are an entry with the
-//! same `key` and that `plugin`, so hiding one copy leaves the others
-//! shown:
-//!
-//! ```json
-//! {
-//!   "accounts": [
-//!     { "provider": "example-cloud", "key": { "env_var": "EXAMPLE_API_KEY" } },
-//!     {
-//!       "provider": "example-cloud",
-//!       "key": { "env_var": "EXAMPLE_API_KEY" },
-//!       "plugin": "example-fork",
-//!       "hidden": true
-//!     }
-//!   ]
-//! }
-//! ```
+//! they are of the account no plugin reads.
 //!
 //! An account may keep where the keys the user gave for it are, each under
 //! the slot of the plugin part that asked for it: a file or an
-//! environment variable; the key itself is never written. An account
-//! the user added is written by its provider and the place of its key,
-//! `"key": { "file": … }` or `"key": { "env_var": … }`. A found account is
+//! environment variable; the key itself is never written. An account is
 //! written by its account id, organization id or email only, never by
 //! anything taken from a key: an account known only by its key gets no
-//! name and can not be hidden in the file.
+//! name and can not be hidden in the file. Accounts are not added by hand
+//! (spec 2026-11-23, Decision 10), so an entry has no `key`.
 //!
 //! Every part may be missing. The entries of an agent or a provider no
 //! entry of the registry names are kept as they are and not read, so they
@@ -113,7 +94,6 @@ use crate::account::Account;
 use crate::agent::AgentId;
 use crate::given_key::{GivenKey, KeyRef};
 use crate::profile::Profile;
-use crate::provider::ProviderRef;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
@@ -168,15 +148,6 @@ impl SavedProfiles {
     pub fn given_keys_of(&self, account: &Account) -> &[GivenKey] {
         self.saved_account(account)
             .map_or(&[], |saved| saved.given_keys.as_slice())
-    }
-
-    /// The accounts the user added by hand, in the order they were added
-    /// (spec 2026-11-19, Decision 7).
-    pub fn added_accounts(&self) -> Vec<Account> {
-        self.accounts
-            .iter()
-            .filter_map(SavedAccount::added_account)
-            .collect()
     }
 
     /// The name the user gave `account`, if any (spec 2026-11-19,
@@ -461,71 +432,6 @@ impl SavedProfiles {
         self.with_account_changed(account, |saved| saved.is_hidden = is_hidden)
     }
 
-    /// The same content with an account the user added at `provider`,
-    /// whose key is kept at `key` (spec 2026-11-19, Decision 7). Only the
-    /// place of the key is saved. An account already added with the same
-    /// place stays as it is.
-    ///
-    /// ```
-    /// use otty_agents::{Account, KeyRef, ProviderRef, SavedProfiles};
-    ///
-    /// let key = KeyRef::EnvVar("EXAMPLE_API_KEY".into());
-    ///
-    /// let saved = SavedProfiles::default()
-    ///     .with_account_added(ProviderRef::of_id("example-cloud"), key.clone());
-    ///
-    /// assert_eq!(
-    ///     saved.added_accounts(),
-    ///     [Account::added(ProviderRef::of_id("example-cloud"), key)]
-    /// );
-    /// ```
-    pub fn with_account_added(
-        mut self,
-        provider: ProviderRef,
-        key: KeyRef,
-    ) -> Self {
-        let account = Account::added(provider, key);
-        if self.saved_account(&account).is_some() {
-            return self;
-        }
-
-        if let Some(saved) = SavedAccount::new(&account) {
-            self.accounts.push(saved);
-        }
-        self
-    }
-
-    /// The same content with the key of the account the user added,
-    /// `account` or a copy of it a plugin reads, kept at `key` from now
-    /// on; the name and whether it is hidden of each copy stay (issue 31).
-    /// An account OTTY found changes nothing.
-    pub fn with_added_key(mut self, account: &Account, key: KeyRef) -> Self {
-        if account.added_key().is_none_or(|old| *old == key) {
-            return self;
-        }
-
-        let moved = Account::added(account.provider().clone(), key);
-        self.accounts.retain(|saved| !saved.is_of_login(&moved));
-        for saved in &mut self.accounts {
-            if saved.is_of_login(account) {
-                saved.identity = moved.identity().clone();
-            }
-        }
-        self
-    }
-
-    /// The same content without the account the user added, `account`,
-    /// and the choices of every copy of it: Remove forgets it. An account
-    /// OTTY found changes nothing.
-    pub fn without_added_account(mut self, account: &Account) -> Self {
-        if account.added_key().is_none() {
-            return self;
-        }
-
-        self.accounts.retain(|saved| !saved.is_of_login(account));
-        self
-    }
-
     /// The same content with `profile` hidden or shown again, kept by its
     /// agent and its config folder.
     pub fn with_profile_hidden(
@@ -647,6 +553,7 @@ pub enum SavedProfilesError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::ProviderRef;
     use crate::testing::organization;
 
     fn claude_id() -> AgentId {
@@ -928,11 +835,6 @@ mod tests {
                 }
             ],
             "accounts": [
-                {
-                    "provider": "example-cloud",
-                    "key": { "env_var": "EXAMPLE_API_KEY" },
-                    "name": "Example"
-                },
                 { "provider": "future", "account_id": "made-up", "hidden": true }
             ],
             "hidden_profiles": [
@@ -945,10 +847,6 @@ mod tests {
             AgentId::new("gone-agent"),
             "Gone Agent",
             PathBuf::from("/home/user/.config/gone-agent"),
-        );
-        let example = Account::added(
-            ProviderRef::of_id("example-cloud"),
-            KeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
         );
         let future_login = crate::testing::chatgpt_login("made-up");
         let future_login = Account::new(
@@ -972,7 +870,6 @@ mod tests {
             .map(|profile| profile.name())
             .collect();
         assert_eq!(added, ["Future · Work", "Claude Code · Work"]);
-        assert_eq!(loaded.account_name(&example), Some("Example"));
         assert!(loaded.is_account_hidden(&future_login));
         assert!(loaded.is_profile_hidden(&gone));
         let written = loaded.to_json().expect("the paths are text");

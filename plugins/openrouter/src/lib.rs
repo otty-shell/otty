@@ -1,7 +1,6 @@
 //! The official OpenRouter plugin of OTTY. Its provider part `openrouter`
 //! reads the limit of an OpenRouter key and how much of it was used, with
-//! the key itself: a key added by hand, or one an agent part found for
-//! `openrouter.ai`. OTTY hands the part a handle to the key, never the
+//! the key itself, one an agent part found for `openrouter.ai`. OTTY hands the part a handle to the key, never the
 //! key.
 //!
 //! The texts of its needs come in every language of OTTY, so the plugin

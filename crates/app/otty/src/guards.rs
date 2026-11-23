@@ -79,9 +79,8 @@ pub(crate) enum Overlay {
     ContainersRowMenu,
     /// The dialog of Agents mode that adds or edits a profile.
     AgentsProfileDialog,
-    /// The dialog of Agents mode that adds an account, or edits the key of
-    /// one the user added.
-    AgentsAddAccountDialog,
+    /// The dialog of Agents mode of a key a plugin part asks for.
+    AgentsKeyDialog,
     /// The dialog of Agents mode that names an account or a profile.
     AgentsRenameDialog,
     /// The dialog of Agents mode that asks before a profile is removed.
@@ -121,7 +120,7 @@ impl Overlay {
             | Overlay::ContainersCreate
             | Overlay::ContainersConfirm
             | Overlay::AgentsProfileDialog
-            | Overlay::AgentsAddAccountDialog
+            | Overlay::AgentsKeyDialog
             | Overlay::AgentsRenameDialog
             | Overlay::AgentsRemoveDialog
             | Overlay::AgentsKeyringDialog
@@ -192,9 +191,9 @@ impl Overlay {
                     otty_app_agents::ProfileDialogIntent::Cancelled,
                 ))
             },
-            Overlay::AgentsAddAccountDialog => {
-                AppEvent::Agents(AgentsIntent::AddAccount(
-                    otty_app_agents::AddAccountIntent::Cancelled,
+            Overlay::AgentsKeyDialog => {
+                AppEvent::Agents(AgentsIntent::KeyDialog(
+                    otty_app_agents::KeyDialogIntent::Cancelled,
                 ))
             },
             Overlay::AgentsRenameDialog => AppEvent::Agents(
@@ -522,7 +521,7 @@ fn plugins_overlay(app: &App) -> Option<Overlay> {
 pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
     let overlay = match app.agents.top_overlay()? {
         AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
-        AgentsOverlay::AddAccountDialog => Overlay::AgentsAddAccountDialog,
+        AgentsOverlay::KeyDialog => Overlay::AgentsKeyDialog,
         AgentsOverlay::RenameDialog => Overlay::AgentsRenameDialog,
         AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
         AgentsOverlay::KeyringDialog => Overlay::AgentsKeyringDialog,
@@ -616,9 +615,9 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
         Overlay::AgentsProfileDialog => {
             matches!(event, AppEvent::Agents(AgentsIntent::Dialog(_)))
         },
-        // Every field, choice and button of the Add account dialog.
-        Overlay::AgentsAddAccountDialog => {
-            matches!(event, AppEvent::Agents(AgentsIntent::AddAccount(_)))
+        // Every field, choice and button of the key dialog.
+        Overlay::AgentsKeyDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::KeyDialog(_)))
         },
         // The name field, Save, Cancel and Esc of the Rename dialog.
         Overlay::AgentsRenameDialog => {
@@ -747,7 +746,7 @@ mod tests {
     use iced::keyboard::Modifiers;
     use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
-        AddAccountIntent, AgentsCtx, FolderFieldIntent, NewSessionDialogIntent,
+        AgentsCtx, FolderFieldIntent, KeyDialogIntent, NewSessionDialogIntent,
         ProfileDialogIntent, RenameIntent, UsageMeasure, UsagePeriod, UsageTab,
     };
     use otty_app_domain::commands::AppCommand;
@@ -810,7 +809,7 @@ mod tests {
     /// one opens. They need the profile of [`agents_app_with_a_profile`].
     const AGENTS_OVERLAYS: [(Opener, Overlay); 9] = [
         (open_profile_dialog, Overlay::AgentsProfileDialog),
-        (open_add_account_dialog, Overlay::AgentsAddAccountDialog),
+        (open_key_dialog, Overlay::AgentsKeyDialog),
         (open_rename_dialog, Overlay::AgentsRenameDialog),
         (open_remove_dialog, Overlay::AgentsRemoveDialog),
         (open_keyring_dialog, Overlay::AgentsKeyringDialog),
@@ -827,7 +826,7 @@ mod tests {
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
         Overlay::AgentsProfileDialog,
-        Overlay::AgentsAddAccountDialog,
+        Overlay::AgentsKeyDialog,
         Overlay::AgentsRenameDialog,
         Overlay::AgentsRemoveDialog,
         Overlay::AgentsKeyringDialog,
@@ -1099,20 +1098,17 @@ mod tests {
                 ],
             ),
             (
-                Overlay::AgentsAddAccountDialog,
+                Overlay::AgentsKeyDialog,
                 vec![
-                    add_account(AddAccountIntent::ProviderListToggled),
-                    add_account(AddAccountIntent::ProviderPicked(
-                        otty_agents::ProviderRef::of_id("openrouter"),
-                    )),
-                    add_account(AddAccountIntent::KeyChoicePicked(
+                    key_dialog(KeyDialogIntent::KeyChoicePicked(
                         otty_app_agents::KeyPlaceChoice::Variable,
                     )),
-                    add_account(AddAccountIntent::KeyChanged(String::from(
-                        "OPENROUTER_API_KEY",
+                    key_dialog(KeyDialogIntent::KeyChanged(String::from(
+                        "EXAMPLE_ADMIN_KEY",
                     ))),
-                    add_account(AddAccountIntent::Submitted),
-                    add_account(AddAccountIntent::Cancelled),
+                    key_dialog(KeyDialogIntent::PageOpened),
+                    key_dialog(KeyDialogIntent::Submitted),
+                    key_dialog(KeyDialogIntent::Cancelled),
                 ],
             ),
             (
@@ -1204,8 +1200,8 @@ mod tests {
         new_session_dialog(NewSessionDialogIntent::Folder(intent))
     }
 
-    fn add_account(intent: AddAccountIntent) -> AppEvent {
-        AppEvent::Agents(AgentsIntent::AddAccount(intent))
+    fn key_dialog(intent: KeyDialogIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::KeyDialog(intent))
     }
 
     fn rename(intent: RenameIntent) -> AppEvent {
@@ -1255,11 +1251,34 @@ mod tests {
         }
     }
 
-    /// The `+` of the Accounts section.
-    fn open_add_account_dialog(app: &mut App) {
-        let _ = app
-            .agents
-            .reduce(AgentsIntent::OpenAddAccount, AgentsCtx::default());
+    /// The button of a need that asks for the admin key of the bill of an
+    /// organization.
+    fn open_key_dialog(app: &mut App) {
+        let organization = otty_agents::Account::new(
+            otty_agents::ProviderRef::of_id("example-cloud"),
+            otty_agents::AccountIdentity::OrganizationId(String::from(
+                "made-up-org",
+            )),
+            otty_agents::AccountLogin::Unnamed,
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
+                "/home/user/.codex-work",
+            )),
+        );
+        let ask = otty_agents::KeyAsk::new(
+            "admin",
+            "Admin key",
+            "Reads the real bill.",
+        );
+
+        let _ = app.agents.reduce(
+            AgentsIntent::FixNeed(otty_app_agents::NeedAction::AskKey {
+                account: organization,
+                plugin: String::from("Example"),
+                ask,
+            }),
+            AgentsCtx::default(),
+        );
     }
 
     fn open_remove_dialog(app: &mut App) {

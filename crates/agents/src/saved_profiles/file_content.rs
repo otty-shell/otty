@@ -142,10 +142,9 @@ impl AddedEntry {
 }
 
 /// One account in the text, by its provider and one of its account id,
-/// organization id, email or, for an account the user added, the place of
-/// its key, and the plugin that reads it, with the user's name
-/// for it, whether it is hidden and where the keys the user gave for it
-/// are kept, each under its slot.
+/// organization id or email, and the plugin that reads it, with the
+/// user's name for it, whether it is hidden and where the keys the user
+/// gave for it are kept, each under its slot.
 #[derive(Debug, Serialize, Deserialize)]
 struct AccountEntry {
     provider: String,
@@ -155,8 +154,6 @@ struct AccountEntry {
     organization_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     email: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    key: Option<KeyEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     plugin: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,7 +171,6 @@ impl AccountEntry {
             account_id: None,
             organization_id: None,
             email: None,
-            key: None,
             plugin: saved.plugin.clone(),
             name: saved.name.clone(),
             hidden: saved.is_hidden,
@@ -193,11 +189,8 @@ impl AccountEntry {
                 entry.organization_id = Some(id.clone());
             },
             AccountIdentity::Email(email) => entry.email = Some(email.clone()),
-            AccountIdentity::AddedKey(key) => {
-                entry.key = Some(KeyEntry::from_ref(key));
-            },
             // A key OTTY found is never saved (`SavedAccount::new`).
-            AccountIdentity::KeyFingerprint(_) => {},
+            _ => {},
         }
         entry
     }
@@ -207,13 +200,12 @@ impl AccountEntry {
     /// entry of the registry names is kept as it is.
     fn into_saved(self) -> Option<SavedAccount> {
         let provider = ProviderRef::from_saved(&self.provider)?;
-        let added_key = self.key.and_then(KeyEntry::into_ref);
         let identity = match (self.account_id, self.organization_id, self.email)
         {
             (Some(id), _, _) => AccountIdentity::AccountId(id),
             (None, Some(id), _) => AccountIdentity::OrganizationId(id),
             (None, None, Some(email)) => AccountIdentity::Email(email),
-            (None, None, None) => AccountIdentity::AddedKey(added_key?),
+            (None, None, None) => return None,
         };
         let given_keys = self
             .given_keys
@@ -271,62 +263,32 @@ struct GivenKeyEntry {
 
 impl GivenKeyEntry {
     fn from_given(given: &GivenKey) -> Self {
-        let place = KeyEntry::from_ref(given.key());
+        let (file, env_var) = match given.key() {
+            KeyRef::File(path) => (Some(path.clone()), None),
+            KeyRef::EnvVar(name) => (None, Some(name.clone())),
+        };
 
         Self {
             slot: given.slot().to_string(),
-            file: place.file,
-            env_var: place.env_var,
+            file,
+            env_var,
         }
     }
 
-    /// The given key; `None` with no slot or no place.
+    /// The given key; `None` with no slot or no place. The file wins when
+    /// both are written.
     fn into_given(self) -> Option<GivenKey> {
-        let place = KeyEntry {
-            file: self.file,
-            env_var: self.env_var,
-        };
         let slot = self.slot.trim();
         if slot.is_empty() {
             return None;
         }
 
-        Some(GivenKey::new(slot, place.into_ref()?))
-    }
-}
-
-/// Where a key is kept, in the text: a file or a variable. Only the path
-/// or the name is written, never the key.
-#[derive(Debug, Serialize, Deserialize)]
-struct KeyEntry {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    file: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    env_var: Option<String>,
-}
-
-impl KeyEntry {
-    fn from_ref(reference: &KeyRef) -> Self {
-        match reference {
-            KeyRef::File(path) => Self {
-                file: Some(path.clone()),
-                env_var: None,
-            },
-            KeyRef::EnvVar(name) => Self {
-                file: None,
-                env_var: Some(name.clone()),
-            },
-        }
-    }
-
-    /// The place of the key; the file when both are written, none when
-    /// neither is.
-    fn into_ref(self) -> Option<KeyRef> {
-        match (self.file, self.env_var) {
-            (Some(path), _) => Some(KeyRef::File(path)),
-            (None, Some(name)) => Some(KeyRef::EnvVar(name)),
-            (None, None) => None,
-        }
+        let key = match (self.file, self.env_var) {
+            (Some(path), _) => KeyRef::File(path),
+            (None, Some(name)) => KeyRef::EnvVar(name),
+            (None, None) => return None,
+        };
+        Some(GivenKey::new(slot, key))
     }
 }
 

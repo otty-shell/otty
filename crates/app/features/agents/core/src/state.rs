@@ -9,7 +9,7 @@ use otty_app_domain::plugins::PluginNotes;
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
-use super::add_account_dialog::AddAccountDialog;
+use super::key_dialog::KeyDialog;
 use super::menus::{AgentsMenu, OpenMenu};
 use super::model::EntryIcon;
 use super::new_session_dialog::NewSessionDialog;
@@ -48,7 +48,7 @@ pub(crate) struct AgentsState {
     is_keyring_dialog_open: bool,
     is_keyring_given: bool,
     rename: Option<RenameDialog>,
-    add_account: Option<AddAccountDialog>,
+    key_dialog: Option<KeyDialog>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
     is_found_report_open: bool,
@@ -83,11 +83,6 @@ impl AgentsState {
     /// the parts that are off and the updates that wait.
     pub(crate) fn plugin_notes(&self) -> &PluginNotes {
         &self.plugin_notes
-    }
-
-    /// The registry as the feature shares it with the reads.
-    pub(crate) fn registry_arc(&self) -> &Arc<Registry> {
-        &self.registry
     }
 
     /// The parts of the environment the agents look at: the home folder
@@ -127,9 +122,9 @@ impl AgentsState {
         self.rename.as_ref()
     }
 
-    /// The open Add account or Edit key dialog.
-    pub(crate) fn add_account(&self) -> Option<&AddAccountDialog> {
-        self.add_account.as_ref()
+    /// The open dialog of a key a plugin part asks for.
+    pub(crate) fn key_dialog(&self) -> Option<&KeyDialog> {
+        self.key_dialog.as_ref()
     }
 
     /// The open statistics dialog.
@@ -262,7 +257,7 @@ impl AgentsState {
             is_keyring_dialog_open: false,
             is_keyring_given: false,
             rename: None,
-            add_account: None,
+            key_dialog: None,
             stats: None,
             new_session: None,
             is_found_report_open: false,
@@ -707,19 +702,19 @@ impl AgentsState {
         self.rename.take()
     }
 
-    /// Open the Add account or Edit key dialog.
-    pub(crate) fn open_add_account(&mut self, dialog: AddAccountDialog) {
-        self.add_account = Some(dialog);
+    /// Open the dialog of a key a plugin part asks for.
+    pub(crate) fn open_key_dialog(&mut self, dialog: KeyDialog) {
+        self.key_dialog = Some(dialog);
     }
 
-    /// The open Add account or Edit key dialog, to change it.
-    pub(crate) fn add_account_mut(&mut self) -> Option<&mut AddAccountDialog> {
-        self.add_account.as_mut()
+    /// The open dialog of a key a plugin part asks for, to change it.
+    pub(crate) fn key_dialog_mut(&mut self) -> Option<&mut KeyDialog> {
+        self.key_dialog.as_mut()
     }
 
-    /// Close the Add account or Edit key dialog and return it.
-    pub(crate) fn take_add_account(&mut self) -> Option<AddAccountDialog> {
-        self.add_account.take()
+    /// Close the dialog of a key a plugin part asks for and return it.
+    pub(crate) fn take_key_dialog(&mut self) -> Option<KeyDialog> {
+        self.key_dialog.take()
     }
 
     /// Ask to confirm the removal of `profile`.

@@ -51,7 +51,7 @@ impl ProviderExports {
 
 /// The calls of the provider contract into one provider part, within one
 /// [`CallBatch`]. The key of each call is given by its source, a place or
-/// a key the user gave by hand: the part gets a handle to it for that
+/// a key OTTY read itself: the part gets a handle to it for that
 /// call only, never the key. The keys the user gave for the account after
 /// a need of the part asked for them go with their slot, each also as a
 /// handle. Which keys a part may get is the caller's choice (only
@@ -391,11 +391,11 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user added by
-    /// hand reaches the part only as a handle; the host fills it into the
+    /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user gave in
+    /// OTTY reaches the part only as a handle; the host fills it into the
     /// request.
     #[test]
-    fn a_key_given_by_hand_reaches_the_part_as_a_handle() {
+    fn a_key_given_in_otty_reaches_the_part_as_a_handle() {
         let given = KeyText::new(KEY).expect("a filled key");
         let key = KeySource::Given(given);
 

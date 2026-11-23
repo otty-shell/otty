@@ -55,16 +55,12 @@
 //! it, a key known by its host by every part that serves the host under
 //! its own provider id, and each plugin's reading is an account of its own
 //! ([`Account::read_by`]; issues 29 and 31): [`read_account_numbers`] reads the
-//! [`Balance`] of a key, the [`Limits`] of a subscription login or the
-//! [`Bill`] of an account the user added, with a key the user added read
-//! again from its [`KeyPlace`] and dropped right after the request, or
-//! the key of a login an agent part found, and tells the part every
-//! profile the account was found in, so it may also ask the agent there.
-//! Where a part reads the numbers from is its business; with no way that
-//! works it answers nothing. An account the user added by hand is an
-//! [`Account::added`], saved in [`SavedProfiles`] by the file or the
-//! variable of its key only; with no part that serves its provider it is
-//! listed and not read.
+//! [`Balance`] of a key or the [`Limits`] of a subscription login with the
+//! key of a login an agent part found, and tells the part every profile
+//! the account was found in, so it may also ask the agent there. Where a
+//! part reads the numbers from is its business; with no way that works it
+//! answers nothing. Accounts are not added by hand (spec 2026-11-23,
+//! Decision 10).
 //!
 //! What the user must do for an agent or a provider comes from its part
 //! as a [`PartNeed`], in the language the host tells the part: a profile
@@ -168,9 +164,7 @@ pub use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
-pub use crate::account_numbers::{
-    AccountNumbers, KeyPlace, own_reader_of, read_account_numbers,
-};
+pub use crate::account_numbers::{AccountNumbers, read_account_numbers};
 pub use crate::agent::{
     Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder, agent_of,
 };

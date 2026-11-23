@@ -182,7 +182,7 @@ pub fn login_need(plugin: &str, part: &str, login: AgentCommand) -> PartNeed {
 /// let PartNeedAction::AskKey(ask) = need.action() else {
 ///     panic!("a key to ask for");
 /// };
-/// assert_eq!(ask.slot(), Some("admin"));
+/// assert_eq!(ask.slot(), "admin");
 /// ```
 pub fn key_need(plugin: &str, part: &str, slot: &str) -> PartNeed {
     let ask = KeyAsk::new(slot, "Admin key", "Reads the real bill.")

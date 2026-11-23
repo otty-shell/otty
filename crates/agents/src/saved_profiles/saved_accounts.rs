@@ -1,21 +1,16 @@
 //! The user's own choices for the accounts in `agents.json` (spec
-//! 2026-11-19, Decision 7): a name, whether the account is hidden, where
-//! the keys the user gave for it are kept, and the accounts the user added
-//! by hand, by where their keys are kept.
+//! 2026-11-19, Decision 7): a name, whether the account is hidden, and
+//! where the keys the user gave for it are kept.
 
 use crate::account::{Account, AccountIdentity};
 use crate::given_key::GivenKey;
 use crate::provider::ProviderRef;
 
 /// The choices for one account, kept by its provider and an identity that
-/// names it for good: an account id, an organization id, an email or the
-/// place of the key of an account the user added, never the fingerprint of
-/// a key ([`Account::can_be_saved`]). The choices are kept with the plugin
-/// that reads the account, as each plugin's reading is its own account
-/// (issue 29). An account the user added is the entry with its key and no
-/// plugin, and the name, the hidden flag and the given keys of each copy a
-/// plugin reads are an entry with that plugin, so each copy hides alone
-/// (issue 31).
+/// names it for good: an account id, an organization id or an email, never
+/// the fingerprint of a key ([`Account::can_be_saved`]). The choices are
+/// kept with the plugin that reads the account, as each plugin's reading
+/// is its own account (issue 29).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SavedAccount {
     pub(super) provider: ProviderRef,
@@ -47,43 +42,15 @@ impl SavedAccount {
     /// Whether these are the choices for `account`: the same provider,
     /// identity and plugin.
     pub(super) fn is_of(&self, account: &Account) -> bool {
-        self.is_of_login(account) && self.plugin.as_deref() == account.read_by()
-    }
-
-    /// Whether these are choices for the login or the key of `account`,
-    /// whichever plugin reads it.
-    pub(super) fn is_of_login(&self, account: &Account) -> bool {
         *account.provider() == self.provider
             && *account.identity() == self.identity
+            && self.plugin.as_deref() == account.read_by()
     }
 
-    /// Whether the entry is an account the user added: the one with its
-    /// key and no plugin, kept for itself, with or without a name.
-    pub(super) fn is_added(&self) -> bool {
-        matches!(self.identity, AccountIdentity::AddedKey(_))
-            && self.plugin.is_none()
-    }
-
-    /// The account the user added that this entry keeps; `None` for the
-    /// choices of an account OTTY finds and of a copy a plugin reads.
-    pub(super) fn added_account(&self) -> Option<Account> {
-        let AccountIdentity::AddedKey(key) = &self.identity else {
-            return None;
-        };
-        if self.plugin.is_some() {
-            return None;
-        }
-
-        Some(Account::added(self.provider.clone(), key.clone()))
-    }
-
-    /// Whether the entry keeps nothing: not an account the user added, and
-    /// no name, not hidden and no given key. Such an entry is not written.
+    /// Whether the entry keeps nothing: no name, not hidden and no given
+    /// key. Such an entry is not written.
     pub(super) fn is_empty(&self) -> bool {
-        !self.is_added()
-            && self.name.is_none()
-            && !self.is_hidden
-            && self.given_keys.is_empty()
+        self.name.is_none() && !self.is_hidden && self.given_keys.is_empty()
     }
 }
 
@@ -244,130 +211,37 @@ mod tests {
         );
     }
 
-    fn deepseek_file() -> KeyRef {
-        KeyRef::File(PathBuf::from("/home/user/.config/deepseek-key"))
-    }
-
-    fn openai_variable() -> KeyRef {
-        KeyRef::EnvVar(String::from("OPENAI_BILL_KEY"))
-    }
-
-    /// Spec 2026-11-19, Decision 7: an account added by hand is saved by
-    /// its provider and the place of its key, never the key.
+    /// Spec 2026-11-23, Decision 10: an account entry keeps the user's
+    /// name, Hide and given keys with no `key`; an entry known only by the
+    /// place of a key is not read, and none is written with one.
     #[test]
-    fn an_added_account_is_saved_with_the_place_of_its_key_only() {
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
-            .with_account_added(
-                ProviderRef::of_id("openai"),
-                openai_variable(),
-            );
-
-        let text = saved.to_json().expect("the paths are text");
-        let loaded = load(&text);
-
-        assert_eq!(loaded, saved);
-        assert_eq!(
-            loaded.added_accounts(),
-            [
-                Account::added(ProviderRef::of_id("deepseek"), deepseek_file()),
-                Account::added(ProviderRef::of_id("openai"), openai_variable()),
-            ]
-        );
-        assert!(text.contains(r#""file": "/home/user/.config/deepseek-key""#));
-        assert!(text.contains(r#""env_var": "OPENAI_BILL_KEY""#));
-        assert!(!text.contains("fingerprint"), "{text}");
-    }
-
-    #[test]
-    fn an_account_added_twice_is_kept_once() {
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
-            .with_account_added(
-                ProviderRef::of_id("deepseek"),
-                deepseek_file(),
-            );
-
-        assert_eq!(saved.added_accounts().len(), 1);
-    }
-
-    #[test]
-    fn remove_forgets_an_added_account_and_its_choices() {
-        let added =
-            Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
-            .with_account_name(&added, Some(String::from("Mine")))
-            .with_account_hidden(&added, true);
-
-        let removed = saved.without_added_account(&added);
-        let text = removed.to_json().expect("the paths are text");
-
-        assert_eq!(removed, SavedProfiles::default());
-        assert!(!text.contains("deepseek"), "{text}");
-    }
-
-    /// Remove is for an account the user added: a found account keeps its
-    /// choices.
-    #[test]
-    fn remove_leaves_a_found_account_as_it_is() {
-        let login = chatgpt_login("made-up-one");
-        let saved = SavedProfiles::default()
-            .with_account_name(&login, Some(String::from("Home")));
-
-        let removed = saved.clone().without_added_account(&login);
-
-        assert_eq!(removed, saved);
-    }
-
-    #[test]
-    fn edit_key_moves_the_account_to_its_new_place_with_its_name() {
-        let added =
-            Account::added(ProviderRef::of_id("deepseek"), deepseek_file());
-        let variable = KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), deepseek_file())
-            .with_account_name(&added, Some(String::from("Mine")))
-            .with_account_hidden(&added, true);
-
-        let edited = saved.with_added_key(&added, variable.clone());
-        let moved =
-            Account::added(ProviderRef::of_id("deepseek"), variable.clone());
-
-        assert_eq!(edited.added_accounts(), std::slice::from_ref(&moved));
-        assert_eq!(edited.account_name(&moved), Some("Mine"));
-        assert!(edited.is_account_hidden(&moved));
-        assert_eq!(edited.account_name(&added), None);
-    }
-
-    /// An added account with no place for its key is left out; one of a
-    /// provider no entry of the registry names is kept as it is (spec
-    /// 2026-11-19-agent-plugins, "`agents.json`").
-    #[test]
-    fn an_added_account_with_no_key_is_left_out() {
+    fn an_account_entry_keeps_its_choices_with_no_key() {
         let text = r#"{
             "accounts": [
-                { "provider": "future", "key": { "env_var": "K" } },
-                { "provider": "deepseek", "key": {} },
-                { "provider": "example-cloud", "key": { "env_var": "EXAMPLE_API_KEY" } }
+                { "provider": "deepseek", "key": { "env_var": "DEEPSEEK_API_KEY" }, "name": "Mine" },
+                {
+                    "provider": "anthropic",
+                    "organization_id": "made-up-org",
+                    "name": "Acme",
+                    "hidden": true,
+                    "given_keys": [{ "slot": "admin", "file": "/home/user/.config/org-key" }]
+                }
             ]
         }"#;
+        let organization = organization("made-up-org");
 
         let loaded = load(text);
+        let written = loaded.to_json().expect("the paths are text");
 
         assert_eq!(
-            loaded.added_accounts(),
-            [
-                Account::added(
-                    ProviderRef::of_id("future"),
-                    KeyRef::EnvVar(String::from("K"))
-                ),
-                Account::added(
-                    ProviderRef::of_id("example-cloud"),
-                    KeyRef::EnvVar(String::from("EXAMPLE_API_KEY"))
-                )
-            ]
+            loaded,
+            SavedProfiles::default()
+                .with_account_name(&organization, Some(String::from("Acme")))
+                .with_account_hidden(&organization, true)
+                .with_given_key_of(&organization, "admin", Some(by_file()))
         );
+        assert!(!written.contains(r#""key""#), "{written}");
+        assert!(!written.contains("deepseek"), "{written}");
     }
 
     /// Issue 29: a login two plugins read is two accounts, so the user
@@ -391,84 +265,6 @@ mod tests {
         assert!(!loaded.is_account_hidden(&read_by("openai")));
         assert_eq!(loaded.account_name(&read_by("openai")), Some("Home"));
         assert_eq!(loaded.account_name(&chatgpt_login("made-up-one")), None);
-    }
-
-    /// The account the user added, and the copies of it the plugins
-    /// `deepseek` and `deepseek-fork` read.
-    fn added_and_copies() -> (Account, Account, Account) {
-        let added = Account::added(ProviderRef::of_id("deepseek"), by_file());
-        let copy = |plugin: &str| {
-            added.clone().with_read_by(Some(String::from(plugin)))
-        };
-
-        (added.clone(), copy("deepseek"), copy("deepseek-fork"))
-    }
-
-    /// Issue 31: the account the user added keeps one entry with its key,
-    /// while the name, the hidden flag and the given keys of each copy a
-    /// plugin reads are kept with that plugin, so hiding one copy leaves
-    /// the other shown; the file reads back the same.
-    #[test]
-    fn the_choices_of_an_added_account_are_kept_per_plugin_copy() {
-        let (added, copy, fork) = added_and_copies();
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), by_file())
-            .with_account_hidden(&fork, true)
-            .with_account_name(&copy, Some(String::from("Mine")))
-            .with_given_key_of(&fork, "admin", Some(openai_variable()));
-
-        let text = saved.to_json().expect("the paths are text");
-        let loaded = load(&text);
-
-        assert_eq!(loaded, saved);
-        assert_eq!(loaded.added_accounts(), std::slice::from_ref(&added));
-        assert!(loaded.is_account_hidden(&fork));
-        assert!(!loaded.is_account_hidden(&copy));
-        assert!(!loaded.is_account_hidden(&added));
-        assert_eq!(loaded.account_name(&copy), Some("Mine"));
-        assert_eq!(loaded.account_name(&fork), None);
-        assert_eq!(
-            loaded.given_keys_of(&fork),
-            [GivenKey::new("admin", openai_variable())]
-        );
-        assert!(loaded.given_keys_of(&copy).is_empty());
-        assert!(text.contains(r#""plugin": "deepseek-fork""#), "{text}");
-        assert_eq!(text.matches("/home/user/.config/org-key").count(), 3);
-    }
-
-    /// Issue 31: showing a copy again with no name leaves only the entry
-    /// of the added account; Edit key moves every copy with it, and Remove
-    /// forgets them all.
-    #[test]
-    fn the_copies_of_an_added_account_follow_its_key() {
-        let (added, copy, fork) = added_and_copies();
-        let saved = SavedProfiles::default()
-            .with_account_added(ProviderRef::of_id("deepseek"), by_file())
-            .with_account_hidden(&fork, true)
-            .with_account_name(&copy, Some(String::from("Mine")));
-        let variable = KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY"));
-        let moved =
-            Account::added(ProviderRef::of_id("deepseek"), variable.clone());
-        let moved_copy = |plugin: &str| {
-            moved.clone().with_read_by(Some(String::from(plugin)))
-        };
-
-        let shown = saved.clone().with_account_hidden(&fork, false);
-        let edited = saved.clone().with_added_key(&copy, variable);
-        let removed = saved.without_added_account(&fork);
-
-        assert_eq!(
-            shown,
-            SavedProfiles::default()
-                .with_account_added(ProviderRef::of_id("deepseek"), by_file())
-                .with_account_name(&copy, Some(String::from("Mine")))
-        );
-        assert_eq!(edited.added_accounts(), std::slice::from_ref(&moved));
-        assert!(edited.is_account_hidden(&moved_copy("deepseek-fork")));
-        assert_eq!(edited.account_name(&moved_copy("deepseek")), Some("Mine"));
-        assert!(!edited.is_account_hidden(&fork));
-        assert_eq!(removed, SavedProfiles::default());
-        assert!(!removed.is_account_hidden(&added));
     }
 
     /// An entry that names no account or no provider, or whose given key

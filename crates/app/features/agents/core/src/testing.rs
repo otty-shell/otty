@@ -136,7 +136,6 @@ fn test_registry() -> Registry {
         ProviderEntry::new(ProviderId::new(id), name, part)
             .with_hosts([host])
             .with_usage_page(page)
-            .with_add_by_hand()
     };
 
     let providers = vec![
@@ -619,6 +618,44 @@ pub(crate) fn with_registry_and_profiles(
     let _ = reduce(
         &mut state,
         profiles_loaded_from(profiles, SavedProfiles::default()),
+    );
+
+    state
+}
+
+/// A made-up key of `provider` found in the Claude Code folder, read by
+/// the plugin of its provider.
+pub(crate) fn found_key(provider: &str) -> Account {
+    read_by_its_plugin(Account::new(
+        ProviderRef::of_id(provider),
+        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
+            &format!("sk-made-up-{provider}"),
+        )),
+        AccountLogin::Key(None),
+        AccountKind::Money,
+        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+    ))
+}
+
+/// Claude Code with the key `account` found in it, whose own read
+/// answered `numbers` at `at(10)`.
+pub(crate) fn with_key_read(
+    account: &Account,
+    numbers: Result<otty_agents::AccountNumbers, SourceError>,
+) -> AgentsState {
+    let mut state = with_accounts(
+        &[(claude(), api_key(), vec![account.clone()])],
+        SavedProfiles::default(),
+    );
+    let _ = reduce(
+        &mut state,
+        AgentsIntent::AccountNumbersLoaded(
+            crate::types::LoadedAccountNumbers {
+                account: account.clone(),
+                numbers,
+                read_at: at(10),
+            },
+        ),
     );
 
     state

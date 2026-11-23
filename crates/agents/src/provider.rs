@@ -151,8 +151,7 @@ impl ProviderRef {
 
 /// What the app shows and needs to know of a provider (spec "Links in the
 /// interface"): its id, name and icon, the pages of its usage, the hosts
-/// of its servers, whether Add account offers it, and the plugin part
-/// that reads it.
+/// of its servers, and the plugin part that reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderEntry {
     id: ProviderId,
@@ -161,7 +160,6 @@ pub struct ProviderEntry {
     usage_page: Option<String>,
     plan_usage_page: Option<String>,
     hosts: Vec<String>,
-    can_add_by_hand: bool,
     priced_as: Option<String>,
     part: PluginPart,
     keyring_services: Vec<String>,
@@ -188,12 +186,6 @@ impl ProviderEntry {
     /// provider's when its host is one of them or ends with `.` and one.
     pub fn hosts(&self) -> &[String] {
         &self.hosts
-    }
-
-    /// Whether Add account offers the provider: the user gives the key of
-    /// an account by hand (spec 2026-11-19, Decision 7).
-    pub fn can_add_by_hand(&self) -> bool {
-        self.can_add_by_hand
     }
 
     /// The name the price table knows the provider by: the one its part
@@ -255,8 +247,7 @@ impl ProviderEntry {
         self.hosts.iter().any(|domain| is_host_of(host, domain))
     }
 
-    /// An entry read by `part`, with no icon, no usage page, no host, and
-    /// not offered by Add account.
+    /// An entry read by `part`, with no icon, no usage page and no host.
     pub fn new(
         id: ProviderId,
         name: impl Into<String>,
@@ -269,7 +260,6 @@ impl ProviderEntry {
             usage_page: None,
             plan_usage_page: None,
             hosts: Vec::new(),
-            can_add_by_hand: false,
             priced_as: None,
             part,
             keyring_services: Vec::new(),
@@ -306,12 +296,6 @@ impl ProviderEntry {
     /// The same entry whose subscriptions show their use on `page`.
     pub fn with_plan_usage_page(mut self, page: impl Into<String>) -> Self {
         self.plan_usage_page = Some(page.into());
-        self
-    }
-
-    /// The same entry offered by Add account.
-    pub fn with_add_by_hand(mut self) -> Self {
-        self.can_add_by_hand = true;
         self
     }
 

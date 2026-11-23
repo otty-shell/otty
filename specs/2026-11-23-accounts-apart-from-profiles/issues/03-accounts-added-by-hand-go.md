@@ -1,6 +1,6 @@
 # 03 Accounts added by hand, by the place of their key, go
 
-Status: ready
+Status: done
 Blocked by: 01
 
 ## Why
@@ -67,3 +67,54 @@ accounts a provider part finds.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-23, done. Accounts can no longer be added by the place of their
+key. The Add account dialog, Edit key…, the Remove of an account and the
+`+` of the Accounts section are gone, with `OpenAddAccount`,
+`AccountAction::EditKey` and `AccountAction::Remove`. The section header
+keeps only Refresh until issue 08 brings the new Add account.
+
+The dialog of an `ask-key` need with a slot stays, as the owner decided. It is
+now its own small dialog, `key_dialog.rs` (`KeyDialog`,
+`KeyDialogIntent`, `AgentsIntent::KeyDialog`, the overlay `KeyDialog`),
+in place of `add_account_dialog.rs`. It shows the part's label, hint,
+prefix and page, the provider of the account, and the key place field,
+and saves the place under the part's slot. `key_place_field.rs` stays
+whole, since this dialog uses it.
+
+In `crates/agents`: `Account::added`, `Account::added_key`,
+`AccountIdentity::AddedKey`, `AccountLogin::KeyPlace`,
+`FoundIn::AddedByUser`, `ProviderEntry::can_add_by_hand` and
+`with_add_by_hand`, `Registry::addable_providers`, `own_reader_of` (now
+just `Registry::reader_of`), `PluginProvider::read_given` and
+`read_given_bill`, `KeyAsk::for_account_key`, the `KeyPlace` enum of
+`read_account_numbers` (it takes the profiles the account was found in)
+and `AccountNumbers::Bill` (only an added account read its bill this
+way; the bill of an organization is still read through its profile) are
+gone. `SavedProfiles` lost `added_accounts`, `with_account_added`,
+`with_added_key` and `without_added_account`; an account entry of
+`agents.json` has no `key`, and an old entry known only by a key is not
+read. `FoundIn` keeps one variant, `ProfileFolder`, until issue 05 adds
+OTTY's own logins.
+
+`KeyAsk::slot` is a `String` now. A need whose `key-ask` has no slot is
+not shown. The WIT shape stays (`slot: option<string>`, Decision 12, no
+version bump); only the doc comments of `key-ask` and `given-in-otty`
+changed. A later shape cleanup could make the slot required.
+
+The manifest refuses `add_by_hand` as an unknown field. Plugins:
+`openai` 0.2.6 → 0.2.7 and `anthropic` 0.2.6 → 0.2.7 drop `add_by_hand`
+and always ask for a refused admin key under `admin`; `deepseek` 0.1.1 →
+0.1.2 and `openrouter` 0.1.1 → 0.1.2 drop `add_by_hand` and the
+`replace-key` need, so a refused key always opens the keys page; the
+template `example` 0.1.1 → 0.1.2 does the same. All five were rebuilt
+into `assets/plugins/`. The template copy the host tests load,
+`crates/plugins/host/tests/fixtures/template.wasm`, was rebuilt too: it
+was older than issue 02, so its host test now expects only the default
+folder. A spend test reads the template's version from its manifest
+instead of writing it.
+
+Texts gone from all ten locales: `agents_found_in_user`,
+`agents_edit_key_item`, `agents_add_account_title`,
+`agents_edit_key_title`, `agents_add_account_text`,
+`agents_error_account_added`. The public docs are issue 10.

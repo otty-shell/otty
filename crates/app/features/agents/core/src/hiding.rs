@@ -65,7 +65,7 @@ pub(crate) fn set_profile_hidden(
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{Account, SavedProfiles};
+    use otty_agents::{Account, Profile, SavedProfiles};
 
     use crate::event::{
         AccountAction, AgentsIntent, AgentsOutcome, ProfileAction,
@@ -222,7 +222,7 @@ mod tests {
     }
 
     /// The registry of the tests with a second plugin, DeepSeek Fork, that
-    /// serves DeepSeek and offers Add account for it too.
+    /// serves DeepSeek too.
     fn with_deepseek_fork() -> std::sync::Arc<otty_agents::Registry> {
         let fork = otty_agents::ProviderEntry::new(
             otty_agents::ProviderId::new("deepseek"),
@@ -235,20 +235,41 @@ mod tests {
                 "deepseek",
             ),
         )
-        .with_hosts(["deepseek.com"])
-        .with_add_by_hand();
+        .with_hosts(["deepseek.com"]);
 
         crate::testing::registry_with(fork)
     }
 
-    /// The copy of the DeepSeek account the user added that `plugin`
-    /// reads.
-    fn added_copy(plugin: &str) -> Account {
-        Account::added(
+    /// A made-up DeepSeek login known by its email, found in the Claude
+    /// Code folder, read by no plugin yet.
+    fn deepseek_login() -> Account {
+        Account::new(
             otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
+            otty_agents::AccountIdentity::Email(String::from(
+                "dev@example.com",
+            )),
+            otty_agents::AccountLogin::Email(String::from("dev@example.com")),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder("/home/user/.claude".into()),
         )
-        .with_read_by(Some(String::from(plugin)))
+    }
+
+    /// The copy of [`deepseek_login`] that `plugin` reads.
+    fn deepseek_copy(plugin: &str) -> Account {
+        deepseek_login().with_read_by(Some(String::from(plugin)))
+    }
+
+    /// Codex with its login, and Claude Code with the DeepSeek login.
+    fn deepseek_profiles()
+    -> [(Profile, otty_agents::ProfileStatus, Vec<Account>); 2] {
+        [
+            (codex(), connected(), vec![chatgpt_login()]),
+            (
+                crate::testing::claude(),
+                crate::testing::api_key(),
+                vec![deepseek_login()],
+            ),
+        ]
     }
 
     /// The accounts read by themselves at the first read with `saved`.
@@ -257,10 +278,7 @@ mod tests {
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let outcomes = reduce(
             &mut state,
-            profiles_with_accounts_loaded(
-                &[(codex(), connected(), vec![chatgpt_login()])],
-                saved,
-            ),
+            profiles_with_accounts_loaded(&deepseek_profiles(), saved),
         );
 
         outcomes
@@ -274,24 +292,19 @@ mod tests {
             .collect()
     }
 
-    /// Issue 31: an account the user added that two plugins read is two
-    /// copies; hiding one saves only that copy hidden, and the other stays
-    /// listed, read and among the accounts counted.
+    /// Issue 31: an account that two plugins read is two copies; hiding
+    /// one saves only that copy hidden, and the other stays listed, read
+    /// and among the accounts counted.
     #[test]
-    fn hiding_one_copy_of_an_added_account_keeps_the_other_shown_and_read() {
-        let added = report_shown().with_account_added(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
-        );
-        let fork_hidden = added
-            .clone()
-            .with_account_hidden(&added_copy("deepseek-fork"), true);
+    fn hiding_one_copy_of_an_account_keeps_the_other_shown_and_read() {
+        let fork_hidden = report_shown()
+            .with_account_hidden(&deepseek_copy("deepseek-fork"), true);
         let mut state = with_accounts_in(
             with_deepseek_fork(),
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            added.clone(),
+            &deepseek_profiles(),
+            report_shown(),
         );
-        open_account_menu(&mut state, added_copy("deepseek-fork"));
+        open_account_menu(&mut state, deepseek_copy("deepseek-fork"));
 
         let outcomes =
             reduce(&mut state, AgentsIntent::AccountMenu(AccountAction::Hide));
@@ -299,28 +312,32 @@ mod tests {
         assert_eq!(outcomes, vec![save(fork_hidden.clone())]);
         assert!(same_accounts(
             &state.profiles().accounts(),
-            &[chatgpt_login(), added_copy("deepseek")]
+            &[chatgpt_login(), deepseek_copy("deepseek")]
         ));
         assert_eq!(
             listed_accounts(&state)
                 .into_iter()
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
-            ["you@example.com", "$DEEPSEEK_API_KEY (DeepSeek)"]
+            ["you@example.com", "dev@example.com (DeepSeek)"]
         );
         assert!(
             state
                 .profiles()
-                .is_account_hidden(&added_copy("deepseek-fork"))
+                .is_account_hidden(&deepseek_copy("deepseek-fork"))
         );
-        assert!(!state.profiles().is_account_hidden(&added_copy("deepseek")));
+        assert!(
+            !state
+                .profiles()
+                .is_account_hidden(&deepseek_copy("deepseek"))
+        );
         assert!(same_accounts(
-            &own_reads_at_start(added),
-            &[added_copy("deepseek"), added_copy("deepseek-fork")]
+            &own_reads_at_start(report_shown()),
+            &[deepseek_copy("deepseek"), deepseek_copy("deepseek-fork")]
         ));
         assert!(same_accounts(
             &own_reads_at_start(fork_hidden),
-            &[added_copy("deepseek")]
+            &[deepseek_copy("deepseek")]
         ));
     }
 

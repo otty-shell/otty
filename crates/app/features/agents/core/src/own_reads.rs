@@ -1,15 +1,14 @@
 //! What was read of the accounts that tell their own numbers with their
-//! own key (spec 2026-11-19, Decisions 5 and 7): the money of a key, the
-//! bill of an organization the user added, and the limits of a
-//! subscription login no profile reads the limits of. Each account is read once, with
-//! the key read again from where it was found; the last good numbers stay,
-//! with their time, when a later read fails.
+//! own key (spec 2026-11-19, Decisions 5 and 7): the money of a key and
+//! the limits of a subscription login no profile reads the limits of. Each
+//! account is read once, with the key read again from where it was found;
+//! the last good numbers stay, with their time, when a later read fails.
 
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountNumbers, Balance, Bill, KeyPlace, SourceError,
-    SourceFailure, SourceId,
+    Account, AccountNumbers, Balance, Profile, SourceError, SourceFailure,
+    SourceId,
 };
 
 use super::freshness::{ReadState, Which};
@@ -36,16 +35,6 @@ impl OwnRead {
         match &self.last_good {
             Some((AccountNumbers::Balance(balance), read_at)) => {
                 Some((balance, *read_at))
-            },
-            _ => None,
-        }
-    }
-
-    /// The last good bill and when it was read.
-    pub(crate) fn bill(&self) -> Option<(&Bill, SystemTime)> {
-        match &self.last_good {
-            Some((AccountNumbers::Bill(bill), read_at)) => {
-                Some((bill, *read_at))
             },
             _ => None,
         }
@@ -129,15 +118,16 @@ impl OwnReads {
             .find(|read| read.account.is_same_account(account))
     }
 
-    /// Start a read of each account of `wanted`, with the place its key
-    /// is read again from, that `which` picks and that has no read on its
-    /// way, and return those. What was read of an account no longer
-    /// wanted, such as one removed or hidden, is forgotten.
+    /// Start a read of each account of `wanted`, with the profiles it was
+    /// found in, the first of which names the place of its key, that
+    /// `which` picks and that has no read on its way, and return those.
+    /// What was read of an account no longer wanted, such as one hidden,
+    /// is forgotten.
     pub(crate) fn start(
         &mut self,
-        wanted: Vec<(Account, KeyPlace)>,
+        wanted: Vec<(Account, Vec<Profile>)>,
         which: Which,
-    ) -> Vec<(Account, KeyPlace)> {
+    ) -> Vec<(Account, Vec<Profile>)> {
         self.reads.retain(|read| {
             wanted
                 .iter()
@@ -145,7 +135,7 @@ impl OwnReads {
         });
 
         let mut started = Vec::new();
-        for (account, place) in wanted {
+        for (account, found_in) in wanted {
             let position = self
                 .reads
                 .iter()
@@ -160,7 +150,7 @@ impl OwnReads {
             };
 
             if read.reads.is_wanted(which) && read.reads.start() {
-                started.push((account, place));
+                started.push((account, found_in));
             }
         }
 
@@ -192,16 +182,27 @@ impl OwnReads {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{Amount, KeyRef, ProviderRef};
+    use otty_agents::Amount;
 
     use super::*;
     use crate::testing::{at, chatgpt_login, five_hour_limits};
 
+    /// A made-up DeepSeek key found in the Claude Code folder.
     fn deepseek() -> Account {
-        Account::added(
-            ProviderRef::of_id("deepseek"),
-            KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
-        )
+        crate::testing::read_by_its_plugin(Account::new(
+            otty_agents::ProviderRef::of_id("deepseek"),
+            otty_agents::AccountIdentity::KeyFingerprint(
+                otty_agents::KeyFingerprint::of("sk-made-up-deepseek"),
+            ),
+            otty_agents::AccountLogin::Key(None),
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder("/home/user/.claude".into()),
+        ))
+    }
+
+    /// The profiles the DeepSeek key is read in.
+    fn in_claude() -> Vec<Profile> {
+        vec![crate::testing::claude()]
     }
 
     fn left(value: f64) -> AccountNumbers {
@@ -223,14 +224,14 @@ mod tests {
     #[test]
     fn an_account_is_read_once_until_its_read_ends() {
         let mut reads = OwnReads::default();
-        let wanted = vec![(deepseek(), KeyPlace::Added)];
+        let wanted = vec![(deepseek(), in_claude())];
 
         let first = reads.start(wanted.clone(), Which::Every);
         let again = reads.start(wanted.clone(), Which::Every);
         reads.apply(loaded(deepseek(), Ok(left(110.0)), at(10)));
         let after = reads.start(wanted, Which::Stale(at(20)));
 
-        assert_eq!(first, [(deepseek(), KeyPlace::Added)]);
+        assert_eq!(first, [(deepseek(), in_claude())]);
         assert!(again.is_empty(), "a read is on its way");
         assert!(after.is_empty(), "the read is fresh");
         let read = reads.of(&deepseek()).map(OwnRead::reads);
@@ -240,9 +241,9 @@ mod tests {
     #[test]
     fn a_failed_read_keeps_the_last_good_numbers_and_says_why() {
         let mut reads = OwnReads::default();
-        let _ = reads.start(vec![(deepseek(), KeyPlace::Added)], Which::Every);
+        let _ = reads.start(vec![(deepseek(), in_claude())], Which::Every);
         reads.apply(loaded(deepseek(), Ok(left(110.0)), at(10)));
-        let _ = reads.start(vec![(deepseek(), KeyPlace::Added)], Which::Every);
+        let _ = reads.start(vec![(deepseek(), in_claude())], Which::Every);
         reads.apply(loaded(
             deepseek(),
             Err(crate::testing::refused_key_need()),
@@ -259,12 +260,12 @@ mod tests {
         assert_eq!(read.reads().read_at(), Some(at(20)));
     }
 
-    /// A removed account is no longer read, and a late answer of it is
-    /// dropped.
+    /// An account no longer wanted is no longer read, and a late answer of
+    /// it is dropped.
     #[test]
     fn an_account_no_longer_wanted_is_forgotten() {
         let mut reads = OwnReads::default();
-        let _ = reads.start(vec![(deepseek(), KeyPlace::Added)], Which::Every);
+        let _ = reads.start(vec![(deepseek(), in_claude())], Which::Every);
 
         let _ = reads.start(Vec::new(), Which::Every);
         reads.apply(loaded(deepseek(), Ok(left(1.0)), at(10)));
@@ -275,8 +276,8 @@ mod tests {
     #[test]
     fn the_limits_of_a_login_are_kept_as_the_limits_of_a_profile() {
         let mut reads = OwnReads::default();
-        let place = KeyPlace::ProfileFiles(vec![crate::testing::codex()]);
-        let _ = reads.start(vec![(chatgpt_login(), place)], Which::Every);
+        let found_in = vec![crate::testing::codex()];
+        let _ = reads.start(vec![(chatgpt_login(), found_in)], Which::Every);
         let answer = crate::testing::limits_answer(vec![(
             otty_agents::SourceId::ProviderPart,
             Ok(five_hour_limits(42.0)),

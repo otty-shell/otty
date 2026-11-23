@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.6"
+version = "0.2.7"
 description = "Claude Code and Anthropic accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -63,8 +63,8 @@ fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
 # The numbers of Anthropic accounts: the limits of a Claude login, read
 # from Anthropic's usage request, else from the `/usage` panel of Claude
 # Code in a profile the login was found in, and the bill of an
-# organization read with an admin key added by hand. A key behind another
-# server is for that server's host and is not read here.
+# organization read with the admin key the user gives for it. A key
+# behind another server is for that server's host and is not read here.
 [[agents.provider]]
 id = "anthropic"
 name = "Anthropic"
@@ -73,7 +73,6 @@ icon = "anthropic.svg"
 hosts = ["anthropic.com", "claude.ai"]
 usage_page = "https://console.anthropic.com/settings/usage"
 plan_usage_page = "https://claude.ai/settings/usage"
-add_by_hand = true
 
 # Apply only while a function of this part runs: the files of the
 # `claude-code` part are refused then.

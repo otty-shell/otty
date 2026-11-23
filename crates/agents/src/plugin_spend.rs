@@ -516,7 +516,11 @@ mod tests {
         assert_eq!(change.tested_version(), "1.4.2");
         assert_eq!(change.plugin().map(|part| part.plugin()), Some("example"));
         let report = change.report("Example Agent", "~/.example-agent");
-        assert!(report.contains("Plugin: example 0.1.1"), "{report}");
+        let version = home.plugin().manifest().plugin().version().to_string();
+        assert!(
+            report.contains(&format!("Plugin: example {version}")),
+            "{report}"
+        );
         assert!(report.contains("Part: example-agent"), "{report}");
     }
 

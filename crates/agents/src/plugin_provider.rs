@@ -1,18 +1,17 @@
 //! A provider read by a provider part of a plugin (spec
 //! 2026-11-19-agent-plugins, Decisions 4 and 5): for an account of its
 //! own provider id or hosts, the part gets a handle to the key at the
-//! place an agent part found it, or to a key OTTY read itself (one the
-//! user added by hand, or one found in the system keyring), says whose
-//! account it is and reads its numbers, once per account per refresh, and
-//! the bill of an organization. With each read it gets the keys the user
-//! gave for the account after a need of the part asked for them, each
-//! under its slot (issue 20), and the profiles the account was found in,
-//! where it may ask the agent itself (issue 29). It never sees a key.
+//! place an agent part found it, says whose account it is and reads its
+//! numbers, once per account per refresh, and the bill of an
+//! organization. With each read it gets the keys the user gave for the
+//! account after a need of the part asked for them, each under its slot
+//! (issue 20), and the profiles the account was found in, where it may
+//! ask the agent itself (issue 29). It never sees a key.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use otty_plugin_host::agents::agent::{Identity, Login, LoginKind};
+use otty_plugin_host::agents::agent::Login;
 use otty_plugin_host::agents::provider::{
     AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, DayRange,
     FoundProfile, LoginFacts, Money,
@@ -123,9 +122,6 @@ impl PluginProvider {
         {
             entry = entry.with_plan_usage_page(page);
         }
-        if manifest_part.can_add_by_hand() {
-            entry = entry.with_add_by_hand();
-        }
         if let Some(name) = manifest_part.priced_as() {
             entry = entry.with_priced_as(name);
         }
@@ -184,24 +180,6 @@ impl PluginProvider {
         self.read_with(account, &key, &found, given, starts_programs)
     }
 
-    /// The numbers of `account`, read once with `key`, a key OTTY read
-    /// itself: from the file or the variable the user gave for an account
-    /// added by hand, or from the system keyring, and the keys the user
-    /// gave for it (`given`). The part gets only a handle to each, for
-    /// this read. An account the part does not serve is not read, and the
-    /// part gets no key.
-    pub(crate) fn read_given(
-        &self,
-        account: &Account,
-        key: &KeySecret,
-        given: &[GivenSecret],
-        starts_programs: bool,
-    ) -> Result<AccountNumbers, SourceError> {
-        let key = given_source(key)?;
-
-        self.read_with(account, &key, &key_facts(), given, starts_programs)
-    }
-
     /// The bill up to `now` of the organization `account`, read once with
     /// the key of `login`, the login an agent part found it by in the
     /// profiles `found_in`, and the keys the user gave for it (`given`).
@@ -219,21 +197,6 @@ impl PluginProvider {
         let found = login_facts(login, found_in);
 
         self.read_bill_with(account, &key, &found, given, now)
-    }
-
-    /// The bill up to `now` of `account`, an account the user added, read
-    /// once with its key `key`, which OTTY read from the file or the
-    /// variable the user gave, and the keys the user gave for it (`given`).
-    pub(crate) fn read_given_bill(
-        &self,
-        account: &Account,
-        key: &KeySecret,
-        given: &[GivenSecret],
-        now: SystemTime,
-    ) -> Result<Bill, SourceError> {
-        let key = given_source(key)?;
-
-        self.read_bill_with(account, &key, &key_facts(), given, now)
     }
 
     /// The bill up to `now` of `account`, read once with the key of
@@ -333,12 +296,6 @@ impl PluginProvider {
 
         Self::of_calls(entry, PartHealth::default(), Box::new(calls))
     }
-
-    /// The same provider offered by Add account.
-    pub(crate) fn with_add_by_hand(mut self) -> Self {
-        self.entry = self.entry.with_add_by_hand();
-        self
-    }
 }
 
 /// The real calls of a provider part.
@@ -434,26 +391,6 @@ fn login_facts(login: &Login, found_in: Vec<FoundProfile>) -> LoginFacts {
     }
 }
 
-/// What OTTY knows of a key it read itself: an API key, known by the key
-/// and found in no profile.
-fn key_facts() -> LoginFacts {
-    LoginFacts {
-        kind: LoginKind::ApiKey,
-        identity: no_identity(),
-        plan: None,
-        found_in: Vec::new(),
-    }
-}
-
-/// An identity that names nothing: OTTY knows the account by the key.
-fn no_identity() -> Identity {
-    Identity {
-        account_id: None,
-        organization_id: None,
-        email: None,
-    }
-}
-
 /// What a key told in `numbers`: the money left, the key's own limit, the
 /// money spent this month and the credits.
 fn balance_of(numbers: &PartNumbers) -> Balance {
@@ -510,14 +447,16 @@ fn amount_of(money: &Money) -> Option<Amount> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agents::agent::{JsonField, KeyPlace};
+    use otty_plugin_host::agents::agent::{
+        Identity, JsonField, KeyPlace, LoginKind,
+    };
 
     use super::*;
     use crate::account::{AccountIdentity, AccountLogin, FoundIn};
-    use crate::given_key::{GivenSecret, KeyRef};
+    use crate::given_key::GivenSecret;
     use crate::key_fingerprint::KeyFingerprint;
     use crate::limits::Credits;
-    use crate::testing::{NOW, at};
+    use crate::testing::{NOW, at, no_identity};
 
     fn key_login() -> Login {
         Login {
@@ -667,61 +606,6 @@ mod tests {
         assert_eq!(
             limits.value().billing(),
             &Billing::UsageWindows(UsageWindows::default())
-        );
-    }
-
-    /// Spec 2026-11-19-agent-plugins, Decision 5: a key the user added by
-    /// hand reaches the part only as a handle to the key OTTY read.
-    #[test]
-    fn an_added_key_reaches_the_part_as_a_given_key() {
-        let account = Account::added(
-            ProviderRef::of_id("deepseek"),
-            KeyRef::EnvVar("DEEPSEEK_API_KEY".to_string()),
-        );
-        let key = KeySecret::made_up("sk-made-up-deepseek-key-0000");
-        let mut calls = MockProviderPartCalls::new();
-        calls
-            .expect_read_numbers()
-            .withf(|key, found, _, _| {
-                let KeySource::Given(given) = key else {
-                    return false;
-                };
-                given.as_str() == "sk-made-up-deepseek-key-0000"
-                    && found.kind == LoginKind::ApiKey
-            })
-            .times(1)
-            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
-        let provider =
-            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
-
-        let numbers = provider.read_given(&account, &key, &[], true);
-
-        assert_eq!(
-            numbers,
-            Ok(AccountNumbers::Balance(Balance::new(
-                Amount::new(12.5, "USD"),
-                None
-            )))
-        );
-    }
-
-    #[test]
-    fn a_part_gets_no_added_key_of_another_provider() {
-        let account = Account::added(
-            ProviderRef::of_id("openrouter"),
-            KeyRef::EnvVar("OPENROUTER_API_KEY".to_string()),
-        );
-        let key = KeySecret::made_up("sk-or-v1-made-up-key-0000");
-        let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().never();
-        let provider =
-            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
-
-        let numbers = provider.read_given(&account, &key, &[], true);
-
-        assert_eq!(
-            numbers,
-            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
         );
     }
 
@@ -1059,23 +943,28 @@ mod tests {
         );
     }
 
-    /// Issue 15 and 20: the key of an account the user added and the keys
-    /// given for it reach the part only as handles, once, for the 31 UTC
+    /// An organization found in a profile, read by the Anthropic part.
+    fn found_organization() -> Account {
+        Account::new(
+            ProviderRef::of_id("anthropic"),
+            AccountIdentity::OrganizationId("made-up-org".into()),
+            AccountLogin::Unnamed,
+            AccountKind::Money,
+            FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
+        )
+    }
+
+    /// Issue 15 and 20: the key of the login and the keys given for the
+    /// organization reach the part only as handles, once, for the 31 UTC
     /// days up to today; the bill holds each of them.
     #[test]
     fn a_given_key_reads_the_bill_of_the_31_days_up_to_today() {
-        let organization = Account::added(
-            ProviderRef::of_id("anthropic"),
-            KeyRef::EnvVar("ANTHROPIC_API_KEY".to_string()),
-        );
-        let key = KeySecret::made_up("sk-made-up-key");
         let given = [GivenSecret::made_up("admin", "sk-made-up-org-key")];
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_bill()
             .withf(|key, _, given, days| {
-                matches!(key, KeySource::Given(own)
-                    if own.as_str() == "sk-made-up-key")
+                matches!(key, KeySource::Place(KeyPlace::JsonField(_)))
                     && matches!(given, [(slot, KeySource::Given(org))]
                         if slot == "admin"
                             && org.as_str() == "sk-made-up-org-key")
@@ -1095,7 +984,13 @@ mod tests {
             PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
 
         let bill = provider
-            .read_given_bill(&organization, &key, &given, at(NOW))
+            .read_bill(
+                &found_organization(),
+                &key_login(),
+                Vec::new(),
+                &given,
+                at(NOW),
+            )
             .expect("the bill");
 
         assert_eq!(bill.days().len(), 31);
@@ -1104,17 +999,18 @@ mod tests {
 
     #[test]
     fn a_part_gets_no_key_of_a_bill_of_another_provider() {
-        let organization = Account::added(
-            ProviderRef::of_id("openai"),
-            KeyRef::EnvVar("OPENAI_API_KEY".to_string()),
-        );
-        let key = KeySecret::made_up("sk-made-up-key");
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_bill().never();
         let provider =
-            PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
+            PluginProvider::made_up("openai", &["openai.com"], calls);
 
-        let bill = provider.read_given_bill(&organization, &key, &[], at(NOW));
+        let bill = provider.read_bill(
+            &found_organization(),
+            &key_login(),
+            Vec::new(),
+            &[],
+            at(NOW),
+        );
 
         assert_eq!(bill, Err(SourceError::NotAvailable(Unavailable::NoBill)));
     }

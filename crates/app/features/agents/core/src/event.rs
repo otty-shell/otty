@@ -1,14 +1,13 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AgentCommand, AgentId, GivenKey, KeyPlace, Profile, SavedProfiles,
-    SessionId,
+    Account, AgentCommand, AgentId, GivenKey, Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
-use super::add_account_dialog::AddAccountIntent;
+use super::key_dialog::KeyDialogIntent;
 use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
 use super::profile_dialog::ProfileDialogIntent;
@@ -193,12 +192,8 @@ pub enum AgentsIntent {
     /// The `+` of the Profiles section was pressed: open the profile
     /// dialog to add one.
     OpenAddProfile,
-    /// The `+` of the Accounts section was pressed: open the Add account
-    /// dialog (spec 2026-11-19, Decision 7).
-    OpenAddAccount,
-    /// The Add account dialog, or the Edit key dialog of an account the
-    /// user added, was used.
-    AddAccount(AddAccountIntent),
+    /// The dialog of a key a plugin part asks for was used.
+    KeyDialog(KeyDialogIntent),
     /// Edit of a profile's menu was pressed: open the profile dialog with
     /// it.
     EditProfile(Profile),
@@ -318,18 +313,18 @@ pub enum AgentsOutcome {
         /// The keys the user gave for it, each under its slot.
         given: Vec<GivenKey>,
     },
-    /// Read the numbers of `account` with its own key, read again from
-    /// `place` and dropped right after the request: the money of a key,
-    /// the bill of an organization the user added, or the limits of a
-    /// subscription login no profile reads. A key in the system
-    /// keyring is read only while Agents mode is on screen. Answer
+    /// Read the numbers of `account` with the key of its login, read again
+    /// from the files of the first profile of `found_in` and dropped right
+    /// after the request: the money of a key, or the limits of a
+    /// subscription login no profile reads. A key in the system keyring is
+    /// read only while Agents mode is on screen. Answer
     /// [`AgentsIntent::AccountNumbersLoaded`].
     LoadAccountNumbers {
         /// The account to read.
         account: Account,
-        /// Where its key is read again from, with the profiles it was
-        /// found in.
-        place: KeyPlace,
+        /// The shown profiles it was found in; the first names the place
+        /// of its key.
+        found_in: Vec<Profile>,
         /// The keys the user gave for it, each under its slot.
         given: Vec<GivenKey>,
         /// Whether its provider part may start the agent's program, while
@@ -473,10 +468,6 @@ pub enum AccountAction {
     Rename,
     /// Open the usage page of the account at its provider in the browser.
     OpenUsagePage,
-    /// Change where the key of an account the user added is kept.
-    EditKey,
-    /// Forget an account the user added, with its name.
-    Remove,
     /// Stop reading the account and take it out of the lists.
     Hide,
     /// Read the hidden account again and bring it back to the lists.

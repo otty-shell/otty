@@ -22,8 +22,7 @@ pub(crate) enum AgentsMenu {
     Profile(Profile),
     /// The "⋯" of an account's page, also opened by a right press on its
     /// row in the left panel or the All accounts table: Rename…, Open
-    /// usage page, Edit key… and Remove for an added account, Hide or Show
-    /// again.
+    /// usage page, Hide or Show again.
     Account(Account),
     /// The "⋯" of the All accounts page: Show or Hide hidden accounts and
     /// Show Found by OTTY.

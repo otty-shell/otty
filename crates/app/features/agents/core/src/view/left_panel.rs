@@ -104,21 +104,13 @@ pub(super) fn note_height() -> f32 {
     typography::SMALL.line_height() + 2.0 * spacing::SPACE_1
 }
 
-/// The Accounts section: Refresh and `+` (Add account) in the header, All
-/// accounts and a row for each account.
+/// The Accounts section: Refresh in the header, All accounts and a row for
+/// each account. It offers no Add account until accounts are added by
+/// logging in with an agent (spec 2026-11-23, Decisions 6 and 10).
 fn accounts_section<'a>(
     vm: AccountsSectionViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let add = IconButton::new(
-        svg::Handle::from_memory(icons::PLUS),
-        i18n::t(Key::AgentsAddAccountTitle),
-        palette,
-    )
-    .size(IconButtonSize::Small)
-    .tone(IconTone::Accent)
-    .on_press_maybe(vm.can_add.then_some(AgentsIntent::OpenAddAccount));
-
     let count = vm.accounts.len();
     let mut rows = Column::new().width(Length::Fill);
     if let Some(all) = vm.all {
@@ -141,7 +133,6 @@ fn accounts_section<'a>(
         PanelSection::new(i18n::t(Key::AgentsSectionAccounts), palette)
             .open(vm.is_open)
             .action(refresh_button(palette))
-            .action(add)
             .body(section_body(rows, palette))
             .on_toggle(AgentsIntent::ToggleAccountsSection);
     if !vm.is_open {
@@ -350,7 +341,6 @@ mod tests {
                     SessionTone::Muted,
                 )),
             }],
-            can_add: true,
             note: None,
         }
     }
@@ -515,15 +505,17 @@ mod tests {
         assert_eq!(all, vec![AgentsIntent::SelectAllProfiles]);
     }
 
-    /// Spec 2026-11-19, Decision 1: Accounts "+" opens Add account.
+    /// Spec 2026-11-23, Decision 10: the Accounts header refreshes and
+    /// offers no Add account; the place of `+` opens and closes the
+    /// section like the rest of the header.
     #[test]
-    fn the_accounts_header_refreshes_and_adds_an_account() {
-        let added = section_header_pressed(
+    fn the_accounts_header_refreshes_and_offers_no_add_account() {
+        let refreshed = section_header_pressed(
             panel(agents()),
             Key::AgentsSectionAccounts,
             0,
         );
-        let refreshed = section_header_pressed(
+        let next_to_it = section_header_pressed(
             panel(agents()),
             Key::AgentsSectionAccounts,
             1,
@@ -531,8 +523,8 @@ mod tests {
         let toggled =
             pressed(panel(agents()), i18n::t(Key::AgentsSectionAccounts));
 
-        assert_eq!(added, vec![AgentsIntent::OpenAddAccount]);
         assert_eq!(refreshed, vec![AgentsIntent::Refresh]);
+        assert_eq!(next_to_it, vec![AgentsIntent::ToggleAccountsSection]);
         assert_eq!(toggled, vec![AgentsIntent::ToggleAccountsSection]);
     }
 

@@ -7,7 +7,6 @@ use otty_agents::{Account, AccountLogin, Registry, SavedProfiles};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::state::provider_name;
-use super::add_account_dialog::key_place_text;
 
 /// The name of `account`: the one the user gave it in `saved`, the
 /// content of `agents.json`, else its own ([`own_account_name`]), with
@@ -40,9 +39,8 @@ pub(crate) fn short_account_name(
 }
 
 /// The provider and the login of `account`, such as "Example Cloud ·
-/// you@example.com", "Example Cloud · key ••••a1f3" or, for an account the user
-/// added, "Example Cloud · $EXAMPLE_API_KEY"; a login with no email shows its
-/// plan when the files name one, else "unknown". The provider is named as
+/// you@example.com" or "Example Cloud · key ••••a1f3"; a login with no
+/// email shows its plan when the files name one, else "unknown". The provider is named as
 /// the entry of `registry` that serves it names it, else by its id or
 /// host, such as "api.example.com · key ••••a1f3". When a part of another
 /// plugin serves the provider id or a host of the part that reads the
@@ -58,8 +56,8 @@ pub(crate) fn own_account_name(
     with_plugin(registry, account, format!("{provider} · {login}"))
 }
 
-/// The login of `account` as text: its email, its key, the place of the
-/// key the user added, else its plan, else "unknown".
+/// The login of `account` as text: its email, its key, else its plan, else
+/// "unknown".
 fn login_text(account: &Account) -> String {
     match account.login() {
         AccountLogin::Email(email) => email.clone(),
@@ -67,7 +65,6 @@ fn login_text(account: &Account) -> String {
             i18n::filled(Key::TplAgentsAccountKey, &[("last", last)])
         },
         AccountLogin::Key(None) => i18n::t(Key::AgentsAccountKey).to_string(),
-        AccountLogin::KeyPlace(place) => key_place_text(place),
         _ => account
             .plan()
             .unwrap_or(i18n::t(Key::AgentsAccountUnknown))

@@ -114,14 +114,14 @@ impl Delivery for AgentsIntent {
             .map(AppEvent::Agents),
             AgentsOutcome::LoadAccountNumbers {
                 account,
-                place,
+                found_in,
                 given,
                 may_start_programs,
             } => agents_io::load_account_numbers(
                 app.agents.known_agents(),
                 &app.plugin_providers,
                 account,
-                place,
+                found_in,
                 given,
                 may_start_programs,
                 app.shell_session.program(),
@@ -460,20 +460,29 @@ mod tests {
     }
 
     /// The numbers of an account are read with its own key in the
-    /// background; nothing is read here, the key is made up.
+    /// background; nothing is read here, the profile is made up.
     #[test]
     fn the_numbers_of_an_account_are_read_in_the_background() {
         let mut app = app();
-        let account = otty_agents::Account::added(
+        let folder = PathBuf::from("/no/such/.stranger");
+        let account = otty_agents::Account::new(
             otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::KeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_KEY")),
+            otty_agents::AccountIdentity::AccountId(String::from("made-up")),
+            otty_agents::AccountLogin::Unnamed,
+            otty_agents::AccountKind::Money,
+            otty_agents::FoundIn::ProfileFolder(folder.clone()),
+        );
+        let profile = otty_agents::Profile::default_for(
+            otty_agents::AgentId::new("stranger"),
+            "Stranger",
+            folder,
         );
 
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LoadAccountNumbers {
                 account,
-                place: otty_agents::KeyPlace::Added,
+                found_in: vec![profile],
                 given: Vec::new(),
                 may_start_programs: false,
             },

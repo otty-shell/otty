@@ -1,5 +1,4 @@
 //! Where a key the user gave OTTY is kept, and reading it for one request:
-//! the key of an account the user added (spec 2026-11-19, Decision 7), or
 //! a key a plugin part asked for with a need, given under the part's slot
 //! (spec 2026-11-19-agent-plugins, issue 20).
 //!
@@ -14,9 +13,9 @@ use std::path::PathBuf;
 
 use crate::error::{SourceError, Unavailable};
 
-/// Where a key the user gave is kept, the key of an added account or one a
-/// part asked for: a file or an environment variable. This is all OTTY
-/// saves; the key itself is never written.
+/// Where a key the user gave after a part asked for it is kept: a file or
+/// an environment variable. This is all OTTY saves; the key itself is
+/// never written.
 ///
 /// ```
 /// use otty_agents::KeyRef;
@@ -179,9 +178,8 @@ impl GivenSecret {
     }
 }
 
-/// A key read for one request: the key of an account, a key the user gave
-/// for a part, or the login token of an agent. It can not be copied, and
-/// printing it shows no part of the key.
+/// A key read for one request: a key the user gave for a part. It can not
+/// be copied, and printing it shows no part of the key.
 pub struct KeySecret {
     secret: String,
 }

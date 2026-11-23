@@ -372,7 +372,6 @@ pub struct ProviderPart {
     hosts: Vec<String>,
     usage_page: Option<String>,
     plan_usage_page: Option<String>,
-    add_by_hand: bool,
     priced_as: Option<String>,
     permissions: PartPermissions,
 }
@@ -415,12 +414,6 @@ impl ProviderPart {
     /// the Codex limits, when it is another page than [`Self::usage_page`].
     pub fn plan_usage_page(&self) -> Option<&str> {
         self.plan_usage_page.as_deref()
-    }
-
-    /// Whether Add account offers this provider: the user gives a key of
-    /// an account by hand, kept where they keep it.
-    pub fn can_add_by_hand(&self) -> bool {
-        self.add_by_hand
     }
 
     /// The name the LiteLLM price table knows the provider by, when it is
@@ -485,7 +478,6 @@ impl ProviderPart {
             hosts: raw.hosts.clone(),
             usage_page: raw.usage_page.clone(),
             plan_usage_page: raw.plan_usage_page.clone(),
-            add_by_hand: raw.add_by_hand,
             priced_as: raw.priced_as.clone(),
             permissions: PartPermissions::of_provider(&raw.permissions, &part)?,
         })
@@ -591,7 +583,6 @@ description = "Reads ChatGPT limits and OpenAI API spending.""#,
             manifest.parts(),
             vec![PartRef::agent("codex"), PartRef::provider("openai"),]
         );
-        assert!(manifest.providers()[0].can_add_by_hand());
         assert_eq!(manifest.agents()[0].permissions().env(), ["CODEX_HOME"]);
         assert_eq!(
             manifest.providers()[0].permissions().http(),
@@ -894,14 +885,27 @@ sqlite = ["~/.codex/state.db"]"#,
         assert!(matches!(error, ManifestError::Shape(_)));
     }
 
+    /// Spec 2026-11-23, Decision 10: accounts are no longer added by hand,
+    /// so a provider part that offers it is refused as an unknown field.
+    #[test]
+    fn a_provider_that_offers_add_by_hand_is_refused() {
+        let error = refusal(&edited(
+            OPENAI_MANIFEST,
+            "usage_page = ",
+            "add_by_hand = true\nusage_page = ",
+        ));
+
+        assert!(matches!(error, ManifestError::Shape(_)), "{error:?}");
+    }
+
     /// Issue 15: a subscription opens the usage page of its plan, a key
     /// or an organization the usage page of the provider's console.
     #[test]
     fn a_provider_may_name_the_usage_page_of_a_plan() {
         let with_plan = edited(
             OPENAI_MANIFEST,
-            "add_by_hand",
-            "plan_usage_page = \"https://chatgpt.com/codex/settings/usage\"\nadd_by_hand",
+            "usage_page = ",
+            "plan_usage_page = \"https://chatgpt.com/codex/settings/usage\"\nusage_page = ",
         );
 
         let manifest = Manifest::parse(&with_plan).expect("valid");
@@ -926,8 +930,8 @@ sqlite = ["~/.codex/state.db"]"#,
     fn a_provider_may_name_the_name_the_price_table_knows_it_by() {
         let priced = edited(
             OPENAI_MANIFEST,
-            "add_by_hand",
-            "priced_as = \"example_ai\"\nadd_by_hand",
+            "usage_page = ",
+            "priced_as = \"example_ai\"\nusage_page = ",
         );
 
         let manifest = Manifest::parse(&priced).expect("valid");

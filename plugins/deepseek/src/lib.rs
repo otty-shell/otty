@@ -1,7 +1,7 @@
 //! The official DeepSeek plugin of OTTY. Its provider part `deepseek`
-//! reads the money left on a DeepSeek account with the account's key:
-//! a key added by hand, or one an agent part found, such as the key of
-//! a Claude Code profile that talks to `api.deepseek.com`. OTTY hands the
+//! reads the money left on a DeepSeek account with the account's key,
+//! one an agent part found, such as the key of a Claude Code profile that
+//! talks to `api.deepseek.com`. OTTY hands the
 //! part a handle to the key, never the key.
 //!
 //! The texts of its needs come in every language of OTTY, so the plugin

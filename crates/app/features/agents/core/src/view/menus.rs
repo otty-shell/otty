@@ -257,35 +257,21 @@ fn account_menu(
     if vm.can_save {
         rename = rename.on_press(act(AccountAction::Rename));
     }
-    let mut menu = Menu::new(palette).item(rename).item(
-        MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
-            .on_press(act(AccountAction::OpenUsagePage)),
-    );
-    if vm.is_added {
-        menu = menu.separator().item(
-            MenuItem::new(i18n::t(Key::AgentsEditKeyItem))
-                .on_press(act(AccountAction::EditKey)),
-        );
-    }
-
     let hide = hide_item(
         vm.is_hidden,
         vm.can_save,
         act(AccountAction::Hide),
         act(AccountAction::ShowAgain),
     );
-    menu = menu
-        .separator()
-        .item(hide.disabled_reason(i18n::t(Key::AgentsKeyNotSaved)));
-    if vm.is_added {
-        menu = menu.item(
-            MenuItem::new(i18n::t(Key::ButtonRemove))
-                .danger(true)
-                .on_press(act(AccountAction::Remove)),
-        );
-    }
 
-    menu
+    Menu::new(palette)
+        .item(rename)
+        .item(
+            MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
+                .on_press(act(AccountAction::OpenUsagePage)),
+        )
+        .separator()
+        .item(hide.disabled_reason(i18n::t(Key::AgentsKeyNotSaved)))
 }
 
 /// Hide, or Show again while `is_hidden`; it sends nothing unless
@@ -709,7 +695,6 @@ mod tests {
         MenuViewModel::Account(AccountMenuViewModel {
             place: place(),
             can_save,
-            is_added: true,
             is_hidden,
         })
     }
@@ -719,9 +704,7 @@ mod tests {
         let items = [
             (Key::AgentsRename, AccountAction::Rename),
             (Key::AgentsOpenUsagePage, AccountAction::OpenUsagePage),
-            (Key::AgentsEditKeyItem, AccountAction::EditKey),
             (Key::AgentsHide, AccountAction::Hide),
-            (Key::ButtonRemove, AccountAction::Remove),
         ];
 
         for (key, action) in items {
@@ -734,6 +717,21 @@ mod tests {
             pressed(account_menu(true, true), i18n::t(Key::AgentsShowAgain)),
             [AgentsIntent::AccountMenu(AccountAction::ShowAgain)]
         );
+    }
+
+    /// Spec 2026-11-23, Decision 10: no account is added by hand, so the
+    /// account menu has no Edit key… and no Remove.
+    #[test]
+    fn the_account_menu_has_no_edit_key_and_no_remove() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(MenuProps {
+            vm: account_menu(true, false),
+            theme: ThemeProps::new(themes.current()),
+        }));
+
+        assert!(ui.find("Edit key…").is_err(), "no Edit key…");
+        assert!(ui.find(i18n::t(Key::ButtonRemove)).is_err(), "no Remove");
+        assert!(ui.find(i18n::t(Key::AgentsHide)).is_ok());
     }
 
     /// Whether the menu of `vm`, drawn with the pointer on the item

@@ -1,7 +1,7 @@
 //! The field where the user types where a key is kept: a file or an
 //! environment variable (spec 2026-11-19, Decision 7). Only the place of
-//! the key is typed: a dialog never holds the key itself. The key of the
-//! Add account dialog and a key a plugin part asks for share it.
+//! the key is typed: a dialog never holds the key itself. The dialog of a
+//! key a plugin part asks for uses it.
 
 use std::fmt;
 use std::path::Path;

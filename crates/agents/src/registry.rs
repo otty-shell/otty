@@ -158,22 +158,6 @@ impl Registry {
         })
     }
 
-    /// The providers Add account offers, in the order of the registry,
-    /// each id once: the account the user adds is read by every part that
-    /// offers it.
-    pub fn addable_providers(&self) -> Vec<&ProviderEntry> {
-        let mut offered: Vec<&ProviderEntry> = Vec::new();
-
-        for entry in &self.providers {
-            let is_listed = offered.iter().any(|kept| kept.id() == entry.id());
-            if entry.can_add_by_hand() && !is_listed {
-                offered.push(entry);
-            }
-        }
-
-        offered
-    }
-
     /// The page where the user sees the use of `account`, from the entry
     /// of the part that reads it, else of its provider; `None` when no
     /// entry serves the provider or names a page.
@@ -425,6 +409,51 @@ mod tests {
         assert!(!is_shared("other-cloud"));
     }
 
+    /// An account, once merged with the readers of the registry, is read
+    /// by the part of its provider; one of a provider no entry serves has
+    /// no reader, so nothing is read for it (spec 2026-11-19-agent-plugins,
+    /// "What the UI shows"), and a key for a host is read once an entry
+    /// serves it.
+    #[test]
+    fn each_account_is_read_by_the_part_of_its_provider() {
+        let registry = Registry::new(
+            Vec::new(),
+            vec![
+                provider("anthropic", &["anthropic.com"]),
+                provider("openai", &["openai.com"]),
+                provider("example-cloud", &["example.com"]),
+            ],
+        );
+        let without = registry
+            .clone()
+            .without_provider(&ProviderId::new("example-cloud"));
+        let reader = |account: Account, registry: &Registry| {
+            let read = crate::account::merge_accounts(vec![account], registry);
+            registry
+                .reader_of(&read[0])
+                .map(|entry| entry.id().as_str().to_string())
+        };
+        let key = |provider: ProviderRef| {
+            crate::testing::key_account(provider, "sk-made-up")
+        };
+        let by_host = ProviderRef::Host(String::from("api.example.com"));
+
+        let read = [
+            reader(key(ProviderRef::of_id("openai")), &registry),
+            reader(crate::testing::chatgpt_login("made-up"), &registry),
+            reader(crate::testing::organization("made-up-org"), &registry),
+            reader(key(ProviderRef::of_id("other-cloud")), &registry),
+            reader(key(by_host.clone()), &registry),
+            reader(key(by_host), &without),
+        ];
+
+        assert_eq!(
+            read.map(|id| id.unwrap_or_default()),
+            ["openai", "openai", "anthropic", "", "example-cloud", ""]
+                .map(String::from)
+        );
+    }
+
     /// One agent entry per agent id, the first one; issue 29: every
     /// provider part stays, so two plugins that serve one provider both
     /// read it, and the account each reads is found by its plugin.
@@ -467,28 +496,6 @@ mod tests {
             Some("fork")
         );
         assert!(registry.reader_of(&login).is_none());
-    }
-
-    /// Spec 2026-11-19, Decision 7: Add account lists the providers whose
-    /// part offers it, in their order.
-    #[test]
-    fn add_account_offers_the_providers_whose_part_offers_it() {
-        let registry = Registry::new(
-            Vec::new(),
-            vec![
-                provider("org-cloud", &["org.example.com"]).with_add_by_hand(),
-                provider("plain-cloud", &["plain.example.com"]),
-                provider("key-cloud", &["key.example.com"]).with_add_by_hand(),
-            ],
-        );
-
-        let offered: Vec<_> = registry
-            .addable_providers()
-            .iter()
-            .map(|entry| entry.id().as_str())
-            .collect();
-
-        assert_eq!(offered, ["org-cloud", "key-cloud"]);
     }
 
     /// Spec "What the UI shows": the profiles of an agent with no entry

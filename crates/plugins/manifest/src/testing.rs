@@ -47,7 +47,6 @@ name = "OpenAI"
 icon = "openai.svg"
 hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"
-add_by_hand = true
 
 [agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]

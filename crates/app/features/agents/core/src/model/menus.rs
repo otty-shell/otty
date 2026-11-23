@@ -72,7 +72,6 @@ impl MenuViewModel {
                 Self::Account(AccountMenuViewModel {
                     place: open.place(),
                     can_save: account.can_be_saved(),
-                    is_added: account.added_key().is_some(),
                     is_hidden: state.profiles().is_account_hidden(account),
                 })
             },
@@ -219,8 +218,8 @@ pub(crate) struct ProfileMenuViewModel {
 }
 
 /// The menu of an account (spec 2026-11-19, Decision 7): Rename…, Open
-/// usage page, Edit key… for an account the user added, Hide or Show
-/// again, and Remove for an account the user added.
+/// usage page, and Hide or Show again. No account is added by hand, so
+/// none has Edit key… or Remove (spec 2026-11-23, Decision 10).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AccountMenuViewModel {
     /// Where the menu opens.
@@ -229,8 +228,6 @@ pub(crate) struct AccountMenuViewModel {
     /// organization or an email. A key is not kept, so they are off for
     /// it, with why.
     pub(crate) can_save: bool,
-    /// Whether Edit key… and Remove show: an account the user added.
-    pub(crate) is_added: bool,
     /// Whether the account is hidden: Show again in place of Hide.
     pub(crate) is_hidden: bool,
 }
@@ -562,7 +559,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                is_added: false,
                 is_hidden: false,
             })
         );
@@ -571,7 +567,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                is_added: false,
                 is_hidden: false,
             })
         );
@@ -604,37 +599,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: false,
-                is_added: false,
-                is_hidden: false,
-            })
-        );
-    }
-
-    /// Spec 2026-11-19, Decision 7: an account the user added has Edit
-    /// key… and Remove, and it is renamed and hidden by its saved place.
-    #[test]
-    fn the_menu_of_an_added_account_edits_its_key_and_removes_it() {
-        let added = Account::added(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
-        );
-        let saved = SavedProfiles::default().with_account_added(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::KeyRef::EnvVar(String::from("DEEPSEEK_API_KEY")),
-        );
-        let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            saved,
-        );
-
-        let menu = account_menu(&mut state, added);
-
-        assert_eq!(
-            menu,
-            MenuViewModel::Account(AccountMenuViewModel {
-                place: place(),
-                can_save: true,
-                is_added: true,
                 is_hidden: false,
             })
         );
@@ -665,7 +629,6 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 can_save: true,
-                is_added: false,
                 is_hidden: true,
             })
         );

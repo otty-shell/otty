@@ -1,42 +1,49 @@
 //! The read of the numbers of one account with its own key (spec
-//! 2026-11-19, Decision 5): the money left, the limit of a key, the bill of
-//! an organization the user added, or the limits of a subscription login no
-//! profile reads. It reads the key again from where it was found, asks
-//! the provider's server with it and drops it, so it runs on a thread of
-//! its own.
+//! 2026-11-19, Decision 5): the money left, the limit of a key, or the
+//! limits of a subscription login no profile reads. It reads the key again
+//! from where it was found, asks the provider's server with it and drops
+//! it, so it runs on a thread of its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Account, Agent, GivenKey, KeyPlace, PluginProvider};
+use otty_agents::{Account, Agent, GivenKey, PluginProvider, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedAccountNumbers};
 
 use crate::background::{on_own_thread, read_stopped};
 use crate::plugin_parts::ProviderList;
 use crate::shell_variable::shell_variable;
 
-/// Read the numbers of `account` in the background, with its key read
-/// again from `place`: the files of the profiles it was found in through
-/// their agents of `agents`, the system keyring, or the file or variable
-/// the user gave, a variable as the user's login shell at `shell` sees it.
-/// The provider part of `providers` that reads the account reads it with a
-/// handle to the key, any way it can; its programs start only when
-/// `starts_programs`. The key is used for this read only and never
-/// logged. The answer comes back as
+/// Read the numbers of `account` in the background, with the key of its
+/// login read again from the files of the first profile of `found_in`
+/// through its agent of `agents`, and the keys the user gave for it
+/// (`given`), read from their files or variables, a variable as the
+/// user's login shell at `shell` sees it. The provider part of
+/// `providers` that reads the account reads it with a handle to each key,
+/// any way it can, told of every profile of `found_in`; its programs
+/// start only when `starts_programs`. A key is used for this read only and
+/// never logged. The answer comes back as
 /// [`AgentsIntent::AccountNumbersLoaded`].
 ///
 /// # Example
 ///
 /// ```
+/// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{Account, KeyPlace, KeyRef, ProviderRef};
+/// use otty_agents::{
+///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+///     ProviderRef,
+/// };
 /// use otty_app_agents::AgentList;
 ///
-/// let account = Account::added(
+/// let account = Account::new(
 ///     ProviderRef::of_id("example-cloud"),
-///     KeyRef::EnvVar(String::from("EXAMPLE_API_KEY")),
+///     AccountIdentity::AccountId(String::from("made-up-account")),
+///     AccountLogin::Unnamed,
+///     AccountKind::Limits,
+///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
 /// );
 /// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
@@ -44,7 +51,7 @@ use crate::shell_variable::shell_variable;
 ///     &agents,
 ///     &providers,
 ///     account,
-///     KeyPlace::Added,
+///     Vec::new(),
 ///     Vec::new(),
 ///     true,
 ///     "/bin/zsh",
@@ -56,7 +63,7 @@ pub fn load_account_numbers(
     agents: &AgentList,
     providers: &ProviderList,
     account: Account,
-    place: KeyPlace,
+    found_in: Vec<Profile>,
     given: Vec<GivenKey>,
     starts_programs: bool,
     shell: &str,
@@ -77,9 +84,8 @@ pub fn load_account_numbers(
                 &agents,
                 &providers,
                 account,
-                &place,
+                &found_in,
                 &given,
-                SystemTime::now(),
                 starts_programs,
                 |name| shell_variable(&shell, name),
             )
@@ -93,17 +99,16 @@ pub fn load_account_numbers(
     )
 }
 
-/// The numbers of `account` up to `now`, read with its key from `place`
-/// and the keys the user gave for it (`given`), starting programs only
-/// when `starts_programs`; `env_var` gives the value of an environment
-/// variable.
+/// The numbers of `account`, read with the key of its login in the first
+/// profile of `found_in` and the keys the user gave for it (`given`),
+/// starting programs only when `starts_programs`; `env_var` gives the
+/// value of an environment variable.
 fn read_account_numbers(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     account: Account,
-    place: &KeyPlace,
+    found_in: &[Profile],
     given: &[GivenKey],
-    now: SystemTime,
     starts_programs: bool,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedAccountNumbers {
@@ -111,9 +116,8 @@ fn read_account_numbers(
         agents,
         providers,
         &account,
-        place,
+        found_in,
         given,
-        now,
         starts_programs,
         env_var,
     );
@@ -127,36 +131,52 @@ fn read_account_numbers(
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{KeyRef, ProviderRef, SourceError, Unavailable};
+    use std::path::Path;
+
+    use otty_agents::{
+        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
+        ProviderRef, SourceError, Unavailable,
+    };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::testing::{providers_with_plugins, run};
 
-    /// An Anthropic organization added with an admin key file that is not
-    /// there: nothing is sent and no test reaches the network.
-    fn missing_key(folder: &TempDir) -> (Account, KeyRef) {
-        let key = KeyRef::File(folder.path().join("no-such-key"));
-        let account =
-            Account::added(ProviderRef::of_id("anthropic"), key.clone())
-                .with_read_by(Some(String::from("anthropic")));
+    /// An Anthropic organization found in the Claude Code folder under
+    /// `home`, read by the Anthropic plugin, and that folder as a profile.
+    fn organization_in(home: &Path) -> (Account, Profile) {
+        let folder = home.join(".claude");
+        let account = Account::new(
+            ProviderRef::of_id("anthropic"),
+            AccountIdentity::OrganizationId(String::from("made-up-org")),
+            AccountLogin::Unnamed,
+            AccountKind::Money,
+            FoundIn::ProfileFolder(folder.clone()),
+        )
+        .with_read_by(Some(String::from("anthropic")));
+        let profile = Profile::default_for(
+            AgentId::new("claude-code"),
+            "Claude Code",
+            folder,
+        );
 
-        (account, key)
+        (account, profile)
     }
 
+    /// A login no agent part finds any more is not available: nothing is
+    /// sent and no test reaches the network.
     #[test]
-    fn a_key_that_is_not_there_is_not_available_and_nothing_is_sent() {
-        let folder = TempDir::new("agents-numbers-no-key");
-        let (account, key) = missing_key(&folder);
+    fn a_login_that_is_not_there_is_not_available_and_nothing_is_sent() {
+        let folder = TempDir::new("agents-numbers-no-login");
+        let (account, profile) = organization_in(folder.path());
         let before = SystemTime::now();
 
         let loaded = read_account_numbers(
             &[],
             &providers_with_plugins(folder.path()),
             account.clone(),
-            &KeyPlace::Added,
+            &[profile],
             &[],
-            SystemTime::now(),
             true,
             |_| None,
         );
@@ -165,14 +185,14 @@ mod tests {
         assert!(loaded.read_at >= before, "the read tells when it ended");
         assert_eq!(
             loaded.numbers,
-            Err(SourceError::NotAvailable(Unavailable::KeyMissing(key)))
+            Err(SourceError::NotAvailable(Unavailable::KeyGone))
         );
     }
 
     #[test]
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let folder = TempDir::new("agents-numbers-task");
-        let (account, _) = missing_key(&folder);
+        let (account, profile) = organization_in(folder.path());
         let agents: AgentList = Arc::from(Vec::new());
 
         let providers = providers_with_plugins(folder.path());
@@ -180,7 +200,7 @@ mod tests {
             &agents,
             &providers,
             account.clone(),
-            KeyPlace::Added,
+            vec![profile],
             Vec::new(),
             true,
             "/no/such/shell",

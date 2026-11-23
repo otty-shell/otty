@@ -89,12 +89,12 @@ impl Key {
         }
     }
 
-    /// Whether the user gave the key in OTTY: the key of an account they
-    /// added by hand, or one given for an
+    /// Whether the user gave the key in OTTY: one given for an
     /// [`NeedAction::AskKey`](crate::NeedAction) slot. `false` for a key
     /// read from a place of an agent: a file field, a variable, a keyring
-    /// entry or a database. A refused key given in OTTY is replaced with
-    /// an `AskKey` need; one of an agent, where the agent keeps it.
+    /// entry or a database. A refused key given in OTTY is asked for again
+    /// under its slot; one of an agent is replaced where the agent keeps
+    /// it.
     pub fn is_given_in_otty(&self) -> Result<bool, HostError> {
         #[cfg(target_arch = "wasm32")]
         {

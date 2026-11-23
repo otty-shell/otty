@@ -265,8 +265,8 @@ impl TestHost {
         self.state.borrow_mut().add_key(value.to_string())
     }
 
-    /// A handle to the made-up key `value` the user gave in OTTY: the key
-    /// of an account added by hand, or one given for an `AskKey` slot.
+    /// A handle to the made-up key `value` the user gave in OTTY for an
+    /// `AskKey` slot.
     pub fn given_key(&self, value: &str) -> Key {
         self.state.borrow_mut().add_given_key(value.to_string())
     }

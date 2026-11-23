@@ -21,8 +21,8 @@ Anthropic refused the one given.
 Its provider part `anthropic` reads the numbers of Anthropic accounts
 any way it can, with the handles OTTY gives it: the limits of a Claude
 login (and its extra usage) from Anthropic's usage request, whichever
-agent keeps the login, and the cost report of an organization with an
-admin key added by hand, both from `api.anthropic.com`. When the
+agent keeps the login, and the cost report of an organization with the
+admin key the user gives for it, both from `api.anthropic.com`. When the
 login's token is not at its place, as when Claude Code keeps it
 elsewhere, or the server gives no answer, it reads the limits Claude
 Code itself shows, in a Claude Code profile OTTY found the login in: it
