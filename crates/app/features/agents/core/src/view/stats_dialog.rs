@@ -148,13 +148,10 @@ mod tests {
 
     fn session(usage: UsageBlockViewModel) -> StatsDialogViewModel {
         dialog(StatsBodyViewModel::Session(SessionStatsViewModel {
-            facts: vec![
-                FactViewModel::new("Started", "Nov 16, 2026, 10:00".into()),
-                FactViewModel::new(
-                    "Account",
-                    String::from("OpenAI · you@example.com"),
-                ),
-            ],
+            facts: vec![FactViewModel::new(
+                "Started",
+                "Nov 16, 2026, 10:00".into(),
+            )],
             limits: vec![FactViewModel::new(
                 "5 hours",
                 String::from("12 % → 31 %"),
@@ -223,27 +220,26 @@ mod tests {
         assert_eq!(intents, vec![AgentsIntent::CloseStats]);
     }
 
-    /// Spec 2026-11-19, Decision 6: the session popup has its facts with
-    /// the Account line, its usage windows and the usage block with By
-    /// model | By account, and no By project or By session.
+    /// Spec 2026-11-19, Decision 6: the session popup has its facts, its
+    /// usage windows and the usage block with By model, and no By project
+    /// or By session. Spec 2026-11-23, Decision 1: no Account line and no
+    /// By account.
     #[test]
-    fn a_session_shows_its_facts_limits_and_usage_by_model_or_account() {
+    fn a_session_shows_its_facts_limits_and_usage_by_model() {
         let vm = session(popup_usage(&UsageTab::SESSION_POPUP, None, None));
 
         let labels = [
             "Started",
             "Nov 16, 2026, 10:00",
-            "Account",
-            "OpenAI · you@example.com",
             i18n::t(Key::AgentsStatsLimits),
             "12 % → 31 %",
             i18n::t(Key::AgentsUsage),
             i18n::t(Key::AgentsTopByModel),
-            i18n::t(Key::AgentsByAccount),
             "gpt-5.5-codex",
         ];
         assert_eq!(shown(vm.clone(), &labels), labels.map(String::from));
-        assert!(shown(vm, &[i18n::t(Key::AgentsTopByProject)]).is_empty());
+        let gone = [i18n::t(Key::AgentsTopByProject), "Account", "By account"];
+        assert!(shown(vm, &gone).is_empty());
     }
 
     #[test]
@@ -298,7 +294,7 @@ mod tests {
     /// as the kit's tests of `NoteSelect` check).
     #[test]
     fn money_off_in_the_popup_has_no_note_and_its_option_sends_nothing() {
-        let reason = "Paid by a subscription";
+        let reason = "The list prices are not read yet";
         let closed =
             session(popup_usage(&UsageTab::SESSION_POPUP, None, Some(reason)));
         let open = session(popup_usage(

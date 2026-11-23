@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use otty_agents::{Account, Profile, Project};
+use otty_agents::{Profile, Project};
 use otty_app_domain::folder_path::{folder_name, tilde_path};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
@@ -8,11 +8,9 @@ use otty_ui_kit::components::data_table::{ColumnSort, TableCell, TableColumn};
 use otty_ui_kit::components::tag_search::{Suggestion, TagKey, TagSearch};
 
 use super::super::menus::AgentsMenu;
-use super::super::profile_state::ProfileState;
 use super::super::sessions_table::{self, TableSession};
 use super::super::state::AgentsState;
 use super::super::stats_dialog::can_show_project_stats;
-use super::account_chip::{AccountChipViewModel, account_chip};
 use super::age::age_text;
 use super::entry_icon::EntryIcon;
 use super::reset_time::date_time_text;
@@ -36,8 +34,8 @@ pub(crate) struct ProjectViewModel<'a> {
     /// Whether Project statistics can open: a profile with a session in
     /// the project reads statistics, even while the folder is gone.
     pub(crate) can_show_stats: bool,
-    /// Project info: the path, the profiles and accounts, the sessions and
-    /// the first and the last activity.
+    /// Project info: the path, the profiles, the sessions and the first
+    /// and the last activity.
     pub(crate) info: ProjectInfoViewModel,
     /// The search of this project: the field's text and the tags.
     pub(crate) search: &'a TagSearch,
@@ -116,16 +114,15 @@ impl<'a> ProjectViewModel<'a> {
 }
 
 /// Project info: the folder path, a chip for each profile with a session
-/// in the project and for each account those profiles pay through, how
-/// many sessions there are and when the first and the last one changed.
+/// in the project, how many sessions there are and when the first and the
+/// last one changed. No account: nothing links a profile to an account
+/// (spec 2026-11-23-accounts-apart-from-profiles, Decision 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProjectInfoViewModel {
     /// The whole folder path, the home folder written as `~`.
     pub(crate) path: String,
     /// The profiles with a session in the project, in their order.
     pub(crate) profiles: Vec<ProjectProfileViewModel>,
-    /// The chips of the accounts those profiles pay through, each once.
-    pub(crate) accounts: Vec<AccountChipViewModel>,
     /// Sessions, First activity and Last activity.
     pub(crate) facts: Vec<FactViewModel>,
 }
@@ -138,7 +135,7 @@ impl ProjectInfoViewModel {
         let home = state.env().home();
         let time_zone = state.profiles().time_zone();
         let sessions = project.sessions();
-        let shown: Vec<&ProfileState> = state
+        let profiles = state
             .profiles()
             .shown()
             .iter()
@@ -147,23 +144,13 @@ impl ProjectInfoViewModel {
                     .iter()
                     .any(|entry| entry.profile() == shown.profile())
             })
-            .collect();
-
-        let profiles = shown
-            .iter()
             .map(|shown| ProjectProfileViewModel {
                 profile: shown.profile().clone(),
                 icon: state.agent_icon(shown.profile().agent()),
                 name: shown.profile().name().to_string(),
             })
             .collect();
-        let accounts = state
-            .profiles()
-            .accounts()
-            .into_iter()
-            .filter(|account| is_paid_through(account, &shown))
-            .map(|account| account_chip(state, &account))
-            .collect();
+
         let changes = sessions.iter().map(|entry| entry.session().changed_at());
         let first = changes.clone().min();
         let last = changes.max();
@@ -177,7 +164,6 @@ impl ProjectInfoViewModel {
         Self {
             path: tilde_path(project.folder(), home),
             profiles,
-            accounts,
             facts: vec![
                 FactViewModel::new(
                     i18n::t(Key::AgentsSessions),
@@ -247,16 +233,6 @@ fn cells(
         TableCell::muted(session.agent_name()),
         TableCell::muted(age_text(now, session.changed_at())),
     ]
-}
-
-/// Whether one of the profiles `shown` pays through `account`.
-fn is_paid_through(account: &Account, shown: &[&ProfileState]) -> bool {
-    shown.iter().any(|shown| {
-        shown
-            .accounts()
-            .iter()
-            .any(|found| found.is_same_account(account))
-    })
 }
 
 #[cfg(test)]
@@ -368,10 +344,11 @@ mod tests {
     }
 
     /// Spec 2026-11-19, Decision 6: Project info has the path, the
-    /// profiles with a session in the project, the accounts they pay
-    /// through, the sessions and the first and the last activity.
+    /// profiles with a session in the project, the sessions and the first
+    /// and the last activity. Spec 2026-11-23, Decision 1: it names no
+    /// account, though its profiles are logged in to some.
     #[test]
-    fn project_info_names_its_profiles_accounts_sessions_and_activity() {
+    fn project_info_names_its_profiles_sessions_and_activity() {
         let mut state = with_accounts(
             &[
                 (claude(), connected(), vec![organization()]),
@@ -420,20 +397,6 @@ mod tests {
                     name: String::from("Codex"),
                 },
             ]
-        );
-        let accounts: Vec<&str> = info
-            .accounts
-            .iter()
-            .map(|chip| chip.name.as_str())
-            .collect();
-        assert_eq!(accounts, ["dev@example.com", "you@example.com"]);
-        assert_eq!(
-            info.accounts,
-            [
-                account_chip(&state, &organization()),
-                account_chip(&state, &chatgpt_login())
-            ],
-            "a project shows the same chips as a profile"
         );
         let utc = jiff::tz::TimeZone::UTC;
         let when = |seconds| date_time_text(at(seconds), Some(&utc));

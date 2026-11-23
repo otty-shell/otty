@@ -1,6 +1,8 @@
 //! The page of one account in the main area (spec 2026-11-19, Decisions 5
-//! and 6): what it needs from the user, its numbers block, the profiles
-//! that use it and its facts. No budget, and no line under the title.
+//! and 6): what it needs from the user, its numbers block and its facts.
+//! No budget, no line under the title, and no profiles: nothing links an
+//! account to a profile (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 1).
 //! Where a number comes from is the plugin's business (issue 19 of spec
 //! 2026-11-19-agent-plugins): the page tells only how old the numbers are,
 //! what to do, and which plugin reads them.
@@ -18,7 +20,6 @@ use super::entry_icon::EntryIcon;
 use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
 use super::read_by::account_read_by;
-use super::used_by::{UsedByViewModel, used_by};
 use super::{FactViewModel, UNKNOWN};
 
 /// The page of one account.
@@ -37,8 +38,6 @@ pub(crate) struct AccountPageViewModel {
     pub(crate) needs: Vec<NeedViewModel>,
     /// The Limits, Credits or Money block, once anything is known.
     pub(crate) numbers: Option<AccountNumbersViewModel>,
-    /// The profiles that use the account.
-    pub(crate) used_by: Vec<UsedByViewModel>,
     /// Account info: Provider, Email or Key, Plan, Found in and Read by.
     pub(crate) info: Vec<FactViewModel>,
     /// For an account the user hid, the line under the title that says
@@ -64,7 +63,6 @@ impl AccountPageViewModel {
             icon: state.provider_icon(account.provider()),
             needs: Vec::new(),
             numbers: None,
-            used_by: used_by(state, &account),
             info: info(state, &account),
             hidden_note: None,
             account,
@@ -222,8 +220,10 @@ mod tests {
         AccountPageViewModel::of(state, found, now())
     }
 
+    /// Spec 2026-11-23, Decision 1: the page of a login two profiles use
+    /// shows its numbers and its info, and no Used by.
     #[test]
-    fn a_shared_login_shows_its_numbers_users_and_info() {
+    fn a_shared_login_shows_its_numbers_and_info() {
         let state = shared_chatgpt();
 
         let page = page_of(&state, chatgpt_login());
@@ -235,9 +235,6 @@ mod tests {
             page.numbers,
             Some(AccountNumbersViewModel::Limits(_))
         ));
-        let users: Vec<&str> =
-            page.used_by.iter().map(|chip| chip.name.as_str()).collect();
-        assert_eq!(users, ["Codex", "Codex · Work"]);
         assert_eq!(
             page.info,
             vec![

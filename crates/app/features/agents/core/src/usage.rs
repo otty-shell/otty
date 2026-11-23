@@ -44,7 +44,7 @@ pub enum UsageMeasure {
     /// The tokens; chosen at start.
     #[default]
     Tokens,
-    /// The money the tokens cost at the list prices.
+    /// The money the tokens cost at API prices.
     Money,
 }
 
@@ -73,21 +73,17 @@ pub enum UsageTab {
     /// The models that spent the tokens; chosen at start.
     #[default]
     ByModel,
-    /// The accounts that paid for the tokens.
-    ByAccount,
 }
 
 impl UsageTab {
     /// The tabs of a profile page, in the order they show.
-    pub(crate) const PROFILE_PAGE: [Self; 3] =
-        [Self::ByProject, Self::ByModel, Self::ByAccount];
+    pub(crate) const PROFILE_PAGE: [Self; 2] = [Self::ByProject, Self::ByModel];
     /// The tabs of the statistics popup of a project.
-    pub(crate) const PROJECT_POPUP: [Self; 3] =
-        [Self::ByProfile, Self::ByModel, Self::ByAccount];
+    pub(crate) const PROJECT_POPUP: [Self; 2] =
+        [Self::ByProfile, Self::ByModel];
     /// The tabs of the statistics popup of a session: it has one project
     /// and one profile.
-    pub(crate) const SESSION_POPUP: [Self; 2] =
-        [Self::ByModel, Self::ByAccount];
+    pub(crate) const SESSION_POPUP: [Self; 1] = [Self::ByModel];
 }
 
 impl fmt::Display for UsageTab {
@@ -96,7 +92,6 @@ impl fmt::Display for UsageTab {
             Self::ByProject => Key::AgentsTopByProject,
             Self::ByProfile => Key::AgentsStatsByProfile,
             Self::ByModel => Key::AgentsTopByModel,
-            Self::ByAccount => Key::AgentsByAccount,
         };
 
         formatter.write_str(i18n::t(key))
@@ -236,21 +231,19 @@ mod tests {
 
     /// Spec 2026-11-19, Decision 6: the profile page has By project, the
     /// project popup By profile, the session popup neither, and no block
-    /// has By session.
+    /// has By session. Spec 2026-11-23, Decision 1: no block has By
+    /// account, since nothing links a profile to an account.
     #[test]
     fn each_block_has_its_own_tabs() {
         assert_eq!(
             UsageTab::PROFILE_PAGE,
-            [UsageTab::ByProject, UsageTab::ByModel, UsageTab::ByAccount]
+            [UsageTab::ByProject, UsageTab::ByModel]
         );
         assert_eq!(
             UsageTab::PROJECT_POPUP,
-            [UsageTab::ByProfile, UsageTab::ByModel, UsageTab::ByAccount]
+            [UsageTab::ByProfile, UsageTab::ByModel]
         );
-        assert_eq!(
-            UsageTab::SESSION_POPUP,
-            [UsageTab::ByModel, UsageTab::ByAccount]
-        );
+        assert_eq!(UsageTab::SESSION_POPUP, [UsageTab::ByModel]);
         assert_eq!(
             UsageTab::ByProfile.to_string(),
             i18n::t(Key::AgentsStatsByProfile)

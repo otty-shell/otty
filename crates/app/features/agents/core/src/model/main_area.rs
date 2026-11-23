@@ -363,23 +363,4 @@ mod tests {
         assert!(page.numbers.is_none());
         assert!(page.needs.is_empty());
     }
-
-    /// A hidden account leaves the "Pays through" chips of its profiles.
-    #[test]
-    fn a_hidden_account_leaves_the_chips_of_its_profile() {
-        let saved = otty_agents::SavedProfiles::default()
-            .with_account_hidden(&chatgpt_login(), true);
-        let mut state = with_accounts(
-            &[(codex(), connected(), vec![chatgpt_login()])],
-            saved,
-        );
-        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
-
-        let vm = MainAreaViewModel::from_state(&state, now());
-
-        let MainAreaViewModel::Profile(page) = vm else {
-            panic!("the page of the profile shows: {vm:?}");
-        };
-        assert!(page.pays_through.is_empty());
-    }
 }

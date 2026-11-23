@@ -371,8 +371,8 @@ fn need_in(failure: Option<&SourceError>) -> Option<&PartNeed> {
 
 /// The need of an account no installed plugin reads (spec
 /// 2026-11-19-agent-plugins, "What the UI shows"; issue 29): OTTY lists it
-/// by its provider or host with its tokens and estimate, but reads none
-/// of its own numbers. Add plugin… opens Plugins mode with the URL field empty.
+/// by its provider or host, but reads none of its own numbers. Add
+/// plugin… opens Plugins mode with the URL field empty.
 /// An installed part that is off and would serve it asks to be turned on
 /// instead.
 fn no_provider_need(
@@ -1385,8 +1385,7 @@ mod tests {
     }
 
     /// Issue 29: a login no installed plugin reads is still an account,
-    /// with one line that says so; its tokens and their estimate still
-    /// count.
+    /// with one line that says so.
     #[test]
     fn a_login_no_plugin_reads_is_shown_with_a_line_that_says_so() {
         let registry = std::sync::Arc::new(

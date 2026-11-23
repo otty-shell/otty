@@ -1,7 +1,7 @@
 //! The project screen of Agents mode: the title row with the folder name,
 //! Project statistics, Open the folder in a terminal tab and New session;
-//! Project info with the path, the profiles and accounts as chips, the
-//! sessions and the first and the last activity; the toolbar with the
+//! Project info with the path, the profiles as chips, the sessions and the
+//! first and the last activity; the toolbar with the
 //! search over the sessions and Refresh; the tags; the notice of a gone
 //! folder; the sessions table, whose Profile cells open their profile;
 //! and the line that says how to continue a session (spec Decision 6,
@@ -143,9 +143,9 @@ fn title_row<'a>(
         .into()
 }
 
-/// Project info: the path, the chips of the profiles and of the accounts,
-/// which open them, then the sessions and the first and the last
-/// activity, in the look of a list of facts.
+/// Project info: the path, the chips of the profiles, which open them,
+/// then the sessions and the first and the last activity, in the look of
+/// a list of facts.
 fn info<'a>(
     vm: ProjectInfoViewModel,
     palette: &UiPalette,
@@ -157,13 +157,6 @@ fn info<'a>(
         info = info.push(blocks::keyed(
             i18n::t(Key::AgentsSectionProfiles),
             profile_chips(vm.profiles, palette),
-            palette,
-        ));
-    }
-    if !vm.accounts.is_empty() {
-        info = info.push(blocks::keyed(
-            i18n::t(Key::AgentsSectionAccounts),
-            chips::account_chips(vm.accounts, palette),
             palette,
         ));
     }
@@ -182,8 +175,6 @@ fn profile_chips<'a>(
         .map(|chip| Chip {
             icon: chip.icon,
             name: chip.name,
-            note: None,
-            tip: None,
             on_press: AgentsIntent::SelectProfile(chip.profile),
         })
         .collect();
@@ -261,12 +252,10 @@ mod tests {
     use otty_ui_kit::size;
 
     use super::*;
-    use crate::model::{
-        AccountChipViewModel, FactViewModel, ProjectViewModel, session_columns,
-    };
+    use crate::model::{FactViewModel, ProjectViewModel, session_columns};
     use crate::session_sort::newest_first;
     use crate::sessions_table;
-    use crate::testing::{chatgpt_login, codex, right_click};
+    use crate::testing::{codex, right_click};
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 900.0;
@@ -315,7 +304,7 @@ mod tests {
         )
     }
 
-    /// Project info with the profile Codex · Main and its ChatGPT login.
+    /// Project info with the profile Codex · Main.
     fn info() -> ProjectInfoViewModel {
         ProjectInfoViewModel {
             path: String::from("~/work/otty"),
@@ -323,13 +312,6 @@ mod tests {
                 profile: codex(),
                 icon: crate::testing::agent_icon("codex"),
                 name: String::from("Codex · Main"),
-            }],
-            accounts: vec![AccountChipViewModel {
-                account: chatgpt_login(),
-                icon: crate::testing::provider_icon("openai"),
-                name: String::from("you@example.com"),
-                full_name: String::from("OpenAI · you@example.com"),
-                number: None,
             }],
             facts: vec![
                 FactViewModel::new("Sessions", String::from("2")),
@@ -442,7 +424,8 @@ mod tests {
     }
 
     /// Spec 2026-11-19, Decision 6: Project info has the path, the
-    /// profiles and the accounts as chips that open them, and the facts.
+    /// profiles as chips that open them, and the facts. Spec 2026-11-23,
+    /// Decision 1: it has no accounts.
     #[test]
     fn project_info_shows_the_path_its_chips_and_its_facts() {
         let search = TagSearch::default();
@@ -453,19 +436,17 @@ mod tests {
             i18n::t(Key::AgentsFieldPath),
             "~/work/otty",
             i18n::t(Key::AgentsSectionProfiles),
-            i18n::t(Key::AgentsSectionAccounts),
             "Sessions",
             "Nov 12, 2026, 09:00",
         ] {
             assert!(ui.find(label).is_ok(), "{label:?} should show");
         }
+        assert!(ui.find(i18n::t(Key::AgentsSectionAccounts)).is_err());
         drop(ui);
 
         let profile = sent(vm(&search, false), "Codex · Main");
-        let account = sent(vm(&search, false), "you@example.com");
 
         assert_eq!(profile, vec![AgentsIntent::SelectProfile(codex())]);
-        assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt_login())]);
     }
 
     /// Owner, issue 38: the path of the folder shows once, in Project

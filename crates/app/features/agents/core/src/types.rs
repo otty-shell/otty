@@ -279,7 +279,7 @@ pub struct LoadedAccountNumbers {
     pub read_at: SystemTime,
 }
 
-/// The answer of the read of the list prices of the money estimate (spec
+/// The answer of the read of the list prices of the money at API prices (spec
 /// Decision 16).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedPrices {

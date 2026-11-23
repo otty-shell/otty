@@ -517,9 +517,11 @@ mod tests {
                 AgentsOutcome::LoadLimits(claude()),
                 AgentsOutcome::LoadSpend(claude()),
                 AgentsOutcome::LoadSpend(codex()),
+                AgentsOutcome::LoadPrices { fetch_again: false },
             ],
             "only a connected profile has its limits read, every profile \
-             with a config folder its tokens counted"
+             with a config folder its tokens counted, and the prices are \
+             read for the money of every profile"
         );
         assert!(state.profiles().is_loaded());
         assert!(!state.profiles().is_loading());

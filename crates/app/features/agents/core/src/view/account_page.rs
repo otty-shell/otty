@@ -2,8 +2,9 @@
 //! and 7): one column like the profile page, its header with the provider
 //! icon, the name, Refresh and "⋯", then for a hidden account a line that
 //! says so, "Needs from you" as a to-do list when there is anything, the
-//! Limits, Credits or Money block, "Used by" as chips that open their
-//! profile, and "Account info" with the plugin that reads the account.
+//! Limits, Credits or Money block, and "Account info" with the plugin that
+//! reads the account. No profiles: nothing links an account to a profile
+//! (spec 2026-11-23-accounts-apart-from-profiles, Decision 1).
 
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
@@ -12,10 +13,7 @@ use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{
-    AccountNumbersViewModel, AccountPageViewModel, UsedByViewModel,
-};
-use super::chips::{self, Chip};
+use super::super::model::{AccountNumbersViewModel, AccountPageViewModel};
 use super::profile_page::{PAGE_GAP, PAGE_PADDING_X};
 use super::{blocks, limits, money, needs, overview};
 
@@ -46,8 +44,7 @@ pub(crate) fn view<'a>(
 }
 
 /// The blocks under the header, in their order: the line of a hidden
-/// account, the needs when there are any, the numbers, the profiles that
-/// use the account and its facts.
+/// account, the needs when there are any, the numbers and its facts.
 fn page_blocks<'a>(
     vm: AccountPageViewModel,
     palette: &UiPalette,
@@ -66,13 +63,6 @@ fn page_blocks<'a>(
     }
     if let Some(numbers) = vm.numbers {
         body = body.push(numbers_block(numbers, palette));
-    }
-    if !vm.used_by.is_empty() {
-        body = body.push(blocks::titled(
-            i18n::t(Key::AgentsUsedBy),
-            used_by_chips(vm.used_by, palette),
-            palette,
-        ));
     }
     body.push(blocks::titled(
         i18n::t(Key::AgentsAccountInfo),
@@ -97,28 +87,6 @@ fn numbers_block<'a>(
     }
 }
 
-/// The chips of the profiles that use the account: the agent icon, the
-/// profile name and what it sent through the account; a press opens the
-/// profile.
-fn used_by_chips<'a>(
-    used_by: Vec<UsedByViewModel>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let muted = palette.text_muted();
-    let chips = used_by
-        .into_iter()
-        .map(|chip| Chip {
-            icon: chip.icon,
-            name: chip.name,
-            note: chip.usage.map(|usage| (usage, muted)),
-            tip: None,
-            on_press: AgentsIntent::SelectProfile(chip.profile),
-        })
-        .collect();
-
-    chips::view(chips, palette)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -126,8 +94,8 @@ mod tests {
     use iced::widget::container;
     use iced_test::simulator;
     use otty_agents::{
-        Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        Profile, ProviderRef,
+        Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
+        ProviderRef,
     };
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
@@ -136,17 +104,11 @@ mod tests {
     use crate::model::{
         AccountNumbersViewModel, FactViewModel, LimitsViewModel,
         MoneyViewModel, NeedFixViewModel, NeedViewModel, UsageRowViewModel,
-        UsedByViewModel,
     };
     use crate::need::NeedAction;
-    use crate::testing::estimated_money;
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 1000.0;
-
-    fn codex(name: &str, folder: &str) -> Profile {
-        Profile::default_for(AgentId::new("codex"), name, PathBuf::from(folder))
-    }
 
     fn chatgpt() -> Account {
         Account::new(
@@ -177,20 +139,6 @@ mod tests {
                 recorded: None,
                 failure: None,
             })),
-            used_by: vec![
-                UsedByViewModel {
-                    profile: codex("Codex", "/home/user/.codex"),
-                    icon: crate::testing::agent_icon("codex"),
-                    name: String::from("Codex"),
-                    usage: Some(String::from("1.2M today")),
-                },
-                UsedByViewModel {
-                    profile: codex("Codex · Work", "/home/user/.codex-work"),
-                    icon: crate::testing::agent_icon("codex"),
-                    name: String::from("Codex · Work"),
-                    usage: None,
-                },
-            ],
             info: vec![
                 FactViewModel::new(
                     i18n::t(Key::AgentsColumnProvider),
@@ -243,9 +191,6 @@ mod tests {
             i18n::t(Key::AgentsNumberLimits),
             "Updated 2 min ago",
             "42 % used",
-            i18n::t(Key::AgentsUsedBy),
-            "Codex · Work",
-            "1.2M today",
             i18n::t(Key::AgentsAccountInfo),
             "~/.codex",
         ] {
@@ -253,19 +198,6 @@ mod tests {
         }
         assert!(ui.find(i18n::t(Key::AgentsNeedsFromYou)).is_err());
         assert!(ui.find(i18n::t(Key::AgentsUsage)).is_err());
-    }
-
-    #[test]
-    fn a_chip_opens_its_profile() {
-        let intents = sent(page(), "Codex · Work");
-
-        assert_eq!(
-            intents,
-            vec![AgentsIntent::SelectProfile(codex(
-                "Codex · Work",
-                "/home/user/.codex-work"
-            ))]
-        );
     }
 
     #[test]
@@ -298,8 +230,7 @@ mod tests {
             numbers: Some(AccountNumbersViewModel::Money(MoneyViewModel {
                 updated: None,
                 rows: Vec::new(),
-                spent: Some(estimated_money()),
-                note: None,
+                spent: Some(String::from("$42.00")),
                 is_stale: false,
                 failure: None,
             })),
@@ -313,9 +244,11 @@ mod tests {
             .expect("the block is named Money");
         ui.find(i18n::t(Key::AgentsSpentThisMonth))
             .expect("the row shows");
-        ui.find("$1.25").expect("the estimate shows");
-        ui.find(i18n::t(Key::AgentsEstimateMark))
-            .expect("the mark of the estimate shows");
+        ui.find("$42.00").expect("the bill shows");
+        assert!(
+            ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err(),
+            "the money of an account is as its provider told it"
+        );
     }
 
     /// Spec 2026-11-19, Decision 7: "⋯" ends the title line and opens the

@@ -2,30 +2,26 @@
 //! 2026-11-19, Decision 6): the title with its line and two drop-downs at
 //! its right, the bars in the look of the kit `DayBars`, the tabs of the
 //! block and the table of the rows of the tab. Pressing a row, or the
-//! pointer over it, lights its part of every bar. Money at the list prices
-//! has the mark "estimate, list prices" under the table, as the Money
-//! block of an account page has under its sum. On a page a drop-down
+//! pointer over it, lights its part of every bar. Money at API prices has
+//! the mark "at API prices" under the table. On a page a drop-down
 //! opens the menu of the mode at the pointer; in a popup, over which no
 //! menu shows, its list opens under it.
 
 use iced::widget::{Column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
 use otty_app_i18n::{self as i18n, Key};
-use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
 use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
-use otty_ui_kit::components::segmented::segmented_with_disabled;
-use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    AccountLabel, UsageBlockViewModel, UsageListsViewModel,
-    UsageTableRowViewModel,
+    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
 };
 use super::super::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
 use super::{blocks, money};
@@ -48,13 +44,15 @@ pub(super) fn view<'a>(
         .spacing(blocks::TITLE_GAP)
         .push(title_row(&vm, palette));
     if !vm.bars.is_empty() {
-        block = block.push(bars(&vm, palette)).push(tabs(&vm, palette));
-        if let Some(reason) = &vm.account_reason {
-            let line =
-                i18n::filled(Key::TplAgentsByAccountOff, &[("reason", reason)]);
-            block = block.push(small_text(line, palette.text_muted()));
-        }
-        block = block.push(table(&vm, palette));
+        block = block
+            .push(bars(&vm, palette))
+            .push(segmented(
+                &vm.tabs,
+                &vm.tab,
+                AgentsIntent::ShowUsageTab,
+                palette,
+            ))
+            .push(table(&vm, palette));
     }
     if let Some(mark) = vm
         .money_kind
@@ -64,9 +62,7 @@ pub(super) fn view<'a>(
         block = block.push(mark);
     }
 
-    block
-        .push(blocks::notes(vm.notes, vm.failure, palette))
-        .into()
+    block.push(blocks::notes(None, vm.failure, palette)).into()
 }
 
 /// The title with the total of the period, or the time of the last good
@@ -202,27 +198,6 @@ fn bars<'a>(
     bars.into()
 }
 
-/// The tabs; By account is off while the agent does not tell the accounts
-/// apart.
-fn tabs<'a>(
-    vm: &UsageBlockViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let disabled: &[UsageTab] = if vm.account_reason.is_some() {
-        &[UsageTab::ByAccount]
-    } else {
-        &[]
-    };
-
-    segmented_with_disabled(
-        &vm.tabs,
-        disabled,
-        &vm.tab,
-        AgentsIntent::ShowUsageTab,
-        palette,
-    )
-}
-
 /// The table of the rows, as tall as its rows. A press on a row picks it;
 /// the pointer over a row lights it.
 fn table<'a>(
@@ -264,7 +239,6 @@ fn columns(tab: UsageTab, measure: UsageMeasure) -> Vec<TableColumn> {
         UsageTab::ByProject => Key::AgentsColumnProject,
         UsageTab::ByProfile => Key::AgentsProfile,
         UsageTab::ByModel => Key::AgentsColumnModel,
-        UsageTab::ByAccount => Key::AgentsFieldAccount,
     };
 
     vec![
@@ -289,9 +263,8 @@ fn cells(
     tab: UsageTab,
     is_stale: bool,
 ) -> Vec<TableCell> {
-    let name = match (tab, &row.account) {
-        (UsageTab::ByModel, _) => TableCell::mono(row.name.clone()),
-        (_, Some(account)) => account_cell(account),
+    let name = match tab {
+        UsageTab::ByModel => TableCell::mono(row.name.clone()),
         _ => TableCell::plain(row.name.clone()),
     };
     let number = |value: &str| {
@@ -303,18 +276,6 @@ fn cells(
     };
 
     vec![name, number(&row.value), number(&row.share)]
-}
-
-/// The name cell of a row of By account, as the chips of an account show
-/// it: the provider's logo and the short name, the whole name in the
-/// tooltip. The table draws only SVG icons, so a provider with none shows
-/// the icon of Agents mode.
-fn account_cell(account: &AccountLabel) -> TableCell {
-    TableCell::icon_text(
-        account.icon.svg_or(icons::MODE_AGENTS),
-        account.name.clone(),
-    )
-    .with_tooltip(account.full_name.clone())
 }
 
 /// The index of the row of the table at `point`, measured from the top of
@@ -346,11 +307,10 @@ mod tests {
         ui.find(label).expect("the text should show").bounds()
     }
 
-    /// Owner, 2026-11-21: one mark everywhere. Money at the list prices
-    /// carries the mark of the account page under the sums of the table,
-    /// at the right end, and no note of an estimate.
+    /// Spec 2026-11-23, Decision 3: money at API prices carries the mark
+    /// "at API prices" under the sums of the table, at the right end.
     #[test]
-    fn an_estimate_is_marked_under_the_table_of_its_sums() {
+    fn money_at_api_prices_is_marked_under_the_table_of_its_sums() {
         let themes = ThemeManager::new();
         let vm = UsageBlockViewModel {
             measure: UsageMeasure::Money,
@@ -361,7 +321,7 @@ mod tests {
             simulator(container(view(vm, themes.current().ui())).width(WIDTH));
 
         let last_row = at(&mut ui, "gpt-5.4");
-        let mark = at(&mut ui, i18n::t(Key::AgentsEstimateMark));
+        let mark = at(&mut ui, i18n::t(Key::AgentsApiPricesMark));
 
         assert!(mark.y >= last_row.y + last_row.height, "{mark:?}");
         assert!(
@@ -370,31 +330,19 @@ mod tests {
         );
     }
 
-    /// Owner, 2026-11-23: a row of By account names its account by the
-    /// login alone, as its chips do; the whole name is its tooltip.
+    /// Spec 2026-11-23, Decision 1: the tabs have no By account.
     #[test]
-    fn a_row_by_account_shows_the_login_and_the_whole_name_on_hover() {
+    fn the_tabs_have_no_by_account() {
         let themes = ThemeManager::new();
-        let row = UsageTableRowViewModel {
-            name: String::from("Anthropic · dev@example.com"),
-            account: Some(crate::model::AccountLabel {
-                icon: crate::testing::provider_icon("anthropic"),
-                name: String::from("dev@example.com"),
-                full_name: String::from("Anthropic · dev@example.com"),
-            }),
-            value: String::from("50"),
-            share: String::from("100 %"),
-        };
-        let vm = UsageBlockViewModel {
-            tab: UsageTab::ByAccount,
-            rows: vec![row],
-            ..usage_block()
-        };
-        let mut ui =
-            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+        let mut ui = simulator(
+            container(view(usage_block(), themes.current().ui())).width(WIDTH),
+        );
 
-        ui.find("dev@example.com").expect("the login shows");
-        assert!(ui.find("Anthropic · dev@example.com").is_err());
+        ui.find(i18n::t(Key::AgentsTopByProject))
+            .expect("By project shows");
+        ui.find(i18n::t(Key::AgentsTopByModel))
+            .expect("By model shows");
+        assert!(ui.find("By account").is_err());
     }
 
     #[test]
@@ -404,7 +352,7 @@ mod tests {
             container(view(usage_block(), themes.current().ui())).width(WIDTH),
         );
 
-        assert!(ui.find(i18n::t(Key::AgentsEstimateMark)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err());
     }
 
     /// The cost the agent wrote is exact: the block shows no mark.
@@ -419,6 +367,6 @@ mod tests {
         let mut ui =
             simulator(container(view(vm, themes.current().ui())).width(WIDTH));
 
-        assert!(ui.find(i18n::t(Key::AgentsEstimateMark)).is_err());
+        assert!(ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err());
     }
 }

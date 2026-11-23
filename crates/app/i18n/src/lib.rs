@@ -1379,15 +1379,15 @@ mod tests {
     }
 
     /// The blocks of an account are named after what they show, and money
-    /// estimated at the list prices says so with a short mark (issue 19 of
-    /// spec 2026-11-19-agent-plugins).
+    /// of tokens at the list prices says so with a short mark (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 3).
     #[test]
-    fn every_number_has_a_name_and_an_estimate_its_mark() {
+    fn every_number_has_a_name_and_money_at_api_prices_its_mark() {
         let texts = [
             (Key::AgentsNumberLimits, "Limits"),
             (Key::AgentsTokens, "Tokens"),
             (Key::AgentsNumberMoney, "Money"),
-            (Key::AgentsEstimateMark, "estimate, list prices"),
+            (Key::AgentsApiPricesMark, "at API prices"),
         ];
 
         for (key, english) in texts {

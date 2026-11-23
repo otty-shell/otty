@@ -29,7 +29,7 @@ use super::super::model::{
 use super::profile_page::{
     BUTTON_GAP, HEADER_GAP, LOGO_SIZE, PAGE_GAP, PAGE_PADDING_X,
 };
-use super::{blocks, entry_icon, money, needs};
+use super::{blocks, entry_icon, needs};
 
 /// Render the All accounts page.
 pub(crate) fn all_accounts<'a>(
@@ -149,8 +149,7 @@ fn accounts_table<'a>(
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
-        let cell = number_cell(row.now.text(), row.now.tone(), row.is_hidden);
-        let now = money::cell_with_tip(cell, row.now.tip());
+        let now = number_cell(row.now.text(), row.now.tone(), row.is_hidden);
         table = table.row_without_menu(vec![
             TableCell::link(row.name),
             TableCell::plain(row.provider),

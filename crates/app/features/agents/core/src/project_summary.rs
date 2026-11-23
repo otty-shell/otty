@@ -1,69 +1,26 @@
 //! What the tokens in the statistics dialog cost, and the statistics of
 //! the selected project made from what the files of each profile told:
-//! only a profile that pays with an API key has a cost (spec Decisions 9
-//! and 14).
+//! the tokens of every profile cost their money at API prices, on a
+//! subscription too (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 3).
 
-use otty_agents::{
-    ModelTokens, MoneyTotal, PriceTable, Profile, ProjectStats, Registry,
-};
+use otty_agents::{MoneyTotal, Profile, ProjectStats};
 
 use super::state::AgentsState;
 
-/// What the tokens of a profile, or of several, cost in the statistics
-/// dialog: only a profile that pays with an API key has a cost (spec
-/// Decision 9), and the Cost column shows while one does.
+/// What the tokens of the profiles of a project cost in the statistics
+/// dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StatsCost {
-    /// No cost: the profile does not pay per token.
-    Unpaid,
-    /// The profile pays per token, but no prices were read.
+    /// No prices were read.
     NoPrices,
-    /// What the tokens cost at the list prices.
+    /// What the tokens cost at API prices, or as the agent wrote it.
     Priced(MoneyTotal),
-}
-
-impl StatsCost {
-    /// Whether there is a cost to show: the table has a Cost column.
-    pub(crate) fn is_paid(&self) -> bool {
-        !matches!(self, Self::Unpaid)
-    }
-
-    /// The cost of `models` of a profile that `pays_per_token`, at
-    /// `prices` for who served them, as `registry` names it.
-    pub(crate) fn of(
-        models: &[ModelTokens],
-        pays_per_token: bool,
-        prices: Option<&PriceTable>,
-        registry: &Registry,
-    ) -> Self {
-        if !pays_per_token {
-            return Self::Unpaid;
-        }
-
-        match prices {
-            Some(prices) => {
-                Self::Priced(MoneyTotal::of_models(models, prices, registry))
-            },
-            None => Self::NoPrices,
-        }
-    }
-
-    /// This cost and `other` together: a profile that does not pay adds
-    /// nothing.
-    fn plus(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Unpaid, cost) | (cost, Self::Unpaid) => cost,
-            (Self::Priced(one), Self::Priced(other)) => {
-                Self::Priced(one + other)
-            },
-            _ => Self::NoPrices,
-        }
-    }
 }
 
 /// The statistics of the selected project, made from what the files of
 /// each profile told: every profile together, the sessions of the project
-/// list and what the tokens of the profiles that pay per token cost.
+/// list and what the tokens of every profile cost.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProjectSummary {
     all: ProjectStats,
@@ -82,7 +39,7 @@ impl ProjectSummary {
         self.sessions
     }
 
-    /// What the tokens of the profiles that pay per token cost together.
+    /// What the tokens of every profile cost together.
     pub(crate) fn cost(&self) -> StatsCost {
         self.cost
     }
@@ -94,21 +51,23 @@ impl ProjectSummary {
         parts: &[(Profile, ProjectStats)],
     ) -> Self {
         let profiles = state.profiles();
-        let prices = profiles.prices().table();
         let project = state.selected_project();
 
-        let cost =
-            parts
-                .iter()
-                .fold(StatsCost::Unpaid, |sum, (profile, part)| {
-                    let cost = StatsCost::of(
-                        part.models(),
-                        profiles.is_api_key(profile),
-                        prices,
-                        state.registry(),
-                    );
-                    sum.plus(cost)
-                });
+        let cost = match profiles.prices().table() {
+            Some(prices) => StatsCost::Priced(
+                parts
+                    .iter()
+                    .map(|(_, part)| {
+                        MoneyTotal::of_models(
+                            part.models(),
+                            prices,
+                            state.registry(),
+                        )
+                    })
+                    .fold(MoneyTotal::default(), |sum, part| sum + part),
+            ),
+            None => StatsCost::NoPrices,
+        };
 
         Self {
             all: ProjectStats::merged(parts.iter().map(|(_, part)| part)),

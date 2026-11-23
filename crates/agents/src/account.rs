@@ -12,7 +12,6 @@ use crate::given_key::KeyRef;
 use crate::key_fingerprint::KeyFingerprint;
 use crate::provider::{ProviderEntry, ProviderRef};
 use crate::registry::Registry;
-use crate::spend::ModelTokens;
 
 /// What tells one account at a provider from another (spec Decision 2).
 ///
@@ -99,8 +98,7 @@ impl Account {
     }
 
     /// The id of the plugin whose provider part reads the account, such as
-    /// `example`; `None` when no installed plugin reads it. Its sessions
-    /// and their estimated money still count.
+    /// `example`; `None` when no installed plugin reads it.
     pub fn read_by(&self) -> Option<&str> {
         self.read_by.as_deref()
     }
@@ -259,72 +257,6 @@ impl Account {
     /// plugin reads each: the same provider and the same identity.
     pub fn is_same_login(&self, other: &Account) -> bool {
         self.provider == other.provider && self.identity == other.identity
-    }
-
-    /// Whether this account paid `tokens` of a profile with the accounts
-    /// `profile_accounts` (spec Decision 4): the agent wrote so for the
-    /// session, or the tokens went to its provider and the profile
-    /// has no other login there. The tokens of a profile with several
-    /// logins of one provider that does not write which one paid are not
-    /// split between them, and count for none. The copies of one login
-    /// that several plugins read each paid them (issue 29). A provider
-    /// named by its host is each provider whose part in `registry` serves
-    /// the host (issue 31).
-    ///
-    /// ```
-    /// use std::path::PathBuf;
-    ///
-    /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-    ///     ModelTokens, ProviderRef, Registry, TokenCount,
-    /// };
-    ///
-    /// let registry = Registry::default();
-    /// let login = |id: &str| {
-    ///     Account::new(
-    ///         ProviderRef::of_id("other-cloud"),
-    ///         AccountIdentity::AccountId(id.into()),
-    ///         AccountLogin::Unnamed,
-    ///         AccountKind::Limits,
-    ///         FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
-    ///     )
-    /// };
-    /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
-    ///     .with_provider(Some(ProviderRef::of_id("other-cloud")));
-    ///
-    /// assert!(login("one").pays_for(&tokens, &[login("one")], &registry));
-    /// assert!(!login("one").pays_for(
-    ///     &tokens,
-    ///     &[login("one"), login("two")],
-    ///     &registry
-    /// ));
-    /// ```
-    pub fn pays_for(
-        &self,
-        tokens: &ModelTokens,
-        profile_accounts: &[Account],
-        registry: &Registry,
-    ) -> bool {
-        let is_of_provider = tokens.provider().is_some_and(|provider| {
-            registry.is_same_provider(provider, &self.provider)
-        });
-        if !is_of_provider {
-            return false;
-        }
-
-        if let Some(written) = tokens.account() {
-            return *written == self.identity;
-        }
-
-        let mut of_provider = profile_accounts.iter().filter(|found| {
-            registry.is_same_provider(&found.provider, &self.provider)
-        });
-
-        let Some(first) = of_provider.next() else {
-            return false;
-        };
-        first.is_same_login(self)
-            && of_provider.all(|other| other.is_same_login(first))
     }
 
     /// One copy of the account for each provider part of `registry` that
@@ -908,28 +840,6 @@ mod tests {
         assert!(!accounts[0].is_same_login(&accounts[1]));
     }
 
-    /// Issue 31: tokens a profile sent to the host are paid by each copy
-    /// of its key, whichever provider id serves the host.
-    #[test]
-    fn each_copy_of_a_key_for_a_host_pays_for_its_tokens() {
-        let host = ProviderRef::Host(String::from("api.example.com"));
-        let registry = one_host_two_ids();
-        let accounts = merge_accounts(
-            vec![key(host.clone(), "sk-made-up", "/home/user/.claude")],
-            &registry,
-        );
-        let tokens = ModelTokens::new(
-            Some("made-up-model"),
-            crate::token_count::TokenCount::new(10, 0, 0),
-            1,
-        )
-        .with_provider(Some(host));
-
-        assert_eq!(accounts.len(), 2);
-        assert!(accounts[0].pays_for(&tokens, &accounts, &registry));
-        assert!(accounts[1].pays_for(&tokens, &accounts, &registry));
-    }
-
     /// Issue 29: an account no installed plugin reads is still one
     /// account, read by none; merged again it stays as it is.
     #[test]
@@ -943,49 +853,5 @@ mod tests {
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].read_by(), None);
         assert_eq!(again, accounts);
-    }
-
-    /// Issue 29: the tokens of a profile go to the login that paid them
-    /// whichever plugin reads it: each copy of one login pays for them.
-    #[test]
-    fn each_copy_of_the_only_login_of_a_profile_pays_for_its_tokens() {
-        let registry = two_anthropic_readers();
-        let accounts =
-            merge_accounts(vec![claude_login("/home/user/.claude")], &registry);
-        let tokens = ModelTokens::new(
-            Some("claude-sonnet-4-5"),
-            crate::token_count::TokenCount::new(10, 0, 0),
-            1,
-        )
-        .with_provider(Some(ProviderRef::of_id("anthropic")));
-
-        assert_eq!(accounts.len(), 2);
-        assert!(accounts[0].pays_for(&tokens, &accounts, &registry));
-        assert!(accounts[1].pays_for(&tokens, &accounts, &registry));
-    }
-
-    /// The tokens of a profile whose server is named by its host are paid
-    /// by its key, whether or not an entry serves the host.
-    #[test]
-    fn tokens_for_a_host_are_paid_by_the_key_of_the_provider_of_the_host() {
-        let tokens = ModelTokens::new(
-            Some("deepseek-chat"),
-            crate::token_count::TokenCount::new(10, 0, 0),
-            1,
-        )
-        .with_provider(Some(deepseek_host()));
-        let found = key(deepseek_host(), "sk-made-up", "/home/user/.claude");
-        let registry = registry();
-        let resolved = merge_accounts(vec![found.clone()], &registry);
-        let without = registry
-            .clone()
-            .without_provider(&crate::provider::ProviderId::new("deepseek"));
-
-        assert!(resolved[0].pays_for(&tokens, &resolved, &registry));
-        assert!(found.pays_for(
-            &tokens,
-            std::slice::from_ref(&found),
-            &without
-        ));
     }
 }

@@ -2,8 +2,9 @@
 //! one column, at most as wide as a form and centred, read from top to
 //! bottom. The header with the logo, the name, Refresh and "⋯"; "Needs
 //! from you" as a to-do list when there is anything; a line with a plain
-//! fact; the usage block; "Pays through" as chips that open their account;
-//! and "Profile info" with the plugin that reads the profile.
+//! fact; the usage block; and "Profile info" with the plugin that reads
+//! the profile. No account: nothing links a profile to an account (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 1).
 
 use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
@@ -19,7 +20,7 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::ProfilePageViewModel;
-use super::{blocks, chips, entry_icon, needs, usage_block};
+use super::{blocks, entry_icon, needs, usage_block};
 
 /// Edge of the agent logo before the profile name.
 pub(super) const LOGO_SIZE: f32 = 26.0;
@@ -55,7 +56,7 @@ pub(crate) fn view<'a>(
 
 /// The blocks under the header, in their order: the needs when there are
 /// any, the info line and why the sessions could not be read, the usage
-/// block, the accounts it pays through and its facts.
+/// block and its facts.
 fn page_blocks<'a>(
     vm: ProfilePageViewModel,
     palette: &UiPalette,
@@ -74,13 +75,6 @@ fn page_blocks<'a>(
     }
     if let Some(usage) = vm.usage {
         body = body.push(usage_block::view(usage, palette));
-    }
-    if !vm.pays_through.is_empty() {
-        body = body.push(blocks::titled(
-            i18n::t(Key::AgentsPaysThrough),
-            chips::account_chips(vm.pays_through, palette),
-            palette,
-        ));
     }
     body.push(blocks::titled(
         i18n::t(Key::AgentsProfileInfo),
@@ -139,19 +133,12 @@ mod tests {
 
     use iced::{Point, Rectangle, Size};
     use iced_test::Simulator;
-    use otty_agents::{
-        Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        ProviderRef,
-    };
+    use otty_agents::AgentId;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::screen_area::ScreenArea;
-    use otty_ui_kit::components::session_row::SessionTone;
 
     use super::*;
-    use crate::model::{
-        AccountChipViewModel, FactViewModel, NeedFixViewModel, NeedViewModel,
-        UsageBlockViewModel,
-    };
+    use crate::model::{FactViewModel, NeedFixViewModel, NeedViewModel};
     use crate::need::NeedAction;
     use crate::testing::usage_block;
     use crate::usage::UsageTab;
@@ -168,16 +155,6 @@ mod tests {
             AgentId::new("codex"),
             "Codex · Work",
             PathBuf::from("/home/user/.codex-work"),
-        )
-    }
-
-    fn chatgpt() -> Account {
-        Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::AccountId(String::from("made-up-account")),
-            AccountLogin::Email(String::from("you@example.com")),
-            AccountKind::Limits,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex-work")),
         )
     }
 
@@ -202,16 +179,6 @@ mod tests {
             info: Some(String::from("Codex has no sessions yet.")),
             failure: None,
             usage: Some(usage_block()),
-            pays_through: vec![AccountChipViewModel {
-                account: chatgpt(),
-                icon: crate::testing::provider_icon("openai"),
-                name: String::from("you@example.com"),
-                full_name: String::from("OpenAI · you@example.com"),
-                number: Some(crate::model::AccountNumber::word(
-                    String::from("42 % used"),
-                    SessionTone::Muted,
-                )),
-            }],
             facts: vec![
                 FactViewModel::new(
                     i18n::t(Key::AgentsAgent),
@@ -280,7 +247,6 @@ mod tests {
                 at(&mut ui, i18n::t(Key::AgentsUsage)),
                 at(&mut ui, "Nov 10"),
                 at(&mut ui, "gpt-5.5-codex"),
-                at(&mut ui, i18n::t(Key::AgentsPaysThrough)),
                 at(&mut ui, i18n::t(Key::AgentsProfileInfo)),
             ];
 
@@ -355,31 +321,9 @@ mod tests {
     }
 
     #[test]
-    fn by_account_off_says_why_under_the_tabs() {
-        let vm = ProfilePageViewModel {
-            usage: Some(UsageBlockViewModel {
-                account_reason: Some(String::from("Coder does not say")),
-                ..usage_block()
-            }),
-            ..page()
-        };
-        let themes = ThemeManager::new();
-        let mut ui = in_main_area(vm.clone(), WIDE, &themes);
-
-        let line = i18n::filled(
-            Key::TplAgentsByAccountOff,
-            &[("reason", "Coder does not say")],
-        );
-        ui.find(line).expect("the reason shows");
-        assert_eq!(sent(vm, i18n::t(Key::AgentsByAccount)), []);
-    }
-
-    #[test]
-    fn a_chip_of_pays_through_opens_its_account_and_a_need_its_fix() {
-        let chip = sent(page(), "you@example.com");
+    fn a_need_opens_its_fix() {
         let log_in = sent(page(), i18n::t(Key::AgentsLogIn));
 
-        assert_eq!(chip, [AgentsIntent::SelectAccount(chatgpt())]);
         assert_eq!(
             log_in,
             [AgentsIntent::FixNeed(NeedAction::OpenPage(String::from(
@@ -417,7 +361,6 @@ mod tests {
             needs: Vec::new(),
             info: None,
             usage: None,
-            pays_through: Vec::new(),
             ..page()
         };
         let themes = ThemeManager::new();
@@ -425,11 +368,7 @@ mod tests {
 
         ui.find(i18n::t(Key::AgentsProfileInfo))
             .expect("the info shows");
-        for gone in [
-            Key::AgentsNeedsFromYou,
-            Key::AgentsUsage,
-            Key::AgentsPaysThrough,
-        ] {
+        for gone in [Key::AgentsNeedsFromYou, Key::AgentsUsage] {
             assert!(ui.find(i18n::t(gone)).is_err(), "{gone:?}");
         }
     }

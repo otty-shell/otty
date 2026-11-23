@@ -28,7 +28,7 @@ use super::super::model::{
     AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
     AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
 };
-use super::{entry_icon, money, projects_section};
+use super::{entry_icon, projects_section};
 
 /// Props for the left panel.
 pub(crate) struct LeftPanelProps<'a> {
@@ -264,8 +264,7 @@ fn all_row<'a>(
 
 /// An account: the logo of its provider, its name and its number. A press
 /// shows it; a right press opens its menu at the pointer, the same as "⋯"
-/// of the account page. The number is drawn in the tight form: money
-/// estimated at the list prices brings the tooltip of its mark.
+/// of the account page.
 fn account_row<'a>(
     vm: AccountRowViewModel,
     palette: &UiPalette,
@@ -278,8 +277,7 @@ fn account_row<'a>(
         row = row.count_tone(number.tone()).state(number.text());
     }
 
-    let tip = vm.number.as_ref().and_then(|number| number.tip());
-    money::with_tip(mouse_area(row).on_right_press(menu), tip, palette)
+    mouse_area(row).on_right_press(menu).into()
 }
 
 /// A profile: the logo of its agent, its name and its number. A press
@@ -508,26 +506,6 @@ mod tests {
         ui.find("42 % used").expect("the number should show");
         assert_eq!(all, vec![AgentsIntent::SelectAllAccounts]);
         assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt())]);
-    }
-
-    /// Owner, 2026-11-21: the row only hands over the number; money
-    /// estimated at the list prices shows only the sum, with no words of
-    /// the mark (issue 27), and a press still opens the account.
-    #[test]
-    fn an_estimated_account_shows_only_the_sum() {
-        let estimate = crate::testing::estimated_money();
-        let mut vm = panel(agents());
-        vm.accounts.accounts[0].number =
-            Some(crate::model::AccountNumber::month_money(estimate.clone()));
-        let themes = ThemeManager::new();
-        let mut ui = simulator(panel_view(vm, &themes));
-
-        ui.find(estimate.amount()).expect("the sum shows");
-        assert!(ui.find("~ $1.25").is_err(), "no \"~\"");
-        assert!(
-            ui.find(estimate.line_text().as_str()).is_err(),
-            "no words of the mark"
-        );
     }
 
     #[test]

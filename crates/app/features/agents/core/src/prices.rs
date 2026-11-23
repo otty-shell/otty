@@ -1,6 +1,6 @@
-//! The list prices of the money estimate as Agents mode read them (spec
+//! The list prices of the money at API prices as Agents mode read them (spec
 //! Decision 16): the LiteLLM price table, fetched at most once a day, or
-//! its kept copy. One read serves every API key profile.
+//! its kept copy. One read serves every profile.
 
 use std::time::SystemTime;
 
@@ -41,11 +41,6 @@ impl ListPrices {
     /// failures before it, or the failure of each source.
     pub(crate) fn latest(&self) -> Option<&PriceAnswer> {
         self.latest.as_ref()
-    }
-
-    /// Whether the latest read ended with no prices from any source.
-    pub(crate) fn has_failed(&self) -> bool {
-        matches!(self.latest, Some(Err(_)))
     }
 
     /// Whether the prices need a read for `which` at `now`. Prices fetched
@@ -115,6 +110,12 @@ mod tests {
         prices
     }
 
+    /// Whether the latest read of `prices` ended with no prices from any
+    /// source.
+    fn has_failed(prices: &ListPrices) -> bool {
+        matches!(prices.latest(), Some(Err(_)))
+    }
+
     fn network() -> SourceError {
         SourceError::Network(String::from("down"))
     }
@@ -126,7 +127,7 @@ mod tests {
         assert!(prices.is_wanted(Which::Every, at(10)));
         assert!(!prices.fetch_again());
         assert_eq!(prices.table(), None);
-        assert!(!prices.has_failed());
+        assert!(!has_failed(&prices));
     }
 
     #[test]
@@ -171,8 +172,8 @@ mod tests {
             assert!(prices.fetch_again());
         }
         assert!(kept.table().is_some(), "the kept file gave prices");
-        assert!(!kept.has_failed());
-        assert!(none.has_failed());
+        assert!(!has_failed(&kept));
+        assert!(has_failed(&none));
         assert_eq!(none.table(), None);
     }
 
@@ -205,7 +206,7 @@ mod tests {
 
         assert_eq!(after_one, Some(fetched_prices(at(10))));
         assert_eq!(prices.last_good(), Some(&fetched_prices(at(10))));
-        assert!(prices.has_failed());
+        assert!(has_failed(&prices));
     }
 
     #[test]
@@ -220,6 +221,6 @@ mod tests {
         prices.apply(prices_answer(&[], Some(fetched_prices(at(30)))), at(30));
 
         assert_eq!(prices.last_good(), Some(&fetched_prices(at(30))));
-        assert!(!prices.has_failed());
+        assert!(!has_failed(&prices));
     }
 }

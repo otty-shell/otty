@@ -104,9 +104,9 @@ impl MenuViewModel {
                 })
             },
             AgentsMenu::UsageMeasure => {
-                let money_reason = state
-                    .selected_profile()
-                    .and_then(|shown| money_reason(state, shown));
+                // The menu of the usage block of a profile page.
+                let money_reason =
+                    state.selected_profile().and_then(|_| money_reason(state));
                 let picked = if money_reason.is_some() {
                     UsageMeasure::Tokens
                 } else {
@@ -758,10 +758,11 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decision 6: Money is off for a subscription, with
-    /// its reason, and the menu lights Tokens, the measure shown.
+    /// Spec 2026-11-23, Decision 3: Money is off only while the prices
+    /// are not known, with its reason, and the menu lights Tokens, the
+    /// measure shown; then a subscription has Money too.
     #[test]
-    fn the_measure_menu_of_a_subscription_has_money_off_with_its_reason() {
+    fn the_measure_menu_has_money_off_only_until_the_prices_are_known() {
         let mut state = with_profiles(&[(codex(), connected())]);
         let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
         let _ =
@@ -769,16 +770,26 @@ mod tests {
         state.set_pointer(place());
 
         let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
-        let vm = MenuViewModel::from_state(&state);
+        let no_prices = MenuViewModel::from_state(&state);
+        crate::testing::set_prices(&mut state, crate::testing::price_table());
+        let priced = MenuViewModel::from_state(&state);
 
         assert_eq!(
-            vm,
+            no_prices,
             Some(MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
                 place: place(),
                 picked: UsageMeasure::Tokens,
                 money_reason: Some(
-                    i18n::t(Key::AgentsMoneySubscription).to_string()
+                    i18n::t(Key::AgentsMoneyNoPrices).to_string()
                 ),
+            }))
+        );
+        assert_eq!(
+            priced,
+            Some(MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
+                place: place(),
+                picked: UsageMeasure::Money,
+                money_reason: None,
             }))
         );
     }

@@ -71,7 +71,7 @@ pub enum AgentsIntent {
     SpendLoaded(LoadedSpend),
     /// The bill of one API key profile was read.
     BillLoaded(LoadedBill),
-    /// The list prices of the money estimate were read.
+    /// The list prices of the money at API prices were read.
     PricesLoaded(LoadedPrices),
     /// The numbers of one account were read with its own key: its money
     /// left, the limit of its key, the bill of its organization or the
@@ -146,8 +146,8 @@ pub enum AgentsIntent {
     /// All profiles of the left panel was pressed: show every profile and
     /// what the profiles need from the user.
     SelectAllProfiles,
-    /// An account of the left panel, of the All accounts table or of the
-    /// Pays through chips of a profile page was pressed: show its page.
+    /// An account of the left panel or of the All accounts table was
+    /// pressed: show its page.
     SelectAccount(Account),
     /// Log in of a profile was pressed, in its menu or in its need: the
     /// agent logs in in a terminal tab.
@@ -336,7 +336,7 @@ pub enum AgentsOutcome {
         /// Agents mode is on screen.
         may_start_programs: bool,
     },
-    /// Read the list prices of the money estimate: the LiteLLM price
+    /// Read the list prices of the money at API prices: the LiteLLM price
     /// table, fetched at most once a day, or its kept copy. With
     /// `fetch_again` the table is fetched even within the day, because the
     /// latest fetch failed. Answer [`AgentsIntent::PricesLoaded`].

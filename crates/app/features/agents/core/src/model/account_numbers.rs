@@ -2,28 +2,27 @@
 //! named after what the account has: Limits (usage windows of a
 //! subscription), Credits, or Money (Left, the money left on the account;
 //! Key limit, of a key with a limit; Credits of a key's account; Spent this
-//! month, from the bill, the provider's count or an estimate with the mark
-//! "estimate, list prices"). There is no budget: OTTY only shows. The last
-//! good numbers stay, greyed, when a later read fails.
+//! month, from the bill or the provider's count). An account's money is
+//! only what its provider tells: the tokens of the profiles do not count
+//! for it (spec 2026-11-23-accounts-apart-from-profiles, Decision 1).
+//! There is no budget: OTTY only shows. The last good numbers stay,
+//! greyed, when a later read fails.
 
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountKind, AccountMoney, Amount, Balance, KeyLimit,
-    MoneyEstimate, MoneyTotal, SourceError, Spend, own_reader_of,
+    Account, AccountKind, Amount, Balance, KeyLimit, SourceError, own_reader_of,
 };
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::failure_text::{named_failure, source_error_text};
 use super::super::own_reads::OwnRead;
 use super::super::state::AgentsState;
-use super::UNKNOWN;
 use super::limits::{
     LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
 };
-use super::money::{MoneyViewModel, ShownMoney};
+use super::money::MoneyViewModel;
 use super::numbers::{dollars_text, money_text};
-use super::tokens::count_failed_text;
 
 /// The numbers block of an account page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,49 +58,9 @@ impl AccountNumbersViewModel {
     }
 }
 
-/// The estimate of the money `account` spent, at the list prices, over the
-/// tokens the profiles it was found in sent to its provider (spec
-/// 2026-11-19, Decision 4); `None` before the prices were read or any of
-/// those tokens were counted.
-pub(super) fn account_estimate(
-    state: &AgentsState,
-    account: &Account,
-) -> Option<MoneyEstimate> {
-    let profiles = state.profiles();
-    let prices = profiles.prices().table()?;
-    let spends: Vec<(&Spend, &[Account])> = state
-        .profiles()
-        .found_with(account)
-        .filter_map(|shown| {
-            Some((shown.spend().last_good()?.0, shown.accounts()))
-        })
-        .collect();
-    if spends.is_empty() {
-        return None;
-    }
-
-    match AccountMoney::of(account, None, &spends, prices, state.registry()) {
-        AccountMoney::Estimate(estimate) => Some(estimate),
-        _ => None,
-    }
-}
-
 /// The amount `amount` in its currency, such as "$4.20" or "¥110.00".
 pub(super) fn amount_text(amount: &Amount) -> String {
     money_text(amount.value(), Some(amount.currency()))
-}
-
-/// The money of `total`, counted at the list prices the state holds, as
-/// it is shown: an estimate brings its mark with the time of the prices,
-/// in the user's time zone. `None` while no prices were read.
-pub(super) fn shown_total(
-    state: &AgentsState,
-    total: &MoneyTotal,
-) -> Option<ShownMoney> {
-    let profiles = state.profiles();
-    let prices = profiles.prices().last_good()?;
-
-    Some(ShownMoney::of_total(total, prices, profiles.time_zone()))
 }
 
 /// The usage windows or the credits of a subscription, as the latest read
@@ -158,7 +117,6 @@ fn money(
         updated: None,
         rows: Vec::new(),
         spent: None,
-        note: None,
         is_stale: false,
         failure: None,
     });
@@ -248,10 +206,8 @@ fn own_failure_text(
 
 /// The money spent this month: from the bill when one of the account's
 /// profiles read it, or the account's own admin key did, else as the
-/// provider counted it for the account's key, else the money of the
-/// tokens of its profiles: the cost their agent wrote, or an estimate,
-/// which brings its mark. A bill a profile could not read with its admin
-/// key says why under the estimate.
+/// provider counted it for the account's key; with neither, only why the
+/// bill could not be read with the admin key, if it could not.
 fn spent_money(
     state: &AgentsState,
     account: &Account,
@@ -292,79 +248,21 @@ fn spent_money(
         },
         (None, Some((spent, read_at))) => (amount_text(spent), read_at),
         (None, None) => {
-            return estimated_money(state, account, now, bill_failure);
+            return bill_failure.map(|failure| MoneyViewModel {
+                updated: None,
+                rows: Vec::new(),
+                spent: None,
+                is_stale: false,
+                failure: Some(failure),
+            });
         },
     };
     Some(MoneyViewModel {
         updated: Some(updated_text(now, read_at)),
         rows: Vec::new(),
-        spent: Some(ShownMoney::exact(amount)),
-        note: None,
+        spent: Some(amount),
         is_stale: false,
         failure: None,
-    })
-}
-
-/// The estimate of the money spent this month, as old as the latest count
-/// of the tokens of the account's profiles; greyed, with why, when a count
-/// failed, else with `bill_failure`, why the bill could not be read. A
-/// dash while there are no prices.
-fn estimated_money(
-    state: &AgentsState,
-    account: &Account,
-    now: SystemTime,
-    bill_failure: Option<String>,
-) -> Option<MoneyViewModel> {
-    let counted_at = state
-        .profiles()
-        .found_with(account)
-        .filter_map(|shown| shown.spend().last_good().map(|(_, at)| at))
-        .max();
-    let failure = state
-        .profiles()
-        .found_with(account)
-        .find_map(|shown| shown.spend().failure())
-        .map(count_failed_text);
-
-    let Some(counted_at) = counted_at else {
-        return failure.map(|failure| MoneyViewModel {
-            updated: None,
-            rows: Vec::new(),
-            spent: None,
-            note: None,
-            is_stale: false,
-            failure: Some(failure),
-        });
-    };
-
-    let month =
-        account_estimate(state, account).map(|estimate| estimate.this_month());
-    let shown = month.and_then(|month| shown_total(state, &month));
-    let (spent, note) = match (month, shown) {
-        (Some(month), Some(shown)) => {
-            let unpriced = month.unpriced_requests();
-            let note = (unpriced > 0).then(|| {
-                i18n::with_count(Key::TplAgentsMoneyUnpriced, unpriced)
-            });
-            (shown, note)
-        },
-        _ => {
-            let note = state
-                .profiles()
-                .prices()
-                .has_failed()
-                .then(|| i18n::t(Key::AgentsNoPrices).to_string());
-            (ShownMoney::exact(String::from(UNKNOWN)), note)
-        },
-    };
-
-    Some(MoneyViewModel {
-        updated: Some(updated_text(now, counted_at)),
-        rows: Vec::new(),
-        spent: Some(spent),
-        note,
-        is_stale: failure.is_some(),
-        failure: failure.or(bill_failure),
     })
 }
 
@@ -423,9 +321,9 @@ mod tests {
         )
     }
 
-    /// Exact money spent this month, such as a bill.
-    fn exact(amount: &str) -> Option<ShownMoney> {
-        Some(ShownMoney::exact(String::from(amount)))
+    /// Money spent this month, such as a bill.
+    fn exact(amount: &str) -> Option<String> {
+        Some(String::from(amount))
     }
 
     #[test]
@@ -521,19 +419,17 @@ mod tests {
                 updated: Some(updated_text(now(), now())),
                 rows: Vec::new(),
                 spent: exact("$42.00"),
-                note: None,
                 is_stale: false,
                 failure: None,
             }))
         );
     }
 
-    /// With no bill the money is an estimate over the tokens its profiles
-    /// sent to its provider: the sum has no "~", and the mark next to it
-    /// says it is an estimate at the list prices, not the provider's bill
-    /// (issue 19 of spec 2026-11-19-agent-plugins).
+    /// Spec 2026-11-23, Decision 1: with no bill, the tokens of the
+    /// profiles the organization was found in do not make its money: it
+    /// has no numbers, and no estimate.
     #[test]
-    fn with_no_bill_the_money_is_an_estimate_with_the_mark() {
+    fn with_no_bill_the_tokens_of_its_profiles_make_no_money() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             SavedProfiles::default(),
@@ -551,40 +447,16 @@ mod tests {
         let numbers =
             AccountNumbersViewModel::of(&state, &organization(), now());
 
-        let Some(AccountNumbersViewModel::Money(money)) = numbers.clone()
-        else {
-            panic!("the money of the organization: {numbers:?}");
-        };
-        assert_eq!(money.updated, Some(updated_text(now(), at(10))));
-        let spent = money.spent.expect("the money spent this month");
-        assert_eq!(spent.amount(), "$6.00");
-        assert_eq!(money.failure, None);
-        let mark = spent.kind().mark().expect("the estimate is marked");
-        assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
-        assert!(mark.tip.contains("LiteLLM"), "{}", mark.tip);
-        assert_eq!(
-            numbers.map(|numbers| numbers.title()),
-            Some(i18n::t(Key::AgentsNumberMoney))
-        );
+        assert_eq!(numbers, None);
     }
 
     /// Issue 19 of spec 2026-11-19-agent-plugins: a bill that could not be
-    /// read with the admin key says why under the estimate, where the
-    /// table of sources used to say it.
+    /// read with the admin key says why, with no sum.
     #[test]
-    fn a_bill_that_failed_says_why_under_the_estimate() {
+    fn a_bill_that_failed_says_why() {
         let mut state = with_accounts(
             &[(claude(), api_key(), vec![organization()])],
             saved_with_given_key(),
-        );
-        set_prices(&mut state, price_table());
-        let _ = reduce(
-            &mut state,
-            spend_loaded(
-                &claude(),
-                SpendCount::Counted(anthropic_spend()),
-                at(10),
-            ),
         );
         let _ = reduce(
             &mut state,
@@ -595,9 +467,9 @@ mod tests {
             AccountNumbersViewModel::of(&state, &organization(), now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
-            panic!("the estimate: {numbers:?}");
+            panic!("the failure: {numbers:?}");
         };
-        assert!(money.spent.is_some_and(|spent| spent.tip().is_some()));
+        assert_eq!(money.spent, None);
         assert_eq!(
             money.failure,
             Some(i18n::with_error(
@@ -700,7 +572,6 @@ mod tests {
                 updated: Some(updated_text(now(), at(10))),
                 rows: vec![row(Key::AgentsLeft, "¥110.00", None)],
                 spent: None,
-                note: None,
                 is_stale: false,
                 failure: None,
             }))
@@ -742,10 +613,7 @@ mod tests {
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the bill: {numbers:?}");
         };
-        assert_eq!(
-            money.spent,
-            Some(ShownMoney::exact(dollars_text(bill_of(1, 2).this_month())))
-        );
+        assert_eq!(money.spent, Some(dollars_text(bill_of(1, 2).this_month())));
     }
 
     #[test]
@@ -772,7 +640,7 @@ mod tests {
 
     /// Issue 15 of spec 2026-11-19-agent-plugins: a key whose provider
     /// tells the money spent this month and the credits of the account
-    /// shows both, the provider's own count before any estimate.
+    /// shows both, as the provider counted them.
     #[test]
     fn a_key_shows_the_money_spent_this_month_and_its_credits() {
         let deepseek = added(ProviderRef::of_id("deepseek"));

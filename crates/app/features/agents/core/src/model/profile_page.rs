@@ -1,15 +1,15 @@
 //! The page of one profile in the main area (spec 2026-11-19, Decision
 //! 6): what it needs from the user, a line with a plain fact, the usage
-//! block, the accounts it pays through and its facts. No line under the
-//! title. Where a number comes from is the plugin's business (issue 19 of
-//! spec 2026-11-19-agent-plugins).
+//! block and its facts. No line under the title, and no accounts: nothing
+//! links a profile to an account (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 1). Where a number
+//! comes from is the plugin's business (issue 19 of spec
+//! 2026-11-19-agent-plugins).
 
 use std::path::Path;
 use std::time::SystemTime;
 
-use otty_agents::{
-    Account, AgentSession, Profile, ProfileStatus, ProviderRef, SourceFailure,
-};
+use otty_agents::{AgentSession, Profile, ProfileStatus, SourceFailure};
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
@@ -17,14 +17,12 @@ use super::super::failure_text::failure_reasons;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::super::usage::UsageTab;
-use super::account_chip::{AccountChipViewModel, account_chip};
 use super::entry_icon::EntryIcon;
 use super::kept_answer::KeptAnswer;
 use super::needs::{NeedViewModel, needs_of_profile};
 use super::read_by::profile_read_by;
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
-use super::used_by::untold_accounts;
 use super::{FactViewModel, UNKNOWN};
 
 /// The page of one profile.
@@ -45,8 +43,6 @@ pub(crate) struct ProfilePageViewModel {
     pub(crate) failure: Option<String>,
     /// The usage block, once the tokens were counted.
     pub(crate) usage: Option<UsageBlockViewModel>,
-    /// The chips of the accounts the profile pays through.
-    pub(crate) pays_through: Vec<AccountChipViewModel>,
     /// Profile info: Agent, Version, Folder, Projects, Sessions and Read
     /// by.
     pub(crate) facts: Vec<FactViewModel>,
@@ -71,7 +67,6 @@ impl ProfilePageViewModel {
             info: info(agent, shown),
             failure: shown.failures().map(failure_text),
             usage: usage_block(state, shown, now),
-            pays_through: pays_through(state, shown),
             facts: facts(state, shown),
         }
     }
@@ -100,55 +95,22 @@ impl ProfilePageViewModel {
             info: Some(i18n::t(Key::AgentsHiddenProfileNote).to_string()),
             failure: None,
             usage: None,
-            pays_through: Vec::new(),
             facts,
         }
     }
 }
 
-/// Why the usage of `shown` can not be shown as money, for the Money
-/// choice of its usage block; `None` when it can: the profile pays per
-/// token and the list prices are known.
-pub(crate) fn money_reason(
-    state: &AgentsState,
-    shown: &ProfileState,
-) -> Option<String> {
-    if !shown.is_api_key() {
-        return Some(i18n::t(Key::AgentsMoneySubscription).to_string());
-    }
+/// Why the usage can not be shown as money, for the Money choice of a
+/// usage block: the list prices are not known yet. `None` when they are:
+/// the money of every profile is its tokens at API prices, on a
+/// subscription too (spec 2026-11-23-accounts-apart-from-profiles,
+/// Decision 3).
+pub(crate) fn money_reason(state: &AgentsState) -> Option<String> {
     if state.profiles().prices().table().is_none() {
         return Some(i18n::t(Key::AgentsMoneyNoPrices).to_string());
     }
 
     None
-}
-
-/// Why the usage of `shown`, a profile of `agent`, can not be split by
-/// account (spec Decision 4): it has several accounts of one provider and
-/// its agent does not write which one served a message. `None` when it
-/// can.
-pub(super) fn account_reason(
-    state: &AgentsState,
-    agent: &str,
-    shown: &ProfileState,
-) -> Option<String> {
-    let mut providers: Vec<&ProviderRef> =
-        shown.accounts().iter().map(Account::provider).collect();
-    providers.sort();
-    providers.dedup();
-
-    providers.into_iter().find_map(|provider| {
-        let count = untold_accounts(state.registry(), shown, provider)?;
-
-        Some(i18n::filled(
-            Key::TplAgentsAccountsNotTold,
-            &[
-                ("agent", agent),
-                ("count", &count.to_string()),
-                ("provider", state.provider_name(provider)),
-            ],
-        ))
-    })
 }
 
 /// The usage block of `shown` at `now`: `None` while its agent counts no
@@ -166,9 +128,7 @@ fn usage_block(
     }
 
     let profiles = state.profiles();
-    let agent = state.agent_name(shown.profile().agent());
-    let money_reason = money_reason(state, shown);
-    let account_reason = account_reason(state, agent, shown);
+    let money_reason = money_reason(state);
     let kept = KeptAnswer::new(spend.last_good(), spend.failure());
     let counted = match kept {
         KeptAnswer::Nothing => return None,
@@ -180,8 +140,6 @@ fn usage_block(
         .map(|counted| UsageSource {
             name: shown.profile().name(),
             spend: counted,
-            accounts: shown.accounts(),
-            is_priced: money_reason.is_none(),
         })
         .into_iter()
         .collect();
@@ -191,10 +149,7 @@ fn usage_block(
         tabs: &UsageTab::PROFILE_PAGE,
         prices: profiles.prices().last_good(),
         can_show_money: money_reason.is_none(),
-        account_reason: account_reason.as_deref(),
-        left_out: None,
         home: state.env().home(),
-        saved: profiles.saved(),
         registry: state.registry(),
         time_zone: profiles.time_zone(),
     };
@@ -229,20 +184,6 @@ fn info(agent: &str, shown: &ProfileState) -> Option<String> {
     };
 
     Some(i18n::filled(key, &[("agent", agent)]))
-}
-
-/// The chips of the accounts found in `shown`, each with its number. An
-/// account the user hid leaves them.
-fn pays_through(
-    state: &AgentsState,
-    shown: &ProfileState,
-) -> Vec<AccountChipViewModel> {
-    shown
-        .accounts()
-        .iter()
-        .filter(|account| !state.profiles().is_account_hidden(account))
-        .map(|account| account_chip(state, account))
-        .collect()
 }
 
 /// Profile info: the agent, its version, the folder, once the sessions
@@ -299,8 +240,8 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, DaySpend, FoundIn,
-        ModelTokens, ProjectModelTokens, SavedProfiles, Spend, TokenCount,
+        Account, DaySpend, ModelTokens, ProjectModelTokens, ProviderRef,
+        SavedProfiles, Spend, TokenCount,
     };
 
     use super::*;
@@ -316,24 +257,11 @@ mod tests {
     use crate::types::SpendCount;
     use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
-    /// A second made-up ChatGPT login.
-    fn second_login() -> Account {
-        Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::AccountId(String::from("made-up-second")),
-            AccountLogin::Email(String::from("two@example.com")),
-            AccountKind::Limits,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
-        )
-    }
-
-    /// 1 000 tokens of gpt-5 in otty today, 2026-11-16, through OpenAI,
-    /// paid by `account` when the agent wrote it.
-    fn spend(account: Option<AccountIdentity>) -> Spend {
+    /// 1 000 tokens of gpt-5 in otty today, 2026-11-16, through OpenAI.
+    fn spend() -> Spend {
         let tokens =
             ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000, 0, 0), 1)
-                .with_provider(Some(ProviderRef::of_id("openai")))
-                .with_account(account);
+                .with_provider(Some(ProviderRef::of_id("openai")));
         let part = ProjectModelTokens::new(
             Some(PathBuf::from("/work/otty")),
             tokens.clone(),
@@ -387,9 +315,12 @@ mod tests {
         FactViewModel::new(i18n::t(key), String::from(value))
     }
 
+    /// Spec 2026-11-23, Decision 1: the page of a profile logged in to an
+    /// account shows its usage and its info, and no account: there is no
+    /// Pays through, and the tabs have no By account.
     #[test]
-    fn a_subscription_shows_its_usage_its_account_and_its_info() {
-        let state = codex_with(connected(), vec![chatgpt_login()], spend(None));
+    fn a_subscription_shows_its_usage_and_its_info_and_no_account() {
+        let state = codex_with(connected(), vec![chatgpt_login()], spend());
 
         let vm = page(&state);
 
@@ -400,23 +331,8 @@ mod tests {
         let usage = vm.usage.expect("the usage shows");
         assert_eq!(usage.period, UsagePeriod::SevenDays);
         assert_eq!(usage.tab, UsageTab::ByModel);
+        assert_eq!(usage.tabs, [UsageTab::ByProject, UsageTab::ByModel]);
         assert_eq!(usage.measure, UsageMeasure::Tokens);
-        assert_eq!(usage.account_reason, None);
-        assert_eq!(
-            vm.pays_through,
-            [AccountChipViewModel {
-                account: chatgpt_login(),
-                icon: crate::testing::provider_icon("openai"),
-                name: String::from("you@example.com"),
-                full_name: String::from("OpenAI · you@example.com"),
-                number: None,
-            }]
-        );
-        assert_eq!(
-            vm.pays_through,
-            [account_chip(&state, &chatgpt_login())],
-            "the chip is the one every account chip is"
-        );
         assert_eq!(
             vm.facts,
             [
@@ -438,8 +354,7 @@ mod tests {
     /// that never ended well shows only its failure.
     #[test]
     fn a_failed_count_keeps_the_last_good_usage_or_shows_the_failure() {
-        let mut state =
-            codex_with(connected(), vec![chatgpt_login()], spend(None));
+        let mut state = codex_with(connected(), vec![chatgpt_login()], spend());
         let down = || {
             SpendCount::Failed(otty_agents::SourceError::Network(String::from(
                 "down",
@@ -463,27 +378,48 @@ mod tests {
         assert!(failed.failure.is_some());
     }
 
+    /// Spec 2026-11-23, Decision 3: money is off only until the prices are
+    /// known, for a subscription as for a key.
     #[test]
-    fn money_is_off_for_a_subscription_and_until_the_prices_are_known() {
-        let subscription =
-            codex_with(connected(), vec![chatgpt_login()], spend(None));
-        let no_prices = codex_with(api_key(), Vec::new(), spend(None));
-        let mut priced = codex_with(api_key(), Vec::new(), spend(None));
-        set_prices(&mut priced, price_table());
-        let reason = |state: &AgentsState| {
-            let shown = state.selected_profile().expect("selected");
-            money_reason(state, shown)
-        };
+    fn money_is_off_only_until_the_prices_are_known() {
+        let no_prices = codex_with(connected(), vec![chatgpt_login()], spend());
+        let mut subscription =
+            codex_with(connected(), vec![chatgpt_login()], spend());
+        set_prices(&mut subscription, price_table());
+        let mut key = codex_with(api_key(), Vec::new(), spend());
+        set_prices(&mut key, price_table());
 
         assert_eq!(
-            reason(&subscription),
-            Some(i18n::t(Key::AgentsMoneySubscription).to_string())
-        );
-        assert_eq!(
-            reason(&no_prices),
+            money_reason(&no_prices),
             Some(i18n::t(Key::AgentsMoneyNoPrices).to_string())
         );
-        assert_eq!(reason(&priced), None);
+        assert_eq!(money_reason(&subscription), None);
+        assert_eq!(money_reason(&key), None);
+    }
+
+    /// Spec 2026-11-23, Decision 3: the money of a profile logged in with a
+    /// subscription is its tokens at API prices, shown and marked "at API
+    /// prices".
+    #[test]
+    fn money_of_a_subscription_is_shown_at_api_prices() {
+        let mut state =
+            codex_with(connected(), vec![chatgpt_login()], month_spend());
+        set_prices(&mut state, price_table());
+
+        let shown = usage_after(
+            &mut state,
+            &[AgentsIntent::PickMeasure(UsageMeasure::Money)],
+        );
+
+        let money = &shown[0];
+        assert_eq!(money.measure, UsageMeasure::Money);
+        assert_eq!(money.rows[0].value, "$0.88");
+        let mark = money
+            .money_kind
+            .as_ref()
+            .and_then(crate::model::MoneyKind::mark)
+            .expect("the money is marked");
+        assert_eq!(mark.label, i18n::t(Key::AgentsApiPricesMark));
     }
 
     /// The usage block of the page after each intent of `intents`.
@@ -556,8 +492,8 @@ mod tests {
     }
 
     /// Owner, 2026-11-23: the measure switch of the page. Money writes
-    /// the total, the bars and the rows in dollars at the list prices,
-    /// with the mark of an estimate; Tokens writes them in tokens again.
+    /// the total, the bars and the rows in dollars at API prices, with
+    /// its mark; Tokens writes them in tokens again.
     #[test]
     fn money_and_tokens_switch_the_numbers_of_the_page() {
         let mut state = codex_with(api_key(), Vec::new(), month_spend());
@@ -584,7 +520,7 @@ mod tests {
         assert_eq!(money.line, in_week("$0.88"));
         assert_eq!(money.rows[0].value, "$0.88");
         assert_eq!(money.bars[6].value, 125_000, "micro-dollars");
-        assert!(money.money_kind.is_some(), "the estimate is marked");
+        assert!(money.money_kind.is_some(), "the money is marked");
         assert_eq!(tokens.measure, UsageMeasure::Tokens);
         assert_eq!(tokens.line, in_week("700K"));
         assert_eq!(tokens.rows[0].value, "700K");
@@ -635,32 +571,6 @@ mod tests {
     }
 
     #[test]
-    fn by_account_is_off_when_the_agent_does_not_tell_two_accounts_apart() {
-        let untold = codex_with(
-            connected(),
-            vec![chatgpt_login(), second_login()],
-            spend(None),
-        );
-        let told = codex_with(
-            connected(),
-            vec![chatgpt_login(), second_login()],
-            spend(Some(second_login().identity().clone())),
-        );
-
-        let off = page(&untold).usage.expect("usage").account_reason;
-        let on = page(&told).usage.expect("usage").account_reason;
-
-        assert_eq!(
-            off,
-            Some(i18n::filled(
-                Key::TplAgentsAccountsNotTold,
-                &[("agent", "Codex"), ("count", "2"), ("provider", "OpenAI")]
-            ))
-        );
-        assert_eq!(on, None);
-    }
-
-    #[test]
     fn a_profile_with_no_sessions_says_so_in_its_info_line() {
         let mut used = with_accounts(
             &[(codex(), connected(), vec![chatgpt_login()])],
@@ -707,7 +617,6 @@ mod tests {
                 }),
             })
         );
-        assert!(unused.pays_through.is_empty());
         assert!(unused.facts.contains(&fact(Key::AgentsSessions, "0")));
     }
 

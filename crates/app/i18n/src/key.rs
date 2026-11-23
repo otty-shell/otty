@@ -1294,16 +1294,14 @@ pub enum Key {
     AgentsLastSevenDays,
     /// Label of the money of the current month on the dashboard of an API key profile.
     AgentsThisMonth,
-    /// Tooltip of the mark of money estimated at the LiteLLM list prices: the tokens of the session files at the prices fetched at a time, an estimate. Placeholder: `{time}`.
-    TplAgentsMoneyEstimate,
-    /// Short mark next to money that is an estimate at the LiteLLM list prices, not the provider's bill.
-    AgentsEstimateMark,
-    /// An estimated amount with its mark in one line, where there is room for the mark but no place for it under the sum, such as "$42.10 · estimate, list prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
-    TplAgentsEstimatedAmount,
+    /// Tooltip of the mark "at API prices": the tokens priced at the API list prices of LiteLLM fetched at a time. Placeholder: `{time}`.
+    TplAgentsMoneyAtApiPrices,
+    /// Short mark next to money of tokens at the API list prices, on a subscription too.
+    AgentsApiPricesMark,
+    /// An amount at API prices with its mark in one line, such as "$42.10 · at API prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
+    TplAgentsAmountAtApiPrices,
     /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
     TplAgentsBillReadFailed,
-    /// Last row of the Usage block of an API key profile: requests of this month whose model has no price. Placeholder: `{count}`.
-    TplAgentsMoneyUnpriced,
     /// Label of the number of sessions of a profile and the projects they
     /// ran in, and the column of the top projects table: the sessions of
     /// the project.
@@ -1397,8 +1395,6 @@ pub enum Key {
     AgentsNumberLimits,
     /// Number of the dashboard a source gives: the money of an API key profile.
     AgentsNumberMoney,
-    /// Muted line under the money rows of an API key profile when no source gave prices: the rows show a dash.
-    AgentsNoPrices,
     /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
     TplAgentsPricesUnreadable,
     /// Item of the menu of a session that opens its statistics.
@@ -1484,8 +1480,6 @@ pub enum Key {
     TplAgentsAmountThisMonth,
     /// Title of the to-do list of an account page: what the account needs from the user.
     AgentsNeedsFromYou,
-    /// Title of the profiles that use an account, on its page.
-    AgentsUsedBy,
     /// Title of the facts of an account, on its page.
     AgentsAccountInfo,
     /// Label of the email an account is logged in with.
@@ -1494,10 +1488,6 @@ pub enum Key {
     AgentsFieldKey,
     /// Row of the money an account spent this month.
     AgentsSpentThisMonth,
-    /// A profile whose tokens are not split between its accounts of one provider, such as "uses 2 Example Cloud accounts". Placeholders: `{count}`, `{provider}`.
-    TplAgentsUsesAccounts,
-    /// A profile that has spent no tokens through an account yet.
-    AgentsNoTokensYet,
     /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
     AgentsSourceFormatChanged,
     /// Why the tokens could not be counted: the format of the session files changed. Placeholders: `{understood}`, `{seen}`.
@@ -1550,10 +1540,6 @@ pub enum Key {
     AgentsSevenDays,
     /// A period of the usage block: the last 30 days.
     AgentsThirtyDays,
-    /// Tab of the usage block that lists the accounts.
-    AgentsByAccount,
-    /// Row of the usage block for tokens no account paid for, such as of a local model.
-    AgentsNoAccount,
     /// The total of a period of the usage block, such as "1.2M in 7 days". Placeholders: `{amount}`, `{count}`.
     TplAgentsAmountInDays,
     /// Under the title of the usage block when the latest count failed. Placeholder: `{time}`.
@@ -1566,34 +1552,18 @@ pub enum Key {
     TplAgentsShare,
     /// Column of the usage block: the share of each row.
     AgentsColumnShare,
-    /// Why the usage of a subscription can not be shown in money.
-    AgentsMoneySubscription,
     /// Why the usage can not be shown in money before the list prices are read.
     AgentsMoneyNoPrices,
-    /// Under the tabs of the usage block: why By account is off. Placeholder: `{reason}`.
-    TplAgentsByAccountOff,
-    /// Why the usage can not be split by account. Placeholders: `{agent}`, `{count}`, `{provider}`.
-    TplAgentsAccountsNotTold,
     /// Info line of a profile with no sessions. Placeholder: `{agent}`.
     TplAgentsNoSessionsYet,
     /// Info line of a profile with no sessions and no logins. Placeholder: `{agent}`.
     TplAgentsInstalledNotUsed,
-    /// Title of the accounts a profile pays through, on its page.
-    AgentsPaysThrough,
     /// Title of the facts of a profile, on its page.
     AgentsProfileInfo,
     /// Title of the facts of a project, on its page.
     AgentsProjectInfo,
     /// Label of the folder path of a project.
     AgentsFieldPath,
-    /// The account written in a session, in its statistics. Placeholder: `{account}`.
-    TplAgentsAccountWritten,
-    /// The one account of the profile of a session, in its statistics. Placeholder: `{account}`.
-    TplAgentsAccountOfProfile,
-    /// The account of a session when the agent does not write which of the profile's accounts paid. Placeholders: `{count}`, `{provider}`.
-    TplAgentsOneOfAccounts,
-    /// The line under the money of a project that names the profiles paid by a subscription. Placeholder: `{names}`.
-    TplAgentsLeftOutOfMoney,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
     TplAgentsStatsFailed,
     /// How much of a usage window was used at the start and at the end of a session, such as "12 % → 31 %". Placeholders: `{start}`, `{end}`.
@@ -2044,7 +2014,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 956] = [
+    pub(super) const ALL: [Self; 941] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2634,11 +2604,10 @@ impl Key {
         Self::AgentsToday,
         Self::AgentsLastSevenDays,
         Self::AgentsThisMonth,
-        Self::TplAgentsMoneyEstimate,
-        Self::AgentsEstimateMark,
-        Self::TplAgentsEstimatedAmount,
+        Self::TplAgentsMoneyAtApiPrices,
+        Self::AgentsApiPricesMark,
+        Self::TplAgentsAmountAtApiPrices,
         Self::TplAgentsBillReadFailed,
-        Self::TplAgentsMoneyUnpriced,
         Self::AgentsSessions,
         Self::AgentsTopByProject,
         Self::AgentsTopByModel,
@@ -2684,7 +2653,6 @@ impl Key {
         Self::AgentsSourcePlugin,
         Self::AgentsNumberLimits,
         Self::AgentsNumberMoney,
-        Self::AgentsNoPrices,
         Self::TplAgentsPricesUnreadable,
         Self::AgentsShowStatistics,
         Self::AgentsProjectStatistics,
@@ -2727,13 +2695,10 @@ impl Key {
         Self::AgentsNoSessions,
         Self::TplAgentsAmountThisMonth,
         Self::AgentsNeedsFromYou,
-        Self::AgentsUsedBy,
         Self::AgentsAccountInfo,
         Self::AgentsFieldEmail,
         Self::AgentsFieldKey,
         Self::AgentsSpentThisMonth,
-        Self::TplAgentsUsesAccounts,
-        Self::AgentsNoTokensYet,
         Self::AgentsSourceFormatChanged,
         Self::TplAgentsFailureFormatChanged,
         Self::TplAgentsFailurePlugin,
@@ -2760,28 +2725,18 @@ impl Key {
         Self::TplAgentsKeyStartsWith,
         Self::AgentsSevenDays,
         Self::AgentsThirtyDays,
-        Self::AgentsByAccount,
-        Self::AgentsNoAccount,
         Self::TplAgentsAmountInDays,
         Self::TplAgentsLastGoodNumbers,
         Self::TplAgentsBarTip,
         Self::TplAgentsBarTipLit,
         Self::TplAgentsShare,
         Self::AgentsColumnShare,
-        Self::AgentsMoneySubscription,
         Self::AgentsMoneyNoPrices,
-        Self::TplAgentsByAccountOff,
-        Self::TplAgentsAccountsNotTold,
         Self::TplAgentsNoSessionsYet,
         Self::TplAgentsInstalledNotUsed,
-        Self::AgentsPaysThrough,
         Self::AgentsProfileInfo,
         Self::AgentsProjectInfo,
         Self::AgentsFieldPath,
-        Self::TplAgentsAccountWritten,
-        Self::TplAgentsAccountOfProfile,
-        Self::TplAgentsOneOfAccounts,
-        Self::TplAgentsLeftOutOfMoney,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,
         Self::TplAgentsDateTime,

@@ -3,17 +3,17 @@
 //! the total of the period and two drop-downs, a bar per hour of today or
 //! per day in the look of the kit `DayBars`, the tabs of the block and a
 //! table of the rows of the tab with their value and share. The row picked
-//! or under the pointer lights its part of every bar. Money at the list
-//! prices carries the mark "estimate, list prices". The last good numbers
-//! stay, greyed, after a failed count.
+//! or under the pointer lights its part of every bar. Money is the tokens
+//! of every profile at API prices, on a subscription too, and carries the
+//! mark "at API prices" (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 3). The last good numbers stay, greyed, after a failed count.
 
 use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Dollars, FetchedPrices, LocalNow, Registry, SavedProfiles, SourceError,
-    Spend,
+    Dollars, FetchedPrices, LocalNow, Registry, SourceError, Spend,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -21,13 +21,12 @@ use super::super::usage::{
     UsageChoice, UsageList, UsageMeasure, UsagePeriod, UsageTab,
 };
 use super::UNKNOWN;
-use super::account_chip::{AccountLabel, account_label};
 use super::money::MoneyKind;
 use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
 use super::tokens::count_failed_text;
 use super::usage_groups::{
-    UsageGroup, UsageInput, UsageSource, group_usage, money_is_estimate,
+    UsageGroup, UsageInput, UsageSource, group_usage, money_is_at_api_prices,
     period_points, point_count,
 };
 
@@ -40,16 +39,12 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) line: Option<String>,
     /// The period shown.
     pub(crate) period: UsagePeriod,
-    /// The measure shown: tokens when money can not be shown.
+    /// The measure shown: tokens while the prices are not known.
     pub(crate) measure: UsageMeasure,
-    /// The tab shown: By model when the picked one is not in `tabs` or By
-    /// account can not be shown.
+    /// The tab shown: By model when the picked one is not in `tabs`.
     pub(crate) tab: UsageTab,
     /// The tabs of the block, in their order.
     pub(crate) tabs: Vec<UsageTab>,
-    /// Why By account is off, such as "the agent does not write which of
-    /// its 2 accounts served a message"; `None` when it is on.
-    pub(crate) account_reason: Option<String>,
     /// One bar per point of the period, oldest first.
     pub(crate) bars: Vec<UsageBarViewModel>,
     /// The bar of now in the accent color: this hour of today, or today.
@@ -62,11 +57,9 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) picked: Option<usize>,
     /// Whether the numbers are the last good ones, drawn greyed.
     pub(crate) is_stale: bool,
-    /// Who the money leaves out, while it is shown.
-    pub(crate) notes: Vec<String>,
-    /// What the sums are while they are money: exact, or an estimate at
-    /// the LiteLLM list prices, which brings its mark under them, as on
-    /// the account page. `None` for tokens.
+    /// What the sums are while they are money: at API prices, which brings
+    /// its mark under them, or exact, the cost the agent wrote. `None` for
+    /// tokens.
     pub(crate) money_kind: Option<MoneyKind>,
     /// Why the latest count failed.
     pub(crate) failure: Option<String>,
@@ -89,9 +82,6 @@ impl UsageBlockViewModel {
             UsageMeasure::Tokens
         };
         let tab = match choice.tab() {
-            UsageTab::ByAccount if subject.account_reason.is_some() => {
-                UsageTab::ByModel
-            },
             tab if subject.tabs.contains(&tab) => tab,
             _ => UsageTab::ByModel,
         };
@@ -101,7 +91,6 @@ impl UsageBlockViewModel {
             project: subject.project,
             prices: subject.prices.map(FetchedPrices::table),
             home: subject.home,
-            saved: subject.saved,
             registry: subject.registry,
         };
         let amount = match measure {
@@ -111,15 +100,11 @@ impl UsageBlockViewModel {
 
         let money_kind = match (amount, subject.prices) {
             (Amount::Money, Some(prices)) => Some(MoneyKind::at_prices(
-                money_is_estimate(&input, period),
+                money_is_at_api_prices(&input, period),
                 prices,
                 subject.time_zone,
             )),
             _ => None,
-        };
-        let notes = match measure {
-            UsageMeasure::Money => subject.left_out.iter().cloned().collect(),
-            _ => Vec::new(),
         };
 
         let labels = point_labels(subject.sources, period);
@@ -149,9 +134,6 @@ impl UsageBlockViewModel {
             .iter()
             .map(|group| UsageTableRowViewModel {
                 name: group.name.clone(),
-                account: group.account.as_ref().map(|account| {
-                    account_label(subject.registry, subject.saved, account)
-                }),
                 value: amount_text(group.total(), amount),
                 share: share_text(group.total(), total),
             })
@@ -163,14 +145,12 @@ impl UsageBlockViewModel {
             measure,
             tab,
             tabs: subject.tabs.to_vec(),
-            account_reason: subject.account_reason.map(String::from),
             bars: bars(&totals, &labels, lit, amount),
             current,
             axis: axis(&labels, period),
             rows,
             picked,
             is_stale: false,
-            notes,
             money_kind,
             failure: None,
             lists: None,
@@ -252,12 +232,8 @@ pub(crate) struct UsageBarViewModel {
 /// One row of the table: its name, its value and its share of the period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageTableRowViewModel {
-    /// The project, the profile, the model or the account.
+    /// The project, the profile or the model.
     pub(crate) name: String,
-    /// How a row of By account shows its account: the provider's logo,
-    /// the short name and the whole name in the tooltip; `None` on the
-    /// other tabs and for the tokens no account paid.
-    pub(crate) account: Option<AccountLabel>,
     /// Its value, such as "1.2M" or "$3.40".
     pub(crate) value: String,
     /// Its share of the period, such as "62 %".
@@ -275,21 +251,13 @@ pub(crate) struct UsageSubject<'a> {
     /// The tabs of the block.
     pub(crate) tabs: &'a [UsageTab],
     /// The list prices the money is counted at, with when they were
-    /// fetched, which the mark of an estimate tells.
+    /// fetched, which the mark "at API prices" tells.
     pub(crate) prices: Option<&'a FetchedPrices>,
-    /// Whether the money can be shown: a profile pays per token and the
-    /// prices are known.
+    /// Whether the money can be shown: the prices are known.
     pub(crate) can_show_money: bool,
-    /// Why By account is off; `None` when it is on.
-    pub(crate) account_reason: Option<&'a str>,
-    /// The line that names the profiles paid by a subscription, which the
-    /// money leaves out.
-    pub(crate) left_out: Option<String>,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
-    /// What `agents.json` holds: the names the user gave the accounts.
-    pub(crate) saved: Option<&'a SavedProfiles>,
-    /// The registry, which names the providers of the accounts.
+    /// The registry, which names who served the tokens to the price table.
     pub(crate) registry: &'a Registry,
     /// The user's time zone; UTC when it is not known.
     pub(crate) time_zone: Option<&'a TimeZone>,
@@ -300,8 +268,8 @@ pub(crate) struct UsageSubject<'a> {
 enum Amount {
     /// Tokens.
     Tokens,
-    /// Money: what the agents wrote for each answer, or the tokens at the
-    /// list prices, which the mark of an estimate tells.
+    /// Money: what the agents wrote for each answer, or the tokens at API
+    /// prices, which the mark "at API prices" tells.
     Money,
 }
 
@@ -510,8 +478,6 @@ mod tests {
         UsageSource {
             name: "Claude Code",
             spend,
-            accounts: &[],
-            is_priced: true,
         }
     }
 
@@ -525,10 +491,7 @@ mod tests {
             tabs: &UsageTab::PROFILE_PAGE,
             prices,
             can_show_money: true,
-            account_reason: None,
-            left_out: None,
             home: Path::new("/home/user"),
-            saved: None,
             registry: &crate::testing::TEST_REGISTRY,
             time_zone: None,
         }
@@ -544,7 +507,6 @@ mod tests {
     fn row(name: &str, value: &str, share: &str) -> UsageTableRowViewModel {
         UsageTableRowViewModel {
             name: String::from(name),
-            account: None,
             value: String::from(value),
             share: String::from(share),
         }
@@ -582,7 +544,6 @@ mod tests {
         );
         assert_eq!(vm.picked, None);
         assert!(!vm.is_stale);
-        assert!(vm.notes.is_empty());
         assert_eq!(vm.lists, None, "a page opens the menus of the mode");
     }
 
@@ -670,12 +631,11 @@ mod tests {
         );
     }
 
-    /// Owner, 2026-11-21: one mark everywhere. Money at the list prices
-    /// carries the mark "estimate, list prices" with the time of the
-    /// prices in its tooltip, as the account page does; the sums have no
-    /// "~" and there is no note of an estimate.
+    /// Spec 2026-11-23, Decision 3: money is the tokens at API prices and
+    /// carries the mark "at API prices" with the time of the prices in its
+    /// tooltip; the sums have no "~".
     #[test]
-    fn money_is_an_estimate_at_the_list_prices_with_the_mark() {
+    fn money_is_at_api_prices_with_the_mark() {
         let spend = spend();
         let sources = [source(&spend)];
         let prices = fetched_prices(now());
@@ -694,17 +654,17 @@ mod tests {
                 &[("amount", "$1.25")]
             ))
         );
-        assert!(vm.notes.is_empty(), "{:?}", vm.notes);
         let mark = vm.money_kind.as_ref().and_then(MoneyKind::mark);
+        assert_eq!(mark, MoneyKind::at_prices(true, &prices, None).mark());
         assert_eq!(
-            mark,
-            MoneyKind::at_prices(true, &prices, None).mark(),
-            "the mark of the account page"
+            mark.map(|mark| mark.label),
+            Some(i18n::t(Key::AgentsApiPricesMark))
         );
     }
 
-    /// An agent that writes what each answer cost: that money is exact,
-    /// with no mark of an estimate.
+    /// An agent that writes what each answer cost, such as OpenCode: that
+    /// money is exact, with no mark "at API prices" (issue 01 of spec
+    /// 2026-11-23 keeps it).
     #[test]
     fn money_the_agent_wrote_is_exact() {
         let tokens =
@@ -724,32 +684,7 @@ mod tests {
         let vm = block(&subject(&sources, Some(&prices)), &choice);
 
         assert_eq!(vm.rows, [row("gpt-5", "$0.50", "100 %")]);
-        assert!(vm.notes.is_empty(), "{:?}", vm.notes);
         assert_eq!(vm.money_kind, Some(MoneyKind::Exact));
-    }
-
-    /// Spec 2026-11-19, issue 07: the money of a project names the
-    /// profiles paid by a subscription that it leaves out.
-    #[test]
-    fn the_money_names_the_profiles_it_leaves_out() {
-        let spend = spend();
-        let sources = [source(&spend)];
-        let prices = fetched_prices(now());
-        let left_out = String::from("Left out: Codex");
-        let project = UsageSubject {
-            left_out: Some(left_out.clone()),
-            ..subject(&sources, Some(&prices))
-        };
-        let mut choice = UsageChoice::default();
-
-        let tokens = block(&project, &choice);
-        choice.pick_measure(UsageMeasure::Money);
-        let money = block(&project, &choice);
-
-        assert!(tokens.notes.is_empty(), "only the money leaves out");
-        assert_eq!(tokens.money_kind, None, "tokens are no money");
-        assert_eq!(money.notes, [left_out]);
-        assert!(money.money_kind.is_some_and(|kind| kind.mark().is_some()));
     }
 
     /// A failure with nothing counted shows no sums, so no mark either.
@@ -768,57 +703,22 @@ mod tests {
         assert_eq!(vm.money_kind, None);
     }
 
-    /// Owner, 2026-11-23: a row of By account shows its account as the
-    /// chips of an account do: the provider's logo, the login alone, and
-    /// the whole name with the provider in the tooltip.
+    /// Money falls back to tokens while the prices are not known.
     #[test]
-    fn a_row_by_account_shows_the_account_as_its_chips_do() {
-        let paid = ProjectModelTokens::new(
-            Some(PathBuf::from("/home/user/otty")),
-            ModelTokens::new(Some("opus"), TokenCount::new(50, 0, 0), 1)
-                .with_provider(Some(otty_agents::ProviderRef::of_id(
-                    "anthropic",
-                ))),
-        );
-        let today = DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
-            .with_parts(vec![paid]);
-        let spend = Spend::new(vec![today], Vec::new());
-        let accounts = [crate::testing::organization()];
-        let sources = [UsageSource {
-            accounts: &accounts,
-            ..source(&spend)
-        }];
-        let mut choice = UsageChoice::default();
-        choice.show_tab(UsageTab::ByAccount);
-
-        let vm = block(&subject(&sources, None), &choice);
-
-        let label = vm.rows[0].account.clone().expect("the row's account");
-        assert_eq!(label.icon, crate::testing::provider_icon("anthropic"));
-        assert_eq!(label.name, "dev@example.com");
-        assert_eq!(label.full_name, "Anthropic · dev@example.com");
-    }
-
-    #[test]
-    fn money_and_by_account_fall_back_when_the_profile_can_not_show_them() {
+    fn money_falls_back_to_tokens_with_no_prices() {
         let spend = spend();
         let sources = [source(&spend)];
-        let reason = "Codex does not write which of its 2 OpenAI accounts";
-        let subscription = UsageSubject {
+        let no_prices = UsageSubject {
             can_show_money: false,
-            account_reason: Some(reason),
             ..subject(&sources, None)
         };
         let mut choice = UsageChoice::default();
         choice.pick_measure(UsageMeasure::Money);
-        choice.show_tab(UsageTab::ByAccount);
 
-        let vm = block(&subscription, &choice);
+        let vm = block(&no_prices, &choice);
 
         assert_eq!(vm.measure, UsageMeasure::Tokens);
-        assert_eq!(vm.tab, UsageTab::ByModel);
-        assert_eq!(vm.account_reason.as_deref(), Some(reason));
-        assert!(vm.notes.is_empty());
+        assert_eq!(vm.money_kind, None);
     }
 
     /// A tab picked on a profile page, which the popup does not have,
@@ -862,7 +762,7 @@ mod tests {
         let sources = [source(&spend)];
         let mut choice = UsageChoice::default();
         choice.toggle_list(UsageList::Measure);
-        let reason = String::from("Paid by a subscription");
+        let reason = String::from("The list prices are not read yet");
 
         let vm = block(&subject(&sources, None), &choice)
             .in_popup(&choice, Some(reason.clone()));

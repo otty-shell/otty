@@ -1,17 +1,13 @@
 //! Money on screen. The Money block of an account page: when the money
 //! was read, then what the key told and the money spent this month as
-//! rows, drawn as the usage windows of a subscription are, and the
-//! requests with no price. And the two forms every shown sum is drawn in
-//! (owner, 2026-11-21): the full form puts the mark of an estimate under
-//! the sums (`mark`); the tight form, whose text is
-//! `ShownMoney::month_short_text`, only the sum for an estimate (issue
-//! 27), shows the tooltip of the mark over the place that holds it
-//! (`with_tip`, `cell_with_tip`).
+//! rows, drawn as the usage windows of a subscription are, all as the
+//! provider told them. And the mark "at API prices" under the sums of the
+//! tokens of a profile (`mark`; spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 3).
 
 use iced::widget::{Column, Space, row};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::data_table::TableCell;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
@@ -36,23 +32,20 @@ pub(super) fn view<'a>(
     if let Some(spent) = vm.spent {
         let row = UsageRowViewModel {
             name: i18n::t(Key::AgentsSpentThisMonth).to_string(),
-            used: spent.amount().to_string(),
+            used: spent,
             percent: None,
             resets: None,
         };
         block = block.push(blocks::usage_row(row, vm.is_stale, palette));
-        if let Some(mark) = mark(spent.kind(), palette) {
-            block = block.push(mark);
-        }
     }
 
     block
-        .push(blocks::notes(vm.note, vm.failure, palette))
+        .push(blocks::notes(None, vm.failure, palette))
         .width(Length::Fill)
         .into()
 }
 
-/// The full form: the mark of money of `kind` right under the sums it is
+/// The mark "at API prices" of money of `kind` right under the sums it is
 /// about, at the right end of the block, with its tooltip; `None` for
 /// exact money, which has no mark.
 pub(super) fn mark<'a>(
@@ -71,38 +64,15 @@ pub(super) fn mark<'a>(
     )
 }
 
-/// The tight form over an element, such as a row of the left panel or a
-/// chip: `content` shows `tip`, the tooltip of the mark of an estimate,
-/// under the pointer; with no tip it is drawn as it is.
-pub(super) fn with_tip<'a>(
-    content: impl Into<Element<'a, AgentsIntent>>,
-    tip: Option<&str>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    match tip {
-        Some(tip) => tooltip(content, tip, palette),
-        None => content.into(),
-    }
-}
-
-/// The tight form in a table: `cell` shows `tip`, the tooltip of the mark
-/// of an estimate, under the pointer.
-pub(super) fn cell_with_tip(cell: TableCell, tip: Option<&str>) -> TableCell {
-    match tip {
-        Some(tip) => cell.with_tooltip(tip),
-        None => cell,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use iced::Rectangle;
-    use iced::widget::{container, text};
+    use iced::widget::container;
     use iced_test::{Simulator, simulator};
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::{LimitsViewModel, ShownMoney};
+    use crate::model::LimitsViewModel;
     use crate::testing::estimated_money;
 
     /// Width of the block in the tests.
@@ -121,8 +91,7 @@ mod tests {
         MoneyViewModel {
             updated: Some(String::from("Updated 2 min ago")),
             rows: vec![row(i18n::t(Key::AgentsLeft), "$110.00", None)],
-            spent: Some(ShownMoney::exact(String::from("$184.75"))),
-            note: Some(String::from("3 requests have no price")),
+            spent: Some(String::from("$184.75")),
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
         }
@@ -154,39 +123,32 @@ mod tests {
             "$110.00",
             i18n::t(Key::AgentsSpentThisMonth),
             "$184.75",
-            "3 requests have no price",
             "Could not count: z",
         ] {
             ui.find(shown).expect("the money should show");
         }
         assert!(
-            ui.find(i18n::t(Key::AgentsEstimateMark)).is_err(),
+            ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err(),
             "a bill has no mark"
         );
     }
 
-    /// Owner, 2026-11-21: the block only hands over the shown sum; an
-    /// estimate brings its mark right under it by itself.
+    /// Spec 2026-11-23, Decision 3: money at API prices has the mark
+    /// under its sums, at the right end, with the tooltip of the time of
+    /// the prices.
     #[test]
-    fn an_estimate_is_marked_under_its_sum() {
+    fn money_at_api_prices_has_its_mark() {
         let themes = ThemeManager::new();
-        let money = MoneyViewModel {
-            spent: Some(estimated_money()),
-            ..money()
-        };
-        let mut ui = block(view(
-            money,
-            i18n::t(Key::AgentsNumberMoney),
-            themes.current().ui(),
-        ));
+        let money = estimated_money();
+        let palette = themes.current().ui();
+        let drawn = mark(money.kind(), palette).expect("the mark draws");
 
-        let sum = at(&mut ui, "$1.25");
-        let mark = at(&mut ui, i18n::t(Key::AgentsEstimateMark));
+        let mut ui = block(drawn);
 
-        assert!(mark.y >= sum.y + sum.height, "{mark:?} under {sum:?}");
+        let label = at(&mut ui, i18n::t(Key::AgentsApiPricesMark));
         assert!(
-            (mark.x + mark.width - WIDTH).abs() < 1.0,
-            "the mark ends the row: {mark:?}"
+            (label.x + label.width - WIDTH).abs() < 1.0,
+            "the mark ends the row: {label:?}"
         );
     }
 
@@ -197,30 +159,6 @@ mod tests {
         assert!(mark(&MoneyKind::Exact, themes.current().ui()).is_none());
     }
 
-    /// The tight form: the place draws the short text and hands over the
-    /// tip; an estimate's tooltip comes with it, exact money draws as it
-    /// is.
-    #[test]
-    fn the_tight_form_shows_the_short_text_with_or_without_a_tip() {
-        let themes = ThemeManager::new();
-        let palette = themes.current().ui();
-        let estimate = estimated_money();
-        let bill = ShownMoney::exact(String::from("$42.00"));
-
-        let mut estimate_ui = block(with_tip(
-            text(estimate.month_short_text()),
-            estimate.tip(),
-            palette,
-        ));
-        let mut bill_ui =
-            block(with_tip(text(bill.month_short_text()), bill.tip(), palette));
-
-        estimate_ui.find("$1.25").expect("only the sum shows");
-        bill_ui
-            .find(bill.month_short_text().as_str())
-            .expect("the bill shows");
-    }
-
     #[test]
     fn a_row_of_money_is_drawn_as_a_usage_window_is() {
         let themes = ThemeManager::new();
@@ -228,7 +166,6 @@ mod tests {
         let money = MoneyViewModel {
             rows: vec![row("Today", "$12.40", None)],
             spent: None,
-            note: None,
             failure: None,
             ..money()
         };
@@ -255,53 +192,6 @@ mod tests {
         assert!(
             (value.x + value.width - WIDTH).abs() < 1.0,
             "the value ends the row: {value:?}"
-        );
-    }
-
-    #[test]
-    fn the_requests_with_no_price_are_the_last_row() {
-        let themes = ThemeManager::new();
-        let mut ui = block(view(
-            money(),
-            i18n::t(Key::AgentsNumberMoney),
-            themes.current().ui(),
-        ));
-
-        let month = at(&mut ui, "$184.75");
-        let unpriced = at(&mut ui, "3 requests have no price");
-        let title = at(&mut ui, i18n::t(Key::AgentsNumberMoney));
-        let updated = at(&mut ui, "Updated 2 min ago");
-
-        assert!(unpriced.y > month.y, "{unpriced:?} under {month:?}");
-        assert!(updated.y >= title.y + title.height, "{updated:?}");
-    }
-
-    /// Owner, issue 37: with no prices the amount is a dash, and one muted
-    /// line under the rows says why.
-    #[test]
-    fn with_no_prices_the_sum_is_a_dash_and_the_line_is_under_it() {
-        let themes = ThemeManager::new();
-        let no_prices = i18n::t(Key::AgentsNoPrices);
-        let money = MoneyViewModel {
-            rows: Vec::new(),
-            spent: Some(ShownMoney::exact(String::from("—"))),
-            note: Some(no_prices.to_string()),
-            failure: None,
-            ..money()
-        };
-        let mut ui = block(view(
-            money,
-            i18n::t(Key::AgentsNumberMoney),
-            themes.current().ui(),
-        ));
-
-        let month = at(&mut ui, i18n::t(Key::AgentsSpentThisMonth));
-        let line = at(&mut ui, no_prices);
-
-        assert!(line.y > month.y, "{line:?} under {month:?}");
-        assert!(
-            ui.find("$0.00").is_err(),
-            "no amount reads as nothing spent"
         );
     }
 }

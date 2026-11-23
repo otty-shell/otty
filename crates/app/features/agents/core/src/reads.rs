@@ -31,9 +31,9 @@ pub(crate) enum StartWait {
     /// The profiles: every other read needs the profiles and the accounts
     /// found in them.
     Profiles,
-    /// The limits: the list prices and the bills are read for the profiles
-    /// that pay with an API key, and a profile whose files do not tell how
-    /// it pays learns it from its limits answer.
+    /// The limits: the bills are read for the profiles that pay with an API
+    /// key, and a profile whose files do not tell how it pays learns it
+    /// from its limits answer. The list prices follow with the bills.
     Limits,
 }
 
@@ -224,9 +224,9 @@ fn load_spend(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
         .collect()
 }
 
-/// Ask for the list prices when a profile pays with an API key and
-/// `which` wants them at `now`, unless a read is on its way: once a day,
-/// and again after a failed fetch (spec Decision 16).
+/// Ask for the list prices when a profile is shown and `which` wants them
+/// at `now`, unless a read is on its way: once a day, and again after a
+/// failed fetch (spec Decision 16).
 fn load_prices(
     state: &mut AgentsState,
     which: Which,
@@ -482,7 +482,12 @@ mod tests {
             "{profiles:?}"
         );
         assert_eq!(limits, vec![load_prices(false), load_bill(&claude())]);
-        assert!(state.profiles().is_api_key(&codex()));
+        assert!(
+            state
+                .profiles()
+                .get(&codex())
+                .is_some_and(crate::profile_state::ProfileState::is_api_key)
+        );
     }
 
     /// The outcomes of `outcomes` that read limits, in their order.
@@ -667,32 +672,40 @@ mod tests {
             .collect()
     }
 
+    /// Spec 2026-11-23, Decision 3: the money of every profile is at API
+    /// prices, so the prices are read with a profile paid by a
+    /// subscription too, and with no profile they are not read.
     #[test]
-    fn on_screen_the_prices_are_read_with_an_api_key_profile_only() {
-        let mut with_api_key =
-            AgentsState::new(agents(), crate::testing::registry(), env());
-        let _ = reduce(&mut with_api_key, AgentsIntent::Enter);
-        let mut subscriptions =
-            AgentsState::new(agents(), crate::testing::registry(), env());
-        let _ = reduce(&mut subscriptions, AgentsIntent::Enter);
+    fn on_screen_the_prices_are_read_with_any_profile() {
+        let entered = || {
+            let mut state =
+                AgentsState::new(agents(), crate::testing::registry(), env());
+            let _ = reduce(&mut state, AgentsIntent::Enter);
+            state
+        };
+        let prices_of = |outcomes: Vec<AgentsOutcome>| -> Vec<AgentsOutcome> {
+            outcomes
+                .into_iter()
+                .filter(|outcome| {
+                    matches!(outcome, AgentsOutcome::LoadPrices { .. })
+                })
+                .collect()
+        };
 
-        let api_key_reads = prices_asked(&mut with_api_key);
-        let subscription_reads = reduce(
-            &mut subscriptions,
+        let api_key_reads = prices_asked(&mut entered());
+        let subscription_reads = prices_of(reduce(
+            &mut entered(),
             fresh_profiles_loaded(&[
                 (claude(), connected()),
                 (codex(), connected()),
             ]),
-        );
+        ));
+        let no_profile_reads =
+            prices_of(reduce(&mut entered(), fresh_profiles_loaded(&[])));
 
         assert_eq!(api_key_reads, vec![load_prices(false)]);
-        assert!(
-            !subscription_reads.iter().any(|outcome| matches!(
-                outcome,
-                AgentsOutcome::LoadPrices { .. }
-            )),
-            "{subscription_reads:?}"
-        );
+        assert_eq!(subscription_reads, vec![load_prices(false)]);
+        assert!(no_profile_reads.is_empty(), "{no_profile_reads:?}");
     }
 
     #[test]
@@ -807,7 +820,9 @@ mod tests {
 
     /// The start was still reading the sessions, the limits and the
     /// tokens: opening the mode asks for none of them twice, and their
-    /// answers ask for nothing more.
+    /// answers ask for nothing more. The list prices, which waited for the
+    /// limits, are asked for at once (spec 2026-11-23, Decision 3: every
+    /// profile has money at API prices).
     #[test]
     fn opening_the_mode_during_the_start_asks_for_no_read_twice() {
         let mut state =
@@ -823,7 +838,7 @@ mod tests {
             reduce(&mut state, sessions_loaded(&claude(), Vec::new()));
         let count = reduce(&mut state, counted(&claude(), SystemTime::now()));
 
-        assert!(opened.is_empty(), "{opened:?}");
+        assert_eq!(opened, vec![load_prices(false)]);
         assert!(sessions.is_empty(), "{sessions:?}");
         assert!(count.is_empty(), "{count:?}");
     }
@@ -847,6 +862,7 @@ mod tests {
                 AgentsOutcome::LoadSessions(claude()),
                 AgentsOutcome::LoadLimits(claude()),
                 AgentsOutcome::LoadSpend(claude()),
+                load_prices(false),
             ]
         );
     }
@@ -894,7 +910,11 @@ mod tests {
         let failed_on_screen =
             reduce(&mut state, limits_failed(&claude(), SystemTime::now()));
 
-        assert!(opened.is_empty(), "the start asked for the tokens");
+        assert_eq!(
+            opened,
+            vec![load_prices(false)],
+            "the start asked for the tokens, the prices waited"
+        );
         assert_eq!(failed, vec![AgentsOutcome::LoadLimits(claude())]);
         assert!(failed_on_screen.is_empty(), "the terminal had its chance");
     }

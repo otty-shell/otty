@@ -21,7 +21,7 @@ use super::super::event::AgentsIntent;
 use super::super::model::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
 };
-use super::{blocks, money, needs};
+use super::{blocks, needs};
 
 /// Width of the report (`width={760}` of the prototype).
 const REPORT_WIDTH: f32 = 760.0;
@@ -121,8 +121,7 @@ fn accounts_table<'a>(
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
-        let cell = TableCell::number(row.now.text());
-        let now = money::cell_with_tip(cell, row.now.tip());
+        let now = TableCell::number(row.now.text());
         table = table.row_without_menu(vec![
             TableCell::plain(row.account),
             TableCell::muted_mono(row.found_in),

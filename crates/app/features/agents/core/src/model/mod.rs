@@ -1,4 +1,3 @@
-mod account_chip;
 mod account_name;
 mod account_numbers;
 mod account_page;
@@ -24,18 +23,15 @@ mod read_by;
 mod remove_dialog;
 mod rename_dialog;
 mod reset_time;
-mod session_account;
 mod short_number;
 mod stats_dialog;
 mod status_bar;
 mod tokens;
 mod usage_block;
 mod usage_groups;
-mod used_by;
 mod user_need;
 mod window_name;
 
-pub(crate) use account_chip::{AccountChipViewModel, AccountLabel};
 pub(crate) use account_name::own_account_name;
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;
@@ -93,7 +89,6 @@ pub(crate) use usage_block::UsageBarViewModel;
 pub(crate) use usage_block::{
     UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
 };
-pub(crate) use used_by::UsedByViewModel;
 
 /// What stands for a number, a time or an amount that is not known.
 pub(crate) const UNKNOWN: &str = "—";

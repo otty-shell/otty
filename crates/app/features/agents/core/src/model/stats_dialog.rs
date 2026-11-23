@@ -1,9 +1,9 @@
 //! What the statistics popup of a session or of a project shows (spec
 //! 2026-11-19, Decision 6): the facts as a list, the usage windows of a
-//! session whose agent writes them, and the usage block of the session or of every profile
-//! in the project. A session names the account that paid for it; the
-//! money of a project counts only the profiles that pay per token and
-//! names the others.
+//! session whose agent writes them, and the usage block of the session or
+//! of every profile in the project. The money of every profile is its
+//! tokens at API prices, and no account is named (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 1 and 3).
 
 use std::time::{Duration, SystemTime};
 
@@ -19,11 +19,10 @@ use super::super::state::AgentsState;
 use super::super::stats_dialog::{StatsRead, StatsSubject};
 use super::super::types::ProjectStatsFailure;
 use super::super::usage::{UsageChoice, UsageTab};
-use super::account_numbers::shown_total;
+use super::money::ShownMoney;
 use super::numbers::{digit_groups, short_count};
-use super::profile_page::{account_reason, money_reason};
+use super::profile_page::money_reason;
 use super::reset_time::{date_time_text, duration_text};
-use super::session_account::session_account_text;
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
 use super::window_name::window_name;
@@ -96,20 +95,18 @@ pub(crate) enum StatsBodyViewModel {
 /// The statistics of a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionStatsViewModel {
-    /// Agent, profile, first and last answer, length, answers, tokens and
-    /// the account that paid.
+    /// Agent, profile, first and last answer, length, answers and tokens.
     pub(crate) facts: Vec<FactViewModel>,
     /// Each usage window as its name and "12 % → 31 %"; empty for an agent
     /// that writes no limits into its sessions.
     pub(crate) limits: Vec<FactViewModel>,
-    /// The tokens of the session by model or by account.
+    /// The tokens of the session by model.
     pub(crate) usage: UsageBlockViewModel,
 }
 
 impl SessionStatsViewModel {
     /// The statistics `stats` of a session of `profile`, its usage block
-    /// as `choice` picks it at `now`; the money only when the profile pays
-    /// per token.
+    /// as `choice` picks it at `now`.
     fn new(
         state: &AgentsState,
         profile: &Profile,
@@ -119,19 +116,10 @@ impl SessionStatsViewModel {
     ) -> Self {
         let profiles = state.profiles();
         let time_zone = profiles.time_zone();
-        let shown = profiles.get(profile);
-        let accounts = shown.map(ProfileState::accounts).unwrap_or_default();
         let agent = state.agent_name(profile.agent());
         let length = stats
             .length()
             .map_or_else(|| String::from(UNKNOWN), length_text);
-        let account = session_account_text(
-            state.registry(),
-            stats.models(),
-            accounts,
-            &profiles.all_accounts(),
-            profiles.saved(),
-        );
 
         let facts = vec![
             fact(Key::AgentsAgent, agent.to_string()),
@@ -147,7 +135,6 @@ impl SessionStatsViewModel {
             fact(Key::AgentsStatsLength, length),
             fact(Key::AgentsStatsAnswers, digit_groups(stats.answers())),
             fact(Key::AgentsTokens, short_count(stats.tokens().total())),
-            fact(Key::AgentsFieldAccount, account),
         ];
         let limits = stats
             .limit_changes()
@@ -163,17 +150,10 @@ impl SessionStatsViewModel {
             })
             .collect();
 
-        let money_reason = match shown {
-            Some(shown) => money_reason(state, shown),
-            None => Some(i18n::t(Key::AgentsMoneySubscription).to_string()),
-        };
-        let account_reason =
-            shown.and_then(|shown| account_reason(state, agent, shown));
+        let money_reason = money_reason(state);
         let sources = [UsageSource {
             name: profile.name(),
             spend: stats.spend(),
-            accounts,
-            is_priced: money_reason.is_none(),
         }];
         let subject = UsageSubject {
             sources: &sources,
@@ -181,10 +161,7 @@ impl SessionStatsViewModel {
             tabs: &UsageTab::SESSION_POPUP,
             prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
-            account_reason: account_reason.as_deref(),
-            left_out: None,
             home: state.env().home(),
-            saved: profiles.saved(),
             registry: state.registry(),
             time_zone,
         };
@@ -202,18 +179,17 @@ impl SessionStatsViewModel {
 /// The statistics of a project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProjectStatsViewModel {
-    /// Sessions, first and last activity, profiles, tokens, and the money
-    /// of the API key profiles when there is one.
+    /// Sessions, first and last activity, profiles, tokens, and the cost
+    /// of their tokens at API prices.
     pub(crate) facts: Vec<FactViewModel>,
-    /// The tokens spent in the project by profile, by model or by account.
+    /// The tokens spent in the project by profile or by model.
     pub(crate) usage: UsageBlockViewModel,
 }
 
 impl ProjectStatsViewModel {
     /// The statistics of the selected project from what each profile's
     /// files told, `parts`, its usage block as `choice` picks it at `now`.
-    /// The sessions are counted in the project list; the money is that of
-    /// the API key profiles only.
+    /// The sessions are counted in the project list.
     fn new(
         state: &AgentsState,
         parts: &[(Profile, ProjectStats)],
@@ -232,7 +208,7 @@ impl ProjectStatsViewModel {
         let names: Vec<&str> =
             parts.iter().map(|(profile, _)| profile.name()).collect();
 
-        let mut facts = vec![
+        let facts = vec![
             fact(Key::AgentsSessions, format!("{sessions}")),
             fact(
                 Key::AgentsStatsFirstActivity,
@@ -244,11 +220,8 @@ impl ProjectStatsViewModel {
             ),
             fact(Key::AgentsSectionProfiles, names.join(", ")),
             fact(Key::AgentsTokens, short_count(all.tokens().total())),
+            fact(Key::AgentsColumnCost, sum_text(state, summary.cost())),
         ];
-        if summary.cost().is_paid() {
-            let cost = sum_text(state, summary.cost());
-            facts.push(fact(Key::AgentsColumnCost, cost));
-        }
 
         let sources: Vec<UsageSource> = shown
             .iter()
@@ -257,20 +230,10 @@ impl ProjectStatsViewModel {
                 Some(UsageSource {
                     name: shown.profile().name(),
                     spend,
-                    accounts: shown.accounts(),
-                    is_priced: shown.is_api_key(),
                 })
             })
             .collect();
-        let money_reason = project_money_reason(state, &shown);
-        let left_out = left_out_text(&shown);
-        let account_reason = shown.iter().find_map(|shown| {
-            account_reason(
-                state,
-                state.agent_name(shown.profile().agent()),
-                shown,
-            )
-        });
+        let money_reason = money_reason(state);
         let folder = state.selected_project().map(|project| project.folder());
         let subject = UsageSubject {
             sources: &sources,
@@ -278,10 +241,7 @@ impl ProjectStatsViewModel {
             tabs: &UsageTab::PROJECT_POPUP,
             prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
-            account_reason: account_reason.as_deref(),
-            left_out,
             home: state.env().home(),
-            saved: profiles.saved(),
             registry: state.registry(),
             time_zone,
         };
@@ -290,42 +250,6 @@ impl ProjectStatsViewModel {
 
         Self { facts, usage }
     }
-}
-
-/// Why the usage of a project with the profiles `shown` can not be shown
-/// as money: none of them pays per token, or the list prices are not
-/// known. `None` when it can.
-fn project_money_reason(
-    state: &AgentsState,
-    shown: &[&ProfileState],
-) -> Option<String> {
-    if !shown.iter().any(|shown| shown.is_api_key()) {
-        return Some(i18n::t(Key::AgentsMoneySubscription).to_string());
-    }
-    if state.profiles().prices().table().is_none() {
-        return Some(i18n::t(Key::AgentsMoneyNoPrices).to_string());
-    }
-
-    None
-}
-
-/// The line that names the profiles of `shown` paid by a subscription,
-/// which the money of the project leaves out; `None` when every profile
-/// pays per token, or none does and the money is off.
-fn left_out_text(shown: &[&ProfileState]) -> Option<String> {
-    let left_out: Vec<&str> = shown
-        .iter()
-        .filter(|shown| !shown.is_api_key())
-        .map(|shown| shown.profile().name())
-        .collect();
-    if left_out.is_empty() || left_out.len() == shown.len() {
-        return None;
-    }
-
-    Some(i18n::filled(
-        Key::TplAgentsLeftOutOfMoney,
-        &[("names", &left_out.join(", "))],
-    ))
 }
 
 /// The dialog body that tells why the statistics could not be read.
@@ -354,14 +278,18 @@ fn fact(key: Key, value: String) -> FactViewModel {
 
 /// What a sum of costs reads, in one line of the facts, where there is
 /// room for the mark: the dollars of the requests with a price, followed
-/// by the mark when some are at the list prices; a dash while there are
-/// no prices, and nothing when no profile pays per token.
+/// by the mark "at API prices" when some are at the list prices; a dash
+/// while there are no prices.
 fn sum_text(state: &AgentsState, cost: StatsCost) -> String {
-    match cost {
-        StatsCost::Priced(total) => shown_total(state, &total)
-            .map_or_else(|| String::from(UNKNOWN), |money| money.line_text()),
-        StatsCost::NoPrices => String::from(UNKNOWN),
-        StatsCost::Unpaid => String::new(),
+    let profiles = state.profiles();
+    let prices = profiles.prices().last_good();
+
+    match (cost, prices) {
+        (StatsCost::Priced(total), Some(prices)) => {
+            ShownMoney::of_total(&total, prices, profiles.time_zone())
+                .line_text()
+        },
+        _ => String::from(UNKNOWN),
     }
 }
 
@@ -688,8 +616,10 @@ mod tests {
         );
     }
 
+    /// Spec 2026-11-23, Decision 1: a session names no account, and its
+    /// usage block has By model only.
     #[test]
-    fn a_session_shows_its_facts_and_its_usage_by_model_or_account() {
+    fn a_session_shows_its_facts_and_its_usage_by_model() {
         let mut state = state_with(connected());
         session_dialog(&mut state);
         let stats = SessionStats::new(
@@ -727,44 +657,12 @@ mod tests {
                 ),
                 (Key::AgentsStatsAnswers, String::from("5")),
                 (Key::AgentsTokens, short_count(2_005_000)),
-                (Key::AgentsFieldAccount, String::from(UNKNOWN)),
             ]
             .map(|(key, value)| FactViewModel::new(i18n::t(key), value))
         );
-        assert_eq!(vm.usage.tabs, UsageTab::SESSION_POPUP);
+        assert_eq!(vm.usage.tabs, [UsageTab::ByModel]);
         assert!(vm.usage.lists.is_some(), "the lists open in the popup");
         assert!(vm.limits.is_empty());
-    }
-
-    /// Spec 2026-11-19, Decision 6: the Account line of a session names
-    /// the account that paid, here the one account of the profile.
-    #[test]
-    fn a_session_names_the_account_that_paid_for_it() {
-        let mut state = state_with_accounts();
-        session_dialog(&mut state);
-        let stats = SessionStats::new(
-            None,
-            None,
-            vec![
-                million_in("opus", 1)
-                    .with_provider(Some(ProviderRef::of_id("anthropic"))),
-            ],
-        );
-
-        let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
-
-        let account = session_body(&state)
-            .facts
-            .into_iter()
-            .find(|fact| fact.label == i18n::t(Key::AgentsFieldAccount))
-            .expect("the Account line shows");
-        assert_eq!(
-            account.value,
-            i18n::filled(
-                Key::TplAgentsAccountOfProfile,
-                &[("account", "Anthropic · dev@example.com")]
-            )
-        );
     }
 
     /// The session's own tokens by day fill its usage block.
@@ -784,17 +682,15 @@ mod tests {
             AgentsIntent::PickPeriod(crate::usage::UsagePeriod::SevenDays),
         );
         let by_model = session_body(&state).usage;
-        let _ =
-            reduce(&mut state, AgentsIntent::ShowUsageTab(UsageTab::ByAccount));
-        let by_account = session_body(&state).usage;
 
         assert_eq!(names(&by_model.rows), ["opus"]);
         assert_eq!(by_model.rows[0].value, "6K", "otty and site");
-        assert_eq!(names(&by_account.rows), ["Anthropic · dev@example.com"]);
     }
 
+    /// Spec 2026-11-23, Decision 3: money shows for a session of a
+    /// subscription as of a key, once the prices are known.
     #[test]
-    fn money_shows_for_a_session_of_an_api_key_once_the_prices_are_known() {
+    fn money_shows_for_every_session_once_the_prices_are_known() {
         let mut priced = state_with(api_key());
         let mut no_prices = state_with_no_prices(api_key());
         let mut plan = state_with(connected());
@@ -814,37 +710,7 @@ mod tests {
             money_reason(&mut no_prices).as_deref(),
             Some(i18n::t(Key::AgentsMoneyNoPrices))
         );
-        assert_eq!(
-            money_reason(&mut plan).as_deref(),
-            Some(i18n::t(Key::AgentsMoneySubscription))
-        );
-    }
-
-    /// A profile whose files tell no API key, while its limits answer
-    /// says it pays with one, pays per token in the popup as on its page.
-    #[test]
-    fn a_profile_whose_limits_say_api_key_prices_its_session() {
-        let mut state = state_with(connected());
-        let api_key_limits =
-            otty_agents::Limits::new(otty_agents::Billing::ApiKey, None);
-        let _ = reduce(
-            &mut state,
-            crate::testing::limits_loaded(
-                &claude(),
-                crate::testing::limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(api_key_limits),
-                )]),
-                at(NOW),
-            ),
-        );
-        session_dialog(&mut state);
-        let stats = SessionStats::new(None, None, vec![million_in("opus", 3)]);
-
-        let _ = reduce(&mut state, session_stats_loaded(Ok(stats)));
-
-        let lists = session_body(&state).usage.lists.expect("the lists");
-        assert_eq!(lists.money_reason, None);
+        assert_eq!(money_reason(&mut plan), None);
     }
 
     #[test]
@@ -918,10 +784,11 @@ mod tests {
         assert!(vm.usage.rows.is_empty());
     }
 
-    /// The project sums both profiles and both agents; only the API key
-    /// profile has money.
+    /// The project sums both profiles and both agents, and prices the
+    /// tokens of both at API prices, the subscription too (spec
+    /// 2026-11-23, Decision 3).
     #[test]
-    fn a_project_shows_its_facts_and_prices_only_the_api_key_profiles() {
+    fn a_project_shows_its_facts_and_prices_every_profile() {
         let mut state = state_with(api_key());
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
         let claude_part = ProjectStats::new(
@@ -959,13 +826,13 @@ mod tests {
                 &[("date", &date), ("year", "2026"), ("time", time)],
             )
         };
-        // Owner, 2026-11-21: the cost at the list prices has the one mark
-        // of an estimate after it; the facts have room for its words.
+        // The cost at API prices has its mark after it; the facts have
+        // room for its words.
         let cost = i18n::filled(
-            Key::TplAgentsEstimatedAmount,
+            Key::TplAgentsAmountAtApiPrices,
             &[
-                ("amount", "$1.00"),
-                ("mark", i18n::t(Key::AgentsEstimateMark)),
+                ("amount", "$4.00"),
+                ("mark", i18n::t(Key::AgentsApiPricesMark)),
             ],
         );
         assert_eq!(
@@ -986,47 +853,41 @@ mod tests {
         assert_eq!(vm.usage.tabs, UsageTab::PROJECT_POPUP);
     }
 
-    /// Spec 2026-11-19, issue 07: the project sums its usage by profile
-    /// and by account, only what was spent in the project.
+    /// Spec 2026-11-19, issue 07: the project sums its usage by profile,
+    /// only what was spent in the project. Spec 2026-11-23, Decision 1:
+    /// it has no By account.
     #[test]
-    fn a_project_sums_its_usage_by_profile_and_by_account() {
+    fn a_project_sums_its_usage_by_profile() {
         let mut state = state_with_accounts();
         project_dialog(&mut state);
 
         let _ =
             reduce(&mut state, AgentsIntent::ShowUsageTab(UsageTab::ByProfile));
         let by_profile = project_body(&state).usage;
-        let _ =
-            reduce(&mut state, AgentsIntent::ShowUsageTab(UsageTab::ByAccount));
-        let by_account = project_body(&state).usage;
 
+        assert_eq!(by_profile.tabs, [UsageTab::ByProfile, UsageTab::ByModel]);
         assert_eq!(
             by_profile.rows,
             [
                 UsageTableRowViewModel {
                     name: String::from("Claude Code"),
-                    account: None,
                     value: String::from("1M"),
                     share: String::from("100 %"),
                 },
                 UsageTableRowViewModel {
                     name: String::from("Codex"),
-                    account: None,
                     value: String::from("2K"),
                     share: String::from("0 %"),
                 },
             ]
         );
-        assert_eq!(
-            names(&by_account.rows),
-            ["Anthropic · dev@example.com", "OpenAI · you@example.com"]
-        );
     }
 
-    /// Spec 2026-11-19, issue 07: money only from known prices; a line
-    /// names the profiles paid by a subscription, which it leaves out.
+    /// Spec 2026-11-23, Decision 3: the money of a project counts every
+    /// profile at API prices, the one paid by a subscription too, with
+    /// the mark "at API prices".
     #[test]
-    fn the_money_of_a_project_leaves_out_and_names_the_subscriptions() {
+    fn the_money_of_a_project_counts_the_subscriptions_too() {
         let mut state = state_with_accounts();
         project_dialog(&mut state);
 
@@ -1037,17 +898,10 @@ mod tests {
         let usage = project_body(&state).usage;
 
         assert_eq!(usage.measure, UsageMeasure::Money);
-        assert_eq!(names(&usage.rows), ["Claude Code"]);
-        assert_eq!(
-            usage.notes,
-            [i18n::filled(
-                Key::TplAgentsLeftOutOfMoney,
-                &[("names", "Codex")]
-            )]
-        );
+        assert_eq!(names(&usage.rows), ["Claude Code", "Codex"]);
         let kind = usage.money_kind.expect("the usage is money");
-        let mark = kind.mark().expect("the estimate is marked");
-        assert_eq!(mark.label, i18n::t(Key::AgentsEstimateMark));
+        let mark = kind.mark().expect("the money is marked");
+        assert_eq!(mark.label, i18n::t(Key::AgentsApiPricesMark));
     }
 
     /// The total under the title over `count` days, such as "700K in 7
@@ -1134,8 +988,10 @@ mod tests {
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 
+    /// Spec 2026-11-23, Decision 3: a project of a subscription has money
+    /// too.
     #[test]
-    fn a_project_with_no_api_key_profile_has_no_money() {
+    fn a_project_of_a_subscription_has_money_too() {
         let mut state = state_with(connected());
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
 
@@ -1151,14 +1007,18 @@ mod tests {
         );
 
         let vm = project_body(&state);
-        assert_eq!(vm.facts.len(), 5, "no Cost");
-        assert_eq!(vm.facts[1].value, UNKNOWN);
-        assert_eq!(
-            vm.usage
-                .lists
-                .and_then(|lists| lists.money_reason)
-                .as_deref(),
-            Some(i18n::t(Key::AgentsMoneySubscription))
+        let cost = i18n::filled(
+            Key::TplAgentsAmountAtApiPrices,
+            &[
+                ("amount", "$1.00"),
+                ("mark", i18n::t(Key::AgentsApiPricesMark)),
+            ],
         );
+        assert_eq!(
+            vm.facts.last(),
+            Some(&FactViewModel::new(i18n::t(Key::AgentsColumnCost), cost))
+        );
+        assert_eq!(vm.facts[1].value, UNKNOWN);
+        assert_eq!(vm.usage.lists.and_then(|lists| lists.money_reason), None);
     }
 }

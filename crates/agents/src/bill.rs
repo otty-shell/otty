@@ -19,7 +19,7 @@ use crate::profile::Profile;
 use crate::refused_login::to_holding_agent;
 
 /// The money an organization was billed, day by day, as its provider
-/// counts it. Unlike [`MoneyEstimate`](crate::MoneyEstimate) it is the
+/// counts it. Unlike the money of a profile at API prices it is the
 /// bill of the whole organization, not only of one profile.
 ///
 /// ```

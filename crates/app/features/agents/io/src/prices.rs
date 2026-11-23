@@ -1,4 +1,4 @@
-//! The read of the list prices of the money estimate (spec Decision 16):
+//! The read of the list prices of the money at API prices (spec Decision 16):
 //! the LiteLLM price table, fetched at most once a day, or its copy kept in
 //! OTTY's cache folder. The fetch is a request over the network, so it runs
 //! on a thread of its own.

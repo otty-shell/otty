@@ -23,12 +23,13 @@
 //!
 //! A [`SpendCounter`] counts the tokens a profile spent from its session
 //! files into [`Spend`]: by day, project and model, by the days of the
-//! user's time zone that the app gives as a [`LocalNow`]. For a profile
-//! billed by an API key, [`MoneyEstimate`] turns those tokens into an
-//! estimate of the money, at the list prices of a [`PriceTable`] that a
-//! [`PriceSource`] reads from the LiteLLM price table, fetched at most once
-//! a day, or from its kept copy: each model at the price of who served it,
-//! else at its maker's ([`PriceTable::price_of`]). Each reader counts the records it saw and
+//! user's time zone that the app gives as a [`LocalNow`]. The money of a
+//! profile is its tokens at API prices, on a subscription too:
+//! [`MoneyTotal::of_models`] prices them at the list prices of a
+//! [`PriceTable`] that a [`PriceSource`] reads from the LiteLLM price
+//! table, fetched at most once a day, or from its kept copy: each model at
+//! the price of who served it, else at its maker's
+//! ([`PriceTable::price_of`]). Each reader counts the records it saw and
 //! understood; when the newest session files are not understood, the count
 //! fails with [`SourceError::FormatChanged`], whose [`FormatChange`] names
 //! the agent's version and gives a report with no value of a record.
@@ -45,9 +46,9 @@
 //! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
 //! app reads them once per account, with the files of one profile it was
 //! found in. [`read_bill`] reads the real [`Bill`] of an organization
-//! through the provider part that serves it. [`AccountMoney`] is the money
-//! of an account: its bill, else an estimate over the tokens of the
-//! profiles that pay through it.
+//! through the provider part that serves it. Nothing links the tokens of a
+//! profile to an account: an account's money is only what its provider
+//! tells.
 //!
 //! Every account is read by the provider part of each plugin that serves
 //! it, a key known by its host by every part that serves the host under
@@ -104,7 +105,6 @@
 //! of the crates that use this one.
 
 mod account;
-mod account_money;
 mod account_numbers;
 mod agent;
 mod balance;
@@ -167,7 +167,6 @@ pub use crate::account::{
     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
     merge_accounts,
 };
-pub use crate::account_money::AccountMoney;
 pub use crate::account_numbers::{
     AccountNumbers, KeyPlace, own_reader_of, read_account_numbers,
 };
@@ -193,7 +192,7 @@ pub use crate::limits::{
     UsageWindows, WindowId,
 };
 pub use crate::local_time::LocalNow;
-pub use crate::money_estimate::{MoneyEstimate, MoneyTotal};
+pub use crate::money_estimate::MoneyTotal;
 pub use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;

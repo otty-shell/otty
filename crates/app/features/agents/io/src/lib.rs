@@ -22,7 +22,7 @@
 //! key, read again from where it was found and dropped right after the
 //! request: the money left, a key limit, the bill of an organization the
 //! user added or the limits of a subscription login no profile reads.
-//! [`load_prices`] reads the list prices of the money estimate: the
+//! [`load_prices`] reads the list prices of the money at API prices: the
 //! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
 //! folder.
 //! [`load_session_stats`] and [`load_project_stats`] read the statistics of

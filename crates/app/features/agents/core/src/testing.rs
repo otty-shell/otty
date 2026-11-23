@@ -852,7 +852,7 @@ pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
     FetchedPrices::new(price_table(), fetched_at)
 }
 
-/// An estimate of $1.25: one million input tokens of `gpt-5` at the
+/// $1.25 at API prices: one million input tokens of `gpt-5` at the
 /// made-up list prices, fetched at `at(10)`.
 pub(crate) fn estimated_money() -> ShownMoney {
     let tokens =
@@ -892,7 +892,7 @@ pub(crate) fn prices_loaded(
     AgentsIntent::PricesLoaded(LoadedPrices { prices, read_at })
 }
 
-/// Estimate the money in `state` at `prices`, as if LiteLLM gave them
+/// Count the money in `state` at `prices`, as if LiteLLM gave them
 /// just now.
 pub(crate) fn set_prices(state: &mut AgentsState, prices: PriceTable) {
     let fetched = FetchedPrices::new(prices, SystemTime::now());
@@ -1051,7 +1051,6 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
         measure: UsageMeasure::Tokens,
         tab: UsageTab::ByModel,
         tabs: UsageTab::PROFILE_PAGE.to_vec(),
-        account_reason: None,
         bars: (10..=16)
             .map(|day| UsageBarViewModel {
                 value: day,
@@ -1064,20 +1063,17 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
         rows: vec![
             UsageTableRowViewModel {
                 name: String::from("gpt-5.5-codex"),
-                account: None,
                 value: String::from("100"),
                 share: String::from("52 %"),
             },
             UsageTableRowViewModel {
                 name: String::from("gpt-5.4"),
-                account: None,
                 value: String::from("91"),
                 share: String::from("48 %"),
             },
         ],
         picked: None,
         is_stale: false,
-        notes: Vec::new(),
         money_kind: None,
         failure: None,
         lists: None,

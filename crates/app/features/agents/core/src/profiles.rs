@@ -1,6 +1,6 @@
 //! What Agents mode read of the profiles: each shown profile with what was
 //! read of it, the projects made from their sessions, the list prices of
-//! the money estimate, what `agents.json` held, the user's time zone, and
+//! the money at API prices, what `agents.json` held, the user's time zone, and
 //! the reads of the profiles themselves (spec Decisions 5, 9, 10 and 16).
 //!
 //! The limits and the bill belong to an account, so they are read once per
@@ -74,8 +74,8 @@ impl Profiles {
         &self.projects
     }
 
-    /// The list prices the money of an API key profile is estimated at,
-    /// as their latest read left them.
+    /// The list prices the money of every profile is counted at, as their
+    /// latest read left them.
     pub(crate) fn prices(&self) -> &ListPrices {
         &self.prices
     }
@@ -301,11 +301,6 @@ impl Profiles {
             .filter(|shown| shown.can_start())
             .map(ProfileState::profile)
             .collect()
-    }
-
-    /// Whether the shown profile `profile` pays per token with an API key.
-    pub(crate) fn is_api_key(&self, profile: &Profile) -> bool {
-        self.get(profile).is_some_and(ProfileState::is_api_key)
     }
 
     /// The organization whose bill is read through `shown`, an API key
@@ -699,18 +694,19 @@ impl Profiles {
         shown.apply_spend(loaded.spend, loaded.counted_at);
     }
 
-    /// Start a read of the list prices when a shown profile pays with an
-    /// API key, so its money is estimated with them, the prices are wanted
-    /// for `which` at `now` and no read is on its way (spec Decision 16).
-    /// Returns whether the read must fetch the price table again even
-    /// within the day; `None` when no read starts.
+    /// Start a read of the list prices when a profile is shown, since the
+    /// money of every profile is its tokens at API prices, on a
+    /// subscription too (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 3), the prices are wanted for `which` at `now` and no read
+    /// is on its way (spec Decision 16). Returns whether the read must
+    /// fetch the price table again even within the day; `None` when no
+    /// read starts.
     pub(crate) fn start_price_read(
         &mut self,
         which: Which,
         now: SystemTime,
     ) -> Option<bool> {
-        let uses_estimate = self.shown.iter().any(ProfileState::is_api_key);
-        if !uses_estimate || !self.prices.is_wanted(which, now) {
+        if self.shown.is_empty() || !self.prices.is_wanted(which, now) {
             return None;
         }
 
@@ -718,8 +714,8 @@ impl Profiles {
         self.prices.start_reading().then_some(fetch_again)
     }
 
-    /// Take the list prices that were read: the money of the accounts is
-    /// estimated at them when it is shown.
+    /// Take the list prices that were read: the money of the profiles is
+    /// counted at them when it is shown.
     pub(crate) fn apply_prices(&mut self, loaded: LoadedPrices) {
         self.prices.apply(loaded.prices, loaded.read_at);
     }

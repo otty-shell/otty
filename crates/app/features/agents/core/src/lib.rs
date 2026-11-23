@@ -4,12 +4,15 @@
 //! Continue, its row menu and New session, the page of a profile and
 //! the All accounts and All profiles pages, in the main area; and the counts in the left side of the status bar (spec
 //! Decisions 2, 3 and 6). Each connected profile shows its limits, and each
-//! profile the tokens it spent.
+//! profile the tokens it spent and their money at API prices. Nothing links
+//! a profile to an account: a profile page has no accounts, and an account
+//! page no profiles (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decisions 1 and 3).
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
 //! profiles first, then the sessions, the limits, the tokens and the money
-//! together, the list prices of the money estimate (while a profile pays
-//! with an API key) and the bills once the limits are read, and never with
+//! together, the list prices of the money at API prices and the bills once
+//! the limits are read, and never with
 //! the agent's program running, as is or in a hidden terminal. Until the
 //! first read of the profiles ends the main area shows a spinner; then the
 //! first profile is selected, unless the user selected something. On
@@ -41,7 +44,8 @@
 //! # Example
 //!
 //! Entering Agents mode reads the profiles; each profile has its sessions
-//! read and its tokens counted.
+//! read and its tokens counted, and the list prices are read for their
+//! money.
 //!
 //! ```
 //! use std::path::PathBuf;
@@ -92,6 +96,7 @@
 //!     vec![
 //!         AgentsOutcome::LoadSessions(coder.clone()),
 //!         AgentsOutcome::LoadSpend(coder),
+//!         AgentsOutcome::LoadPrices { fetch_again: false },
 //!     ]
 //! );
 //! ```

@@ -1,6 +1,6 @@
 //! What was read of the real bill of one API key profile (spec Decision
-//! 9). The bill is the first source of the money: when its latest read
-//! failed, the estimate answers instead (spec Decision 5).
+//! 9). The bill is the first source of the money of its organization: when
+//! its latest read failed, the money shows why (spec Decision 5).
 
 use std::time::SystemTime;
 
