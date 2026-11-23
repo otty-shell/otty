@@ -81,3 +81,7 @@ Prototype (website repo, read only):
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-23, owner answer: OTTY reads its own logins on the usual
+  schedule while it runs, and runs nothing in the background when it is
+  closed.

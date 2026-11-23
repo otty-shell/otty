@@ -97,10 +97,18 @@ only to feed the links of Decision 1.
 
 ### 3. Money of a profile is always at API prices
 
-A profile's money is its tokens priced per model at the API list prices
-(LiteLLM), on a subscription too. It is always marked **"at API prices"**,
-which replaces the mark "estimate, list prices". Money is never disabled
-in the usage block.
+A profile's money comes from its agent part. When the agent writes the
+cost itself (OpenCode writes a cost per answer), the part gives that cost
+as it is, with no mark. Otherwise the part asks OTTY for the price of a
+model (a host call, OTTY answers from the price list it keeps and renews,
+LiteLLM today) and prices the tokens with it, and that money is marked
+**"at API prices"**, which replaces the mark "estimate, list prices". This
+holds on a subscription too. Money is never disabled in the usage block.
+
+Owner, 2026-11-23: "we ask the plugin for the price of the tokens. If it
+can give it on the spot without asking the price list, let it give it. If
+it can not, let it ask OTTY for the price, OTTY gives it from the price
+list it keeps and renews."
 
 Why (owner): on a subscription the number still answers a real question,
 "what would this work cost me on the API", and it needs no account. The
@@ -210,10 +218,18 @@ user may act from any of them; once fixed it goes from all of them.
   goes and the provider part finds the account. An agent that works with
   no login (local models, OpenCode's free models) reports no such need:
   the plugin decides.
-- **A profile whose login expired.** The agent part shows the need on the
-  profile, and the provider part shows it on the account found in that
-  profile ("Login expired [Run login]"). Both run the same command in the
-  same folder, from either place.
+- **A profile whose login expired.** Whether a login expired is the
+  plugin's call, by whatever means it has: the expiry written in the
+  files, or a request to its server with its own permissions. OTTY does
+  not work it out. The agent part shows the need on the profile, and the
+  provider part shows it on the account found in that profile ("Login
+  expired [Run login]"). OTTY does not copy one to the other: each part of
+  the plugin says it for its own page. Both run the same command in the
+  same folder, so acting in either place fixes both, and both go at the
+  next read.
+
+  Owner, 2026-11-23: "can the plugin not see that the login expired? Why
+  is it OTTY's job?"
 - **An account with no profile** (OTTY's own login in a hidden profile).
   The need shows only on the account, as "Log in again".
 
@@ -559,19 +575,14 @@ Code that goes or is rewritten (not a full list):
   does not log the user's own Claude Code out? CodexBar chose not to keep
   its own Claude login, maybe for this reason. Until checked on a Mac,
   "Log in with Claude Code" may be Linux only.
-- **How often OTTY runs the agent in a hidden profile.** Each numbers read
-  runs the agent there, which also keeps its tokens fresh. If the user
-  does not open Agents mode for weeks, the refresh token may expire. Is a
-  read once a day in the background enough, or only while OTTY runs?
 - **Money of a profile on a subscription.** Besides the "at API prices"
   mark, should the profile say it is on a subscription (it no longer knows
   its account), or show nothing more?
-- **A cost the agent writes.** OpenCode writes a cost per answer. Is it
-  shown instead of the API price, or dropped so that every profile counts
-  the same way?
-- **Claude login command.** `claude login` or `claude auth login
-  --claudeai` (what CodexBar runs)? The Anthropic plugin decides through
-  `log-in`, but the owner may want the organization login offered too.
+- Answered 2026-11-23: a cost the agent writes is shown as it is
+  (Decision 3), the Claude login is `claude auth login --claudeai`, OTTY
+  reads its own logins on the usual schedule while it runs and runs
+  nothing in the background when it is closed, and whether a login
+  expired is the plugin's call on both sides (Decision 9).
 
 ## Later
 

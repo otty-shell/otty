@@ -76,3 +76,11 @@ Found by OTTY lists profiles and accounts in two separate groups with no
   part of the same plugin gives for an account found in that profile's
   folder (same plugin, same folder, so no link across plugins), or show
   it only when the agent part's files tell.
+
+- 2026-11-23, owner answer to the question above: whether a login expired
+  is the plugin's call, on both sides, by whatever means it has (expiry in
+  the files, or a request to its server with its own permissions). OTTY
+  does not work it out and does not copy a need from the account to the
+  profile: the agent part says it for the profile, the provider part for
+  the account. Same command, same folder, so acting in either place fixes
+  both at the next read. See spec Decision 9.

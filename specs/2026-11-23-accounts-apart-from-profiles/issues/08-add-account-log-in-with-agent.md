@@ -116,3 +116,6 @@ provider with no agent login).
   whether "Log in with Claude Code" is offered on macOS. OTTY must not
   check the agent itself (no agent-specific code), so the Anthropic
   plugin would decide.
+
+- 2026-11-23, owner answer: the Claude login is `claude auth login
+  --claudeai`.

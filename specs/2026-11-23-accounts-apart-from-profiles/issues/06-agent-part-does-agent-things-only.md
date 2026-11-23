@@ -74,3 +74,13 @@ removes them from the contract, the SDK, the host and the plugins.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-23, owner answer, added to this issue: **money comes from the
+  agent part.** When the agent writes the cost itself (OpenCode), the part
+  gives it as it is, with no mark. Otherwise the part asks OTTY for the
+  price of a model through a new host call (OTTY answers from the price
+  list it keeps and renews, LiteLLM today, `prices.rs`) and prices the
+  tokens itself, and that money is marked "at API prices". The spend the
+  part returns carries money per model next to the tokens, and whether
+  it is exact or at API prices. OTTY no longer multiplies tokens by prices
+  itself. See spec Decision 3.
