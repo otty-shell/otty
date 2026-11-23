@@ -1,6 +1,6 @@
 # 05 A provider part finds its own accounts, with stable ids
 
-Status: ready
+Status: done
 Blocked by: 01, 03, 04
 
 ## Why
@@ -161,3 +161,77 @@ until issue 06, OTTY just stops calling them here.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-23, done. A provider part finds its own accounts and OTTY joins
+none.
+
+Contract (changed in place): `provider.wit` has `login-folder` (only
+`profile`, the `own` case comes with issue 08), `account-kind`,
+`account` (`id`, `name`, `kind`, `plan`, `found-in`, `needs`), `found`,
+and `accounts(provider, folders)`, `numbers(provider, account, given)`,
+`read-bill(provider, account, given, days)`. `limit-window` and
+`credits` moved here. Gone: `found-profile`, `login-facts`,
+`account-facts`, `account()`, the lent key, and `login-refused` of
+`read-error` (a refused or expired login is a need). The agent contract
+keeps `logins` and `login-refused` until issue 06; OTTY no longer calls
+them. The SDK trait follows (`accounts` has a default: none), and
+`TestHost::as_provider_in(id, &[LoginFolder], ..)` gives the folders of
+a call. The host's `ProviderCalls` has `accounts`, `numbers` and
+`read_bill`; the folders of a call are the folders given to `accounts`
+or the `found-in` of the account, and the pace of a slow reading is kept
+by part and account id. "Found logins" (`GetsProviderKeys`) and the
+"keys found for a host" lines are gone, with their four texts, so a new
+host of a provider asks for nothing more. A provider part may now
+declare `[[agents.provider.permissions.keys]]`, JSON fields of files only,
+for a login file outside every profile folder (`~/.claude.json` of the
+default `~/.claude`).
+
+`otty-agents`: `Account` is the plugin, the provider part, the part's id
+(`AccountKey`), a name, a kind (`Subscription`, `Key`, `Organization`),
+a plan, `FoundIn::ProfileFolder { agent, folder }` and needs.
+`AccountIdentity`, `AccountLogin`, `merge_accounts`, `join_copies`,
+`is_same_login`, `read_by`, `can_be_saved`, `KeyFingerprint`,
+`RefusedLogin`, `SourceError::LoginRefused`, `Agent::accounts`,
+`found_login`, `login_refused`, `account_of` and the tokens by account
+of the spend count are gone. `find_accounts` asks each provider part with
+the shown profiles of the agent parts its `logins` name, of its own
+plugin only; `read_account_numbers` and `read_bill` read through the part
+that found the account. `agents.json` keeps an account as `plugin` + `id`
+with `name`, `hidden` and `given_keys`; an entry of the old layout is not
+read.
+
+Screen: the accounts come with the profiles read (`LoadedProfiles.accounts`)
+and are kept by plugin + id; the names are the user's name, else the
+part's name ("OpenAI · you@example.com", no plugin after it); Hide and
+Rename work for every account, keys too, so Rename… and Hide are never
+off. Account info is Provider, Name, Kind, Plan, Source ("Found in
+~/.codex", one line per folder) and Read by (seven new texts in ten
+locales). An account's needs show on its page and in Needs you; the
+needs of no account show with the needs of the accounts. The "no
+provider plugin", "part is off" and "login was refused" needs of an
+account are gone with their texts. Kept on purpose: the limits and the
+bill are still read through the first profile an account was found in
+(an internal schedule, nothing on screen), and the `AddPlugin` and
+`TurnOnPart` actions of `NeedAction` stay unused for issue 07.
+
+Plugins: `openai` 0.2.7 -> 0.2.8 (provider `logins` for `codex`:
+`auth.json` keys, `config.toml`, `sessions/**`, `archived_sessions/**`;
+ChatGPT `chatgpt:<account id>` named by email, key `key:<fingerprint>`
+named `key ••••<last 4>`, an admin key an organization, a gateway login
+none; an expired token is a `login-expired` need running `codex login`
+with `CODEX_HOME`; the claims name no workspace, so the name is the
+email alone). `anthropic` 0.2.7 -> 0.2.8 (`logins` for `claude-code`;
+Claude login `claude:<accountUuid>` named "email · organization", a
+prepaid Console login an organization `console:<uuid>`, keys
+`key:<fingerprint>`, a key for another base URL none; a login is
+expired only when `expiresAt` passed and no refresh token is left, since
+Claude Code renews short tokens itself). `deepseek` and `openrouter`
+0.1.2 -> 0.1.3 find no accounts; their reads take a key given under the
+slot `key`, for "paste a key". `opencode` 0.1.6 -> 0.1.7 and the
+template `example` 0.1.3 -> 0.1.4 (accounts from the key of `auth.json`
+by fingerprint) rebuilt; `template.wasm` and the four test plugins of
+the host were rebuilt.
+
+Left for later issues: the agent contract's login functions and the
+`login` of an answer (06), the needs wherever met and the Source line of
+OTTY's own logins (07, 08), the public docs (10).

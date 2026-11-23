@@ -160,7 +160,7 @@ mod tests {
     }
 
     /// Issue 20: the key a part asks for opens its dialog, for the
-    /// account; an account `agents.json` can not keep takes none.
+    /// account.
     #[test]
     fn ask_key_of_a_need_opens_the_key_dialog_of_the_account() {
         let mut state = with_accounts(
@@ -172,23 +172,9 @@ mod tests {
             plugin: String::from("Anthropic"),
             ask: key_ask(),
         };
-        let key = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("anthropic"),
-            otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-made-up"),
-            ),
-            otty_agents::AccountLogin::Key(None),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder("/home/user/.claude".into()),
-        );
-
-        let unsaved = reduce(&mut state, AgentsIntent::FixNeed(ask(key)));
-        let is_open_for_a_key = state.key_dialog().is_some();
         let outcomes =
             reduce(&mut state, AgentsIntent::FixNeed(ask(organization())));
 
-        assert!(unsaved.is_empty());
-        assert!(!is_open_for_a_key, "a found key keeps no given key");
         assert!(outcomes.is_empty());
         assert!(
             state

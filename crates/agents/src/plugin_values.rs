@@ -5,16 +5,13 @@
 use std::time::{Duration, SystemTime};
 
 use otty_plugin_host::agents::agent::{
-    Command as PartCommand, Credits as PartCredits, KeyPlace,
     Profile as PartProfile, ProviderRef as PartProviderRef,
     TokenCount as PartTokenCount,
 };
 use otty_plugin_host::agents::provider::{
-    AccountNumbers as PartNumbers, FoundProfile,
+    AccountNumbers as PartNumbers, Credits as PartCredits,
 };
 
-use crate::agent::Agent;
-use crate::command::AgentCommand;
 use crate::limits::{
     Billing, Credits, LimitWindow, Limits, UsageWindows, WindowId,
 };
@@ -30,32 +27,6 @@ pub(crate) fn part_profile(profile: &Profile) -> PartProfile {
         agent: profile.agent().as_str().to_string(),
         folder: profile.config_dir().display().to_string(),
         is_default: profile.is_in_default_config_dir(),
-    }
-}
-
-/// `profile` as a provider part is told an account was found in it (issue
-/// 29): the plugin and the agent part `agent` that found it, the folder,
-/// and the command the part starts a new session with there.
-pub(crate) fn found_profile(
-    agent: &dyn Agent,
-    profile: &Profile,
-) -> FoundProfile {
-    let part = agent.entry().part();
-
-    FoundProfile {
-        plugin: part.plugin().to_string(),
-        agent: part.part().to_string(),
-        folder: profile.config_dir().display().to_string(),
-        launch: part_command(&agent.launch(profile, None)),
-    }
-}
-
-/// `command` as a part is given it.
-fn part_command(command: &AgentCommand) -> PartCommand {
-    PartCommand {
-        program: command.program().to_string(),
-        args: command.args().to_vec(),
-        env: command.env().to_vec(),
     }
 }
 
@@ -134,34 +105,9 @@ pub(crate) fn credits_of(credits: &PartCredits) -> Credits {
     )
 }
 
-/// Whether `one` and `other` are the same place of a key.
-pub(crate) fn is_same_place(one: &KeyPlace, other: &KeyPlace) -> bool {
-    match (one, other) {
-        (KeyPlace::JsonField(one), KeyPlace::JsonField(other)) => {
-            one.file == other.file && one.pointer == other.pointer
-        },
-        (KeyPlace::EnvVar(one), KeyPlace::EnvVar(other)) => one == other,
-        (KeyPlace::Keyring(one), KeyPlace::Keyring(other)) => {
-            one.service == other.service
-                && one.user == other.user
-                && one.pointer == other.pointer
-        },
-        (KeyPlace::SqliteField(one), KeyPlace::SqliteField(other)) => {
-            one.database == other.database
-                && one.table == other.table
-                && one.column == other.column
-                && one.row_id == other.row_id
-                && one.pointer == other.pointer
-        },
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agents::agent::{
-        Credits as PartCredits, LimitWindow as PartWindow,
-    };
+    use otty_plugin_host::agents::provider::LimitWindow as PartWindow;
 
     use super::*;
 
@@ -179,36 +125,6 @@ mod tests {
             plan: Some("Pro".to_string()),
             recorded_at_ms: None,
         }
-    }
-
-    /// Issue 29: a provider part is told the profiles an account was
-    /// found in, each with the command its agent part starts there.
-    #[test]
-    fn a_found_profile_names_its_part_and_the_command_of_its_agent() {
-        let mut agent = crate::testing::MockAgent::new();
-        agent
-            .expect_entry()
-            .return_const(crate::testing::mock_entry("coder", "coder"));
-        agent.expect_launch().returning(|_, _| {
-            AgentCommand::new("coder")
-                .with_env("CODER_HOME", "/home/u/.coder-w")
-        });
-        let profile = Profile::added(
-            crate::agent::AgentId::new("coder"),
-            "Coder · Work",
-            std::path::PathBuf::from("/home/u/.coder-w"),
-        );
-
-        let found = found_profile(&agent, &profile);
-
-        assert_eq!(found.plugin, "example");
-        assert_eq!(found.agent, "coder");
-        assert_eq!(found.folder, "/home/u/.coder-w");
-        assert_eq!(found.launch.program, "coder");
-        assert_eq!(
-            found.launch.env,
-            [("CODER_HOME".to_string(), "/home/u/.coder-w".to_string())]
-        );
     }
 
     #[test]
@@ -260,22 +176,5 @@ mod tests {
             ProviderRef::Host("api.deepseek.com".to_string())
         );
         assert_eq!(provider_of(&id), ProviderRef::of_id("openai"));
-    }
-    #[test]
-    fn two_places_are_the_same_only_with_every_field_the_same() {
-        use otty_plugin_host::agents::agent::JsonField;
-
-        let field = |pointer: &str| {
-            KeyPlace::JsonField(JsonField {
-                file: "/home/dev/.agent/auth.json".to_string(),
-                pointer: pointer.to_string(),
-            })
-        };
-        let variable = KeyPlace::EnvVar("AGENT_KEY".to_string());
-
-        assert!(is_same_place(&field("/key"), &field("/key")));
-        assert!(!is_same_place(&field("/key"), &field("/token")));
-        assert!(!is_same_place(&field("/key"), &variable));
-        assert!(is_same_place(&variable, &variable.clone()));
     }
 }

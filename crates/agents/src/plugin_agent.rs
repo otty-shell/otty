@@ -1,36 +1,31 @@
 //! An agent read by an agent part of a plugin (spec
 //! 2026-11-19-agent-plugins, Decisions 4 and 6): the part names the
-//! agent's default folder and finds the logins, the sessions and the
-//! answers, and OTTY keeps the generic work, from walking the spend places
-//! to joining accounts. Other folders are profiles only when the user adds
-//! them (spec 2026-11-23, Decision 4).
+//! agent's default folder and finds the sessions and the answers, and OTTY
+//! keeps the generic work, such as walking the spend places. Other folders
+//! are profiles only when the user adds them (spec 2026-11-23, Decision
+//! 4). The accounts are the provider part's (Decision 5): OTTY no longer
+//! asks an agent part for the logins of a profile.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    Billing as PartBilling, Login, LoginKind, ProfilePlace,
-    ProfileStatus as PartStatus,
+    Billing as PartBilling, ProfilePlace, ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{
     AgentPart, CalledPart, LoadedPlugin, PartHealth, PartRef, ProgramInstall,
 };
 
-use crate::account::{
-    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-};
 use crate::agent::{Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
-use crate::key_fingerprint::KeyFingerprint;
 use crate::limits::BillingKind;
 use crate::part_need::{PartNeed, started_command};
 use crate::plugin_sources::PluginSessions;
 use crate::plugin_spend::PluginSpend;
-use crate::plugin_values::{part_profile, provider_of};
+use crate::plugin_values::part_profile;
 use crate::profile::{Profile, ProfileStatus};
-use crate::provider::ProviderRef;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -133,31 +128,6 @@ impl PluginAgent {
         self.entry = self.entry.with_icon(icon);
         self
     }
-
-    /// The logins and keys the part finds in `profile`; none when the read
-    /// failed.
-    fn logins(&self, profile: &Profile) -> Vec<Login> {
-        let asked = part_profile(profile);
-
-        self.part
-            .read("logins", |batch| batch.agent()?.logins(&asked))
-            .unwrap_or_default()
-    }
-
-    /// The login of `logins` that is `account`.
-    fn login_of<'a>(
-        &self,
-        logins: &'a [Login],
-        profile: &Profile,
-        account: &Account,
-    ) -> Option<&'a Login> {
-        logins.iter().find(|login| {
-            account_of(&self.part, login, profile).is_some_and(|found| {
-                found.identity() == account.identity()
-                    && is_same_provider(found.provider(), account)
-            })
-        })
-    }
 }
 
 impl Agent for PluginAgent {
@@ -210,42 +180,6 @@ impl Agent for PluginAgent {
             ),
             Err(_) => ProfileStatus::NotLoggedIn(None),
         }
-    }
-
-    fn accounts(&self, profile: &Profile) -> Vec<Account> {
-        self.logins(profile)
-            .iter()
-            .filter_map(|login| account_of(&self.part, login, profile))
-            .collect()
-    }
-
-    fn found_login(
-        &self,
-        profile: &Profile,
-        account: &Account,
-    ) -> Option<Login> {
-        let logins = self.logins(profile);
-
-        self.login_of(&logins, profile, account).cloned()
-    }
-
-    /// The need the part gives for `login` of `profile` once a provider
-    /// refused it; a read that failed gives none, and OTTY says the login
-    /// was refused itself.
-    fn login_refused(
-        &self,
-        profile: &Profile,
-        login: &Login,
-    ) -> Option<PartNeed> {
-        let asked = part_profile(profile);
-
-        let need = self.part.read("login-refused", |batch| {
-            batch.agent()?.login_refused(&asked, &login.place)
-        });
-
-        let need = need.ok().flatten()?;
-        PartNeed::of_called_part(&self.part, &need)
-            .map(|need| need.about_profile(profile.config_dir()))
     }
 
     fn version(&self, profile: &Profile) -> Option<String> {
@@ -304,51 +238,6 @@ impl Agent for PluginAgent {
     }
 }
 
-/// The account `login` of `profile` is: known by its account id,
-/// organization id or email when the part tells one, else by the
-/// fingerprint of its key, which the host reads at the login's place.
-/// `None` when the key can not be read either.
-pub(crate) fn account_of(
-    part: &CalledPart,
-    login: &Login,
-    profile: &Profile,
-) -> Option<Account> {
-    let found = &login.identity;
-    let identity =
-        match (&found.account_id, &found.organization_id, &found.email) {
-            (Some(id), _, _) => AccountIdentity::AccountId(id.clone()),
-            (None, Some(id), _) => AccountIdentity::OrganizationId(id.clone()),
-            (None, None, Some(email)) => AccountIdentity::Email(email.clone()),
-            (None, None, None) => {
-                let key =
-                    part.plugin().read_key(part.part(), &login.place).ok()?;
-                AccountIdentity::KeyFingerprint(KeyFingerprint::of(
-                    key.as_str(),
-                ))
-            },
-        };
-
-    let shown = match (&found.email, login.kind) {
-        (Some(email), _) => AccountLogin::Email(email.clone()),
-        (None, LoginKind::Subscription) => AccountLogin::Unnamed,
-        (None, _) => AccountLogin::Key(None),
-    };
-    let kind = match login.kind {
-        LoginKind::Subscription => AccountKind::Limits,
-        _ => AccountKind::Money,
-    };
-    let found_in = FoundIn::ProfileFolder(profile.config_dir().to_path_buf());
-
-    let account = Account::new(
-        provider_of(&login.for_whom),
-        identity,
-        shown,
-        kind,
-        found_in,
-    );
-    Some(account.with_plan(login.plan.clone()))
-}
-
 /// The default folder of the part `id`, asked once; the folder `~/.<id>`
 /// when the read fails or the part marks no place as the default one.
 fn default_folder(part: &CalledPart, id: &str) -> PathBuf {
@@ -369,15 +258,6 @@ fn default_folder(part: &CalledPart, id: &str) -> PathBuf {
 /// the part gives is left out (spec 2026-11-23, Decision 4).
 fn default_place(places: &[ProfilePlace]) -> Option<&ProfilePlace> {
     places.iter().find(|place| place.is_default)
-}
-
-/// Whether `found`, the provider of a login, is the provider of
-/// `account`: the same reference, or a host and an id, which only the
-/// registry joins.
-fn is_same_provider(found: &ProviderRef, account: &Account) -> bool {
-    found == account.provider()
-        || found.as_host().is_some()
-        || account.provider().as_host().is_some()
 }
 
 /// The program places of `part` on the computer `plugin` sees.
@@ -413,7 +293,6 @@ fn billing_kind(billing: PartBilling) -> BillingKind {
 mod tests {
     use super::*;
     use crate::part_need::PartNeedAction;
-    use crate::plugin_values::found_profile;
     use crate::profile_list::{profile_status, profiles};
     use crate::saved_profiles::SavedProfiles;
     use crate::testing::{NOW, TemplateHome, answer_line, meta_line};
@@ -515,30 +394,6 @@ mod tests {
         assert_eq!(version.as_deref(), Some("1.4.2"));
     }
 
-    /// Spec Decision 4: the logins of a profile are accounts of the
-    /// provider the part names, with the place of their key for a
-    /// provider part.
-    #[test]
-    fn a_login_is_an_account_whose_key_place_the_part_names() {
-        let home = TemplateHome::new();
-        let agent = agent(&home);
-
-        let accounts = agent.accounts(&home.profile());
-        let login = agent.found_login(&home.profile(), &accounts[0]);
-
-        assert_eq!(
-            accounts,
-            [Account::new(
-                ProviderRef::of_id("example-cloud"),
-                AccountIdentity::Email("dev@example.com".to_string()),
-                AccountLogin::Email("dev@example.com".to_string()),
-                AccountKind::Money,
-                FoundIn::ProfileFolder(home.folder()),
-            )]
-        );
-        assert!(login.is_some_and(|login| login.kind == LoginKind::ApiKey));
-    }
-
     /// Issue 32: the places and the install come from the manifest, the
     /// places made concrete for this home.
     #[test]
@@ -567,8 +422,7 @@ mod tests {
     /// Issue 32: the login shell does not find `example-agent`, but the
     /// installer put it at `~/.example/bin/example-agent`. OTTY finds it
     /// there and starts it by that path for a session, for the login a
-    /// need runs and for the version; a provider part is told of the
-    /// profile with that command.
+    /// need runs and for the version.
     #[cfg(unix)]
     #[test]
     fn a_program_at_a_program_place_is_started_by_its_full_path() {
@@ -584,7 +438,6 @@ mod tests {
         let status = profile_status(&agent, &home.profile(), |_| false);
         let launch = agent.launch(&home.profile(), None);
         let need = agent.detect(&work);
-        let found = found_profile(&agent, &home.profile());
 
         assert!(matches!(status, ProfileStatus::Connected { .. }));
         assert_eq!(launch.program(), full_path);
@@ -597,7 +450,6 @@ mod tests {
         };
         assert_eq!(login.program(), full_path);
         assert_eq!(login.args(), ["login"]);
-        assert_eq!(found.launch.program, full_path);
     }
 
     /// Issue 32: the name comes first: a program the login shell finds is

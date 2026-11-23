@@ -8,9 +8,10 @@
 //! the file itself is the app's job; this module turns its content to and
 //! from text. A default profile is listed under its agent's id with only
 //! the parts the user changed; an added profile is a whole entry; an
-//! account is listed by its provider and its account id, organization id
-//! or email, and the plugin that reads it; a hidden profile by its agent
-//! and its config folder:
+//! account is listed by the plugin whose provider part found it and the
+//! part's id of the account (spec 2026-11-23-accounts-apart-from-profiles,
+//! "What OTTY stores"); a hidden profile by its agent and its config
+//! folder:
 //!
 //! ```json
 //! {
@@ -30,19 +31,14 @@
 //!   ],
 //!   "accounts": [
 //!     {
-//!       "provider": "example-cloud",
-//!       "organization_id": "00000000-0000-4000-8000-00000000000b",
+//!       "plugin": "example",
+//!       "id": "org:00000000-0000-4000-8000-00000000000b",
 //!       "name": "Acme",
 //!       "given_keys": [
 //!         { "slot": "admin", "file": "/home/user/.config/acme-key" }
 //!       ]
 //!     },
-//!     {
-//!       "provider": "other-cloud",
-//!       "account_id": "made-up-account",
-//!       "plugin": "other",
-//!       "hidden": true
-//!     }
+//!     { "plugin": "other", "id": "chatgpt:made-up-account", "hidden": true }
 //!   ],
 //!   "hidden_profiles": [
 //!     { "agent": "coder", "config_dir": "/home/user/.coder-old" }
@@ -58,28 +54,18 @@
 //! keyring to read it. A hidden profile is kept by its folder, not by an
 //! entry, so a default profile the user did not change can be hidden too.
 //!
-//! Two plugins that serve one provider, or one host under two provider
-//! ids, each read its accounts, and each reading is an account of its own
-//! (spec 2026-11-19-agent-plugins, issues 29 and 31), so the choices for
-//! an account are kept with `plugin`, the plugin that reads it; without it
-//! they are of the account no plugin reads.
+//! An account entry keeps only the user's choices: a name, Hide, and where
+//! the keys the user gave for it are, each under the slot of the plugin
+//! part that asked for it: a file or an environment variable; the key
+//! itself is never written. The id is the part's own, which it keeps the
+//! same between reads, so the choices survive a renewed token.
 //!
-//! An account may keep where the keys the user gave for it are, each under
-//! the slot of the plugin part that asked for it: a file or an
-//! environment variable; the key itself is never written. An account is
-//! written by its account id, organization id or email only, never by
-//! anything taken from a key: an account known only by its key gets no
-//! name and can not be hidden in the file. Accounts are not added by hand
-//! (spec 2026-11-23, Decision 10), so an entry has no `key`.
-//!
-//! Every part may be missing. The entries of an agent or a provider no
+//! Every part may be missing. The entries of an agent or a plugin no
 //! entry of the registry names are kept as they are and not read, so they
-//! come back when the entry does (spec 2026-11-19-agent-plugins,
-//! "`agents.json`"). An account of a provider no entry serves may be
-//! written by the host of its server, `"provider": "host:api.example.com"`.
-//! An unknown field is skipped. Agents mode was never released, so no
-//! earlier layout of the file is read (spec 2026-11-19-agent-plugins,
-//! "`agents.json`").
+//! come back when the plugin does (spec 2026-11-19-agent-plugins,
+//! "`agents.json`"). An unknown field is skipped. Agents mode was never
+//! released, so no earlier layout of the file is read (spec 2026-11-23,
+//! Decision 12).
 
 mod file_content;
 mod hidden_profiles;
@@ -341,24 +327,20 @@ impl SavedProfiles {
 
     /// The same content with `key` as the place of the key the user gave
     /// for `account` under `slot`, in place of the one given before, or
-    /// with no key under `slot`. Only an account that can be saved
-    /// ([`Account::can_be_saved`]) keeps one: for a key OTTY found the
-    /// content stays as it is, so nothing taken from a key is ever saved.
+    /// with no key under `slot`.
     ///
     /// ```
-    /// use std::path::PathBuf;
-    ///
     /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn, GivenKey,
-    ///     KeyRef, ProviderRef, SavedProfiles,
+    ///     Account, AccountKind, GivenKey, KeyRef, ProviderId, SavedProfiles,
     /// };
     ///
     /// let organization = Account::new(
-    ///     ProviderRef::of_id("example-cloud"),
-    ///     AccountIdentity::OrganizationId("made-up-org".into()),
-    ///     AccountLogin::Email("dev@example.com".into()),
-    ///     AccountKind::Money,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.writer")),
+    ///     "example",
+    ///     ProviderId::new("example-cloud"),
+    ///     "org:made-up",
+    ///     "Made-up org",
+    ///     AccountKind::Organization,
+    ///     Vec::new(),
     /// );
     /// let key = KeyRef::EnvVar("EXAMPLE_ORG_KEY".into());
     ///
@@ -388,24 +370,20 @@ impl SavedProfiles {
     }
 
     /// The same content with `name` as the user's name of `account`, or
-    /// with none, so it is shown by its provider and login again. Only an
-    /// account that can be saved ([`Account::can_be_saved`]) keeps one: for
-    /// a key the content stays as it is.
+    /// with none, so it is shown by the name its part gives again. The
+    /// name is kept by the account's plugin and id, so it stays when the
+    /// part reads the account again.
     ///
     /// ```
-    /// use std::path::PathBuf;
-    ///
-    /// use otty_agents::{
-    ///     Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-    ///     ProviderRef, SavedProfiles,
-    /// };
+    /// use otty_agents::{Account, AccountKind, ProviderId, SavedProfiles};
     ///
     /// let login = Account::new(
-    ///     ProviderRef::of_id("other-cloud"),
-    ///     AccountIdentity::AccountId("made-up-account".into()),
-    ///     AccountLogin::Email("you@example.com".into()),
-    ///     AccountKind::Limits,
-    ///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
+    ///     "example",
+    ///     ProviderId::new("other-cloud"),
+    ///     "chatgpt:made-up-account",
+    ///     "you@example.com",
+    ///     AccountKind::Subscription,
+    ///     Vec::new(),
     /// );
     ///
     /// let saved = SavedProfiles::default()
@@ -421,9 +399,8 @@ impl SavedProfiles {
         self.with_account_changed(account, |saved| saved.name = name)
     }
 
-    /// The same content with `account` hidden or shown again. Only an
-    /// account that can be saved ([`Account::can_be_saved`]) is hidden: for
-    /// a key the content stays as it is.
+    /// The same content with `account` hidden or shown again, kept by its
+    /// plugin and id.
     pub fn with_account_hidden(
         self,
         account: &Account,
@@ -454,8 +431,7 @@ impl SavedProfiles {
 
     /// The same content with the choices for `account` changed by
     /// `change`, in their place or in a new entry at the end. An entry
-    /// left with nothing to keep goes, and an account that can not be
-    /// saved changes nothing.
+    /// left with nothing to keep goes.
     fn with_account_changed(
         mut self,
         account: &Account,
@@ -465,10 +441,7 @@ impl SavedProfiles {
             self.accounts.iter().position(|saved| saved.is_of(account));
         let mut saved = match position {
             Some(position) => self.accounts.remove(position),
-            None => match SavedAccount::new(account) {
-                Some(saved) => saved,
-                None => return self,
-            },
+            None => SavedAccount::new(account),
         };
 
         change(&mut saved);
@@ -553,7 +526,6 @@ pub enum SavedProfilesError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::ProviderRef;
     use crate::testing::organization;
 
     fn claude_id() -> AgentId {
@@ -710,8 +682,8 @@ mod tests {
             ],
             "accounts": [
                 {
-                    "provider": "anthropic",
-                    "organization_id": "00000000-0000-4000-8000-00000000000b",
+                    "plugin": "example",
+                    "id": "org:00000000-0000-4000-8000-00000000000b",
                     "given_keys": [
                         { "slot": "admin", "file": "/home/user/.config/anthropic-org-key" }
                     ]
@@ -811,9 +783,9 @@ mod tests {
     }
 
     /// Spec 2026-11-19-agent-plugins, "`agents.json`": the entries of an
-    /// agent or a provider no entry of the registry names, such as one a
-    /// plugin served before, are kept and written back, so
-    /// they come back with their entry; an unknown field is skipped.
+    /// agent or a plugin no entry of the registry names, such as one the
+    /// user removed, are kept and written back, so they come back with
+    /// the plugin; an unknown field is skipped.
     #[test]
     fn the_entries_of_an_unknown_agent_or_provider_are_kept() {
         let text = r#"{
@@ -835,7 +807,7 @@ mod tests {
                 }
             ],
             "accounts": [
-                { "provider": "future", "account_id": "made-up", "hidden": true }
+                { "plugin": "future", "id": "chatgpt:made-up", "hidden": true }
             ],
             "hidden_profiles": [
                 { "agent": "gone-agent", "config_dir": "/home/user/.config/gone-agent" }
@@ -848,13 +820,13 @@ mod tests {
             "Gone Agent",
             PathBuf::from("/home/user/.config/gone-agent"),
         );
-        let future_login = crate::testing::chatgpt_login("made-up");
         let future_login = Account::new(
-            ProviderRef::of_id("future"),
-            future_login.identity().clone(),
-            future_login.login().clone(),
-            future_login.kind(),
-            future_login.found_in()[0].clone(),
+            "future",
+            crate::provider::ProviderId::new("openai"),
+            "chatgpt:made-up",
+            "you@example.com",
+            crate::account::AccountKind::Subscription,
+            Vec::new(),
         );
 
         let loaded = load(text);
@@ -875,44 +847,6 @@ mod tests {
         let written = loaded.to_json().expect("the paths are text");
         assert_eq!(load(&written), loaded);
         assert!(!written.contains("colour"), "{written}");
-    }
-
-    /// Spec 2026-11-19-agent-plugins, "`agents.json`": an account of a
-    /// provider no entry serves may be kept by the host of its server, and
-    /// is written back so. Issue 31: it is the choice of the account no
-    /// plugin reads; once parts serve the host, each copy they read under
-    /// their id has its own choices.
-    #[test]
-    fn an_account_kept_by_host_is_the_account_no_plugin_reads() {
-        let text = r#"{
-            "accounts": [
-                {
-                    "provider": "host:api.example.com",
-                    "account_id": "made-up",
-                    "name": "Gateway"
-                }
-            ]
-        }"#;
-        let login = |provider: ProviderRef| {
-            let found = crate::testing::chatgpt_login("made-up");
-            Account::new(
-                provider,
-                found.identity().clone(),
-                found.login().clone(),
-                found.kind(),
-                found.found_in()[0].clone(),
-            )
-        };
-        let by_host = login(ProviderRef::Host(String::from("api.example.com")));
-        let copy = login(ProviderRef::of_id("example-cloud"))
-            .with_read_by(Some(String::from("example-cloud")));
-
-        let loaded = load(text);
-
-        assert_eq!(loaded.account_name(&by_host), Some("Gateway"));
-        assert_eq!(loaded.account_name(&copy), None);
-        let written = loaded.to_json().expect("the paths are text");
-        assert!(written.contains(r#""provider": "host:api.example.com""#));
     }
 
     #[test]

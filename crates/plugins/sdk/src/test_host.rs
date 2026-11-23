@@ -44,12 +44,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use otty_plugin_manifest::{
-    Environment, LoginFolder, Manifest, PartRef, Permissions,
-};
+use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
 pub use self::programs::StartedProgram;
-use crate::agents::{LoginFacts, Place, PlaceItem};
+use crate::agents::{LoginFolder, Place, PlaceItem};
 use crate::files::{Batch, FileInfo};
 use crate::http::{Request, Response};
 use crate::log::Level;
@@ -315,10 +313,11 @@ impl TestHost {
         self.as_part(&PartRef::provider(id), &[], run)
     }
 
-    /// Runs `run` as the provider part `id` in a call about the login
-    /// `found`, as OTTY calls it: the folders of the profiles of `found`
-    /// of this plugin are the login folders of the call, so the part also
-    /// reads inside them what the `logins` of its manifest declare.
+    /// Runs `run` as the provider part `id` in a call given the login
+    /// folders `folders`, as OTTY calls `accounts`, or `numbers` and
+    /// `read-bill` with the folders an account was found in: inside each
+    /// folder the part also reads what the `logins` of its manifest
+    /// declare for the folder's agent part.
     ///
     /// # Panics
     ///
@@ -326,22 +325,15 @@ impl TestHost {
     pub fn as_provider_in<R>(
         &self,
         id: &str,
-        found: &LoginFacts,
+        folders: &[LoginFolder],
         run: impl FnOnce() -> R,
     ) -> R {
-        let folders: Vec<LoginFolder> = {
-            let state = self.state.borrow();
-            let plugin = state.manifest.plugin().id();
-
-            found
-                .found_in
-                .iter()
-                .filter(|profile| profile.plugin == plugin)
-                .map(|profile| {
-                    LoginFolder::new(&profile.agent, &profile.folder)
-                })
-                .collect()
-        };
+        let folders: Vec<otty_plugin_manifest::LoginFolder> = folders
+            .iter()
+            .map(|LoginFolder::Profile((agent, folder))| {
+                otty_plugin_manifest::LoginFolder::new(agent, folder)
+            })
+            .collect();
 
         self.as_part(&PartRef::provider(id), &folders, run)
     }
@@ -378,7 +370,7 @@ impl TestHost {
     fn as_part<R>(
         &self,
         part: &PartRef,
-        folders: &[LoginFolder],
+        folders: &[otty_plugin_manifest::LoginFolder],
         run: impl FnOnce() -> R,
     ) -> R {
         let permissions = {
@@ -1040,31 +1032,17 @@ mod tests {
         assert!(matches!(relative_listed, Err(HostError::NotAllowed(_))));
     }
 
-    /// What OTTY found of a login in the profile `folder` of the agent
-    /// part `agent` of the plugin `plugin`.
-    fn found_in(plugin: &str, agent: &str, folder: &Path) -> LoginFacts {
-        crate::agents::LoginFacts {
-            kind: crate::agents::LoginKind::ApiKey,
-            identity: crate::agents::Identity::default(),
-            plan: None,
-            found_in: vec![crate::agents::FoundProfile {
-                plugin: plugin.to_string(),
-                agent: agent.to_string(),
-                folder: text(folder),
-                launch: crate::Command {
-                    program: "made-up".to_string(),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                },
-            }],
-        }
+    /// The profile `folder` of the agent part `agent`, as OTTY gives it to
+    /// a call of a provider part.
+    fn profile_folder(agent: &str, folder: &Path) -> Vec<LoginFolder> {
+        vec![LoginFolder::Profile((agent.to_string(), text(folder)))]
     }
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: in a
-    /// call about a login found in a profile of its own plugin, a
-    /// provider part reads in that folder what its `logins` declare, the
-    /// login with its key as a handle; outside such a call, and in a
-    /// profile of another plugin, it reads nothing there.
+    /// call given a profile folder of an agent part its `logins` name, a
+    /// provider part reads in that folder what they declare, the login
+    /// with its key as a handle; outside such a call, and in a folder of
+    /// another agent part, it reads nothing there.
     #[test]
     fn a_provider_part_reads_in_the_login_folders_of_its_call() {
         let plugin = MadeUpPlugin::new();
@@ -1079,15 +1057,12 @@ mod tests {
             (login, files::read(&text(&session), 1024))
         };
 
-        let in_call = host.as_provider_in(
-            PROVIDER,
-            &found_in("made-up", AGENT, folder),
-            read,
-        );
+        let in_call =
+            host.as_provider_in(PROVIDER, &profile_folder(AGENT, folder), read);
         let outside = host.as_provider(PROVIDER, read);
-        let of_another_plugin = host.as_provider_in(
+        let of_another_agent = host.as_provider_in(
             PROVIDER,
-            &found_in("other", AGENT, folder),
+            &profile_folder("other-agent", folder),
             read,
         );
 
@@ -1098,7 +1073,7 @@ mod tests {
                 Ok(b"{}\n".to_vec())
             )
         );
-        for refused in [outside, of_another_plugin] {
+        for refused in [outside, of_another_agent] {
             assert_eq!(refused.0, Err(HostError::NotAllowed(text(&auth))));
             assert_eq!(refused.1, Err(HostError::NotAllowed(text(&session))));
         }
@@ -1112,7 +1087,7 @@ mod tests {
         let auth = plugin.write("work/auth.json", br#"{"token": "x.y.z"}"#);
         let folder = auth.parent().expect("the profile folder");
         let host = TestHost::new(plugin.folder());
-        let found = found_in("made-up", AGENT, folder);
+        let found = profile_folder(AGENT, folder);
         host.answer_run(
             "made-up",
             &["--usage"],

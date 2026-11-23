@@ -1,7 +1,8 @@
 //! The official OpenRouter plugin of OTTY. Its provider part `openrouter`
 //! reads the limit of an OpenRouter key and how much of it was used, with
-//! the key itself, one an agent part found for `openrouter.ai`. OTTY hands the part a handle to the key, never the
-//! key.
+//! the key itself. It finds no accounts until "paste a key" (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 11). OTTY hands the
+//! part a handle to the key, never the key.
 //!
 //! The texts of its needs come in every language of OTTY, so the plugin
 //! exports the language receiver.

@@ -542,6 +542,7 @@ mod tests {
         let outcomes = reduce(
             &mut state,
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
+                accounts: otty_agents::FoundAccounts::default(),
                 profiles: Vec::new(),
                 hidden_profiles: Vec::new(),
                 saved: None,
@@ -1032,6 +1033,7 @@ mod tests {
         let moscow = crate::testing::moscow();
         let read = |time_zone: Option<TimeZone>| {
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
+                accounts: otty_agents::FoundAccounts::default(),
                 profiles: Vec::new(),
                 hidden_profiles: Vec::new(),
                 saved: None,
@@ -1089,11 +1091,11 @@ mod tests {
 
         let bills: Vec<_> = outcomes
             .iter()
-            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill { .. }))
+            .filter_map(crate::testing::bill_read_of)
             .collect();
         assert_eq!(
             bills,
-            [&load_bill(&claude())],
+            [(claude(), organization().key().clone())],
             "a profile with no organization, or of an agent with no bill, \
              has no bill read"
         );
@@ -1191,10 +1193,10 @@ mod tests {
         let outcomes = reduce(
             &mut state,
             AgentsIntent::ProfilesLoaded(LoadedProfiles {
+                accounts: otty_agents::FoundAccounts::default(),
                 profiles: vec![LoadedProfile {
                     profile: codex(),
                     status: connected(),
-                    accounts: Vec::new(),
                     version: Some(String::from(
                         crate::testing::SESSION_VERSION,
                     )),
@@ -1338,7 +1340,7 @@ mod tests {
             state
                 .selected_account()
                 .map(|account| account.provider().clone()),
-            Some(otty_agents::ProviderRef::of_id("anthropic"))
+            Some(otty_agents::ProviderId::new("anthropic"))
         );
     }
 

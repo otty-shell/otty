@@ -474,6 +474,7 @@ mod tests {
             &mut state,
             AgentsIntent::ProfilesLoaded(crate::types::LoadedProfiles {
                 profiles: Vec::new(),
+                accounts: otty_agents::FoundAccounts::default(),
                 hidden_profiles: Vec::new(),
                 saved: None,
                 problem: Some(String::from("broken")),

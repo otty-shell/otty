@@ -17,7 +17,6 @@ use crate::plugin_places::place_items;
 use crate::plugin_values::{part_profile, time_of};
 use crate::profile::Profile;
 use crate::read_failure::read_failure;
-use crate::refused_login::RefusedLogin;
 use crate::session::{AgentSession, SessionSource};
 use crate::session_files::{
     FoundSession, PanelFiles, panel_files, read_session_files,
@@ -134,8 +133,7 @@ impl SessionSource for Arc<PluginSessions> {
 
 /// The error of `call` of `part` that answered `error`: `not_supported`
 /// when the part does not read this, a need of the part as the need the
-/// user is asked, about `profile` for a call of an agent part, a refused
-/// login as such, for the caller to ask the agent part that holds it, and
+/// user is asked, about `profile` for a call of an agent part, and
 /// anything else, and a need OTTY can not show, as the plugin could not
 /// read.
 pub(crate) fn read_error(
@@ -147,10 +145,6 @@ pub(crate) fn read_error(
 ) -> SourceError {
     let need = match error {
         ReadError::NotSupported => return not_supported,
-        ReadError::LoginRefused => {
-            let refused = RefusedLogin::new(part.named().clone());
-            return SourceError::LoginRefused(Box::new(refused));
-        },
         ReadError::NeedsUser(need) => PartNeed::of_called_part(part, need),
         _ => None,
     };

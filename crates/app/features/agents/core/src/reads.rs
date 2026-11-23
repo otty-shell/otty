@@ -138,14 +138,11 @@ pub(crate) fn load_account_numbers(
         .profiles_mut()
         .start_own_reads(which)
         .into_iter()
-        .map(
-            |(account, found_in, given)| AgentsOutcome::LoadAccountNumbers {
-                account,
-                found_in,
-                given,
-                may_start_programs,
-            },
-        )
+        .map(|(account, given)| AgentsOutcome::LoadAccountNumbers {
+            account,
+            given,
+            may_start_programs,
+        })
         .collect()
 }
 
@@ -605,10 +602,10 @@ mod tests {
         let _ = reduce(&mut state, bill_loaded(&claude(), Ok(bill_of(12, 3))));
 
         let bills: Vec<_> = loaded
-            .into_iter()
-            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadBill { .. }))
+            .iter()
+            .filter_map(crate::testing::bill_read_of)
             .collect();
-        assert_eq!(bills, [load_bill(&claude())]);
+        assert_eq!(bills, [(claude(), organization().key().clone())]);
         for profile in [claude(), claude_work()] {
             let bill = state
                 .profiles()
@@ -928,21 +925,20 @@ mod tests {
         assert!(ticked.is_empty());
     }
 
-    /// A subscription login only a made-up agent, Coder, keeps, found in
-    /// its folder.
+    /// A subscription the OpenAI part found in the folder of a made-up
+    /// agent, Coder, whose limits no profile reads.
     fn coder_login(coder: &otty_agents::Profile) -> otty_agents::Account {
         otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("openai"),
-            otty_agents::AccountIdentity::AccountId(String::from(
-                "made-up-coder-login",
-            )),
-            otty_agents::AccountLogin::Email(String::from("coder@example.com")),
-            otty_agents::AccountKind::Limits,
-            otty_agents::FoundIn::ProfileFolder(
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-coder-login",
+            "coder@example.com",
+            otty_agents::AccountKind::Subscription,
+            vec![otty_agents::FoundIn::profile(
+                coder.agent().clone(),
                 coder.config_dir().to_path_buf(),
-            ),
+            )],
         )
-        .with_read_by(Some(String::from("openai")))
     }
 
     fn coder() -> otty_agents::Profile {
@@ -953,23 +949,21 @@ mod tests {
         )
     }
 
-    fn own_reads(
-        outcomes: Vec<AgentsOutcome>,
-    ) -> Vec<(otty_agents::Account, Vec<otty_agents::Profile>)> {
+    fn own_reads(outcomes: Vec<AgentsOutcome>) -> Vec<otty_agents::Account> {
         outcomes
             .into_iter()
             .filter_map(|outcome| match outcome {
-                AgentsOutcome::LoadAccountNumbers {
-                    account, found_in, ..
-                } => Some((account, found_in)),
+                AgentsOutcome::LoadAccountNumbers { account, .. } => {
+                    Some(account)
+                },
                 _ => None,
             })
             .collect()
     }
 
-    /// Spec 2026-11-19, Decision 5: a subscription login only Coder keeps
-    /// is read with its own key, in the profile it was found in; the login
-    /// Codex reads the limits of is not read twice.
+    /// Spec 2026-11-19, Decision 5: a subscription whose limits no profile
+    /// reads is read by itself; the one Codex reads the limits of is not
+    /// read twice.
     #[test]
     fn accounts_that_tell_their_own_numbers_are_read_with_their_own_key() {
         let mut state =
@@ -988,27 +982,34 @@ mod tests {
         );
         let again = reduce(&mut state, AgentsIntent::LimitsTick);
 
-        assert_eq!(own_reads(loaded), [(coder_login(&coder()), vec![coder()])]);
+        assert_eq!(own_reads(loaded), [coder_login(&coder())]);
         assert!(own_reads(again).is_empty(), "the reads are on their way");
     }
 
-    /// Issue 31: a key for `api.deepseek.com`, a host two plugins serve
-    /// under two provider ids, is two accounts, one per plugin under its
-    /// id, each named with its plugin, and both are read.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: two
+    /// plugins that find one login give two accounts, each read by its own
+    /// part; OTTY joins none.
     #[test]
-    fn a_key_for_a_host_two_plugins_serve_under_two_ids_is_read_by_both() {
+    fn one_login_two_plugins_find_is_two_accounts_each_read_by_its_part() {
         let fork = otty_agents::ProviderEntry::new(
-            otty_agents::ProviderId::new("deepseek-fork"),
-            "DeepSeek Fork",
+            otty_agents::ProviderId::new("openai"),
+            "OpenAI Fork",
             otty_plugin_host::PluginPart::new(
-                "deepseek-fork",
-                "DeepSeek Fork",
+                "openai-fork",
+                "OpenAI Fork",
                 "0.1.0",
                 "",
-                "deepseek-fork",
+                "openai",
             ),
-        )
-        .with_hosts(["deepseek.com"]);
+        );
+        let of_fork = otty_agents::Account::new(
+            "openai-fork",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-account",
+            "you@example.com",
+            otty_agents::AccountKind::Key,
+            Vec::new(),
+        );
         let mut state = AgentsState::new(
             agents(),
             crate::testing::registry_with(fork),
@@ -1020,38 +1021,20 @@ mod tests {
             &mut state,
             profiles_with_accounts_loaded(
                 &[(
-                    claude(),
+                    codex(),
                     api_key(),
-                    vec![crate::testing::deepseek_key_by_host()],
+                    vec![crate::testing::key_account(), of_fork],
                 )],
                 otty_agents::SavedProfiles::default(),
             ),
         );
 
-        let read: Vec<(String, Option<String>)> = own_reads(loaded)
+        let read: Vec<String> = own_reads(loaded)
             .iter()
-            .map(|(account, _)| {
-                (
-                    account.provider().as_str().to_string(),
-                    account.read_by().map(String::from),
-                )
-            })
+            .map(|account| account.plugin().to_string())
             .collect();
-        let names: Vec<String> =
-            crate::model::LeftPanelViewModel::from_state(&state, at(0))
-                .accounts
-                .accounts
-                .into_iter()
-                .map(|row| row.name)
-                .collect();
-        let pair = |provider: &str| {
-            (String::from(provider), Some(String::from(provider)))
-        };
-        assert_eq!(read, [pair("deepseek"), pair("deepseek-fork")]);
-        assert_eq!(
-            names,
-            ["key ••••seek (DeepSeek)", "key ••••seek (DeepSeek Fork)"]
-        );
+        assert_eq!(state.profiles().accounts().len(), 2);
+        assert_eq!(read, ["openai", "openai-fork"]);
     }
 
     /// Issue 17: an account of a provider no plugin part serves is listed
@@ -1059,15 +1042,15 @@ mod tests {
     #[test]
     fn an_account_no_plugin_serves_is_listed_and_not_read() {
         let unserved = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("example-cloud"),
-            otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-made-up-example"),
-            ),
-            otty_agents::AccountLogin::Key(None),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
+            "example",
+            otty_agents::ProviderId::new("example-cloud"),
+            "key:made-up-example",
+            "key ••••mple",
+            otty_agents::AccountKind::Key,
+            vec![crate::testing::found_in(
+                crate::testing::codex_id(),
                 "/home/user/.codex",
-            )),
+            )],
         );
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
@@ -1083,9 +1066,7 @@ mod tests {
 
         assert!(state.profiles().accounts().contains(&unserved));
         assert!(
-            own_reads(loaded)
-                .iter()
-                .all(|(account, _)| *account != unserved),
+            own_reads(loaded).iter().all(|account| *account != unserved),
             "an account no part serves is not read"
         );
     }

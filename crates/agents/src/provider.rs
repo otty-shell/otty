@@ -10,10 +10,6 @@ use otty_plugin_host::PluginPart;
 
 use crate::account::AccountKind;
 
-/// The prefix of a provider saved in `agents.json` by the host of its
-/// server, such as `host:api.example.com`.
-const HOST_PREFIX: &str = "host:";
-
 /// The id of a provider, such as `example-cloud`.
 ///
 /// It is the name the provider is saved under, so it never changes once a
@@ -39,14 +35,10 @@ impl ProviderId {
     }
 }
 
-/// What an account or the tokens of a model name their provider by (spec
-/// "Identity and links do not depend on a provider plugin"): the provider
-/// id when the agent named one, else the host of the server the key is
-/// for, in lower case, such as `api.example.com`.
-///
-/// An account known by a host is read by every part of the [`Registry`]
-/// that serves the host, one copy under the id of each (issue 31); with no
-/// such part it stays known by its host.
+/// What the tokens of a model name their provider by: the provider id
+/// when the agent named one, else the host of the server the key is for,
+/// in lower case, such as `api.example.com`. The [`Registry`] finds the
+/// part that serves a host, to name and price it.
 ///
 /// [`Registry`]: crate::Registry
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -126,27 +118,6 @@ impl ProviderRef {
     pub fn of_base_url(base_url: &str) -> Option<Self> {
         host_of(base_url).map(Self::Host)
     }
-
-    /// The text the provider is saved as in `agents.json`: its id, or
-    /// `host:` and its host.
-    pub(crate) fn to_saved(&self) -> String {
-        match self {
-            Self::Id(id) => id.as_str().to_string(),
-            Self::Host(host) => format!("{HOST_PREFIX}{host}"),
-        }
-    }
-
-    /// The provider saved as `text`; `None` for an empty one.
-    pub(crate) fn from_saved(text: &str) -> Option<Self> {
-        let text = text.trim();
-
-        let reference = match text.strip_prefix(HOST_PREFIX) {
-            Some(host) => Self::Host(host.trim().to_ascii_lowercase()),
-            None => Self::of_id(text),
-        };
-
-        (!reference.as_str().is_empty()).then_some(reference)
-    }
 }
 
 /// What the app shows and needs to know of a provider (spec "Links in the
@@ -222,8 +193,8 @@ impl ProviderEntry {
     /// organization. `None` when the provider names none.
     pub fn usage_page(&self, kind: AccountKind) -> Option<&str> {
         let plan = match kind {
-            AccountKind::Money => None,
-            _ => self.plan_usage_page.as_deref(),
+            AccountKind::Subscription => self.plan_usage_page.as_deref(),
+            _ => None,
         };
 
         plan.or(self.usage_page.as_deref())
@@ -388,22 +359,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_provider_is_saved_by_its_id_or_by_host_and_read_back() {
-        let by_id = ProviderRef::of_id("deepseek");
-        let by_host = ProviderRef::Host(String::from("api.deepseek.com"));
-
-        assert_eq!(by_id.to_saved(), "deepseek");
-        assert_eq!(by_host.to_saved(), "host:api.deepseek.com");
-        assert_eq!(ProviderRef::from_saved("deepseek"), Some(by_id));
-        assert_eq!(
-            ProviderRef::from_saved("host:API.deepseek.com"),
-            Some(by_host)
-        );
-        assert_eq!(ProviderRef::from_saved(""), None);
-        assert_eq!(ProviderRef::from_saved("host:"), None);
-    }
-
     /// Open usage page: a subscription opens the page of its plan, a key
     /// or an organization the usage page of the provider's console.
     #[test]
@@ -419,17 +374,17 @@ mod tests {
             .with_usage_page("https://platform.deepseek.com/usage");
 
         assert_eq!(
-            anthropic.usage_page(AccountKind::Limits),
+            anthropic.usage_page(AccountKind::Subscription),
             Some("https://claude.ai/settings/usage")
         );
         assert_eq!(
-            anthropic.usage_page(AccountKind::Money),
+            anthropic.usage_page(AccountKind::Key),
             Some("https://console.anthropic.com/settings/usage")
         );
         assert_eq!(
-            deepseek.usage_page(AccountKind::Limits),
+            deepseek.usage_page(AccountKind::Subscription),
             Some("https://platform.deepseek.com/usage")
         );
-        assert_eq!(deepseek_entry().usage_page(AccountKind::Money), None);
+        assert_eq!(deepseek_entry().usage_page(AccountKind::Key), None);
     }
 }

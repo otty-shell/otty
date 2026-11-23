@@ -11,21 +11,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    AgentCalls, Answers, HostError, KeyPlace, Profile as PartProfile, ReadError,
+    AgentCalls, Answers, HostError, ReadError,
 };
 use otty_plugin_host::{CallError, CalledPart, PluginFailureKind};
 
-use crate::account::AccountIdentity;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
-use crate::plugin_agent::account_of;
 use crate::plugin_places::place_items;
 use crate::plugin_sources::PluginSessions;
-use crate::plugin_values::{
-    is_same_place, part_profile, provider_of, time_of, tokens_of,
-};
+use crate::plugin_values::{part_profile, provider_of, time_of, tokens_of};
 use crate::profile::Profile;
 use crate::read_failure::read_failure;
 use crate::record_format::{RecordCounts, RecordFormat};
@@ -140,26 +136,13 @@ impl PluginSpend {
         let paths = items.keys().cloned().collect();
 
         let mut failed_call = None;
-        let mut logins = None;
         let made = walk(paths, &mut |path| {
             let Some(item) = items.get(path) else {
                 return Ok(FileSpend::default());
             };
 
             match calls.read_answers(&asked, item) {
-                Ok(Ok(answers)) => {
-                    let names_a_login = answers
-                        .answers
-                        .iter()
-                        .any(|answer| answer.login.is_some());
-                    if names_a_login && logins.is_none() {
-                        logins =
-                            Some(self.login_accounts(calls, &asked, profile));
-                    }
-                    let logins = logins.as_deref().unwrap_or_default();
-
-                    Ok(self.file_spend(answers, logins))
-                },
+                Ok(Ok(answers)) => Ok(self.file_spend(answers)),
                 Ok(Err(ReadError::Host(HostError::NotFound(_)))) => {
                     Ok(FileSpend::default())
                 },
@@ -178,32 +161,11 @@ impl PluginSpend {
         }
     }
 
-    /// The account of each login the part finds in `profile`, by the
-    /// place of its key: what an answer that names its login was paid by.
-    fn login_accounts(
-        &self,
-        calls: &mut AgentCalls<'_, '_>,
-        asked: &PartProfile,
-        profile: &Profile,
-    ) -> Vec<(KeyPlace, AccountIdentity)> {
-        let logins = calls.logins(asked).unwrap_or_default();
-
-        logins
-            .iter()
-            .filter_map(|login| {
-                let account = account_of(&self.part, login, profile)?;
-                Some((login.place.clone(), account.identity().clone()))
-            })
-            .collect()
-    }
-
     /// What one file told, from the part's `answers`: each answer with
-    /// its own project, provider and account, and what the part saw.
-    fn file_spend(
-        &self,
-        answers: Answers,
-        logins: &[(KeyPlace, AccountIdentity)],
-    ) -> FileSpend {
+    /// its own project and provider, and what the part saw. The login an
+    /// answer names is not read: nothing ties tokens to an account (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 1).
+    fn file_spend(&self, answers: Answers) -> FileSpend {
         let records = &answers.records;
         let records = RecordCounts::of_plugin(
             records.seen,
@@ -220,13 +182,6 @@ impl PluginSpend {
                 if answer.cost_microdollars.is_some() {
                     self.writes_cost.store(true, Ordering::Relaxed);
                 }
-                let account = answer.login.as_ref().and_then(|login| {
-                    logins
-                        .iter()
-                        .find(|(place, _)| is_same_place(place, login))
-                        .map(|(_, identity)| identity.clone())
-                });
-
                 let counted = CountedAnswer::new(
                     time_of(answer.at_ms),
                     answer.model.as_deref(),
@@ -237,8 +192,7 @@ impl PluginSpend {
                 )
                 .with_session(answer.session)
                 .with_project(answer.project.map(PathBuf::from))
-                .with_provider(answer.provider.as_ref().map(provider_of))
-                .with_account(account);
+                .with_provider(answer.provider.as_ref().map(provider_of));
 
                 match &answer.identity {
                     Some(identity) => counted.with_identity(identity),
@@ -315,11 +269,11 @@ impl StatsSource for Arc<PluginSpend> {
 mod tests {
 
     use super::*;
-    use crate::account::{Account, AccountKind, AccountLogin, FoundIn};
+    use crate::account::{Account, AccountKind, FoundIn};
     use crate::agent::Agent;
     use crate::plugin_agent::PluginAgent;
     use crate::plugin_provider::PluginProvider;
-    use crate::provider::ProviderRef;
+    use crate::provider::{ProviderId, ProviderRef};
     use crate::spend::ModelTokens;
     use crate::testing::{NOW, TemplateHome, answer_line, meta_line, utc_now};
     use crate::token_count::TokenCount;
@@ -545,13 +499,7 @@ mod tests {
                 other => panic!("a failed read: {other:?}"),
             })
             .collect();
-        let other_part = provider.read(
-            &cloud_account(&home),
-            &missing_key(),
-            Vec::new(),
-            &[],
-            true,
-        );
+        let other_part = provider.read(&cloud_account(), &[], true);
 
         assert_eq!(
             failures,
@@ -564,8 +512,8 @@ mod tests {
         );
         assert!(agent.health().is_paused());
         assert!(!provider.health().is_paused());
-        // Issue 29: the part found no key at its place and answered
-        // nothing, which is no failure.
+        // Issue 29: the part found no login in the account's folders and
+        // answered nothing, which is no failure.
         assert!(
             matches!(
                 &other_part,
@@ -576,32 +524,19 @@ mod tests {
         );
     }
 
-    fn cloud_account(home: &TemplateHome) -> Account {
+    /// A key of the template's provider part found in a folder with no
+    /// login: the part finds no key, so nothing is sent.
+    fn cloud_account() -> Account {
         Account::new(
-            ProviderRef::of_id("example-cloud"),
-            AccountIdentity::Email("dev@example.com".into()),
-            AccountLogin::Email("dev@example.com".into()),
-            AccountKind::Money,
-            FoundIn::ProfileFolder(home.folder()),
+            "example",
+            ProviderId::new("example-cloud"),
+            "key:made-up",
+            "dev@example.com",
+            AccountKind::Key,
+            vec![FoundIn::profile(
+                crate::agent::AgentId::new(AGENT),
+                "/no/such/home/.example-agent",
+            )],
         )
-    }
-
-    /// A login whose key file is not there: the part finds no key, so
-    /// nothing is sent.
-    fn missing_key() -> otty_plugin_host::agents::agent::Login {
-        use otty_plugin_host::agents::agent::{JsonField, Login, LoginKind};
-
-        Login {
-            kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
-                "example-cloud".to_string(),
-            ),
-            place: KeyPlace::JsonField(JsonField {
-                file: "/no/such/home/.example-agent/auth.json".to_string(),
-                pointer: "/api_key".to_string(),
-            }),
-            identity: crate::testing::no_identity(),
-            plan: None,
-        }
     }
 }

@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.7"
+version = "0.2.8"
 description = "Codex, ChatGPT and OpenAI accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -51,11 +51,15 @@ files = ["~/.codex*/auth.json", "{CODEX_HOME}/auth.json"]
 fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
           "/tokens/refresh_token"]
 
-# The numbers of OpenAI accounts: the limits and credits of a ChatGPT
-# login (also one only OpenCode keeps), else what Codex knows of them in a
-# profile the login was found in, and the costs of an organization read
-# with the admin key the user gives for it. A login behind a gateway is
-# for the gateway's host and is not read here.
+# The accounts of OpenAI and their numbers. The part finds its accounts
+# itself in the Codex profiles OTTY gives it (`logins` below): a ChatGPT
+# login of `auth.json` is a subscription, known by its account id, and an
+# API key is a key, known by its fingerprint. A login behind a gateway is
+# for the gateway's host and is no OpenAI account. The numbers are the
+# limits and credits of a ChatGPT login, read from `chatgpt.com` with its
+# token, else what Codex knows of them in a folder the account was found
+# in, and the costs of an organization read with the admin key the user
+# gives for it.
 [[agents.provider]]
 id = "openai"
 name = "OpenAI"
@@ -65,22 +69,34 @@ hosts = ["openai.com", "chatgpt.com"]
 usage_page = "https://platform.openai.com/usage"
 plan_usage_page = "https://chatgpt.com/codex/settings/usage"
 
-# Apply only while a function of this part runs: the files of the `codex`
-# part are refused then, but for the session files, where Codex writes the
-# limits it was last told. `CODEX_HOME` moves the default config folder.
+# Apply only while a function of this part runs. The files of the `codex`
+# part are refused then, but for what `logins` below lists inside the
+# folders of the call.
 [agents.provider.permissions]
 http = ["chatgpt.com", "api.openai.com"]
-read = [
-  "~/.codex*/sessions/**",
-  "~/.codex*/archived_sessions/**",
-  "{CODEX_HOME}/sessions/**",
-  "{CODEX_HOME}/archived_sessions/**",
-]
-env = ["CODEX_HOME"]
 
-# Talked to line by line for the limits of the login, in a Codex profile
-# it was found in; only `initialize`, `initialized` and
+# Talked to line by line for the limits of a ChatGPT login, in a Codex
+# profile folder the account was found in, which `CODEX_HOME` names (see
+# `folder_env` below); only `initialize`, `initialized` and
 # `account/rateLimits/read` are ever sent.
 [[agents.provider.permissions.run]]
 program = "codex"
 args = ["-s", "read-only", "-a", "never", "app-server"]
+
+# The Codex profiles whose logins the part reads to find its accounts.
+# OTTY gives the part the folders of those profiles, wherever they are,
+# when it asks for the accounts, and the folders of an account when it
+# reads its numbers; for that call only the part reads there: the config,
+# which tells whether a login is sent to a gateway, and the session files,
+# where Codex writes the limits it was last told, as plain files, and
+# `auth.json` with its keys replaced by handles. `codex app-server` gets
+# `CODEX_HOME` set only to one of those folders.
+[[agents.provider.logins]]
+agent = "codex"
+folder_env = "CODEX_HOME"
+read = ["config.toml", "sessions/**", "archived_sessions/**"]
+
+[[agents.provider.logins.keys]]
+files = ["auth.json"]
+fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
+          "/tokens/refresh_token"]

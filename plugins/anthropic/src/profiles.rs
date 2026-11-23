@@ -13,14 +13,18 @@ const DEFAULT_FOLDER: &str = ".claude";
 
 /// The default config folder of Claude Code, the only place given.
 pub(crate) fn profiles() -> Vec<ProfilePlace> {
-    let folder = env::var(CONFIG_VARIABLE)
-        .filter(|folder| !folder.trim().is_empty())
-        .unwrap_or_else(|| format!("{}/{DEFAULT_FOLDER}", env::home()));
-
     vec![ProfilePlace {
-        folder,
+        folder: default_folder(),
         is_default: true,
     }]
+}
+
+/// The config folder Claude Code uses with no variable set by OTTY:
+/// `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+pub(crate) fn default_folder() -> String {
+    env::var(CONFIG_VARIABLE)
+        .filter(|folder| !folder.trim().is_empty())
+        .unwrap_or_else(|| format!("{}/{DEFAULT_FOLDER}", env::home()))
 }
 
 #[cfg(test)]

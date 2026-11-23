@@ -155,8 +155,6 @@ mod tests {
                 places: vec![PlaceViewModel {
                     group: PermissionGroup::Sites,
                     text: String::from("api.example.com"),
-                    is_words: false,
-                    lead: None,
                     note: None,
                     profiles_of: None,
                     mark: None,

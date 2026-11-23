@@ -3,11 +3,12 @@
 The official OpenRouter plugin of OTTY. OTTY has no code for any provider
 by name: this plugin teaches it OpenRouter. Its provider part
 `openrouter` reads the limit of an OpenRouter key and how much of it was
-used (`GET https://openrouter.ai/api/v1/key`) with the key itself, one
-an agent part found for `openrouter.ai`.
-The plugin never sees the key: OTTY hands it a handle, which goes only
-into the request to `openrouter.ai`. With no OpenRouter key found it does
-nothing.
+used (`GET https://openrouter.ai/api/v1/key`) with the key itself. It
+finds no accounts yet: no agent of this plugin keeps a login, and a
+provider part never reads another plugin's profiles. Accounts come with
+"paste a key", which will give the key under the slot `key`. The plugin
+never sees the key: OTTY hands it a handle, which goes only into the
+request to `openrouter.ai`.
 
 A refused key the part asks the user to replace where the agent keeps
 it, with the keys page at hand. Its texts are in OTTY's language, which it follows when the user

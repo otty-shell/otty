@@ -1,27 +1,32 @@
 //! The official Anthropic plugin of OTTY. Its agent part `claude-code`
-//! reads Claude Code: its config folders (profiles), its sessions, the
-//! tokens of its answers and its logins. Claude Code keeps everything in
-//! its config folder, `CLAUDE_CONFIG_DIR` or `~/.claude`: the login in
-//! `.credentials.json` (the account in the global config file
-//! `.claude.json`), keys in `settings.json`, and one file for each session
-//! in `projects/<folder name>/<session id>.jsonl`.
+//! reads Claude Code: its config folders (profiles), whether each is
+//! logged in, its sessions and the tokens of its answers. Claude Code
+//! keeps everything in its config folder, `CLAUDE_CONFIG_DIR` or
+//! `~/.claude`: the login in `.credentials.json` (the account in the
+//! global config file `.claude.json`), keys in `settings.json`, and one
+//! file for each session in `projects/<folder name>/<session id>.jsonl`.
 //!
-//! Its provider part `anthropic` reads the numbers of Anthropic accounts
-//! any way it can (issue 29): the limits of a Claude login from
-//! `api.anthropic.com` with its token, whichever agent keeps the login,
-//! else from the `/usage` panel of `claude` in a hidden terminal, in a
-//! Claude Code profile the login was found in, such as a profile whose
-//! `.credentials.json` holds no token while Claude Code still works; and
-//! the bill of an organization with an admin key. With no way that works
-//! it reads nothing. A Claude login it sees refused it only reports as
-//! refused: OTTY asks the agent part that keeps it what the user must
-//! do.
+//! Its provider part `anthropic` owns the accounts (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 8). OTTY
+//! gives it the folders of the Claude Code profiles, and it reads the
+//! logins there itself (`logins.rs`): a Claude login is a subscription
+//! known by its account id (`claude:<uuid>`), a Console organization
+//! paid per token is that organization (`console:<uuid>`), and an
+//! Anthropic key is known by its fingerprint (`key:<fingerprint>`). A
+//! key the settings send to another server, such as DeepSeek's, is no
+//! account. It reads the numbers of an account any way it can (issue
+//! 29), only in the account's folders: the limits of a Claude login from
+//! `api.anthropic.com` with its token, else from the `/usage` panel of
+//! `claude` pointed at the folder in a hidden terminal, such as a profile
+//! whose `.credentials.json` holds no token while Claude Code still
+//! works; and the bill of an organization with an admin key. With no way
+//! that works it reads nothing.
 //!
 //! What only the user can do, the parts give as needs (`needs.rs`): log
-//! in to Claude Code, run Claude Code so it renews an expired login, and
-//! give or replace the admin key of an organization's bill. The texts
-//! come in every language of OTTY, so the plugin exports the language
-//! receiver.
+//! in to Claude Code, run Claude Code in a folder so it renews a login
+//! that expired or Anthropic refused, and give or replace the admin key
+//! of an organization's bill. The texts come in every language of OTTY,
+//! so the plugin exports the language receiver.
 
 // A `ReadError` may hold a need, a record the contract can not box.
 #![allow(clippy::result_large_err)]

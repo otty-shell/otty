@@ -1255,15 +1255,12 @@ mod tests {
     /// organization.
     fn open_key_dialog(app: &mut App) {
         let organization = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("example-cloud"),
-            otty_agents::AccountIdentity::OrganizationId(String::from(
-                "made-up-org",
-            )),
-            otty_agents::AccountLogin::Unnamed,
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
-                "/home/user/.codex-work",
-            )),
+            "example",
+            otty_agents::ProviderId::new("example-cloud"),
+            "org:made-up-org",
+            "Made-up org",
+            otty_agents::AccountKind::Organization,
+            Vec::new(),
         );
         let ask = otty_agents::KeyAsk::new(
             "admin",
@@ -2133,15 +2130,12 @@ mod tests {
     fn every_item_of_the_agents_account_menu_passes() {
         let mut app = agents_app_with_a_session();
         let account = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("openai"),
-            otty_agents::AccountIdentity::AccountId(String::from(
-                "made-up-account",
-            )),
-            otty_agents::AccountLogin::Email(String::from("you@example.com")),
-            otty_agents::AccountKind::Limits,
-            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
-                "/home/user/.codex",
-            )),
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-account",
+            "you@example.com",
+            otty_agents::AccountKind::Subscription,
+            Vec::new(),
         );
         open_agents_menu_with(&mut app, AgentsIntent::OpenAccountMenu(account));
 
@@ -2444,41 +2438,26 @@ mod tests {
         assert!(money, "Money shows the dollars of today");
     }
 
-    /// An account that is only a key found in an agent: it can not be
-    /// renamed or hidden yet.
-    fn key_account() -> otty_agents::Account {
-        otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("openai"),
-            otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-made-up-key"),
-            ),
-            otty_agents::AccountLogin::Key(Some(String::from("a1f3"))),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(std::path::PathBuf::from(
-                "/home/user/.codex",
-            )),
-        )
-    }
-
     /// Issue 42: the pointer moving over a disabled item of an open menu,
     /// whose reason then shows, and a press on it go through the window
     /// and the input checks and keep the menu open.
     #[test]
     fn hovering_and_pressing_a_disabled_item_keeps_the_menu_open() {
         let mut app = agents_app_with_a_session();
-        open_agents_menu_with(
-            &mut app,
-            AgentsIntent::OpenAccountMenu(key_account()),
-        );
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
         let mut window = RunningApp::new(app);
-        let rename = window
-            .find(i18n::t(i18n::Key::AgentsRename))
-            .expect("Rename… shows");
+        let show_hidden = i18n::filled(
+            i18n::Key::TplAgentsShowHiddenProfiles,
+            &[("count", "0")],
+        );
+        let off = window
+            .find(&show_hidden)
+            .expect("Show hidden profiles shows, off with none hidden");
 
         for point in [
-            rename.center(),
-            iced::Point::new(rename.x + 1.0, rename.y + 1.0),
-            iced::Point::new(rename.x + rename.width, rename.center_y()),
+            off.center(),
+            iced::Point::new(off.x + 1.0, off.y + 1.0),
+            iced::Point::new(off.x + off.width, off.center_y()),
         ] {
             window.move_to(point);
         }

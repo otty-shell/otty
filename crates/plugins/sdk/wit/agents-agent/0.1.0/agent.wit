@@ -174,7 +174,8 @@ interface agent {
   /// The agent's version written in the profile's newest files; none and
   /// OTTY runs `<program> --version` itself.
   version: func(profile: profile) -> option<string>;
-  /// The logins and keys the profile holds.
+  /// The logins and keys the profile holds. OTTY no longer asks: the
+  /// provider part of the plugin finds the accounts in the profile.
   logins: func(profile: profile) -> list<login>;
   /// Where the profile's sessions are.
   session-places: func(profile: profile) -> list<place>;
@@ -188,8 +189,9 @@ interface agent {
   /// The command that starts a new session, or continues `session`.
   launch: func(profile: profile, session: option<string>) -> command;
   /// What the user must do now that a provider refused `login` of the
-  /// profile, or it expired, such as run the agent so it renews the
-  /// login. None: OTTY says the login was refused, with no button.
+  /// profile, or it expired. OTTY no longer asks: the provider part says
+  /// it with a need of the account. It leaves with the other login
+  /// functions.
   login-refused: func(profile: profile, login: login-ref) -> option<need>;
 }
 

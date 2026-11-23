@@ -168,7 +168,7 @@ mod tests {
 
     use super::*;
     use crate::rate_limits::no_numbers;
-    use crate::testing::{as_provider, file_info, host, path};
+    use crate::testing::{as_provider_in, file_info, host, path};
 
     /// 2026-11-16T10:00:00Z, the time of the made-up records.
     const NOW: i64 = 1_794_823_200_000;
@@ -202,7 +202,9 @@ mod tests {
     fn limits_in(found: Vec<FileInfo>) -> Result<Limits, ReadError> {
         let host = host();
 
-        as_provider(&host, || newest_limits(found, last_record))
+        as_provider_in(&host, ".codex-limits", || {
+            newest_limits(found, last_record)
+        })
     }
 
     /// The made-up file `relative`, changed at `changed_ms`.
@@ -295,7 +297,8 @@ mod tests {
         let host = host();
         let empty = path(&host, ".codex-work-none");
 
-        let limits = as_provider(&host, || read_limits(&empty));
+        let limits =
+            as_provider_in(&host, ".codex-work-none", || read_limits(&empty));
 
         assert_eq!(
             limits,
@@ -309,7 +312,8 @@ mod tests {
         let folder = path(&host, ".codex-limits");
 
         let limits =
-            as_provider(&host, || read_limits(&folder)).expect("the limits");
+            as_provider_in(&host, ".codex-limits", || read_limits(&folder))
+                .expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Plus"));
     }

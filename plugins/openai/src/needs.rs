@@ -1,6 +1,6 @@
 //! What the parts of the OpenAI plugin ask the user to do, in the
-//! language of OTTY's interface: log in to Codex, run Codex so it renews
-//! its login, and give the admin key of an organization's bill. OTTY shows
+//! language of OTTY's interface: log in to Codex, log in again when a
+//! login expired, and give the admin key of an organization's bill. OTTY shows
 //! each need as it is, with the plugin's name, and its button does the
 //! need's action. A language with no text of its own gets English.
 
@@ -107,61 +107,59 @@ const LOGIN_EXPIRED_TITLE: &[(&str, &str)] = &[
 const LOGIN_EXPIRED_TEXT: &[(&str, &str)] = &[
     (
         "en",
-        "OTTY never renews a login it found in an agent. Open {agent}: it \
-         renews the login or asks you to log in again, and OTTY picks the \
-         new login up by itself.",
+        "OTTY never renews a login it found in an agent. {agent} logs in \
+         again in a terminal tab, and OTTY picks the new login up by itself.",
     ),
     (
         "zh-CN",
-        "OTTY 从不续期它在代理中找到的登录。打开 {agent}：它会续期登录或请你重新登录，\
+        "OTTY 从不续期它在代理中找到的登录。{agent} 会在终端标签页中重新登录，\
          OTTY 会自动读取新的登录。",
     ),
     (
         "zh-TW",
-        "OTTY 從不續期它在代理中找到的登入。開啟 {agent}：它會續期登入或請你重新登入，\
+        "OTTY 從不續期它在代理中找到的登入。{agent} 會在終端機分頁中重新登入，\
          OTTY 會自動讀取新的登入。",
     ),
     (
         "ja",
-        "OTTY はエージェントで見つけたログインを更新しません。{agent} を開くと、\
-         ログインが更新されるか再ログインを求められます。新しいログインは OTTY が\
-         自動で読み取ります。",
+        "OTTY はエージェントで見つけたログインを更新しません。{agent} が\
+         ターミナルタブで再ログインします。新しいログインは OTTY が自動で\
+         読み取ります。",
     ),
     (
         "ko",
-        "OTTY는 에이전트에서 찾은 로그인을 갱신하지 않습니다. {agent}을(를) 열면 \
-         로그인을 갱신하거나 다시 로그인하라고 묻고, OTTY는 새 로그인을 알아서 \
-         읽습니다.",
+        "OTTY는 에이전트에서 찾은 로그인을 갱신하지 않습니다. {agent}이(가) \
+         터미널 탭에서 다시 로그인하고, OTTY는 새 로그인을 알아서 읽습니다.",
     ),
     (
         "fr",
         "OTTY ne renouvelle jamais une connexion trouvée dans un agent. \
-         Ouvrez {agent} : il renouvelle la connexion ou vous demande de vous \
-         reconnecter, et OTTY reprend la nouvelle connexion tout seul.",
+         {agent} se reconnecte dans un onglet de terminal, et OTTY reprend \
+         la nouvelle connexion tout seul.",
     ),
     (
         "de",
         "OTTY erneuert nie eine Anmeldung, die es in einem Agenten gefunden \
-         hat. Öffne {agent}: Er erneuert die Anmeldung oder bittet dich, dich \
-         neu anzumelden, und OTTY übernimmt die neue Anmeldung von selbst.",
+         hat. {agent} meldet sich in einem Terminal-Tab neu an, und OTTY \
+         übernimmt die neue Anmeldung von selbst.",
     ),
     (
         "es",
-        "OTTY nunca renueva una sesión que encontró en un agente. Abre \
-         {agent}: renueva la sesión o te pide iniciarla de nuevo, y OTTY toma \
-         la nueva sesión por sí solo.",
+        "OTTY nunca renueva una sesión que encontró en un agente. {agent} \
+         inicia sesión de nuevo en una pestaña de terminal, y OTTY toma la \
+         nueva sesión por sí solo.",
     ),
     (
         "pt-BR",
-        "O OTTY nunca renova um login que encontrou em um agente. Abra o \
-         {agent}: ele renova o login ou pede que você entre de novo, e o OTTY \
-         pega o novo login sozinho.",
+        "O OTTY nunca renova um login que encontrou em um agente. O {agent} \
+         faz login de novo em uma aba de terminal, e o OTTY pega o novo login \
+         sozinho.",
     ),
     (
         "ru",
-        "OTTY никогда не продлевает вход, найденный у агента. Откройте \
-         {agent}: он продлит вход или попросит войти заново, а OTTY сам \
-         подхватит новый вход.",
+        "OTTY никогда не продлевает вход, найденный у агента. {agent} \
+         выполнит вход заново во вкладке терминала, а OTTY сам подхватит \
+         новый вход.",
     ),
 ];
 
@@ -387,14 +385,14 @@ pub(crate) fn not_logged_in(login: Command) -> Need {
 }
 
 /// The ChatGPT login expired or OpenAI refused it, and the plugin never
-/// renews it: the button runs `codex`, Codex itself, which renews the
-/// login or asks to log in again.
-pub(crate) fn login_expired(codex: Command) -> Need {
+/// renews it: the button runs `login`, `codex login` in the config folder
+/// of the login, in a terminal tab.
+pub(crate) fn login_expired(login: Command) -> Need {
     Need {
         id: "login-expired".to_string(),
         title: in_language(LOGIN_EXPIRED_TITLE).to_string(),
         text: in_language(LOGIN_EXPIRED_TEXT).replace("{agent}", AGENT_NAME),
-        action: NeedAction::Run(codex),
+        action: NeedAction::Run(login),
     }
 }
 
@@ -540,7 +538,7 @@ mod tests {
         assert_eq!(needs[0].title, "Нужен вход");
         assert!(needs[0].text.contains("Codex выполнит вход"));
         assert_eq!(needs[1].title, "Вход истёк");
-        assert!(needs[1].text.contains("Откройте Codex"));
+        assert!(needs[1].text.contains("Codex выполнит вход заново"));
         assert_eq!(
             needs[2].title,
             "Для настоящего счёта нужен ключ администратора"
@@ -558,7 +556,7 @@ mod tests {
 
         assert_eq!(needs[0].title, "Needs login");
         assert_eq!(needs[1].title, "The login expired");
-        assert!(needs[1].text.contains("Open Codex"));
+        assert!(needs[1].text.contains("Codex logs in again"));
         assert_eq!(needs[3].title, "The admin key was refused");
     }
 

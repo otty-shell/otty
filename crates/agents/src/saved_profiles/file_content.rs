@@ -9,11 +9,10 @@ use serde::{Deserialize, Serialize};
 use super::hidden_profiles::HiddenProfile;
 use super::saved_accounts::SavedAccount;
 use super::{DefaultProfileChanges, SavedProfiles};
-use crate::account::AccountIdentity;
+use crate::account::AccountKey;
 use crate::agent::AgentId;
 use crate::given_key::{GivenKey, KeyRef};
 use crate::profile::Profile;
-use crate::provider::ProviderRef;
 
 /// The whole text of `agents.json`.
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -66,9 +65,9 @@ impl FileContent {
     }
 
     /// The content this text holds. The entries of every agent and
-    /// provider are kept, whether or not an entry of the registry names
-    /// them; an account entry that names no provider or no account, or
-    /// keeps nothing, and a given key of no place are left out.
+    /// plugin are kept, whether or not an entry of the registry names
+    /// them; an account entry that names no plugin or no id, or keeps
+    /// nothing, and a given key of no place are left out.
     pub(super) fn into_saved(self) -> SavedProfiles {
         let mut saved = SavedProfiles::default();
 
@@ -141,21 +140,16 @@ impl AddedEntry {
     }
 }
 
-/// One account in the text, by its provider and one of its account id,
-/// organization id or email, and the plugin that reads it, with the
-/// user's name for it, whether it is hidden and where the keys the user
-/// gave for it are kept, each under its slot.
+/// One account in the text, by the plugin whose provider part found it
+/// and the part's id of it, with the user's name for it, whether it is
+/// hidden and where the keys the user gave for it are kept, each under
+/// its slot.
 #[derive(Debug, Serialize, Deserialize)]
 struct AccountEntry {
-    provider: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    account_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    organization_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    plugin: Option<String>,
+    #[serde(default)]
+    plugin: String,
+    #[serde(default)]
+    id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -166,12 +160,9 @@ struct AccountEntry {
 
 impl AccountEntry {
     fn from_saved(saved: &SavedAccount) -> Self {
-        let mut entry = Self {
-            provider: saved.provider.to_saved(),
-            account_id: None,
-            organization_id: None,
-            email: None,
-            plugin: saved.plugin.clone(),
+        Self {
+            plugin: saved.key.plugin().to_string(),
+            id: saved.key.id().to_string(),
             name: saved.name.clone(),
             hidden: saved.is_hidden,
             given_keys: saved
@@ -179,44 +170,24 @@ impl AccountEntry {
                 .iter()
                 .map(GivenKeyEntry::from_given)
                 .collect(),
-        };
-
-        match &saved.identity {
-            AccountIdentity::AccountId(id) => {
-                entry.account_id = Some(id.clone())
-            },
-            AccountIdentity::OrganizationId(id) => {
-                entry.organization_id = Some(id.clone());
-            },
-            AccountIdentity::Email(email) => entry.email = Some(email.clone()),
-            // A key OTTY found is never saved (`SavedAccount::new`).
-            _ => {},
         }
-        entry
     }
 
     /// The choices for the account; `None` for an entry that names no
-    /// provider or no account, or one that keeps nothing. A provider no
-    /// entry of the registry names is kept as it is.
+    /// plugin or no id, or one that keeps nothing. A plugin no entry of
+    /// the registry names is kept as it is.
     fn into_saved(self) -> Option<SavedAccount> {
-        let provider = ProviderRef::from_saved(&self.provider)?;
-        let identity = match (self.account_id, self.organization_id, self.email)
-        {
-            (Some(id), _, _) => AccountIdentity::AccountId(id),
-            (None, Some(id), _) => AccountIdentity::OrganizationId(id),
-            (None, None, Some(email)) => AccountIdentity::Email(email),
-            (None, None, None) => return None,
-        };
+        if self.plugin.is_empty() || self.id.is_empty() {
+            return None;
+        }
+
         let given_keys = self
             .given_keys
             .into_iter()
             .filter_map(GivenKeyEntry::into_given)
             .collect();
-
         let saved = SavedAccount {
-            provider,
-            identity,
-            plugin: self.plugin,
+            key: AccountKey::new(self.plugin, self.id),
             name: self.name,
             is_hidden: self.hidden,
             given_keys,

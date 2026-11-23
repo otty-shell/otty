@@ -71,7 +71,6 @@ impl MenuViewModel {
             AgentsMenu::Account(account) => {
                 Self::Account(AccountMenuViewModel {
                     place: open.place(),
-                    can_save: account.can_be_saved(),
                     is_hidden: state.profiles().is_account_hidden(account),
                 })
             },
@@ -224,10 +223,6 @@ pub(crate) struct ProfileMenuViewModel {
 pub(crate) struct AccountMenuViewModel {
     /// Where the menu opens.
     pub(crate) place: MenuPlace,
-    /// Whether Rename… and Hide act: the account is known by an id, an
-    /// organization or an email. A key is not kept, so they are off for
-    /// it, with why.
-    pub(crate) can_save: bool,
     /// Whether the account is hidden: Show again in place of Hide.
     pub(crate) is_hidden: bool,
 }
@@ -558,7 +553,6 @@ mod tests {
             login,
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
-                can_save: true,
                 is_hidden: false,
             })
         );
@@ -566,39 +560,6 @@ mod tests {
             company,
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
-                can_save: true,
-                is_hidden: false,
-            })
-        );
-    }
-
-    /// A key is known only by its fingerprint, which is not kept: its name
-    /// and its hiding can not be saved, so Rename… and Hide are off.
-    #[test]
-    fn the_menu_of_a_key_can_not_rename_or_hide_it() {
-        let key = Account::new(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AccountIdentity::KeyFingerprint(
-                otty_agents::KeyFingerprint::of("sk-made-up-deepseek-key"),
-            ),
-            otty_agents::AccountLogin::Key(None),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(PathBuf::from(
-                "/home/user/.claude",
-            )),
-        );
-        let mut state = with_accounts(
-            &[(claude(), api_key(), vec![key.clone()])],
-            SavedProfiles::default(),
-        );
-
-        let menu = account_menu(&mut state, key);
-
-        assert_eq!(
-            menu,
-            MenuViewModel::Account(AccountMenuViewModel {
-                place: place(),
-                can_save: false,
                 is_hidden: false,
             })
         );
@@ -628,7 +589,6 @@ mod tests {
             account,
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
-                can_save: true,
                 is_hidden: true,
             })
         );

@@ -7,25 +7,20 @@ use std::time::{Duration, SystemTime};
 
 use jiff::tz::TimeZone;
 use mockall::mock;
-use otty_plugin_host::agents::agent::Login;
 use otty_plugin_host::{
     Environment, LoadedPlugin, Manifest, PluginEngine, PluginPart,
 };
 
-use crate::account::{
-    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-};
+use crate::account::{Account, AccountKind, FoundIn};
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
 use crate::fixtures::stand_in::{default_config_dir, profile_command};
-use crate::key_fingerprint::KeyFingerprint;
 use crate::local_time::LocalNow;
-use crate::part_need::PartNeed;
 use crate::price_table::TokenPrices;
 use crate::profile::{Profile, ProfileStatus};
-use crate::provider::ProviderRef;
+use crate::provider::ProviderId;
 use crate::session::{AgentSession, SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -55,7 +50,6 @@ mock! {
         fn writes_cost(&self) -> bool;
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
-        fn accounts(&self, profile: &Profile) -> Vec<Account>;
         fn version(&self, profile: &Profile) -> Option<String>;
         fn launch<'a>(
             &self,
@@ -66,16 +60,6 @@ mock! {
         fn session_source_ids(&self) -> &'static [SourceId];
         fn spend_counter(&self) -> Option<Box<dyn SpendCounter>>;
         fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
-        fn found_login(
-            &self,
-            profile: &Profile,
-            account: &Account,
-        ) -> Option<Login>;
-        fn login_refused(
-            &self,
-            profile: &Profile,
-            login: &Login,
-        ) -> Option<PartNeed>;
     }
 }
 
@@ -236,10 +220,6 @@ impl Agent for Coder {
             plan: None,
             billing: None,
         }
-    }
-
-    fn accounts(&self, _profile: &Profile) -> Vec<Account> {
-        Vec::new()
     }
 
     fn version(&self, _profile: &Profile) -> Option<String> {
@@ -419,54 +399,35 @@ pub(crate) fn set_file_time(path: &Path, time: SystemTime) {
         .expect("set the file time");
 }
 
-/// A made-up Anthropic Console organization with the id `id`, paid per
-/// token, found in `/home/user/.claude`.
+/// A made-up Anthropic Console organization with the id `id`, read by the
+/// made-up plugin `example`, found in the Claude Code profile
+/// `/home/user/.claude`.
 pub(crate) fn organization(id: &str) -> Account {
     Account::new(
-        ProviderRef::of_id("anthropic"),
-        AccountIdentity::OrganizationId(id.to_string()),
-        AccountLogin::Email(String::from("dev@example.com")),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+        "example",
+        ProviderId::new("anthropic"),
+        format!("org:{id}"),
+        "dev@example.com",
+        AccountKind::Organization,
+        vec![FoundIn::profile(
+            AgentId::new("claude-code"),
+            PathBuf::from("/home/user/.claude"),
+        )],
     )
 }
 
-/// A made-up ChatGPT login with the account id `id`, found in
-/// `/home/user/.codex`.
+/// A made-up ChatGPT login with the account id `id`, read by the made-up
+/// plugin `example`, found in the Codex profile `/home/user/.codex`.
 pub(crate) fn chatgpt_login(id: &str) -> Account {
     Account::new(
-        ProviderRef::of_id("openai"),
-        AccountIdentity::AccountId(id.to_string()),
-        AccountLogin::Email(String::from("you@example.com")),
-        AccountKind::Limits,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+        "example",
+        ProviderId::new("openai"),
+        format!("chatgpt:{id}"),
+        "you@example.com",
+        AccountKind::Subscription,
+        vec![FoundIn::profile(
+            AgentId::new("codex"),
+            PathBuf::from("/home/user/.codex"),
+        )],
     )
-}
-
-/// The account of the made-up `key` at `provider`, found in
-/// `/home/user/.claude`.
-pub(crate) fn key_account(provider: ProviderRef, key: &str) -> Account {
-    Account::new(
-        provider,
-        AccountIdentity::KeyFingerprint(KeyFingerprint::of(key)),
-        AccountLogin::Key(None),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
-    )
-}
-
-/// `account` read by the made-up plugin `example` of the tests, the one
-/// [`made_up_part`] and `PluginProvider::made_up` belong to (issue 29).
-pub(crate) fn read_by_example(account: Account) -> Account {
-    account.with_read_by(Some(String::from("example")))
-}
-
-/// What a plugin part tells of whom a login is for when its files say
-/// nothing.
-pub(crate) fn no_identity() -> otty_plugin_host::agents::agent::Identity {
-    otty_plugin_host::agents::agent::Identity {
-        account_id: None,
-        organization_id: None,
-        email: None,
-    }
 }

@@ -436,12 +436,10 @@ impl ProviderPart {
     }
 
     /// The part's permissions in plain words, as the install dialog shows
-    /// them, with the keys every provider part gets.
+    /// them. A provider part gets no key another part found: it reads the
+    /// logins of its accounts itself, as its `logins` declare.
     pub fn permission_lines(&self) -> Vec<PermissionLine> {
-        let mut lines = self.permissions.lines();
-        lines.push(PermissionLine::GetsProviderKeys(self.name.clone()));
-
-        lines
+        self.permissions.lines()
     }
 
     fn of_raw(
@@ -744,8 +742,8 @@ description = "Reads ChatGPT limits and OpenAI API spending.""#,
 
     /// Issue 29: a provider part reads an account any way it can, also by
     /// asking the agent in a profile the account was found in, so it may
-    /// declare files, variables, programs and hidden terminals; keys,
-    /// databases and the keyring stay the agent parts'.
+    /// declare files, variables, programs and hidden terminals; databases
+    /// and the keyring stay the agent parts'.
     #[test]
     fn a_provider_part_may_declare_files_programs_and_terminals() {
         let with_ways = edited(
@@ -791,6 +789,46 @@ sqlite = ["~/.codex/state.db"]"#,
         );
         assert!(
             matches!(&refused, ManifestError::Shape(text) if text.contains("unknown field")),
+            "{refused:?}"
+        );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, issue 05: a provider
+    /// part may read a key file outside every profile folder, such as
+    /// `~/.claude.json` next to the default `~/.claude`, its keys as
+    /// handles; only JSON fields of files, never a database column or a
+    /// variable.
+    #[test]
+    fn a_provider_part_may_declare_key_files_only() {
+        let key_file = |place: &str| {
+            edited(
+                OPENAI_MANIFEST,
+                r#"http = ["chatgpt.com", "api.openai.com"]"#,
+                &format!(
+                    "http = [\"chatgpt.com\"]\n\n\
+                     [[agents.provider.permissions.keys]]\n{place}"
+                ),
+            )
+        };
+
+        let manifest = Manifest::parse(&key_file(
+            "files = [\"~/.codex.json\"]\nfields = [\"/key\"]",
+        ))
+        .expect("valid");
+        let refused = refusal(&key_file("env = [\"OPENAI_API_KEY\"]"));
+
+        let lines: Vec<String> = manifest.providers()[0]
+            .permissions()
+            .lines()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            lines.iter().any(|line| line.contains("~/.codex.json")),
+            "{lines:?}"
+        );
+        assert!(
+            matches!(refused, ManifestError::BadPart { .. }),
             "{refused:?}"
         );
     }

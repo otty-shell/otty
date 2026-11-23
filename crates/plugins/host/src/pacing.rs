@@ -1,9 +1,8 @@
 //! The pace of the slow readings of an account's numbers: a reading that
 //! ran a program or a hidden terminal, such as `codex app-server` or
 //! Claude Code's `/usage` screen, runs at most once in the five minutes
-//! of the limits read, per provider part and the profiles the account was
-//! found in. Within that time the answer of the last reading is given
-//! again, for any plugin.
+//! of the limits read, per provider part and account id. Within that time
+//! the answer of the last reading is given again, for any plugin.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
@@ -26,7 +25,7 @@ pub(crate) const PACE_GAP: Duration = Duration::from_secs(4 * 60 + 30);
 /// part could not read them.
 pub(crate) type NumbersAnswer = Result<AccountNumbers, ReadError>;
 
-/// The last slow reading of each part and profiles of one plugin.
+/// The last slow reading of each part and account of one plugin.
 #[derive(Default)]
 pub(crate) struct LimitPacing {
     readings: Mutex<HashMap<PaceKey, Reading>>,
@@ -67,21 +66,20 @@ impl LimitPacing {
     }
 }
 
-/// Which reading is paced: the part and the folders of the profiles it
-/// read in.
+/// Which reading is paced: the part and the part's id of the account it
+/// read.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PaceKey {
     part: PartRef,
-    folder: String,
+    account: String,
 }
 
 impl PaceKey {
-    /// The reading by `part` in the profiles of `folder`: one folder, or
-    /// several, one per line.
-    pub(crate) fn new(part: &PartRef, folder: &str) -> Self {
+    /// The reading by `part` of its account `account`.
+    pub(crate) fn new(part: &PartRef, account: &str) -> Self {
         Self {
             part: part.clone(),
-            folder: folder.to_string(),
+            account: account.to_string(),
         }
     }
 }
@@ -95,7 +93,7 @@ struct Reading {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::agent::LimitWindow;
+    use crate::agents::provider::LimitWindow;
 
     fn limits(percent_used: f64) -> AccountNumbers {
         AccountNumbers {
@@ -116,8 +114,8 @@ mod tests {
         }
     }
 
-    fn key(folder: &str) -> PaceKey {
-        PaceKey::new(&PartRef::provider("test-provider"), folder)
+    fn key(account: &str) -> PaceKey {
+        PaceKey::new(&PartRef::provider("test-provider"), account)
     }
 
     fn percent(answer: Option<NumbersAnswer>) -> Option<f64> {
@@ -129,11 +127,15 @@ mod tests {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
+        pacing.remember(
+            key("chatgpt:made-up-one"),
+            started_at,
+            Ok(limits(29.0)),
+        );
 
         let soon = started_at + Duration::from_secs(60);
         assert_eq!(
-            percent(pacing.recent(&key("/home/u/.agent"), soon)),
+            percent(pacing.recent(&key("chatgpt:made-up-one"), soon)),
             Some(29.0)
         );
     }
@@ -144,13 +146,13 @@ mod tests {
         let started_at = Instant::now();
 
         pacing.remember(
-            key("/home/u/.agent"),
+            key("chatgpt:made-up-one"),
             started_at,
             Err(ReadError::Failed("not logged in".to_string())),
         );
 
         let soon = started_at + Duration::from_secs(60);
-        let answer = pacing.recent(&key("/home/u/.agent"), soon);
+        let answer = pacing.recent(&key("chatgpt:made-up-one"), soon);
         assert!(matches!(answer, Some(Err(ReadError::Failed(_)))));
     }
 
@@ -159,23 +161,31 @@ mod tests {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
+        pacing.remember(
+            key("chatgpt:made-up-one"),
+            started_at,
+            Ok(limits(29.0)),
+        );
 
         let later = started_at + PACE_GAP;
-        assert!(pacing.recent(&key("/home/u/.agent"), later).is_none());
+        assert!(pacing.recent(&key("chatgpt:made-up-one"), later).is_none());
     }
 
     #[test]
-    fn each_profile_and_part_has_its_own_reading() {
+    fn each_account_and_part_has_its_own_reading() {
         let pacing = LimitPacing::default();
         let started_at = Instant::now();
 
-        pacing.remember(key("/home/u/.agent"), started_at, Ok(limits(29.0)));
+        pacing.remember(
+            key("chatgpt:made-up-one"),
+            started_at,
+            Ok(limits(29.0)),
+        );
 
-        let other_profile = key("/home/u/.agent-work");
+        let other_account = key("chatgpt:made-up-two");
         let other_part =
-            PaceKey::new(&PartRef::agent("other-agent"), "/home/u/.agent");
-        assert!(pacing.recent(&other_profile, started_at).is_none());
+            PaceKey::new(&PartRef::agent("other-agent"), "chatgpt:made-up-one");
+        assert!(pacing.recent(&other_account, started_at).is_none());
         assert!(pacing.recent(&other_part, started_at).is_none());
     }
 }

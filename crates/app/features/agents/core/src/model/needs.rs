@@ -5,19 +5,19 @@
 //!
 //! Who asks (spec 2026-11-19-agent-plugins, issue 20): everything the user
 //! must do for an agent or a provider comes from its plugin part as a
-//! [`PartNeed`], shown as it is with the plugin's name; a login a provider
-//! refused is the need of the agent part that keeps it. OTTY writes only
+//! [`PartNeed`], shown as it is with the plugin's name. A login that
+//! expired is said by each part for its own page: the agent part on the
+//! profile, the provider part on the account it found there (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 9). OTTY writes only
 //! the needs about plugins and its own permissions: a plugin update, a
-//! part that is off, a key no plugin serves, a plugin that failed, a
-//! changed format and the system keyring, a profile whose program or
-//! folder is missing, and a refused login the agent part said nothing
-//! about.
+//! plugin that failed, a changed format and the system keyring, and a
+//! profile whose program or folder is missing.
 
 use std::path::Path;
 
 use otty_agents::{
-    Account, AgentCommand, AgentEntry, AgentInstall, FormatChange, PartNeed,
-    PartNeedAction, ProfileStatus, ProviderId, RefusedLogin, SourceError,
+    Account, AccountKind, AgentCommand, AgentEntry, AgentInstall, FormatChange,
+    PartNeed, PartNeedAction, ProfileStatus, ProviderId, SourceError,
     SourceFailure,
 };
 use otty_app_domain::folder_path::tilde_path;
@@ -30,8 +30,6 @@ use super::super::need::NeedAction;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::account_name;
-use super::found_in::found_in_text;
-use super::read_by::off_provider_part;
 use super::reset_time::date_time_text;
 use super::user_need::UserNeed;
 
@@ -64,30 +62,29 @@ pub(crate) struct NeedFixViewModel {
 }
 
 /// What the accounts need from the user, in the order of the accounts,
-/// each as [`needs_of_account`] lists them, then the need of the system
-/// keyring, which hides accounts until it is read.
+/// each as [`needs_of_account`] lists them, then what the provider parts
+/// ask that belongs to no account, then the need of the system keyring,
+/// which hides accounts until it is read.
 pub(crate) fn account_needs(state: &AgentsState) -> Vec<NeedViewModel> {
     state
         .profiles()
         .accounts()
         .iter()
         .flat_map(|account| needs_of_account(state, account))
+        .chain(found_needs(state))
         .chain(keyring_need(state))
         .chain(plugin_update_needs(state))
         .collect()
 }
 
-/// What `account` needs from the user: what its plugin parts ask, each
-/// once, then the needs about its plugins.
+/// What `account` needs from the user: what its provider part asks, each
+/// once, then the need of a plugin that failed.
 pub(crate) fn needs_of_account(
     state: &AgentsState,
     account: &Account,
 ) -> Vec<NeedViewModel> {
     account_part_needs(state, account)
         .into_iter()
-        .chain(refused_login_needs(state, account))
-        .chain(no_provider_need(state, account))
-        .chain(part_off_need(state, account))
         .chain(account_plugin_failed_need(state, account))
         .collect()
 }
@@ -118,10 +115,11 @@ pub(crate) fn needs_of_profile(
         .collect()
 }
 
-/// The needs the plugin parts give for `account`, each once: from the
-/// latest read of its limits when no part answered, from the read of its
-/// own numbers and from the bill of the organization it is. A key a part
-/// asks for is given for the account.
+/// The needs the provider part gives for `account`, each once: the ones
+/// it gave when it found the account, such as an expired login, and the
+/// ones of the latest read of its limits when no part answered, of the
+/// read of its own numbers and of the bill of the organization it is. A
+/// key a part asks for is given for the account.
 fn account_part_needs(
     state: &AgentsState,
     account: &Account,
@@ -132,13 +130,14 @@ fn account_part_needs(
         .own_reads()
         .of(account)
         .and_then(|own| need_in(own.failure()));
-    let bill = account
-        .organization_id()
-        .and(profiles.first_with(account))
+    let bill = (account.kind() == AccountKind::Organization)
+        .then(|| profiles.first_with(account))
+        .flatten()
         .and_then(|shown| need_in(shown.bill().failure()));
 
     let mut needs: Vec<&PartNeed> = Vec::new();
-    let found = limits.iter().flat_map(|limits| limits.needs());
+    let read = limits.iter().flat_map(|limits| limits.needs());
+    let found = account.needs().iter().chain(read);
     for need in found.chain(own).chain(bill) {
         if !needs.iter().any(|shown| shown.is_same_need(need)) {
             needs.push(need);
@@ -150,68 +149,6 @@ fn account_part_needs(
         .into_iter()
         .map(|need| part_need_view(need, &place, Some(account)))
         .collect()
-}
-
-/// OTTY's own needs of `account`, a login a provider part refused that
-/// the agent part keeping it said nothing about, from the same reads as
-/// [`account_part_needs`]: one per provider part and profile, with no
-/// plugin label and no button, since only that agent knows how to log in
-/// again.
-fn refused_login_needs(
-    state: &AgentsState,
-    account: &Account,
-) -> Vec<NeedViewModel> {
-    let profiles = state.profiles();
-    let limits = profiles.account_limits(account);
-    let own = profiles
-        .own_reads()
-        .of(account)
-        .and_then(|own| refused_in(own.failure()));
-    let bill = account
-        .organization_id()
-        .and(profiles.first_with(account))
-        .and_then(|shown| refused_in(shown.bill().failure()));
-
-    let mut refusals: Vec<&RefusedLogin> = Vec::new();
-    let found = limits.iter().flat_map(|limits| limits.refused_logins());
-    for refused in found.chain(own).chain(bill) {
-        if !refusals.contains(&refused) {
-            refusals.push(refused);
-        }
-    }
-
-    let place = account_name(state.registry(), profiles.saved(), account);
-    refusals
-        .into_iter()
-        .map(|refused| refused_login_need(state, refused, &place))
-        .collect()
-}
-
-/// OTTY's need of the login `refused`, about `place`: the provider by the
-/// name of its entry and the profile by its name, else `place`.
-fn refused_login_need(
-    state: &AgentsState,
-    refused: &RefusedLogin,
-    place: &str,
-) -> NeedViewModel {
-    let part = refused.provider();
-    let provider = state
-        .registry()
-        .provider(&ProviderId::new(part.part()))
-        .map_or(part.name(), |entry| entry.name());
-    let profile = refused.profile().map_or(place, |profile| profile.name());
-
-    NeedViewModel {
-        place: place.to_string(),
-        plugin: None,
-        title: i18n::t(Key::AgentsNeedLoginRefusedTitle).to_string(),
-        line: i18n::filled(
-            Key::TplAgentsNeedLoginRefusedText,
-            &[("provider", provider), ("profile", profile)],
-        ),
-        fix: None,
-        extra: None,
-    }
 }
 
 /// The need of the agent part of a profile nobody is logged in with.
@@ -226,8 +163,7 @@ fn profile_part_need(shown: &ProfileState) -> Option<NeedViewModel> {
 
 /// `need` of a plugin part as it is, about `place`, with the name of its
 /// plugin and the button of its action. A key it asks for is given for
-/// `account`; with no account that can keep one in `agents.json` the
-/// button is shown disabled.
+/// `account`; with no account the button is shown disabled.
 fn part_need_view(
     need: &PartNeed,
     place: &str,
@@ -252,13 +188,11 @@ fn part_need_view(
                 Key::TplAgentsNeedAskKey,
                 &[("label", ask.label())],
             ),
-            action: account.filter(|account| account.can_be_saved()).map(
-                |account| NeedAction::AskKey {
-                    account: account.clone(),
-                    plugin: plugin.to_string(),
-                    ask: ask.clone(),
-                },
-            ),
+            action: account.map(|account| NeedAction::AskKey {
+                account: account.clone(),
+                plugin: plugin.to_string(),
+                ask: ask.clone(),
+            }),
         },
         PartNeedAction::OpenPage(page) => NeedFixViewModel {
             label: open_page_label(page),
@@ -352,15 +286,6 @@ fn typed_word(word: &str) -> String {
     format!("'{quoted}'")
 }
 
-/// The login a provider refused in `failure`, when no agent part said
-/// what to do about it.
-fn refused_in(failure: Option<&SourceError>) -> Option<&RefusedLogin> {
-    match failure? {
-        SourceError::LoginRefused(refused) => Some(refused.as_ref()),
-        _ => None,
-    }
-}
-
 /// The need of a part in `failure`, when the read waits for the user.
 fn need_in(failure: Option<&SourceError>) -> Option<&PartNeed> {
     match failure? {
@@ -369,77 +294,23 @@ fn need_in(failure: Option<&SourceError>) -> Option<&PartNeed> {
     }
 }
 
-/// The need of an account no installed plugin reads (spec
-/// 2026-11-19-agent-plugins, "What the UI shows"; issue 29): OTTY lists it
-/// by its provider or host, but reads none of its own numbers. Add
-/// plugin… opens Plugins mode with the URL field empty.
-/// An installed part that is off and would serve it asks to be turned on
-/// instead.
-fn no_provider_need(
-    state: &AgentsState,
-    account: &Account,
-) -> Option<NeedViewModel> {
-    if account.read_by().is_some()
-        || off_provider_part(state, account.provider()).is_some()
-    {
-        return None;
-    }
+/// What the provider parts ask that belongs to no account, such as a
+/// login file a part does not understand, about the part's provider.
+fn found_needs(state: &AgentsState) -> Vec<NeedViewModel> {
+    state
+        .profiles()
+        .found_needs()
+        .iter()
+        .map(|need| {
+            let id = ProviderId::new(need.part().part());
+            let place = state
+                .registry()
+                .provider(&id)
+                .map_or(need.part().name(), |entry| entry.name());
 
-    let found_in = match state.profiles().first_with(account) {
-        Some(shown) => state.agent_name(shown.profile().agent()).to_string(),
-        None => found_in_text(account.found_in().first()?, state.env().home()),
-    };
-
-    Some(NeedViewModel {
-        place: account_name(
-            state.registry(),
-            state.profiles().saved(),
-            account,
-        ),
-        plugin: None,
-        title: i18n::t(Key::AgentsNeedNoProviderTitle).to_string(),
-        line: i18n::filled(
-            Key::TplAgentsNeedNoProviderText,
-            &[("host", account.provider().as_str()), ("agent", &found_in)],
-        ),
-        fix: Some(NeedFixViewModel {
-            label: i18n::t(Key::AgentsAddPlugin).to_string(),
-            action: Some(NeedAction::AddPlugin),
-        }),
-        extra: None,
-    })
-}
-
-/// The need of an account whose provider an installed part would serve,
-/// but the part is off: "Example Cloud of the Example plugin is off [Turn
-/// on]".
-fn part_off_need(
-    state: &AgentsState,
-    account: &Account,
-) -> Option<NeedViewModel> {
-    if account.read_by().is_some() {
-        return None;
-    }
-    let off = off_provider_part(state, account.provider())?;
-
-    Some(NeedViewModel {
-        place: account_name(
-            state.registry(),
-            state.profiles().saved(),
-            account,
-        ),
-        plugin: None,
-        title: i18n::t(Key::AgentsNeedPartOffTitle).to_string(),
-        line: i18n::filled(
-            Key::TplAgentsNeedPartOffText,
-            &[("part", &off.part_name), ("plugin", &off.plugin_name)],
-        ),
-        fix: Some(NeedFixViewModel {
-            label: i18n::t(Key::AgentsTurnOn).to_string(),
-            action: Some(NeedAction::TurnOnPart(off.clone())),
-        }),
-        extra: None,
-    })
+            part_need_view(need, place, None)
+        })
+        .collect()
 }
 
 /// The needs of the plugin updates that ask for new permissions and wait
@@ -786,12 +657,9 @@ mod tests {
 
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        AgentInstall, FormatChange, ProfileStatus, ProviderRef, SavedProfiles,
-        SourceError,
+        AgentInstall, FormatChange, ProfileStatus, SavedProfiles, SourceError,
     };
-    use otty_app_domain::plugins::{
-        OffPart, PartSide, PluginNotes, WaitingUpdate,
-    };
+    use otty_app_domain::plugins::{PluginNotes, WaitingUpdate};
     use otty_plugin_host::{PluginFailureKind, PluginPart};
 
     use super::*;
@@ -800,10 +668,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         api_key, at, bill_loaded, chatgpt_login, claude, claude_work, codex,
-        codex_work, connected, deepseek_key_by_host, limits_answer,
-        limits_loaded, organization, registry_with_codex,
-        registry_without_deepseek, saved_with_given_key, spend_loaded,
-        spend_of, with_accounts, with_accounts_in, with_profiles,
+        codex_work, connected, limits_answer, limits_loaded, organization,
+        registry_with_codex, saved_with_given_key, spend_loaded, spend_of,
+        with_accounts, with_accounts_in, with_profiles,
         with_registry_and_profiles,
     };
     use crate::types::SpendCount;
@@ -1170,48 +1037,81 @@ mod tests {
         assert_eq!(needs[0].plugin, plugin_label("Openai"));
     }
 
-    /// Issue 20: when the agent part that keeps a refused login said
-    /// nothing about it, OTTY says itself that the provider refused the
-    /// login of the profile: no plugin label and no button.
+    /// The need of the OpenAI part whose login expired, as the part gives
+    /// it with the account it found.
+    fn expired_need() -> otty_agents::PartNeed {
+        let SourceError::NeedsUser(need) = crate::testing::login_expired()
+        else {
+            panic!("a need");
+        };
+
+        *need
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the need
+    /// a provider part gives with an account it found, such as an expired
+    /// login, shows as a need of the account, with the part's button.
     #[test]
-    fn a_refused_login_its_agent_part_said_nothing_about_is_told_by_otty() {
-        let mut state = with_accounts(
+    fn the_need_a_part_gives_with_an_account_shows_on_it() {
+        let expired =
+            crate::testing::chatgpt_login().with_needs(vec![expired_need()]);
+        let state = with_accounts(
+            &[(codex(), connected(), vec![expired.clone()])],
+            SavedProfiles::default(),
+        );
+
+        let needs = needs_of_account(&state, &expired);
+
+        assert_eq!(needs.len(), 1, "{needs:?}");
+        assert_eq!(needs[0].title, "The login expired");
+        assert_eq!(needs[0].plugin, plugin_label("Openai"));
+        assert!(matches!(
+            needs[0].fix.as_ref().and_then(|fix| fix.action.as_ref()),
+            Some(NeedAction::Run { .. })
+        ));
+        assert!(profile_needs(&state).is_empty());
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: an
+    /// account whose part is not in the registry now asks for no provider
+    /// plugin: the part found it, so no other plugin would read it.
+    #[test]
+    fn an_account_whose_part_is_gone_asks_for_no_provider_plugin() {
+        let registry = std::sync::Arc::new(
+            crate::testing::registry()
+                .as_ref()
+                .clone()
+                .without_provider(&otty_agents::ProviderId::new("openai")),
+        );
+        let state = with_accounts_in(
+            registry,
             &[(codex(), connected(), vec![chatgpt_login()])],
             SavedProfiles::default(),
         );
-        let part = otty_agents::fixtures::plugin_part("openai", "openai");
-        let refused = RefusedLogin::new(part).of_profile(&codex());
-        let _ = reduce(
-            &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Err(SourceError::LoginRefused(Box::new(refused))),
-                )]),
-                at(10),
-            ),
-        );
 
-        assert_eq!(
-            account_needs(&state),
-            vec![NeedViewModel {
-                place: String::from("OpenAI · you@example.com"),
-                plugin: None,
-                title: i18n::t(Key::AgentsNeedLoginRefusedTitle).to_string(),
-                line: i18n::filled(
-                    Key::TplAgentsNeedLoginRefusedText,
-                    &[("provider", "OpenAI"), ("profile", "Codex")],
-                ),
-                fix: None,
-                extra: None,
-            }]
-        );
+        assert!(account_needs(&state).is_empty());
     }
 
-    /// Issue 20: each action of a part's need gets its button: a page by
-    /// its host, a report to copy; a key OTTY found can keep no given key,
-    /// so its key button is off.
+    /// The needs a provider part gives that belong to no account show with
+    /// the other needs of the accounts, about its provider.
+    #[test]
+    fn a_need_of_no_account_shows_with_the_needs_of_the_accounts() {
+        let mut state = with_profiles(&[(codex(), connected())]);
+        let AgentsIntent::ProfilesLoaded(mut loaded) =
+            crate::testing::profiles_loaded(&[(codex(), connected())])
+        else {
+            panic!("a profiles read");
+        };
+        loaded.accounts =
+            otty_agents::FoundAccounts::new(Vec::new(), vec![expired_need()]);
+        let _ = reduce(&mut state, AgentsIntent::ProfilesLoaded(loaded));
+
+        let needs = account_needs(&state);
+
+        assert_eq!(needs.len(), 1, "{needs:?}");
+        assert_eq!(needs[0].title, "The login expired");
+    }
+
     #[test]
     fn each_action_of_a_part_need_gets_its_button() {
         let part = otty_agents::fixtures::plugin_part("example", "example");
@@ -1260,7 +1160,10 @@ mod tests {
                 ))),
             })
         );
-        assert_eq!(key.fix.and_then(|fix| fix.action), None);
+        assert!(matches!(
+            key.fix.and_then(|fix| fix.action),
+            Some(NeedAction::AskKey { account, .. }) if account == found_key
+        ));
     }
 
     /// Claude Code, whose last good count ended at 10 and whose next count
@@ -1349,89 +1252,6 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19-agent-plugins, "What the UI shows": a key for a
-    /// host no entry serves is an account by its host that asks for a
-    /// provider plugin; Add plugin… opens Plugins mode.
-    #[test]
-    fn a_key_for_a_host_with_no_entry_asks_for_a_provider_plugin() {
-        let state = with_accounts_in(
-            registry_without_deepseek(),
-            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
-            SavedProfiles::default(),
-        );
-
-        let needs = account_needs(&state);
-
-        assert_eq!(
-            needs,
-            vec![NeedViewModel {
-                place: format!(
-                    "api.deepseek.com · {}",
-                    i18n::filled(Key::TplAgentsAccountKey, &[("last", "seek")])
-                ),
-                plugin: None,
-                title: i18n::t(Key::AgentsNeedNoProviderTitle).to_string(),
-                line: i18n::filled(
-                    Key::TplAgentsNeedNoProviderText,
-                    &[("host", "api.deepseek.com"), ("agent", "Claude Code")]
-                ),
-                fix: Some(NeedFixViewModel {
-                    label: i18n::t(Key::AgentsAddPlugin).to_string(),
-                    action: Some(NeedAction::AddPlugin),
-                }),
-                extra: None,
-            }]
-        );
-    }
-
-    /// Issue 29: a login no installed plugin reads is still an account,
-    /// with one line that says so.
-    #[test]
-    fn a_login_no_plugin_reads_is_shown_with_a_line_that_says_so() {
-        let registry = std::sync::Arc::new(
-            crate::testing::registry()
-                .as_ref()
-                .clone()
-                .without_provider(&otty_agents::ProviderId::new("openai")),
-        );
-        let found = crate::testing::chatgpt_login().with_read_by(None);
-        let state = with_accounts_in(
-            registry,
-            &[(codex(), connected(), vec![found.clone()])],
-            SavedProfiles::default(),
-        );
-
-        let accounts = state.profiles().accounts();
-        let needs = account_needs(&state);
-
-        assert_eq!(accounts, [found]);
-        let lines: Vec<&str> =
-            needs.iter().map(|need| need.line.as_str()).collect();
-        assert_eq!(
-            lines,
-            [i18n::filled(
-                Key::TplAgentsNeedNoProviderText,
-                &[("host", "openai"), ("agent", "Codex")]
-            )
-            .as_str()]
-        );
-    }
-
-    /// With the DeepSeek entry, the same key is a DeepSeek account and
-    /// needs nothing.
-    #[test]
-    fn a_key_for_a_host_an_entry_serves_needs_no_plugin() {
-        let state = with_accounts(
-            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
-            SavedProfiles::default(),
-        );
-
-        let accounts = state.profiles().accounts();
-
-        assert!(account_needs(&state).is_empty());
-        assert_eq!(accounts[0].provider(), &ProviderRef::of_id("deepseek"));
-    }
-
     #[test]
     fn an_organization_whose_bill_was_read_needs_nothing() {
         let mut state = with_accounts(
@@ -1506,65 +1326,6 @@ mod tests {
                 ))),
             })
         );
-    }
-
-    fn deepseek_off() -> OffPart {
-        OffPart {
-            plugin: String::from("deepseek"),
-            plugin_name: String::from("DeepSeek"),
-            version: String::from("0.2.0"),
-            side: PartSide::Provider,
-            part: String::from("deepseek"),
-            part_name: String::from("DeepSeek"),
-            hosts: vec![String::from("deepseek.com")],
-        }
-    }
-
-    /// Spec "What the UI shows": the provider part is off, so the account
-    /// asks to turn it on, not for a plugin; Turn on leaves when the part
-    /// serves again.
-    #[test]
-    fn an_account_whose_provider_part_is_off_asks_to_turn_it_on() {
-        let mut state = with_accounts_in(
-            registry_without_deepseek(),
-            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
-            SavedProfiles::default(),
-        );
-        let _ = reduce(
-            &mut state,
-            AgentsIntent::PluginNotesChanged(PluginNotes {
-                off_parts: vec![deepseek_off()],
-                waiting_updates: Vec::new(),
-            }),
-        );
-
-        let needs = account_needs(&state);
-
-        assert_eq!(needs.len(), 1);
-        assert_eq!(
-            needs[0].title,
-            i18n::t(Key::AgentsNeedPartOffTitle).to_string()
-        );
-        assert_eq!(
-            needs[0].line,
-            i18n::filled(
-                Key::TplAgentsNeedPartOffText,
-                &[("part", "DeepSeek"), ("plugin", "DeepSeek")]
-            )
-        );
-        assert_eq!(
-            needs[0].fix,
-            Some(NeedFixViewModel {
-                label: i18n::t(Key::AgentsTurnOn).to_string(),
-                action: Some(NeedAction::TurnOnPart(deepseek_off())),
-            })
-        );
-
-        let served = with_accounts(
-            &[(claude(), api_key(), vec![deepseek_key_by_host()])],
-            SavedProfiles::default(),
-        );
-        assert!(account_needs(&served).is_empty());
     }
 
     /// Spec "What the UI shows": an update that asks for new permissions

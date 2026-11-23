@@ -13,9 +13,9 @@ use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
 use super::account_name::account_name;
-use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
 use super::short_number::{AccountNumber, account_number};
+use super::source::source_folder;
 
 /// The Found by OTTY report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,7 +108,7 @@ impl FoundProfileRowViewModel {
 /// One account of the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FoundAccountRowViewModel {
-    /// The provider and the login, such as "Example Cloud · you@example.com".
+    /// The provider and the name, such as "Example Cloud · you@example.com".
     pub(crate) account: String,
     /// Every place it was found, such as "~/.coder, ~/.coder-work".
     pub(crate) found_in: String,
@@ -125,7 +125,7 @@ impl FoundAccountRowViewModel {
         let found_in: Vec<String> = account
             .found_in()
             .iter()
-            .map(|place| found_in_text(place, home))
+            .map(|place| source_folder(place, home))
             .collect();
         let now = account_number(state, account).unwrap_or_else(|| {
             AccountNumber::word(UNKNOWN.to_string(), SessionTone::Muted)
@@ -144,23 +144,18 @@ impl FoundAccountRowViewModel {
     }
 }
 
-/// What OTTY reads of an account of `kind`.
+/// What OTTY reads of an account of `kind`: the limits of a
+/// subscription, the money of a key or an organization.
 fn reads_of(kind: AccountKind) -> &'static str {
     match kind {
-        AccountKind::Limits => i18n::t(Key::AgentsReadsLimits),
-        AccountKind::Credits => i18n::t(Key::AgentsReadsCredits),
+        AccountKind::Subscription => i18n::t(Key::AgentsReadsLimits),
         _ => i18n::t(Key::AgentsReadsMoney),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use otty_agents::{
-        AccountIdentity, AccountLogin, FoundIn, KeyFingerprint, ProviderRef,
-        SavedProfiles,
-    };
+    use otty_agents::SavedProfiles;
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -176,16 +171,18 @@ mod tests {
         FoundReportViewModel::from_state(state).expect("the report is open")
     }
 
-    /// A made-up key at OpenAI that ends with `a1f3`.
+    /// A made-up key at OpenAI the OpenAI part named by its ending.
     fn key_account() -> Account {
         Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::KeyFingerprint(KeyFingerprint::of(
-                "sk-made-up-key-for-tests-a1f3",
-            )),
-            AccountLogin::Key(Some(String::from("a1f3"))),
-            AccountKind::Money,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            "key:made-up-a1f3",
+            "key ••••a1f3",
+            AccountKind::Key,
+            vec![crate::testing::found_in(
+                crate::testing::codex_id(),
+                "/home/user/.codex",
+            )],
         )
     }
 
@@ -287,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_is_shown_by_its_last_characters_and_nothing_known_is_a_dash() {
+    fn a_key_is_shown_by_its_parts_name_and_nothing_known_is_a_dash() {
         let state = with_accounts(
             &[(codex(), api_key(), vec![key_account()])],
             SavedProfiles::default(),
@@ -298,10 +295,7 @@ mod tests {
         assert_eq!(
             vm.accounts,
             vec![FoundAccountRowViewModel {
-                account: format!(
-                    "OpenAI · {}",
-                    i18n::filled(Key::TplAgentsAccountKey, &[("last", "a1f3")])
-                ),
+                account: String::from("OpenAI · key ••••a1f3"),
                 found_in: String::from("~/.codex"),
                 reads: i18n::t(Key::AgentsReadsMoney),
                 now: AccountNumber::word(

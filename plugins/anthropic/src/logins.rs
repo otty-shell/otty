@@ -1,332 +1,503 @@
-//! The logins and keys found in a Claude Code profile, each named by where
-//! its key sits, never by the key.
+//! The logins of a Claude Code profile folder, as the provider part
+//! `anthropic` finds its accounts in them (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 8). OTTY gives
+//! the part the folders of the `claude-code` profiles, and the part reads
+//! the login files there itself, with every key replaced by a handle.
 //!
-//! A profile can hold a Claude login (the token of `.credentials.json`,
-//! the account in `oauthAccount` of `.claude.json`), a Console key
-//! (`primaryApiKey` of `.claude.json`) and a key in the `env` of
-//! `settings.json` (`ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY`), which
-//! is a key for the host of `ANTHROPIC_BASE_URL` when it is set.
+//! A folder can hold three logins:
+//!
+//! - A Claude login: the token of `.credentials.json` and the account in
+//!   `oauthAccount` of `.claude.json`. It is a subscription known by the
+//!   account's id, which stays the same when Claude Code renews the
+//!   tokens, and named by its email. A login to an Anthropic Console
+//!   organization that pays per token (`billingType` `prepaid`, no plan)
+//!   is that organization: its bill is the organization's, so everyone
+//!   logged in to it is one account.
+//! - A Console key, `primaryApiKey` of `.claude.json`.
+//! - A key in the `env` of `settings.json` (`ANTHROPIC_AUTH_TOKEN`, else
+//!   `ANTHROPIC_API_KEY`). A key sent to another server
+//!   (`ANTHROPIC_BASE_URL`, such as DeepSeek's) is no Anthropic account
+//!   (spec scenario "Claude Code pointed at DeepSeek").
+//!
+//! A key is known by its fingerprint, so one key in two places is one
+//! account; an admin key (`sk-ant-admin…`) is an organization whose bill
+//! it reads.
+//!
+//! Whether a login expired is the part's call. The token of a Claude
+//! login expires within hours and Claude Code renews it with its refresh
+//! token on its next run, also in the `/usage` probe, so a token past its
+//! time is no need. A token past its time with no refresh token beside it
+//! can not be renewed: that login expired, and the account gets the need
+//! that runs `claude` in its folder.
 
-use otty_plugin_sdk::agents::{Identity, Login, LoginKind, ProviderRef};
-use otty_plugin_sdk::{JsonField, KeyPlace};
+use otty_plugin_sdk::agents::{Account, AccountKind, LoginFolder, ProviderRef};
+use otty_plugin_sdk::{Key, clock};
 
+use crate::claude_code::claude_in_folder;
 use crate::config_files::{
-    API_KEY_FIELD, AUTH_TOKEN_FIELD, GlobalConfig, KeyFile, OauthAccount,
-    OauthLogin, PRIMARY_API_KEY_FIELD, Settings, TOKEN_FIELD, credentials_path,
+    Credentials, GlobalConfig, KeyFile, OauthAccount, OauthLogin, Settings,
     read_credentials, read_global_configs, read_settings,
 };
+use crate::needs::{self, ADMIN_PREFIX};
 use crate::provider::{ANTHROPIC, provider_of};
 
-/// The logins of the profile in `folder`: the Claude login first, then
-/// the Console key of `.claude.json`, then the key of the settings.
-pub(crate) fn logins(folder: &str) -> Vec<Login> {
-    let configs = read_global_configs(folder);
-    let settings = read_settings(folder);
+/// The agent part whose profiles hold the logins.
+pub(crate) const CLAUDE_CODE: &str = "claude-code";
 
-    let claude_login = configs
-        .iter()
-        .find_map(|config| config.fields().oauth_account())
-        .and_then(|account| claude_login(folder, account));
-    let console_key = configs.iter().find_map(console_key);
-    let settings_key = settings.as_ref().and_then(settings_key);
+/// The host of Anthropic's API, as `ANTHROPIC_BASE_URL` may name it.
+const ANTHROPIC_API_HOST: &str = "api.anthropic.com";
 
-    [claude_login, console_key, settings_key]
-        .into_iter()
-        .flatten()
-        .collect()
+/// One login found in one folder: the account it is, found in that
+/// folder only, and how the part reads it.
+pub(crate) struct FolderLogin {
+    account: Account,
+    access: Access,
 }
 
-/// The Claude login of the account `account` of the profile in `folder`,
-/// with the plan of its login file; its key is the token of the login
-/// file.
-///
-/// A login to a Console organization with no plan pays per token, and its
-/// bill is the organization's, so it is known by its organization. Any
-/// other login is a subscription, known by its own id, else its email. A
-/// login whose files name neither can not be told from the others, so it
-/// is none.
-fn claude_login(folder: &str, account: &OauthAccount) -> Option<Login> {
-    let credentials = read_credentials(folder);
-    let plan = credentials
-        .as_ref()
-        .and_then(|credentials| credentials.fields().login())
-        .and_then(OauthLogin::plan);
-    let is_paid_per_token = account.is_console() && plan.is_none();
-
-    let identity = if is_paid_per_token && account.organization_id().is_some() {
-        Identity {
-            organization_id: account.organization_id().map(String::from),
-            email: account.email().map(String::from),
-            ..Identity::default()
-        }
-    } else {
-        Identity {
-            account_id: account.account_id().map(String::from),
-            email: account.email().map(String::from),
-            ..Identity::default()
-        }
-    };
-    if identity.account_id.is_none()
-        && identity.organization_id.is_none()
-        && identity.email.is_none()
-    {
-        return None;
+impl FolderLogin {
+    /// The account of the login.
+    pub(crate) fn account(&self) -> &Account {
+        &self.account
     }
 
-    let kind = if is_paid_per_token {
-        LoginKind::ApiKey
-    } else {
-        LoginKind::Subscription
+    /// The account and how the part reads it.
+    pub(crate) fn into_parts(self) -> (Account, Access) {
+        (self.account, self.access)
+    }
+}
+
+/// How the part reads the account of a login.
+pub(crate) enum Access {
+    /// A Claude login, with its token when `.credentials.json` holds one:
+    /// Claude Code may keep it elsewhere and still work.
+    Claude(Option<Key>),
+    /// An API key or an admin key.
+    Key(Key),
+}
+
+/// The logins of the profile folder `folder`: the Claude login first,
+/// then the Console key, then the key of the settings. A folder of
+/// another agent part, or with no login, gives none.
+pub(crate) fn logins(folder: &LoginFolder) -> Vec<FolderLogin> {
+    let LoginFolder::Profile((agent, path)) = folder;
+    if agent != CLAUDE_CODE {
+        return Vec::new();
+    }
+
+    let configs = read_global_configs(path);
+    let settings = read_settings(path);
+
+    let claude = configs
+        .iter()
+        .find_map(|config| config.fields().oauth_account())
+        .and_then(|account| claude_login(folder, path, account));
+    let console = configs
+        .into_iter()
+        .find_map(console_key)
+        .and_then(|key| key_login(folder, key));
+    let settings = settings
+        .and_then(settings_key)
+        .and_then(|key| key_login(folder, key));
+
+    [claude, console, settings].into_iter().flatten().collect()
+}
+
+/// The Claude login of the account `account` in the profile folder
+/// `path`, given to the part as `place`, with the plan and the token of
+/// its login file. A login whose files name neither an account id nor an
+/// email can not be told from another, so it is none.
+fn claude_login(
+    place: &LoginFolder,
+    path: &str,
+    account: &OauthAccount,
+) -> Option<FolderLogin> {
+    let credentials = read_credentials(path);
+    let login = credentials
+        .as_ref()
+        .and_then(|credentials| credentials.fields().login());
+    let plan = login.and_then(OauthLogin::plan);
+    let has_lapsed = credentials
+        .as_ref()
+        .zip(login)
+        .is_some_and(|(credentials, login)| has_lapsed(credentials, login));
+    let token_marker = login.and_then(OauthLogin::token);
+    let token =
+        credentials.and_then(|credentials| credentials.into_key(token_marker));
+
+    let organization = account
+        .organization_id()
+        .filter(|_| account.is_console() && plan.is_none());
+    let (id, name, kind, plan) = match organization {
+        Some(organization) => (
+            format!("console:{organization}"),
+            organization_name(account, organization),
+            AccountKind::Organization,
+            None,
+        ),
+        None => (
+            format!("claude:{}", account.account_id().or(account.email())?),
+            subscription_name(account),
+            AccountKind::Subscription,
+            plan,
+        ),
     };
 
-    Some(Login {
-        kind,
-        for_whom: ProviderRef::Id(ANTHROPIC.to_string()),
-        place: json_field(&credentials_path(folder), TOKEN_FIELD),
-        identity,
-        plan,
+    let needs = match has_lapsed {
+        true => vec![needs::login_expired(claude_in_folder(path))],
+        false => Vec::new(),
+    };
+    Some(FolderLogin {
+        account: Account {
+            id,
+            name,
+            kind,
+            plan,
+            found_in: vec![place.clone()],
+            needs,
+        },
+        access: Access::Claude(token),
     })
+}
+
+/// Whether the Claude login `login` of `credentials` expired for good:
+/// its token is past its time and no refresh token is there to renew it.
+fn has_lapsed(credentials: &KeyFile<Credentials>, login: &OauthLogin) -> bool {
+    let is_past = login
+        .expires_at_ms()
+        .is_some_and(|expires_at| expires_at <= clock::now_ms());
+
+    is_past && !credentials.holds_key(login.refresh_token())
+}
+
+/// What the user knows a Claude subscription by: its email, with the name
+/// of its organization when it is not the personal one Claude makes for
+/// every account, `<email>'s Organization`.
+fn subscription_name(account: &OauthAccount) -> String {
+    let email = account.email().or(account.account_id()).unwrap_or_default();
+
+    match account.organization_name() {
+        Some(organization) if !organization.contains(email) => {
+            format!("{email} · {organization}")
+        },
+        _ => email.to_string(),
+    }
+}
+
+/// What the user knows a Console organization by: its name, else the
+/// email of the login, else its id.
+fn organization_name(account: &OauthAccount, organization_id: &str) -> String {
+    account
+        .organization_name()
+        .or(account.email())
+        .unwrap_or(organization_id)
+        .to_string()
 }
 
 /// The Console key of the global config file `config`, when it holds one.
-fn console_key(config: &KeyFile<GlobalConfig>) -> Option<Login> {
-    if !config.holds_key(config.fields().primary_api_key()) {
-        return None;
-    }
+fn console_key(config: KeyFile<GlobalConfig>) -> Option<Key> {
+    let marker = config.fields().primary_api_key();
 
-    Some(key_login(
-        ProviderRef::Id(ANTHROPIC.to_string()),
-        json_field(config.path(), PRIMARY_API_KEY_FIELD),
-    ))
+    config.into_key(marker)
 }
 
-/// The key the settings give Claude Code in their variables, for the
-/// server they send it to: `ANTHROPIC_AUTH_TOKEN`, which Claude Code sends
-/// first, else `ANTHROPIC_API_KEY`. None for a server that is not an
-/// address of the web.
-fn settings_key(settings: &KeyFile<Settings>) -> Option<Login> {
+/// The key the settings give Claude Code in their variables:
+/// `ANTHROPIC_AUTH_TOKEN`, which Claude Code sends first, else
+/// `ANTHROPIC_API_KEY`. None when the settings send Claude Code to a
+/// server other than Anthropic's.
+fn settings_key(settings: KeyFile<Settings>) -> Option<Key> {
     let fields = settings.fields();
     let provider = provider_of(Some(fields))?;
-
-    let pointer = if settings.holds_key(fields.auth_token()) {
-        AUTH_TOKEN_FIELD
-    } else if settings.holds_key(fields.api_key()) {
-        API_KEY_FIELD
-    } else {
+    if !is_anthropic(&provider) {
         return None;
-    };
+    }
 
-    Some(key_login(provider, json_field(settings.path(), pointer)))
+    let marker = match settings.holds_key(fields.auth_token()) {
+        true => fields.auth_token(),
+        false => fields.api_key(),
+    };
+    settings.into_key(marker)
 }
 
-/// An API key for `provider` at `place`; the files tell nothing else
-/// about it.
-fn key_login(provider: ProviderRef, place: KeyPlace) -> Login {
-    Login {
-        kind: LoginKind::ApiKey,
-        for_whom: provider,
-        place,
-        identity: Identity::default(),
-        plan: None,
+/// Whether `provider` is Anthropic: no other server set, or Anthropic's
+/// own API.
+fn is_anthropic(provider: &ProviderRef) -> bool {
+    match provider {
+        ProviderRef::Id(id) => id == ANTHROPIC,
+        ProviderRef::Host(host) => host == ANTHROPIC_API_HOST,
     }
 }
 
-/// The field `pointer` of the JSON file `file` as a key place.
-fn json_field(file: &str, pointer: &str) -> KeyPlace {
-    KeyPlace::JsonField(JsonField {
-        file: file.to_string(),
-        pointer: pointer.to_string(),
+/// The account of the key `key` found in `place`: known by the key's
+/// fingerprint and named by its end, an organization for an admin key.
+fn key_login(place: &LoginFolder, key: Key) -> Option<FolderLogin> {
+    let fingerprint = key.fingerprint().ok()?;
+    let is_admin = key.has_prefix(ADMIN_PREFIX).unwrap_or(false);
+
+    let kind = match is_admin {
+        true => AccountKind::Organization,
+        false => AccountKind::Key,
+    };
+    Some(FolderLogin {
+        account: Account {
+            id: format!("key:{fingerprint}"),
+            name: short_key(&fingerprint),
+            kind,
+            plan: None,
+            found_in: vec![place.clone()],
+            needs: Vec::new(),
+        },
+        access: Access::Key(key),
     })
+}
+
+/// A key shown by the end of its fingerprint, such as `key ••••a1f3`: the
+/// key itself is never read.
+fn short_key(fingerprint: &str) -> String {
+    let start = fingerprint.len().saturating_sub(4);
+
+    format!("key ••••{}", &fingerprint[start..])
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::keys;
+    use otty_plugin_sdk::NeedAction;
+    use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
-    use crate::testing::{as_part, host, path};
+    use crate::profiles::CONFIG_VARIABLE;
+    use crate::testing::{as_provider_in, host, login_folder, path};
 
-    fn logins_of(folder: &str) -> Vec<Login> {
-        let host = host();
-        let folder = path(&host, folder);
+    /// A time after the made-up tokens of the fixtures expired, which
+    /// expire on 2026-11-16, and after the one of `.claude-expired`.
+    const AFTER_EXPIRY_MS: i64 = 1_800_000_000_000;
 
-        as_part(&host, || logins(&folder))
+    /// The accounts of the logins in the folder `name` of `host`, read in
+    /// a call given that folder.
+    fn accounts_of(host: &TestHost, name: &str) -> Vec<Account> {
+        let folder = login_folder(host, name);
+
+        as_provider_in(host, std::slice::from_ref(&folder), || {
+            logins(&folder)
+                .into_iter()
+                .map(|login| login.into_parts().0)
+                .collect()
+        })
     }
 
-    fn anthropic() -> ProviderRef {
-        ProviderRef::Id(ANTHROPIC.to_string())
+    fn accounts_in(name: &str) -> Vec<Account> {
+        accounts_of(&host(), name)
     }
 
-    fn place(folder: &str, file: &str, pointer: &str) -> KeyPlace {
-        let host = host();
-
-        json_field(&path(&host, &format!("{folder}/{file}")), pointer)
-    }
-
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 8: a Claude
+    /// login is a subscription known by its account and named by its
+    /// email and its organization, with its plan.
     #[test]
-    fn a_subscription_login_is_a_claude_account_with_its_plan() {
-        let found = logins_of(".claude-work");
+    fn a_claude_login_is_a_subscription_named_by_its_email() {
+        let host = host();
+
+        let found = accounts_of(&host, ".claude-work");
 
         assert_eq!(
             found,
-            [Login {
-                kind: LoginKind::Subscription,
-                for_whom: anthropic(),
-                place: place(".claude-work", ".credentials.json", TOKEN_FIELD),
-                identity: Identity {
-                    account_id: Some(
-                        "00000000-0000-4000-8000-00000000000c".to_string()
-                    ),
-                    email: Some("own@example.com".to_string()),
-                    ..Identity::default()
-                },
+            [Account {
+                id: "claude:00000000-0000-4000-8000-00000000000c".to_string(),
+                name: "own@example.com · Example Org".to_string(),
+                kind: AccountKind::Subscription,
                 plan: Some("Max 20x".to_string()),
+                found_in: vec![login_folder(&host, ".claude-work")],
+                needs: Vec::new(),
             }]
         );
     }
 
+    /// The default folder `~/.claude` keeps its global config file next
+    /// to it, `~/.claude.json`, outside the folder. A provider part may
+    /// not declare a key file outside its login folders yet, so the
+    /// manifest can not give the part that file.
     #[test]
-    fn the_default_folder_finds_the_login_next_to_it() {
-        let found = logins_of(".claude");
+    fn the_default_folder_finds_the_account_next_to_it() {
+        let found = accounts_in(".claude");
 
         assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "dev@example.com · Example Org");
         assert_eq!(found[0].plan.as_deref(), Some("Max 20x"));
-        assert_eq!(found[0].identity.email.as_deref(), Some("dev@example.com"));
+    }
+
+    /// Claude makes every account a personal organization named after
+    /// its email; that name tells nothing more.
+    #[test]
+    fn a_personal_organization_leaves_the_email_alone() {
+        let found = accounts_in(".claude-expired");
+
+        assert_eq!(found[0].name, "old@example.com");
+    }
+
+    /// Decision 8: the id stays when Claude Code renews the tokens.
+    #[test]
+    fn the_id_stays_the_same_after_the_tokens_are_renewed() {
+        let before = accounts_in(".claude-work");
+        let after = accounts_in(".claude-renewed");
+
+        assert_eq!(before[0].id, after[0].id);
     }
 
     /// The bill of a Console organization belongs to the organization, so
-    /// two people logged in to it are one account.
+    /// everyone logged in to it is one account.
     #[test]
-    fn a_prepaid_login_is_its_organization_paid_per_token() {
-        let found = logins_of(".claude-prepaid");
-
-        assert_eq!(
-            found,
-            [Login {
-                kind: LoginKind::ApiKey,
-                for_whom: anthropic(),
-                place: place(
-                    ".claude-prepaid",
-                    ".credentials.json",
-                    TOKEN_FIELD
-                ),
-                identity: Identity {
-                    organization_id: Some(
-                        "00000000-0000-4000-8000-0000000000dd".to_string()
-                    ),
-                    email: Some("dev@example.com".to_string()),
-                    ..Identity::default()
-                },
-                plan: None,
-            }]
-        );
-    }
-
-    #[test]
-    fn a_login_with_no_id_is_told_by_its_email() {
-        let found = logins_of(".claude-email");
+    fn a_prepaid_login_is_its_organization() {
+        let found = accounts_in(".claude-prepaid");
 
         assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "console:00000000-0000-4000-8000-0000000000dd");
+        assert_eq!(found[0].name, "Example Org");
+        assert_eq!(found[0].kind, AccountKind::Organization);
+        assert_eq!(found[0].plan, None);
+    }
+
+    #[test]
+    fn a_prepaid_login_with_a_plan_is_a_subscription() {
+        let found = accounts_in(".claude-prepaid-max");
+
+        assert_eq!(found[0].id, "claude:00000000-0000-4000-8000-00000000000d");
+        assert_eq!(found[0].kind, AccountKind::Subscription);
+    }
+
+    #[test]
+    fn a_login_with_no_id_is_known_by_its_email() {
+        let found = accounts_in(".claude-email");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "claude:dev@example.com");
+        assert_eq!(found[0].name, "dev@example.com");
+    }
+
+    /// A token with no account in the files can not be told apart after
+    /// it is renewed, and a folder with no login has no account; neither
+    /// gives a need here: a missing login is the agent part's need.
+    #[test]
+    fn a_folder_with_no_account_in_its_files_gives_none() {
+        assert_eq!(accounts_in(".claude-token"), []);
+        assert_eq!(accounts_in(".claude-nothing"), []);
+        assert_eq!(accounts_in(".claude-no-token"), []);
+        assert_eq!(accounts_in(".claude-broken"), []);
+    }
+
+    #[test]
+    fn a_console_key_is_a_key_named_by_its_fingerprint() {
+        let found = accounts_in(".claude-console");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, AccountKind::Key);
+        assert!(found[0].id.starts_with("key:"), "{}", found[0].id);
+        assert!(found[0].name.starts_with("key ••••"), "{}", found[0].name);
         assert_eq!(
-            found[0].identity,
-            Identity {
-                email: Some("dev@example.com".to_string()),
-                ..Identity::default()
-            }
+            found[0].name.chars().count(),
+            "key ••••a1f3".chars().count()
         );
     }
 
+    /// The same key as the Console key of `.claude-console` is the same
+    /// account.
     #[test]
-    fn a_token_with_no_account_in_the_files_is_no_login() {
-        assert_eq!(logins_of(".claude-token"), []);
-        assert_eq!(logins_of(".claude-nothing"), []);
+    fn an_anthropic_key_of_the_settings_is_a_key() {
+        let in_settings = accounts_in(".claude-api");
+        let in_console = accounts_in(".claude-console");
+
+        assert_eq!(in_settings.len(), 1);
+        assert_eq!(in_settings[0].kind, AccountKind::Key);
+        assert_eq!(in_settings[0].id, in_console[0].id);
     }
 
+    /// Spec scenario "Claude Code pointed at DeepSeek": a key the settings
+    /// send to another server is no Anthropic account.
     #[test]
-    fn a_primary_api_key_is_an_anthropic_key() {
-        assert_eq!(
-            logins_of(".claude-console"),
-            [key_login(
-                anthropic(),
-                place(".claude-console", ".claude.json", PRIMARY_API_KEY_FIELD)
-            )]
-        );
-    }
-
-    #[test]
-    fn an_api_key_in_the_settings_is_an_anthropic_key() {
-        assert_eq!(
-            logins_of(".claude-api"),
-            [key_login(
-                anthropic(),
-                place(".claude-api", "settings.json", API_KEY_FIELD)
-            )]
-        );
-    }
-
-    /// The issue's case: a DeepSeek key behind DeepSeek's server is a
-    /// login for `api.deepseek.com`, not for Anthropic.
-    #[test]
-    fn a_token_for_a_deepseek_base_url_is_a_key_for_its_host() {
-        assert_eq!(
-            logins_of(".claude-deepseek"),
-            [key_login(
-                ProviderRef::Host("api.deepseek.com".to_string()),
-                place(".claude-deepseek", "settings.json", AUTH_TOKEN_FIELD)
-            )]
-        );
-    }
-
-    /// Claude Code sends the auth token before the API key, so the token
-    /// is the key in use; a key for any other server is a key of its host.
-    #[test]
-    fn the_auth_token_comes_before_the_api_key() {
-        assert_eq!(
-            logins_of(".claude-gateway"),
-            [key_login(
-                ProviderRef::Host("gateway.example.com".to_string()),
-                place(".claude-gateway", "settings.json", AUTH_TOKEN_FIELD)
-            )]
-        );
-    }
-
-    #[test]
-    fn a_key_for_a_server_that_is_no_web_address_is_none() {
-        assert_eq!(logins_of(".claude-local"), []);
+    fn a_key_for_another_server_is_no_account() {
+        assert_eq!(accounts_in(".claude-deepseek"), []);
+        assert_eq!(accounts_in(".claude-gateway"), []);
+        assert_eq!(accounts_in(".claude-local"), []);
     }
 
     #[test]
     fn empty_null_and_blank_keys_are_none() {
-        assert_eq!(logins_of(".claude-nullkey"), []);
-        assert_eq!(logins_of(".claude-blank"), []);
+        assert_eq!(accounts_in(".claude-nullkey"), []);
+        assert_eq!(accounts_in(".claude-blank"), []);
     }
 
     #[test]
-    fn a_login_and_a_key_in_one_profile_are_two_logins() {
-        let kinds: Vec<LoginKind> = logins_of(".claude-mixed")
+    fn an_admin_key_is_an_organization() {
+        let found = accounts_in(".claude-admin");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, AccountKind::Organization);
+    }
+
+    #[test]
+    fn a_login_and_a_key_in_one_folder_are_two_accounts() {
+        let kinds: Vec<AccountKind> = accounts_in(".claude-mixed")
             .iter()
-            .map(|login| login.kind)
+            .map(|account| account.kind)
             .collect();
 
-        assert_eq!(kinds, [LoginKind::Subscription, LoginKind::ApiKey]);
+        assert_eq!(kinds, [AccountKind::Subscription, AccountKind::Key]);
+    }
+
+    /// Decision 9: a token past its time with no refresh token can not be
+    /// renewed; the account needs `claude` in its folder.
+    #[test]
+    fn an_expired_login_needs_claude_in_its_folder() {
+        let host = host().with_now_ms(AFTER_EXPIRY_MS);
+        let folder = path(&host, ".claude-expired");
+
+        let found = accounts_of(&host, ".claude-expired");
+
+        assert_eq!(found[0].needs.len(), 1);
+        let need = &found[0].needs[0];
+        assert_eq!(need.id, "login-expired");
+        let NeedAction::Run(command) = &need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.program, "claude");
+        assert_eq!(command.env, [(CONFIG_VARIABLE.to_string(), folder)]);
+    }
+
+    /// Claude Code renews a token past its time with its refresh token.
+    #[test]
+    fn a_login_with_a_refresh_token_needs_nothing() {
+        let host = host().with_now_ms(AFTER_EXPIRY_MS);
+
+        let found = accounts_of(&host, ".claude-work");
+
+        assert_eq!(found[0].needs, []);
+    }
+
+    #[test]
+    fn a_login_before_its_time_needs_nothing() {
+        let host = host().with_now_ms(1_700_000_000_000);
+
+        let found = accounts_of(&host, ".claude-expired");
+
+        assert_eq!(found[0].needs, []);
+    }
+
+    #[test]
+    fn a_folder_of_another_agent_part_gives_none() {
+        let host = host();
+        let folder =
+            LoginFolder::Profile(("other".to_string(), path(&host, ".claude")));
+
+        let found = as_provider_in(&host, &[], || logins(&folder));
+
+        assert!(found.is_empty());
     }
 
     #[test]
     fn no_key_or_token_reaches_the_plugin() {
         let host = host();
-        let folders = [
-            ".claude",
-            ".claude-mixed",
-            ".claude-console",
-            ".claude-gateway",
-        ];
+        let names = [".claude", ".claude-mixed", ".claude-console"];
 
-        let found: Vec<Login> = folders
+        let found: Vec<Account> = names
             .iter()
-            .flat_map(|folder| {
-                let folder = path(&host, folder);
-                as_part(&host, || logins(&folder))
-            })
+            .flat_map(|name| accounts_of(&host, name))
             .collect();
 
         let text = format!("{found:?}");
@@ -334,21 +505,13 @@ mod tests {
             "made-up-access-token",
             "made-up-refresh-token",
             "sk-ant-made-up",
-            "made-up-gateway-token",
         ] {
             assert!(!text.contains(secret), "{secret} in {text}");
         }
     }
 
     #[test]
-    fn the_key_of_a_login_opens_as_a_handle() {
-        let host = host();
-        let folder = path(&host, ".claude-deepseek");
-        let found = as_part(&host, || logins(&folder));
-
-        let fingerprint =
-            as_part(&host, || keys::open(&found[0].place)?.fingerprint());
-
-        assert_eq!(fingerprint.map(|text| text.len()), Ok(64));
+    fn a_key_is_named_by_the_end_of_its_fingerprint() {
+        assert_eq!(short_key("27c8d30e"), "key ••••d30e");
     }
 }

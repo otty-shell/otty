@@ -1,7 +1,6 @@
 //! The limits of a ChatGPT login: the usage request to the ChatGPT server
-//! with the login's access token, for the provider part `openai`. It reads
-//! the limits of every ChatGPT login OTTY found, also one that only
-//! OpenCode keeps. The request, its headers and the fields of the answer
+//! with the login's access token, for the provider part `openai`, with the
+//! token of an account's login in one of its Codex folders. The request, its headers and the fields of the answer
 //! follow CodexBar (MIT licence),
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexOAuth/CodexOAuthUsageFetcher.swift>.
 //! The address is not documented by OpenAI, so the answer is read
@@ -15,7 +14,7 @@
 
 use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::http::Request;
-use otty_plugin_sdk::{Key, clock};
+use otty_plugin_sdk::{Key, Need};
 use serde_json::Value;
 
 use crate::individual_limit::individual_limit_in;
@@ -24,7 +23,7 @@ use crate::rate_limits::{
     WindowNumbers, codex_credits, codex_limits, millis_of_seconds, no_numbers,
 };
 use crate::requests::json_answer;
-use crate::token_expiry::expires_at_ms;
+use crate::token_expiry::has_expired;
 use crate::workspace_credits::{WorkspaceAsk, workspace_credits};
 
 /// The ChatGPT backend the requests go to.
@@ -37,19 +36,21 @@ const USAGE_PATH: &str = "/wham/usage";
 /// workspace when the usage answer says they are on and tells no number
 /// of them. The token is never renewed: one whose claims say it expired
 /// is not sent. An expired or refused login is
-/// [`ReadError::LoginRefused`]: this part does not know which agent keeps
-/// it, so OTTY asks the agent part that found it what the user must do.
+/// [`ReadError::NeedsUser`] with `login_need`, what the user does to log
+/// in again where the token sits.
 pub(crate) fn chatgpt_limits(
     key: &Key,
     account_id: &str,
+    login_need: &Need,
 ) -> Result<Limits, ReadError> {
-    if has_expired(key)? {
-        return Err(ReadError::LoginRefused);
+    let refused = || ReadError::NeedsUser(login_need.clone());
+    if has_expired(key) {
+        return Err(refused());
     }
 
     let url = format!("{BACKEND_API_URL}{USAGE_PATH}");
     let request = usage_request(&url, key, account_id);
-    let answer = json_answer(&request, &url, login_refused)?;
+    let answer = json_answer(&request, &url, refused)?;
     let limits = limits_from(&answer)?;
 
     let ask = WorkspaceAsk {
@@ -71,21 +72,6 @@ pub(crate) fn usage_request<'key>(
         .header_with_key("authorization", "Bearer ", key)
         .header("accept", "application/json")
         .header("chatgpt-account-id", account_id)
-}
-
-/// What ChatGPT refusing the login is: a refused login, whose need comes
-/// from the agent part that keeps it.
-pub(crate) fn login_refused() -> ReadError {
-    ReadError::LoginRefused
-}
-
-/// Whether the token of `key` expired, as the `exp` claim of the JWT says;
-/// a token that is no JWT, or tells no expiry, is sent.
-fn has_expired(key: &Key) -> Result<bool, ReadError> {
-    let claims = key.jwt_claims().map_err(ReadError::Host)?;
-    let expires_at = claims.as_deref().and_then(expires_at_ms);
-
-    Ok(expires_at.is_some_and(|expires_at| expires_at <= clock::now_ms()))
 }
 
 /// `limits`, with the credits of the workspace when the usage answer says
@@ -198,6 +184,18 @@ mod tests {
     }}"#;
 
     const ACCOUNT: &str = "00000000-0000-4000-8000-000000000000";
+
+    /// A made-up need of the login the token is of.
+    fn login_need() -> Need {
+        Need {
+            id: "login-expired".to_string(),
+            title: "The login expired".to_string(),
+            text: "Log in again.".to_string(),
+            action: otty_plugin_sdk::NeedAction::OpenPage(
+                "https://example.com".to_string(),
+            ),
+        }
+    }
     const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
     const MONTHLY_URL: &str = "https://chatgpt.com/backend-api/accounts/00000000-0000-4000-8000-000000000000/spend-controls/current-user/monthly-usage";
     const BALANCE_URL: &str = "https://chatgpt.com/backend-api/accounts/00000000-0000-4000-8000-000000000000/remaining_balance";
@@ -240,7 +238,9 @@ mod tests {
     fn limits_with(host: &TestHost, token: &str) -> Result<Limits, ReadError> {
         let key = host.key(token);
 
-        host.as_provider("openai", || chatgpt_limits(&key, ACCOUNT))
+        host.as_provider("openai", || {
+            chatgpt_limits(&key, ACCOUNT, &login_need())
+        })
     }
 
     /// The limits the login with a token that expires in 2100 reads when
@@ -578,17 +578,17 @@ mod tests {
 
     /// Issue 12 of spec 2026-11-19-agent-plugins: the provider part tries
     /// the login, and a token whose claims say it expired is not even sent
-    /// and never renewed. Issue 20: either way the part only says the
-    /// login was refused; it does not know which agent keeps it, so it
-    /// names no agent to run.
+    /// and never renewed. Spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 9: either way the read needs the user to log in again
+    /// where the token sits.
     #[test]
-    fn a_refused_or_expired_login_is_only_refused() {
+    fn a_refused_or_expired_login_needs_the_user_to_log_in_again() {
         let refused = limits_in(401, "");
         let host = server(&[(USAGE_URL, 200, FIVE_HOUR_ANSWER)]);
         let expired = limits_with(&host, EXPIRED_TOKEN);
 
-        assert_eq!(refused, Err(ReadError::LoginRefused));
-        assert_eq!(expired, Err(ReadError::LoginRefused));
+        assert_eq!(refused, Err(ReadError::NeedsUser(login_need())));
+        assert_eq!(expired, Err(ReadError::NeedsUser(login_need())));
         assert!(host.requests().is_empty());
     }
 

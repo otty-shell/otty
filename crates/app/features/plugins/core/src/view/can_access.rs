@@ -211,11 +211,6 @@ fn place_line<'a>(
         Some(PlaceMark::NoLonger) => palette.text_muted(),
         None => palette.text_body(),
     };
-    let font = if place.is_words {
-        fonts::UI
-    } else {
-        fonts::MONO
-    };
     let muted = |words: &'static str| {
         text(words)
             .size(TEXT_SIZE)
@@ -226,13 +221,10 @@ fn place_line<'a>(
     let mut line = Row::new()
         .spacing(spacing::SPACE_2)
         .align_y(Alignment::Center);
-    if let Some(lead) = place.lead {
-        line = line.push(muted(lead));
-    }
     line = line.push(
         text(place.text)
             .size(TEXT_SIZE)
-            .font(font)
+            .font(fonts::MONO)
             .color(color)
             .wrapping(Wrapping::WordOrGlyph),
     );
@@ -273,8 +265,6 @@ mod tests {
         PlaceViewModel {
             group: PermissionGroup::Files,
             text: String::from(text),
-            is_words: false,
-            lead: None,
             note: None,
             profiles_of: None,
             mark,
@@ -294,37 +284,27 @@ mod tests {
         }
     }
 
-    fn found_logins() -> PermissionGroupViewModel {
+    fn sites() -> PermissionGroupViewModel {
         PermissionGroupViewModel {
-            label: i18n::t(Key::PluginsGroupFoundLogins).to_string(),
-            meaning: Some(String::from(
-                "Logins and keys of Example Cloud accounts",
-            )),
-            places: vec![
-                PlaceViewModel {
-                    group: PermissionGroup::FoundLogins,
-                    is_words: true,
-                    ..place("Example Cloud accounts", None)
-                },
-                PlaceViewModel {
-                    group: PermissionGroup::FoundLogins,
-                    lead: Some(i18n::t(Key::PluginsPlaceKeysFor)),
-                    ..place("example.com", None)
-                },
-            ],
+            label: i18n::t(Key::PluginsGroupSites).to_string(),
+            meaning: Some(String::from("Sends requests only to these")),
+            places: vec![PlaceViewModel {
+                group: PermissionGroup::Sites,
+                ..place("api.example.com", None)
+            }],
         }
     }
 
     /// Issue 36: the dialog of a part says that only this is open to it,
     /// then shows its groups alone, no name, kind or description, as its
     /// title names the part: each group with what it means and its
-    /// places, the keys of a host after "keys for". Close closes it.
+    /// places. Close closes it.
     #[test]
     fn the_can_access_dialog_shows_the_line_and_the_groups() {
         let palette = UiPalette::otty_dark();
         let vm = CanAccessDialogViewModel {
             title: String::from("Example Cloud can access"),
-            groups: vec![found_logins()],
+            groups: vec![sites()],
         };
         let mut ui = simulator(dialog(vm, &palette));
 
@@ -333,27 +313,22 @@ mod tests {
             .expect("the line")
             .bounds();
         let label = ui
-            .find(i18n::t(Key::PluginsGroupFoundLogins))
+            .find(i18n::t(Key::PluginsGroupSites))
             .expect("the label")
             .bounds();
         let meaning = ui
-            .find("Logins and keys of Example Cloud accounts")
+            .find("Sends requests only to these")
             .expect("what it means")
             .bounds();
-        let lead = ui
-            .find(i18n::t(Key::PluginsPlaceKeysFor))
-            .expect("the lead")
-            .bounds();
-        let host = ui.find("example.com").expect("the host").bounds();
+        let host = ui.find("api.example.com").expect("the host").bounds();
 
         assert!(ui.find("Example Cloud can access").is_ok());
         assert!(ui.find("Example Cloud").is_err());
         assert!(ui.find("Provider").is_err());
         assert!(ui.find(i18n::t(Key::PluginsCanAccess)).is_err());
-        assert!(ui.find("Example Cloud accounts").is_ok());
         assert!(note.y < label.y);
         assert!(meaning.y > label.y && (meaning.x - label.x).abs() < 1.0);
-        assert!(label.x < lead.x && lead.x < host.x);
+        assert!(label.x < host.x);
         let _ = ui.click(i18n::t(Key::ButtonClose));
         let sent: Vec<PluginsIntent> = ui.into_messages().collect();
         assert!(matches!(sent.as_slice(), [PluginsIntent::Back]));

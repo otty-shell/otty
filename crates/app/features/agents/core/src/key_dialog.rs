@@ -79,19 +79,13 @@ impl KeyDialog {
 }
 
 /// Open the dialog of the key `ask` the plugin named `plugin` asks for,
-/// given for `account`, with the place given before under its slot. An
-/// account `agents.json` can not keep, such as a key OTTY found, takes no
-/// key.
+/// given for `account`, with the place given before under its slot.
 pub(crate) fn open(
     state: &mut AgentsState,
     account: Account,
     plugin: String,
     ask: KeyAsk,
 ) -> Vec<AgentsOutcome> {
-    if !account.can_be_saved() {
-        return Vec::new();
-    }
-
     let given = state.profiles().given_keys_of(&account);
     let saved = given
         .iter()

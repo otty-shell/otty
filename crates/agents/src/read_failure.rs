@@ -16,7 +16,6 @@ pub(crate) fn read_failure(error: &ReadError) -> PluginFailureKind {
         ReadError::NotSupported => "the part does not read this",
         ReadError::Unexpected(_) => "unexpected shape",
         ReadError::NeedsUser(_) => "a need OTTY can not show",
-        ReadError::LoginRefused => "the login was refused",
         ReadError::Failed(_) => "failed",
     };
 
@@ -56,8 +55,8 @@ mod tests {
             PluginFailureKind::CouldNotRead("unexpected shape")
         );
         assert_eq!(
-            read_failure(&ReadError::LoginRefused),
-            PluginFailureKind::CouldNotRead("the login was refused")
+            read_failure(&ReadError::Failed("made-up".into())),
+            PluginFailureKind::CouldNotRead("failed")
         );
     }
 }

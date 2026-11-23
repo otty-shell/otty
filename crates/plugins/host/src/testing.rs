@@ -7,14 +7,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
-use crate::agents::agent::{Command, Identity, LoginKind, ReadError};
+use crate::agents::agent::ReadError;
 use crate::agents::provider::{
-    AccountFacts, AccountNumbers, FoundProfile, LoginFacts,
+    Account, AccountKind, AccountNumbers, LoginFolder,
 };
 use crate::calls::{CallBatch, CallKind, CallState};
 use crate::engine::PluginEngine;
 use crate::https::MockHttpsSend;
-use crate::keys::{KeySource, KeyText};
 use crate::operations::v0_1::otty::host::types::HostError;
 use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
@@ -427,8 +426,9 @@ pub(crate) fn assert_same<T: std::fmt::Debug>(actual: T, expected: T) {
 
 /// The numbers the provider part of `batch` of the `programs` test plugin
 /// reads for an account found in the profile in `folder`, the way `way`
-/// names, such as `run`: the test plugin takes the way from the account
-/// id, and puts what the program answered in the plan.
+/// names, such as `run`: the test plugin takes the way from the account's
+/// name, and puts what the program answered in the plan. The account's id
+/// is its first profile, so the pace of its readings is kept per profile.
 // A `ReadError` may hold a need, a record the contract can not box.
 #[allow(clippy::result_large_err)]
 pub(crate) fn read_by_way(
@@ -436,13 +436,13 @@ pub(crate) fn read_by_way(
     folder: &str,
     way: &str,
 ) -> Result<AccountNumbers, ReadError> {
-    read_in_profiles(batch, &[("test-plugin", folder)], way)
+    read_in_profiles(batch, &[("test-agent", folder)], way)
 }
 
 /// The numbers the provider part of `batch` of the `programs` test plugin
-/// reads, the way `way` names, for an account found in the profiles of
-/// `test-agent` in `profiles`, each the id of its plugin and its folder.
-/// The test plugin reads in the first profile.
+/// reads, the way `way` names, for an account found in `profiles`, each
+/// the id of its agent part and its folder. The test plugin reads in the
+/// first profile, or in no folder when there is none.
 // A `ReadError` may hold a need, a record the contract can not box.
 #[allow(clippy::result_large_err)]
 pub(crate) fn read_in_profiles(
@@ -450,51 +450,30 @@ pub(crate) fn read_in_profiles(
     profiles: &[(&str, &str)],
     way: &str,
 ) -> Result<AccountNumbers, ReadError> {
-    let identity = Identity {
-        account_id: Some(way.to_string()),
-        organization_id: None,
-        email: None,
-    };
-    let found_in = profiles
+    let found_in: Vec<LoginFolder> = profiles
         .iter()
-        .map(|(plugin, folder)| found_profile(plugin, "test-agent", folder))
+        .map(|(agent, folder)| {
+            LoginFolder::Profile((agent.to_string(), folder.to_string()))
+        })
         .collect();
-    let found = LoginFacts {
-        kind: LoginKind::Subscription,
-        identity: identity.clone(),
+    let id = profiles
+        .first()
+        .map(|(agent, folder)| format!("{agent} {folder}"))
+        .unwrap_or_default();
+    let account = Account {
+        id,
+        name: way.to_string(),
+        kind: AccountKind::Subscription,
         plan: None,
         found_in,
+        needs: Vec::new(),
     };
-    let account = AccountFacts {
-        identity,
-        plan: None,
-    };
-    let key = KeySource::Given(KeyText::new("made-up-key").expect("a key"));
 
     batch
         .provider()
         .expect("a provider part")
-        .numbers(&found, &account, &key, &[])
+        .numbers(&account, &[])
         .expect("the call")
-}
-
-/// The profile in `folder` of the agent part `agent` of the plugin
-/// `plugin`, as OTTY tells a provider part where an account was found.
-pub(crate) fn found_profile(
-    plugin: &str,
-    agent: &str,
-    folder: &str,
-) -> FoundProfile {
-    FoundProfile {
-        plugin: plugin.to_string(),
-        agent: agent.to_string(),
-        folder: folder.to_string(),
-        launch: Command {
-            program: "stand-in".to_string(),
-            args: Vec::new(),
-            env: Vec::new(),
-        },
-    }
 }
 
 /// What the program answered, as [`read_by_way`] gave it: the plan, or

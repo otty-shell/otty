@@ -4,7 +4,7 @@
 [plugin]
 id = "example"
 name = "Example"
-version = "0.1.3"
+version = "0.1.4"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/otty-shell/otty-plugin-example"
 license = "Apache-2.0"
@@ -65,11 +65,12 @@ usage_page = "https://example.com/usage"
 http = ["api.example.com"]
 
 # The profiles of the agent parts of this plugin whose logins the part
-# reads. In a call about a login found in such a profile, OTTY gives the
-# part the profile's folder, wherever it is, and for that call only the
-# part reads there what this entry lists: `read` as plain files, `keys`
-# with the keys replaced by handles. A program it starts may get
-# `folder_env` set only to that folder.
+# reads to find its accounts. OTTY gives the part the folders of those
+# profiles, wherever they are, when it asks for the accounts, and the
+# folders of an account when it reads it; for that call only the part
+# reads there what this entry lists: `read` as plain files, `keys` with
+# the keys replaced by handles. A program it starts may get `folder_env`
+# set only to one of those folders.
 [[agents.provider.logins]]
 agent = "example-agent"
 folder_env = "EXAMPLE_AGENT_HOME"

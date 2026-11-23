@@ -93,9 +93,9 @@ pub(crate) fn account_number(
     }
 
     let (word, tone) = match account.kind() {
-        AccountKind::Money => balance_now(state, account)
+        AccountKind::Subscription => limits_now(state, account)?,
+        _ => balance_now(state, account)
             .or_else(|| money_this_month(state, account))?,
-        _ => limits_now(state, account)?,
     };
 
     Some(AccountNumber::word(word, tone))

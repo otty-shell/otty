@@ -4,12 +4,9 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use otty_plugin_host::PluginPart;
-use otty_plugin_host::agents::agent::Login;
 
-use crate::account::Account;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
-use crate::part_need::PartNeed;
 use crate::profile::{Profile, ProfileStatus};
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
@@ -296,18 +293,6 @@ pub trait Agent: Send + Sync {
     /// Whether the profile is installed and logged in.
     fn detect(&self, profile: &Profile) -> ProfileStatus;
 
-    /// The accounts found in the files of the profile: its logins and the
-    /// keys it uses, each found in the profile's folder (spec Decision 2).
-    /// Empty: none found. The same account found in several profiles is
-    /// listed by each; [`merge_accounts`] makes it one.
-    ///
-    /// It is a method of the agent because each agent keeps its logins and
-    /// keys in its own files. Only reads them: a key is kept only as its
-    /// fingerprint, and a token never.
-    ///
-    /// [`merge_accounts`]: crate::merge_accounts
-    fn accounts(&self, profile: &Profile) -> Vec<Account>;
-
     /// The version of the agent's program as the agent wrote it in the
     /// newest session of `profile`, such as "2.1.328". `None` when no
     /// session names one; the app then asks the program itself.
@@ -348,30 +333,6 @@ pub trait Agent: Send + Sync {
     /// local files (spec Decision 14). `None`: not supported, and Show
     /// statistics is off for the agent's sessions.
     fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
-
-    /// The login of `account` as the plugin part that found it in
-    /// `profile` names it, with the place its key sits, so that a
-    /// provider part can be given a handle to it. `None` when the part no
-    /// longer finds it there.
-    fn found_login(
-        &self,
-        _profile: &Profile,
-        _account: &Account,
-    ) -> Option<Login> {
-        None
-    }
-
-    /// What the user must do now that a provider refused `login`, which
-    /// the agent found in `profile`, or saw it expired, as the plugin part
-    /// that holds the login says (spec 2026-11-19-agent-plugins, issue
-    /// 20). `None` when the part says nothing or could not answer.
-    fn login_refused(
-        &self,
-        _profile: &Profile,
-        _login: &Login,
-    ) -> Option<PartNeed> {
-        None
-    }
 
     /// Whether the agent reads the statistics of a session and of a
     /// project: its [`Agent::stats_source`] gives one (spec Decision 14).

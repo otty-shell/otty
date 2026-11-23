@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.7"
+version = "0.2.8"
 description = "Claude Code and Anthropic accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -21,7 +21,7 @@ language = "0.1"
 [[agents.agent]]
 id = "claude-code"
 name = "Claude Code"
-description = "Finds Claude Code profiles, sessions, tokens and logins."
+description = "Finds Claude Code profiles, sessions and tokens."
 icon = "claude-code.svg"
 program = "claude"
 # The native installer of Claude Code puts the program here, a folder
@@ -44,7 +44,8 @@ read = ["~/.claude*/**", "{CLAUDE_CONFIG_DIR}/**"]
 env = ["CLAUDE_CONFIG_DIR"]
 
 # Where the keys are: readable only with the keys replaced by handles.
-# The Claude login.
+# The part reads them only to tell whether a profile is logged in; the
+# provider part finds the accounts. The Claude login.
 [[agents.agent.permissions.keys]]
 files = ["~/.claude*/.credentials.json", "{CLAUDE_CONFIG_DIR}/.credentials.json"]
 fields = ["/claudeAiOauth/accessToken", "/claudeAiOauth/refreshToken"]
@@ -60,36 +61,41 @@ fields = ["/primaryApiKey"]
 files = ["~/.claude*/settings.json", "{CLAUDE_CONFIG_DIR}/settings.json"]
 fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
 
-# The numbers of Anthropic accounts: the limits of a Claude login, read
-# from Anthropic's usage request, else from the `/usage` panel of Claude
-# Code in a profile the login was found in, and the bill of an
-# organization read with the admin key the user gives for it. A key
-# behind another server is for that server's host and is not read here.
+# The accounts of Anthropic, found in the Claude Code profiles OTTY gives
+# the part (see `logins` below): a Claude login, a Console key and an
+# Anthropic key of the settings. A key behind another server, such as
+# DeepSeek's, is no Anthropic account. Their numbers: the limits of a
+# Claude login, read from Anthropic's usage request, else from the
+# `/usage` panel of Claude Code in a profile the login was found in, and
+# the bill of an organization read with its own admin key or the one the
+# user gives for it.
 [[agents.provider]]
 id = "anthropic"
 name = "Anthropic"
-description = "Reads Claude limits and Anthropic organization bills."
+description = "Finds Claude and Anthropic accounts and reads their limits and organization bills."
 icon = "anthropic.svg"
 hosts = ["anthropic.com", "claude.ai"]
 usage_page = "https://console.anthropic.com/settings/usage"
 plan_usage_page = "https://claude.ai/settings/usage"
 
 # Apply only while a function of this part runs: the files of the
-# `claude-code` part are refused then.
+# `claude-code` part are refused then, but for what `logins` below gives
+# in the folders of a call.
 #
 # The `/usage` probe runs `claude` in OTTY's working folder of hidden
-# terminals, `~/.cache/otty/agent-probe`, with the variables the
-# `claude-code` part starts it with in the profile, and Claude Code writes
-# a session file for the run in the project folder named after it,
-# `projects/-home-<user>--cache-otty-agent-probe`. The probe lists and
-# deletes those files, and the folder once it is empty; nothing else may
-# be read or written. `DISABLE_AUTOUPDATER` is passed to that run only.
+# terminals, `~/.cache/otty/agent-probe`, pointed at the profile's folder
+# as the `claude-code` part starts it there, and Claude Code writes a
+# session file for the run in the project folder named after it,
+# `projects/-home-<user>--cache-otty-agent-probe`. The probe lists those
+# files (`read` of `logins`) and deletes them, and the folder once it is
+# empty; nothing else may be written. `logins` can not give a part the
+# right to delete, so the deletion stays a plain permission, of the
+# folders `~/.claude*` and `CLAUDE_CONFIG_DIR` only. `DISABLE_AUTOUPDATER`
+# is passed to that run only. `CLAUDE_CONFIG_DIR` also tells the part
+# which folder is the default one, where Claude Code runs with no
+# variable set.
 [agents.provider.permissions]
 http = ["api.anthropic.com"]
-read = [
-  "~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl",
-  "{CLAUDE_CONFIG_DIR}/projects/*--cache-otty-agent-probe/*.jsonl",
-]
 write = [
   "~/.claude*/projects/*--cache-otty-agent-probe",
   "~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl",
@@ -97,6 +103,13 @@ write = [
   "{CLAUDE_CONFIG_DIR}/projects/*--cache-otty-agent-probe/*.jsonl",
 ]
 env = ["CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER"]
+
+# The global config file of the default profile sits next to `~/.claude`,
+# outside its folder, so it is a plain key file of the part: it names the
+# account of the Claude login, and its Console key comes as a handle.
+[[agents.provider.permissions.keys]]
+files = ["~/.claude.json"]
+fields = ["/primaryApiKey"]
 
 # The `/usage` probe: `claude` that can run nothing, with no tools, no MCP
 # servers of the user, no hooks and no remote control. Each argument is a
@@ -110,3 +123,33 @@ args = [
   "--settings",
   '\{"remoteControlAtStartup":false,"disableAllHooks":true\}',
 ]
+
+# The Claude Code profiles whose logins the part reads to find its
+# accounts. OTTY gives the part the folders of those profiles, wherever
+# they are, when it asks for the accounts, and the folders of an account
+# when it reads it; for that call only the part reads there what this
+# entry lists: `read` as plain files, `keys` with the keys replaced by
+# handles. The `/usage` probe may get `CLAUDE_CONFIG_DIR` set only to one
+# of those folders.
+[[agents.provider.logins]]
+agent = "claude-code"
+folder_env = "CLAUDE_CONFIG_DIR"
+read = ["projects/*--cache-otty-agent-probe/*.jsonl"]
+
+# The Claude login: its token, and the refresh token Claude Code renews
+# it with.
+[[agents.provider.logins.keys]]
+files = [".credentials.json"]
+fields = ["/claudeAiOauth/accessToken", "/claudeAiOauth/refreshToken"]
+
+# The global config file of a profile outside the default folder: the
+# account of its Claude login and its Console key.
+[[agents.provider.logins.keys]]
+files = [".claude.json"]
+fields = ["/primaryApiKey"]
+
+# The variables the settings give Claude Code: a key, and the server it
+# is sent to.
+[[agents.provider.logins.keys]]
+files = ["settings.json"]
+fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]

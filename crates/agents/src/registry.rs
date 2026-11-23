@@ -1,10 +1,9 @@
 //! The registry (spec "Words", "Links in the interface"): the one list of
 //! the agents and providers OTTY knows right now. The app takes names,
-//! icons, usage pages and hosts only from it, and an account whose
-//! provider no entry serves stays known by the host of its key. The parts
-//! of the installed plugins that are on fill it. Two plugins may serve one
-//! provider, or one host under two provider ids: both read its accounts
-//! (issues 29 and 31).
+//! icons, usage pages and hosts only from it. The parts of the installed
+//! plugins that are on fill it. Two plugins may serve one provider: each
+//! part finds its own accounts (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 1).
 
 use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId};
@@ -76,15 +75,14 @@ impl Registry {
             .collect()
     }
 
-    /// The provider part that reads `account`: the part of the plugin it
-    /// is read by that serves its provider; `None` for an account no
-    /// plugin reads.
+    /// The provider part that reads `account`: the part that found it, of
+    /// its plugin and its provider id; `None` when that part is not in the
+    /// registry now.
     pub fn reader_of(&self, account: &Account) -> Option<&ProviderEntry> {
-        let plugin = account.read_by()?;
-
-        self.readers_of(account.provider())
-            .into_iter()
-            .find(|entry| entry.part().plugin() == plugin)
+        self.providers.iter().find(|entry| {
+            entry.id() == account.provider()
+                && entry.part().plugin() == account.plugin()
+        })
     }
 
     /// The first provider whose servers are at `host`: `host` is one of its
@@ -145,26 +143,11 @@ impl Registry {
             .any(|entry| ids_of_one.contains(&entry.id()))
     }
 
-    /// Whether a provider part of another plugin serves what `entry`
-    /// serves: its provider id, or a host one of them serves. The accounts
-    /// such a part reads say their plugin (issues 29 and 31).
-    pub fn is_shared(&self, entry: &ProviderEntry) -> bool {
-        self.providers.iter().any(|other| {
-            let serves_the_same = other.id() == entry.id()
-                || entry.hosts().iter().any(|host| other.serves_host(host))
-                || other.hosts().iter().any(|host| entry.serves_host(host));
-
-            other.part().plugin() != entry.part().plugin() && serves_the_same
-        })
-    }
-
     /// The page where the user sees the use of `account`, from the entry
-    /// of the part that reads it, else of its provider; `None` when no
-    /// entry serves the provider or names a page.
+    /// of the part that reads it; `None` when that part is not in the
+    /// registry or names no page.
     pub fn usage_page(&self, account: &Account) -> Option<&str> {
-        self.reader_of(account)
-            .or_else(|| self.provider_of(account.provider()))?
-            .usage_page(account.kind())
+        self.reader_of(account)?.usage_page(account.kind())
     }
 
     /// The readers of `agents` whose entry is in the registry, in their
@@ -367,9 +350,7 @@ mod tests {
     }
 
     /// Issue 31: a host two plugins serve under two provider ids is the
-    /// same provider as each id, while the two ids stay two providers; the
-    /// part of each is shared with the other plugin, so the accounts it
-    /// reads say their plugin.
+    /// same provider as each id, while the two ids stay two providers.
     #[test]
     fn a_host_two_plugins_serve_under_two_ids_is_each_of_them() {
         let fork = ProviderEntry::new(
@@ -389,11 +370,6 @@ mod tests {
         let host = ProviderRef::Host(String::from("api.example.com"));
         let cloud = ProviderRef::of_id("example-cloud");
         let fork = ProviderRef::of_id("cloud-fork");
-        let is_shared = |id: &str| {
-            registry
-                .provider(&ProviderId::new(id))
-                .is_some_and(|entry| registry.is_shared(entry))
-        };
 
         let readers: Vec<_> = registry
             .readers_of(&host)
@@ -404,59 +380,49 @@ mod tests {
         assert!(registry.is_same_provider(&host, &cloud));
         assert!(registry.is_same_provider(&host, &fork));
         assert!(!registry.is_same_provider(&cloud, &fork));
-        assert!(is_shared("example-cloud"));
-        assert!(is_shared("cloud-fork"));
-        assert!(!is_shared("other-cloud"));
     }
 
-    /// An account, once merged with the readers of the registry, is read
-    /// by the part of its provider; one of a provider no entry serves has
-    /// no reader, so nothing is read for it (spec 2026-11-19-agent-plugins,
-    /// "What the UI shows"), and a key for a host is read once an entry
-    /// serves it.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: an
+    /// account is read by the part that found it, of its plugin and its
+    /// provider id; with that part gone it has no reader, so nothing is
+    /// read for it.
     #[test]
-    fn each_account_is_read_by_the_part_of_its_provider() {
+    fn each_account_is_read_by_the_part_that_found_it() {
+        let fork = ProviderEntry::new(
+            ProviderId::new("anthropic"),
+            "Anthropic fork",
+            PluginPart::new("fork", "Fork", "0.1.0", "", "anthropic"),
+        );
         let registry = Registry::new(
             Vec::new(),
             vec![
+                fork,
                 provider("anthropic", &["anthropic.com"]),
                 provider("openai", &["openai.com"]),
-                provider("example-cloud", &["example.com"]),
             ],
         );
         let without = registry
             .clone()
-            .without_provider(&ProviderId::new("example-cloud"));
-        let reader = |account: Account, registry: &Registry| {
-            let read = crate::account::merge_accounts(vec![account], registry);
+            .without_provider(&ProviderId::new("openai"));
+        let reader = |account: &Account, registry: &Registry| {
             registry
-                .reader_of(&read[0])
-                .map(|entry| entry.id().as_str().to_string())
+                .reader_of(account)
+                .map(|entry| entry.part().plugin().to_string())
         };
-        let key = |provider: ProviderRef| {
-            crate::testing::key_account(provider, "sk-made-up")
-        };
-        let by_host = ProviderRef::Host(String::from("api.example.com"));
+        let login = crate::testing::chatgpt_login("made-up");
+        let organization = crate::testing::organization("made-up-org");
 
-        let read = [
-            reader(key(ProviderRef::of_id("openai")), &registry),
-            reader(crate::testing::chatgpt_login("made-up"), &registry),
-            reader(crate::testing::organization("made-up-org"), &registry),
-            reader(key(ProviderRef::of_id("other-cloud")), &registry),
-            reader(key(by_host.clone()), &registry),
-            reader(key(by_host), &without),
-        ];
-
+        assert_eq!(reader(&login, &registry).as_deref(), Some("example"));
         assert_eq!(
-            read.map(|id| id.unwrap_or_default()),
-            ["openai", "openai", "anthropic", "", "example-cloud", ""]
-                .map(String::from)
+            reader(&organization, &registry).as_deref(),
+            Some("example")
         );
+        assert_eq!(reader(&login, &without), None);
     }
 
-    /// One agent entry per agent id, the first one; issue 29: every
-    /// provider part stays, so two plugins that serve one provider both
-    /// read it, and the account each reads is found by its plugin.
+    /// One agent entry per agent id, the first one; every provider part
+    /// stays, so two plugins that serve one provider each find their own
+    /// accounts.
     #[test]
     fn an_agent_is_read_once_and_every_provider_part_stays() {
         let fork = |id: &str, hosts: &[&str]| {
@@ -473,10 +439,6 @@ mod tests {
                 provider("other-cloud", &["example.net"]),
             ],
         );
-        let login = crate::testing::key_account(
-            ProviderRef::of_id("example-cloud"),
-            "sk-made-up",
-        );
 
         let names: Vec<_> =
             registry.agents().iter().map(AgentEntry::name).collect();
@@ -485,17 +447,9 @@ mod tests {
             .iter()
             .map(|entry| entry.part().plugin())
             .collect();
-        let read_by_fork = login.clone().with_read_by(Some("fork".into()));
         assert_eq!(names, ["Coder"]);
         assert_eq!(registry.providers().len(), 3);
         assert_eq!(readers, ["example", "fork"]);
-        assert_eq!(
-            registry
-                .reader_of(&read_by_fork)
-                .map(|entry| entry.part().plugin()),
-            Some("fork")
-        );
-        assert!(registry.reader_of(&login).is_none());
     }
 
     /// Spec "What the UI shows": the profiles of an agent with no entry

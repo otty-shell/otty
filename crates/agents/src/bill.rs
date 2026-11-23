@@ -1,5 +1,6 @@
-//! The real bill of an API key account, and its read through the provider
-//! part that serves the organization (spec Decision 9). Which key reads
+//! The real bill of an organization, and its read through the provider
+//! part that found it (spec Decision 9; spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 8). Which key reads
 //! it is the part's business: a part that needs one the user must give
 //! asks for it with its need (spec 2026-11-19-agent-plugins, issue 20).
 
@@ -8,15 +9,11 @@ use std::time::SystemTime;
 use jiff::civil::Date;
 
 use crate::account::Account;
-use crate::agent::{Agent, agent_of};
 use crate::dollars::Dollars;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenKey, read_given_keys};
 use crate::local_time::{is_in_last_days, is_in_month_of};
 use crate::plugin_provider::PluginProvider;
-use crate::plugin_values::found_profile;
-use crate::profile::Profile;
-use crate::refused_login::to_holding_agent;
 
 /// The money an organization was billed, day by day, as its provider
 /// counts it. Unlike the money of a profile at API prices it is the
@@ -118,20 +115,17 @@ impl DayCost {
 }
 
 /// The bill up to `now` of `organization`, read once for it (spec
-/// Decision 9) through `profile`, which pays through it: by the provider
-/// part of `providers` that reads it, with the key of the login the
-/// agent part of `agents` found it by and the keys the user gave for it
-/// (`given`); `env_var` gives the value of an environment variable, for a
-/// key kept in one. With no such part there is no bill: "not available",
-/// and nothing is sent.
+/// Decision 9) by the provider part of `providers` that found it, in the
+/// folders it was found in, with the keys the user gave for it (`given`);
+/// `env_var` gives the value of an environment variable, for a key kept
+/// in one. With no such part there is no bill: "not available", and
+/// nothing is sent.
 ///
 /// Each given key is read from its file or its variable, used for this
 /// read only and never kept: the part gets only a handle to it.
 pub fn read_bill(
-    agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     organization: &Account,
-    profile: &Profile,
     given: &[GivenKey],
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
@@ -140,31 +134,23 @@ pub fn read_bill(
         .iter()
         .find(|part| part.reads(organization))
         .ok_or(SourceError::NotAvailable(Unavailable::NoBill))?;
-    let gone = || SourceError::NotAvailable(Unavailable::KeyGone);
-    let agent = agent_of(agents, profile.agent()).ok_or_else(gone)?;
-    let login = agent.found_login(profile, organization).ok_or_else(gone)?;
-    let found_in = vec![found_profile(agent, profile)];
 
     let given = read_given_keys(given, &env_var)?;
-    part.read_bill(organization, &login, found_in, &given, now)
-        .map_err(|error| to_holding_agent(error, agent, profile, &login))
+
+    part.read_bill(organization, &given, now)
 }
 
 #[cfg(test)]
 mod tests {
     use otty_plugin_host::KeySource;
-    use otty_plugin_host::agents::agent::KeyPlace;
     use otty_plugin_host::agents::provider::Bill as PartBill;
 
     use super::*;
-    use crate::account::{AccountIdentity, AccountKind, AccountLogin, FoundIn};
+    use crate::account::AccountKind;
     use crate::given_key::KeyRef;
     use crate::plugin_provider::MockProviderPartCalls;
-    use crate::provider::ProviderRef;
-    use crate::testing::{
-        MockAgent, NOW, at, dollars, mock_entry, organization, profile,
-        read_by_example,
-    };
+    use crate::provider::ProviderId;
+    use crate::testing::{NOW, at, dollars, organization};
 
     fn day(month: i8, day: i8, amount: u64) -> DayCost {
         DayCost::new(jiff::civil::date(2026, month, day), dollars(amount))
@@ -200,63 +186,22 @@ mod tests {
         assert_eq!(bill.this_month(), Dollars::default());
     }
 
-    /// An API key login of the profile, with the organization's id.
-    fn api_key_login() -> otty_plugin_host::agents::agent::Login {
-        use otty_plugin_host::agents::agent::{
-            Identity, JsonField, Login, LoginKind, ProviderRef as PartProvider,
-        };
-
-        Login {
-            kind: LoginKind::ApiKey,
-            for_whom: PartProvider::Id("anthropic".to_string()),
-            place: KeyPlace::JsonField(JsonField {
-                file: "/home/user/.config-Work/settings.json".to_string(),
-                pointer: "/apiKey".to_string(),
-            }),
-            identity: Identity {
-                account_id: None,
-                organization_id: Some("made-up-org".to_string()),
-                email: None,
-            },
-            plan: None,
-        }
-    }
-
-    /// The agent of the profile, which finds the login of the
-    /// organization when `finds`.
-    fn agents(finds: bool) -> Vec<Box<dyn Agent>> {
-        let mut agent = MockAgent::new();
-        agent
-            .expect_entry()
-            .return_const(mock_entry("test-agent", "test-agent"));
-        agent
-            .expect_launch()
-            .returning(|_, _| crate::AgentCommand::new("test-agent"));
-        agent
-            .expect_found_login()
-            .returning(move |_, _| finds.then(api_key_login));
-
-        vec![Box::new(agent)]
-    }
-
-    /// The provider part of Anthropic, whose bill is read `times`.
+    /// The provider part of Anthropic of the plugin `example`, whose bill
+    /// is read `times`.
     fn anthropic_part(times: usize) -> PluginProvider {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_bill()
-            .withf(|key, found, given, days| {
-                matches!(key, KeySource::Place(KeyPlace::JsonField(field))
-                    if field.pointer == "/apiKey")
-                    && found.identity.organization_id.as_deref()
-                        == Some("made-up-org")
+            .withf(|account, given, days| {
+                account.id == "org:made-up-org"
                     && matches!(given, [(slot, KeySource::Given(key))]
                         if slot == "admin" && key.as_str() == "made-up-key")
                     && days.last == "2026-11-16"
             })
             .times(times)
-            .returning(|_, _, _, _| Ok(PartBill { days: Vec::new() }));
+            .returning(|_, _, _| Ok(PartBill { days: Vec::new() }));
 
-        PluginProvider::made_up("anthropic", &["anthropic.com"], calls)
+        PluginProvider::made_up("anthropic", &["claude-code"], calls)
     }
 
     fn given_admin() -> Vec<GivenKey> {
@@ -271,35 +216,32 @@ mod tests {
     }
 
     #[test]
-    fn an_organization_no_part_serves_has_no_bill() {
-        let other = Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::OrganizationId("made-up-org".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Money,
-            FoundIn::ProfileFolder("/home/user/.config-Work".into()),
+    fn an_organization_no_part_found_has_no_bill() {
+        let of_another_plugin = Account::new(
+            "another",
+            ProviderId::new("anthropic"),
+            "org:made-up-org",
+            "Made-up org",
+            AccountKind::Organization,
+            Vec::new(),
         );
 
         let no_part = read_bill(
-            &agents(true),
             &[],
-            &read_by_example(organization("made-up-org")),
-            &profile("Work"),
+            &organization("made-up-org"),
             &given_admin(),
             at(NOW),
             org_key,
         );
-        let other_provider = read_bill(
-            &agents(true),
+        let other_plugin = read_bill(
             &[anthropic_part(0)],
-            &other,
-            &profile("Work"),
+            &of_another_plugin,
             &given_admin(),
             at(NOW),
             org_key,
         );
 
-        for read in [no_part, other_provider] {
+        for read in [no_part, other_plugin] {
             assert_eq!(
                 read,
                 Err(SourceError::NotAvailable(Unavailable::NoBill))
@@ -307,37 +249,24 @@ mod tests {
         }
     }
 
-    /// Issue 20: the bill is read through the profile with the key of the
-    /// login the agent part found and the key the user gave under its
-    /// slot, each as a handle.
+    /// Issue 20: the bill is read by the part that found the
+    /// organization, with the key the user gave under its slot, as a
+    /// handle.
     #[test]
-    fn the_bill_is_read_with_the_login_and_the_given_keys() {
+    fn the_bill_is_read_with_the_given_keys() {
         let read = read_bill(
-            &agents(true),
             &[anthropic_part(1)],
-            &read_by_example(organization("made-up-org")),
-            &profile("Work"),
+            &organization("made-up-org"),
             &given_admin(),
             at(NOW),
             org_key,
         );
         let unset = read_bill(
-            &agents(true),
             &[anthropic_part(0)],
-            &read_by_example(organization("made-up-org")),
-            &profile("Work"),
+            &organization("made-up-org"),
             &given_admin(),
             at(NOW),
             |_| None,
-        );
-        let gone = read_bill(
-            &agents(false),
-            &[anthropic_part(0)],
-            &read_by_example(organization("made-up-org")),
-            &profile("Work"),
-            &given_admin(),
-            at(NOW),
-            org_key,
         );
 
         assert_eq!(read.map(|bill| bill.days().len()), Ok(31));
@@ -345,6 +274,5 @@ mod tests {
             unset,
             Err(SourceError::NotAvailable(Unavailable::KeyMissing(_)))
         ));
-        assert_eq!(gone, Err(SourceError::NotAvailable(Unavailable::KeyGone)));
     }
 }

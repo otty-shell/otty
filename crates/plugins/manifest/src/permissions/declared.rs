@@ -135,6 +135,11 @@ impl PartPermissions {
             .iter()
             .map(|login| LoginRule::of_raw(login, agents, part))
             .collect::<Result<_, _>>()?;
+        let keys = raw
+            .keys
+            .iter()
+            .map(|place| provider_key_rule(place, &raw.env, part))
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             read: globs(&raw.read)?,
@@ -142,6 +147,7 @@ impl PartPermissions {
             env: raw.env.clone(),
             run: program_rules(&raw.run, part)?,
             terminal: program_rules(&raw.terminal, part)?,
+            keys,
             http: raw.http.clone(),
             logins,
             ..Self::default()
@@ -554,6 +560,25 @@ fn program_rules(
     raw.iter()
         .map(|program| ProgramRule::of_raw(program, part))
         .collect()
+}
+
+/// A key place of a provider part: JSON fields of files only, such as a
+/// login file outside every profile folder. A database column or a
+/// variable that holds a key is the agent parts'.
+fn provider_key_rule(
+    raw: &RawKeyPlace,
+    listed_vars: &[String],
+    part: &PartRef,
+) -> Result<KeyRule, ManifestError> {
+    if raw.files.is_none() || raw.sqlite.is_some() || raw.env.is_some() {
+        return Err(ManifestError::BadPart {
+            part: part.clone(),
+            reason: "a provider part's keys are JSON fields of files"
+                .to_string(),
+        });
+    }
+
+    KeyRule::of_raw(raw, listed_vars, part)
 }
 
 fn keyring_rules(

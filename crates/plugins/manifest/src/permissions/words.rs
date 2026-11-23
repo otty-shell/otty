@@ -61,8 +61,6 @@ pub enum PermissionLine {
         /// The glob inside the profile folder.
         glob: String,
     },
-    /// Gets the logins and keys of the provider's accounts, as handles.
-    GetsProviderKeys(String),
 }
 
 impl fmt::Display for PermissionLine {
@@ -120,11 +118,6 @@ impl fmt::Display for PermissionLine {
                 formatter,
                 "Reads your login in `{glob}` in each {agent} profile (OTTY \
                  gives it only as a handle)"
-            ),
-            PermissionLine::GetsProviderKeys(provider) => write!(
-                formatter,
-                "Gets the logins and keys of {provider} accounts found in \
-                 your agents, as handles"
             ),
         }
     }
@@ -251,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_part_lists_its_hosts_and_the_keys_it_gets() {
+    fn a_provider_part_lists_its_hosts() {
         let manifest = Manifest::parse(OPENAI_MANIFEST).expect("valid");
 
         assert_eq!(
@@ -259,8 +252,6 @@ mod tests {
             [
                 "Sends requests to `chatgpt.com`",
                 "Sends requests to `api.openai.com`",
-                "Gets the logins and keys of OpenAI accounts found in your \
-             agents, as handles",
             ]
         );
     }
@@ -280,8 +271,6 @@ mod tests {
                 "Reads your login in `auth.json` in each Codex profile (OTTY \
                  gives it only as a handle)",
                 "Reads files in `sessions/**` in each Codex profile",
-                "Gets the logins and keys of OpenAI accounts found in your \
-                 agents, as handles",
             ]
         );
     }

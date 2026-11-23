@@ -7,21 +7,26 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Agent, AgentEnv, AgentSession, Profile, SourceId, agent_of};
+use otty_agents::{
+    Agent, AgentEnv, AgentSession, PluginProvider, Profile, SourceId, agent_of,
+};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProfile, LoadedProfiles, LoadedSessions,
     SessionsRead,
 };
 
 use crate::background::{failed_because_stopped, on_own_thread};
+use crate::plugin_parts::ProviderList;
 use crate::profiles_file::read_saved;
 use crate::program_lookup::ProgramLookup;
 use crate::time_zone::user_time_zone;
 
 /// Read the profiles in the background: the saved ones in `agents.json` in
 /// `config_dir` and the default profile of each of `agents`, each with its
-/// state. A program is looked up through the user's shell at `shell`. The
-/// answer comes back as [`AgentsIntent::ProfilesLoaded`], or as
+/// state, and the accounts each provider part of `providers` finds in the
+/// shown profiles of its own plugin. A program is looked up through the
+/// user's shell at `shell`. The answer comes back as
+/// [`AgentsIntent::ProfilesLoaded`], or as
 /// [`AgentsIntent::ProfilesReadStopped`] when the read stops before it
 /// answers, so the profiles shown stay.
 ///
@@ -35,8 +40,10 @@ use crate::time_zone::user_time_zone;
 /// use otty_app_agents::AgentList;
 ///
 /// let agents: AgentList = Arc::from(Vec::new());
+/// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_profiles(
 ///     &agents,
+///     &providers,
 ///     &AgentEnv::new(PathBuf::from("/home/user")),
 ///     Path::new("/home/user/.config/otty"),
 ///     "/bin/zsh",
@@ -46,11 +53,13 @@ use crate::time_zone::user_time_zone;
 /// ```
 pub fn load_profiles(
     agents: &AgentList,
+    providers: &ProviderList,
     env: &AgentEnv,
     config_dir: &Path,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let agents = Arc::clone(agents);
+    let providers = Arc::clone(providers);
     let env = env.clone();
     let config_dir = config_dir.to_path_buf();
     let shell = shell.to_string();
@@ -58,7 +67,8 @@ pub fn load_profiles(
     on_own_thread(
         String::from("reading the agent profiles"),
         move || {
-            let loaded = read_profiles(&agents, &env, &config_dir, &shell);
+            let loaded =
+                read_profiles(&agents, &providers, &env, &config_dir, &shell);
             AgentsIntent::ProfilesLoaded(loaded)
         },
         || AgentsIntent::ProfilesReadStopped,
@@ -86,12 +96,14 @@ pub fn load_sessions(
     )
 }
 
-/// The profiles to show, each with its state and the accounts found in
-/// its files, the profiles the user hid, which are not checked and whose
-/// files are not read, and the user's time zone, which the dashboard
-/// writes its times in.
+/// The profiles to show, each with its state, the accounts the provider
+/// parts of `providers` find in them (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 5), the profiles the
+/// user hid, which are not checked and whose files are not read, and the
+/// user's time zone, which the dashboard writes its times in.
 fn read_profiles(
     agents: &[Box<dyn Agent>],
+    providers: &[PluginProvider],
     env: &AgentEnv,
     config_dir: &Path,
     shell: &str,
@@ -114,20 +126,24 @@ fn read_profiles(
                 otty_agents::profile_status(agent, &profile, |program| {
                     lookup.is_found(program)
                 });
-            let accounts = agent.accounts(&profile);
             let version = agent.version(&profile);
             Some(LoadedProfile {
                 profile,
                 status,
-                accounts,
                 version,
             })
         })
         .collect();
+    let shown: Vec<Profile> = profiles
+        .iter()
+        .map(|loaded| loaded.profile.clone())
+        .collect();
+    let accounts = otty_agents::find_accounts(agents, providers, &shown);
 
     LoadedProfiles {
         profiles,
         hidden_profiles,
+        accounts,
         saved: content,
         problem,
         time_zone: user_time_zone(),
@@ -202,17 +218,14 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{
-        AccountIdentity, AgentId, BillingKind, KeyFingerprint, ProfileStatus,
-        ProviderRef, SourceFailure,
-    };
+    use otty_agents::{AgentId, BillingKind, ProfileStatus, SourceFailure};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::background::read_stopped;
     use crate::testing::{
-        agents_with_opencode, agents_with_plugins, executable_script, run,
-        write,
+        agents_with_opencode, agents_with_plugins, executable_script,
+        providers_with_plugins, run, write,
     };
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
@@ -250,9 +263,10 @@ mod tests {
             .collect()
     }
 
-    /// Issue 14: the built OpenCode plugin reads OpenCode's
-    /// data folder: the profile is connected, its logins are its accounts
-    /// and its version comes from its database, which is never written.
+    /// Issue 14: the built OpenCode plugin reads OpenCode's data folder:
+    /// the profile is connected and its version comes from its database,
+    /// which is never written. Spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 11: OpenCode finds no account.
     #[test]
     fn the_built_opencode_plugin_reads_its_data_folder() {
         let home = TempDir::new("agents-read-opencode");
@@ -270,6 +284,7 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_opencode(home.path()),
+            &[],
             &env,
             home.path(),
             &shell(&home, true),
@@ -289,27 +304,9 @@ mod tests {
             }
         );
         assert_eq!(opencode.version.as_deref(), Some("2.3.2"));
-        let accounts: Vec<(&ProviderRef, &AccountIdentity)> = opencode
-            .accounts
-            .iter()
-            .map(|account| (account.provider(), account.identity()))
-            .collect();
-        assert_eq!(
-            accounts,
-            [
-                (
-                    &ProviderRef::of_id("openai"),
-                    &AccountIdentity::AccountId(String::from(
-                        "00000000-0000-4000-8000-0000000000f1"
-                    )),
-                ),
-                (
-                    &ProviderRef::of_id("deepseek"),
-                    &AccountIdentity::KeyFingerprint(KeyFingerprint::of(
-                        "sk-made-up-deepseek-fixture-0000"
-                    )),
-                ),
-            ]
+        assert!(
+            loaded.accounts.accounts().is_empty(),
+            "OpenCode has no provider part: its logins are no accounts"
         );
         assert_eq!(
             std::fs::read(data.join("opencode.db")).expect("read"),
@@ -335,12 +332,14 @@ mod tests {
 
         let found = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             home.path(),
             &finds,
         );
         let not_found = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             home.path(),
             &finds_nothing,
@@ -402,7 +401,7 @@ mod tests {
         let agents = agents_with_plugins(home.path());
 
         let before =
-            read_profiles(&agents, &env, &config_dir, &prints_a_version);
+            read_profiles(&agents, &[], &env, &config_dir, &prints_a_version);
         write(
             &config_dir.join("agents.json"),
             &format!(
@@ -411,7 +410,7 @@ mod tests {
             ),
         );
         let after =
-            read_profiles(&agents, &env, &config_dir, &prints_a_version);
+            read_profiles(&agents, &[], &env, &config_dir, &prints_a_version);
 
         let folders = |loaded: &LoadedProfiles| {
             loaded
@@ -459,6 +458,7 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             &config_dir,
             &finds,
@@ -504,6 +504,7 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             &config_dir,
             &finds,
@@ -539,6 +540,7 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             &config_dir,
             &finds,
@@ -554,16 +556,21 @@ mod tests {
         assert_eq!(loaded.problem, None);
     }
 
-    /// Spec 2026-11-19, Decision 2: each profile comes with the accounts
-    /// its agent part finds in its files.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the
+    /// provider part of a plugin finds the accounts in the shown profiles
+    /// of its own agent part, wherever the user added them.
     #[test]
-    fn the_accounts_come_with_the_profiles() {
+    fn the_provider_parts_find_the_accounts_in_the_shown_profiles() {
         let home = TempDir::new("agents-read-accounts");
         let config_dir = home.path().join("otty");
         let work = home.path().join(".claude-work");
         write(
             &work.join(".claude.json"),
-            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"dev@example.com","organizationUuid":"00000000-0000-4000-8000-00000000000b","billingType":"prepaid"}}"#,
+            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"dev@example.com","organizationUuid":"00000000-0000-4000-8000-00000000000b","organizationName":"Made-up Org"}}"#,
+        );
+        write(
+            &work.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000,"subscriptionType":"pro"}}"#,
         );
         write(
             &config_dir.join("agents.json"),
@@ -577,22 +584,21 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &providers_with_plugins(home.path()),
             &env,
             &config_dir,
             &finds,
         );
 
-        let work_profile = loaded
-            .profiles
-            .iter()
-            .find(|entry| entry.profile.name() == "Claude Code · Work")
-            .expect("the added profile is shown");
-        let organizations: Vec<_> = work_profile
+        let claude_code = AgentId::new("claude-code");
+        let in_work: Vec<_> = loaded
             .accounts
+            .accounts()
             .iter()
-            .filter_map(|account| account.organization_id())
+            .filter(|account| account.is_found_in(&claude_code, &work))
             .collect();
-        assert_eq!(organizations, ["00000000-0000-4000-8000-00000000000b"]);
+        assert_eq!(in_work.len(), 1, "{:?}", loaded.accounts);
+        assert_eq!(in_work[0].plugin(), "anthropic");
         assert!(loaded.saved.is_some(), "the file was read");
     }
 
@@ -606,6 +612,7 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             home.path(),
             &finds_nothing,
@@ -629,12 +636,14 @@ mod tests {
 
         let loaded = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             home.path(),
             &finds,
         );
         let unread = read_profiles(
             &agents_with_plugins(home.path()),
+            &[],
             &env,
             broken.path(),
             &finds,
@@ -707,8 +716,14 @@ mod tests {
             config_dir,
         );
 
-        let profiles =
-            run(load_profiles(&agents, &env, home.path(), &finds_nothing));
+        let providers: ProviderList = Arc::from(Vec::new());
+        let profiles = run(load_profiles(
+            &agents,
+            &providers,
+            &env,
+            home.path(),
+            &finds_nothing,
+        ));
         let sessions = run(load_sessions(&agents, profile.clone()));
 
         assert!(matches!(

@@ -9,26 +9,26 @@
 
 use std::time::SystemTime;
 
-use otty_agents::{Account, AccountLogin};
+use otty_agents::{Account, AccountKind};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::state::AgentsState;
+use super::FactViewModel;
 use super::account_name::short_account_name;
 use super::account_numbers::AccountNumbersViewModel;
 use super::entry_icon::EntryIcon;
-use super::found_in::found_in_text;
 use super::needs::{NeedViewModel, needs_of_account};
 use super::read_by::account_read_by;
-use super::{FactViewModel, UNKNOWN};
+use super::source::source_text;
 
 /// The page of one account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AccountPageViewModel {
     /// The account.
     pub(crate) account: Account,
-    /// The login without the provider the logo beside it shows, such as
-    /// "you@example.com", or the name the user gave the account (issue 38
-    /// of spec 2026-11-19-agent-plugins). Account info names the provider.
+    /// The name the part gives without the provider the logo beside it
+    /// shows, such as "you@example.com", or the name the user gave the
+    /// account. Account info names the provider.
     pub(crate) name: String,
     /// The icon of the provider.
     pub(crate) icon: EntryIcon,
@@ -37,7 +37,7 @@ pub(crate) struct AccountPageViewModel {
     pub(crate) needs: Vec<NeedViewModel>,
     /// The Limits, Credits or Money block, once anything is known.
     pub(crate) numbers: Option<AccountNumbersViewModel>,
-    /// Account info: Provider, Email or Key, Plan, Found in and Read by.
+    /// Account info: Provider, Name, Kind, Plan, Source and Read by.
     pub(crate) info: Vec<FactViewModel>,
     /// For an account the user hid, the line under the title that says
     /// OTTY does not read it; its page then has no needs or numbers.
@@ -54,12 +54,8 @@ impl AccountPageViewModel {
         now: SystemTime,
     ) -> Self {
         let page = Self {
-            name: short_account_name(
-                state.registry(),
-                state.profiles().saved(),
-                &account,
-            ),
-            icon: state.provider_icon(account.provider()),
+            name: short_account_name(state.profiles().saved(), &account),
+            icon: state.account_icon(&account),
             needs: Vec::new(),
             numbers: None,
             info: info(state, &account),
@@ -82,47 +78,49 @@ impl AccountPageViewModel {
     }
 }
 
-/// Account info: the provider, the email or the key, the plan when known,
-/// each place the account was found in, the first one named "Found in",
-/// and the plugin that reads its provider.
+/// Account info (spec 2026-11-23-accounts-apart-from-profiles, "Account
+/// page"): the provider, the name its part gives, its kind, the plan when
+/// known, its Source, one line per folder it was found in, and the plugin
+/// that reads it.
 fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
-    let mut list = vec![FactViewModel::new(
-        i18n::t(Key::AgentsColumnProvider),
-        state.provider_name(account.provider()).to_string(),
-    )];
-
-    match account.login() {
-        AccountLogin::Email(email) => list.push(FactViewModel::new(
-            i18n::t(Key::AgentsFieldEmail),
-            email.clone(),
-        )),
-        AccountLogin::Key(ending) => {
-            let key = ending.as_ref().map_or_else(
-                || String::from(UNKNOWN),
-                |last| {
-                    i18n::filled(Key::TplAgentsAccountKey, &[("last", last)])
-                },
-            );
-            list.push(FactViewModel::new(i18n::t(Key::AgentsFieldKey), key));
-        },
-        _ => {},
-    }
+    let mut list = vec![
+        FactViewModel::new(
+            i18n::t(Key::AgentsColumnProvider),
+            state.account_provider_name(account).to_string(),
+        ),
+        FactViewModel::new(
+            i18n::t(Key::AgentsFieldName),
+            account.name().to_string(),
+        ),
+        FactViewModel::new(
+            i18n::t(Key::AgentsFieldKind),
+            kind_text(account.kind()).to_string(),
+        ),
+    ];
     if let Some(plan) = plan(state, account) {
         list.push(FactViewModel::new(i18n::t(Key::AgentsFieldPlan), plan));
     }
 
     let home = state.env().home();
     for (index, place) in account.found_in().iter().enumerate() {
-        let label = if index == 0 {
-            i18n::t(Key::AgentsColumnFoundIn)
-        } else {
-            ""
+        let label = match index {
+            0 => i18n::t(Key::AgentsFieldSource),
+            _ => "",
         };
-        list.push(FactViewModel::new(label, found_in_text(place, home)));
+        list.push(FactViewModel::new(label, source_text(place, home)));
     }
     list.push(account_read_by(state, account));
 
     list
+}
+
+/// The kind of an account in words, such as "Subscription".
+fn kind_text(kind: AccountKind) -> &'static str {
+    match kind {
+        AccountKind::Subscription => i18n::t(Key::AgentsKindSubscription),
+        AccountKind::Key => i18n::t(Key::AgentsKindKey),
+        AccountKind::Organization => i18n::t(Key::AgentsKindOrganization),
+    }
 }
 
 /// The plan of `account`: as its files name it, else as its last good
@@ -139,10 +137,7 @@ fn plan(state: &AgentsState, account: &Account) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, FoundIn, KeyFingerprint,
-        ProviderRef, SavedProfiles, SourceId,
-    };
+    use otty_agents::{AccountKind, ProviderId, SavedProfiles, SourceId};
 
     use super::*;
     use crate::need::NeedAction;
@@ -157,8 +152,14 @@ mod tests {
         FactViewModel::new(i18n::t(key), String::from(value))
     }
 
-    fn found_in(folder: &str) -> FactViewModel {
-        FactViewModel::new("", String::from(folder))
+    /// The Source line of a folder after the first one.
+    fn also_found_in(folder: &str) -> FactViewModel {
+        FactViewModel::new("", source(folder))
+    }
+
+    /// The Source line of `folder`: "Found in" it.
+    fn source(folder: &str) -> String {
+        i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", folder)])
     }
 
     /// Codex and Codex · Work logged in to the [`chatgpt_login`] on the
@@ -209,14 +210,17 @@ mod tests {
             .profiles()
             .accounts()
             .into_iter()
-            .find(|found| found.is_same_login(&account))
+            .find(|found| found.is_same_account(&account))
             .expect("the account is found");
 
         AccountPageViewModel::of(state, found, now())
     }
 
     /// Spec 2026-11-23, Decision 1: the page of a login two profiles use
-    /// shows its numbers and its info, and no Used by.
+    /// shows its numbers and its info, and no Used by. Spec
+    /// 2026-11-23-accounts-apart-from-profiles, "Account page": Account
+    /// info is Provider, Name, Kind, Plan, Source, one line per folder,
+    /// and Read by.
     #[test]
     fn a_shared_login_shows_its_numbers_and_info() {
         let state = shared_chatgpt();
@@ -234,29 +238,33 @@ mod tests {
             page.info,
             vec![
                 fact(Key::AgentsColumnProvider, "OpenAI"),
-                fact(Key::AgentsFieldEmail, "you@example.com"),
+                fact(Key::AgentsFieldName, "you@example.com"),
+                fact(
+                    Key::AgentsFieldKind,
+                    i18n::t(Key::AgentsKindSubscription)
+                ),
                 fact(Key::AgentsFieldPlan, "Plus"),
-                fact(Key::AgentsColumnFoundIn, "~/.codex"),
-                found_in("~/.codex-work"),
+                fact(Key::AgentsFieldSource, &source("~/.codex")),
+                also_found_in("~/.codex-work"),
                 read_by_plugin("OpenAI 0.1.0", "openai"),
             ]
         );
     }
 
-    /// A key shows its last four characters and the folder it was found
-    /// in.
+    /// A key shows the name its part gives it and the folder it was
+    /// found in.
     #[test]
-    fn a_key_shows_its_ending_and_where_it_was_found() {
+    fn a_key_shows_its_name_and_where_it_was_found() {
         let key = Account::new(
-            ProviderRef::of_id("anthropic"),
-            AccountIdentity::KeyFingerprint(KeyFingerprint::of(
-                "sk-made-up-key-for-tests-a1f3",
-            )),
-            AccountLogin::Key(Some(String::from("a1f3"))),
-            AccountKind::Money,
-            FoundIn::ProfileFolder(std::path::PathBuf::from(
+            "anthropic",
+            ProviderId::new("anthropic"),
+            "key:made-up-a1f3",
+            "key ••••a1f3",
+            AccountKind::Key,
+            vec![crate::testing::found_in(
+                crate::testing::claude_id(),
                 "/home/user/.claude",
-            )),
+            )],
         );
         let state = with_accounts(
             &[(claude(), api_key(), vec![key.clone()])],
@@ -269,11 +277,9 @@ mod tests {
             page.info,
             vec![
                 fact(Key::AgentsColumnProvider, "Anthropic"),
-                FactViewModel::new(
-                    i18n::t(Key::AgentsFieldKey),
-                    i18n::filled(Key::TplAgentsAccountKey, &[("last", "a1f3")])
-                ),
-                fact(Key::AgentsColumnFoundIn, "~/.claude"),
+                fact(Key::AgentsFieldName, "key ••••a1f3"),
+                fact(Key::AgentsFieldKind, i18n::t(Key::AgentsKindKey)),
+                fact(Key::AgentsFieldSource, &source("~/.claude")),
                 read_by_plugin("Anthropic 0.1.0", "anthropic"),
             ]
         );

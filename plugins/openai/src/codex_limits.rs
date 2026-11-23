@@ -1,60 +1,55 @@
 //! The limits Codex itself knows of a ChatGPT login, read by the provider
-//! part `openai` in a Codex profile the login was found in (issue 29):
-//! `codex app-server` first, which tells them now, then the last record
-//! of them in the session files. When neither answers, the error of
-//! `codex app-server` says why.
+//! part `openai` in a Codex profile folder the account was found in
+//! (issue 29): `codex app-server` first, started with `CODEX_HOME` of that
+//! folder, which tells them now, then the last record of them in the
+//! session files. When neither answers, the error of `codex app-server`
+//! says why.
 //!
 //! `codex app-server` renews an expired login token by itself, which a
 //! plugin never makes another agent do: with an expired token it is not
-//! started, and the read waits for the user to run Codex, which renews it.
+//! started, and the read waits for the user to log in again in the folder.
+//! With no token in the folder there is no login to ask about, and only
+//! the session files are read.
 
-use otty_plugin_sdk::agents::{FoundProfile, ReadError};
-use otty_plugin_sdk::{Key, clock};
+use otty_plugin_sdk::Key;
+use otty_plugin_sdk::agents::ReadError;
 
+use crate::accounts::login_need;
 use crate::limits::Limits;
-use crate::token_expiry::expires_at_ms;
-use crate::{app_server, needs, session_limits};
+use crate::profiles::CONFIG_VARIABLE;
+use crate::token_expiry::has_expired;
+use crate::{app_server, session_limits};
 
-/// The limits of the login of `token` that Codex knows in `profile`, run
-/// with the command the agent part `codex` starts Codex with there.
+/// The limits Codex knows in the profile folder `folder`, whose login
+/// token is `token` when the folder holds one.
 pub(crate) fn read_codex_limits(
-    profile: &FoundProfile,
-    token: &Key,
+    folder: &str,
+    token: Option<&Key>,
 ) -> Result<Limits, ReadError> {
-    let now = if has_expired(token) {
-        let codex = profile.launch.clone();
-        Err(ReadError::NeedsUser(needs::login_expired(codex)))
-    } else {
-        app_server::read_limits(&profile.launch.env)
+    let now = match token {
+        None => Err(ReadError::Failed("no login in the folder".to_string())),
+        Some(token) if has_expired(token) => {
+            Err(ReadError::NeedsUser(login_need(folder)))
+        },
+        Some(_) => {
+            let env = [(CONFIG_VARIABLE.to_string(), folder.to_string())];
+            app_server::read_limits(&env)
+        },
     };
 
-    now.or_else(|error| {
-        session_limits::read_limits(&profile.folder).map_err(|_| error)
-    })
-}
-
-/// Whether `token` expired, as its claims say. A token that says nothing,
-/// or that is not at its place, is not taken as expired.
-fn has_expired(token: &Key) -> bool {
-    token
-        .jwt_claims()
-        .ok()
-        .flatten()
-        .and_then(|claims| expires_at_ms(&claims))
-        .is_some_and(|expires_at_ms| expires_at_ms <= clock::now_ms())
+    now.or_else(|error| session_limits::read_limits(folder).map_err(|_| error))
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::FoundProfile;
+    use otty_plugin_sdk::agents::LoginFolder;
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{JsonField, KeyPlace, NeedAction};
 
     use super::*;
     use crate::app_server::APP_SERVER_ARGS;
     use crate::auth_file::ACCESS_TOKEN_FIELD;
-    use crate::profiles::CONFIG_VARIABLE;
-    use crate::testing::{TEN, as_provider, found_profile, host, path};
+    use crate::testing::{PROVIDER, TEN, codex_folder, host, path};
 
     /// A handle to the access token of the login of the config folder
     /// `name`, read at each use.
@@ -65,18 +60,24 @@ mod tests {
         }))
     }
 
+    /// The limits Codex knows in the config folder `name`, read in a call
+    /// given that folder, with its token or with none.
     fn read(
         host: &TestHost,
-        profile: &FoundProfile,
         name: &str,
+        with_token: bool,
     ) -> Result<Limits, ReadError> {
-        let token = token_of(host, name);
+        let folders = [codex_folder(host, name)];
+        let folder = path(host, name);
+        let token = with_token.then(|| token_of(host, name));
 
-        as_provider(host, || read_codex_limits(profile, &token))
+        host.as_provider_in(PROVIDER, &folders, || {
+            read_codex_limits(&folder, token.as_ref())
+        })
     }
 
     #[test]
-    fn the_app_server_of_a_profile_runs_in_its_config_folder() {
+    fn the_app_server_runs_in_the_accounts_folder() {
         let host = host();
         host.answer_talk(
             "codex",
@@ -86,14 +87,13 @@ mod tests {
                 r#"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":42,"windowDurationMins":300,"resetsAt":1794826800},"planType":"pro"}}}"#,
             ],
         );
-        let profile = found_profile(&host, ".codex-plus", false);
 
-        let limits = read(&host, &profile, ".codex-plus").expect("the limits");
+        let limits = read(&host, ".codex-plus", true).expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Pro 200"));
         assert_eq!(
             host.started()[0].env(),
-            [(CONFIG_VARIABLE.to_string(), profile.folder.clone())]
+            [(CONFIG_VARIABLE.to_string(), path(&host, ".codex-plus"))]
         );
     }
 
@@ -102,51 +102,46 @@ mod tests {
     #[test]
     fn without_the_app_server_the_session_files_give_their_last_record() {
         let host = host();
-        let profile = found_profile(&host, ".codex-limits", false);
 
-        let limits =
-            read(&host, &profile, ".codex-limits").expect("the limits");
+        let limits = read(&host, ".codex-limits", true).expect("the limits");
 
         assert_eq!(limits.plan.as_deref(), Some("Plus"));
         assert!(limits.recorded_at_ms.is_some());
     }
 
-    /// `codex app-server` would renew the expired token, writing Codex's
-    /// login: it is not started, and with no session files to fall back
-    /// on the read waits for the user to run Codex in the profile's config
-    /// folder, which renews the login.
+    /// A folder with no login now has only what Codex wrote: nothing is
+    /// started.
     #[test]
-    fn an_expired_login_starts_no_app_server_and_asks_to_run_codex() {
+    fn with_no_token_only_the_session_files_are_read() {
         let host = host();
         host.answer_talk("codex", &APP_SERVER_ARGS, &[]);
-        let profile = found_profile(&host, ".codex-expired", false);
 
-        let limits = read(&host, &profile, ".codex-expired");
+        let limits = read(&host, ".codex-limits", false).expect("the limits");
+
+        assert_eq!(limits.plan.as_deref(), Some("Plus"));
+        assert!(host.started().is_empty());
+    }
+
+    /// `codex app-server` would renew the expired token, writing Codex's
+    /// login: it is not started, and with no session files to fall back
+    /// on the read waits for the user to log in again in the folder.
+    #[test]
+    fn an_expired_login_starts_no_app_server_and_asks_to_log_in() {
+        let host = host().with_now_ms(TEN);
+        host.answer_talk("codex", &APP_SERVER_ARGS, &[]);
+        let LoginFolder::Profile((_, folder)) =
+            codex_folder(&host, ".codex-expired");
+
+        let limits = read(&host, ".codex-expired", true);
 
         let Err(ReadError::NeedsUser(need)) = limits else {
             panic!("a need: {limits:?}");
         };
-        assert_eq!(need.id, "login-expired");
-        assert!(need.text.contains("Open Codex"), "{}", need.text);
-        assert_eq!(need.action, NeedAction::Run(profile.launch.clone()));
+        assert_eq!(need, host.as_provider(PROVIDER, || login_need(&folder)));
+        let NeedAction::Run(command) = need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.args, ["login"]);
         assert!(host.started().is_empty());
-    }
-
-    #[test]
-    fn a_token_that_does_not_tell_its_expiry_is_used() {
-        let host = host().with_now_ms(TEN);
-        let opaque = token_of(&host, ".codex");
-        let fresh = token_of(&host, ".codex-plus");
-        let missing = token_of(&host, ".codex-empty");
-
-        let expired = as_provider(&host, || {
-            [
-                has_expired(&opaque),
-                has_expired(&fresh),
-                has_expired(&missing),
-            ]
-        });
-
-        assert_eq!(expired, [false, false, false]);
     }
 }

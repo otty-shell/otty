@@ -156,7 +156,8 @@ pub(crate) struct RawProvider {
 
 /// `[agents.provider.permissions]`. Files, variables, programs and hidden
 /// terminals serve the ways of reading that ask the agent itself (issue
-/// 29); keys, databases and the keyring are the agent parts'.
+/// 29); `keys` are JSON fields of files outside every profile folder, such
+/// as `~/.claude.json`. Databases and the keyring are the agent parts'.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RawProviderPermissions {
@@ -172,6 +173,8 @@ pub(crate) struct RawProviderPermissions {
     pub(crate) run: Vec<RawProgram>,
     #[serde(default)]
     pub(crate) terminal: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) keys: Vec<RawKeyPlace>,
 }
 
 /// One `[[agents.provider.logins]]`: the profiles of an agent part of the

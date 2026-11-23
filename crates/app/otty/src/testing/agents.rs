@@ -117,7 +117,6 @@ fn loaded(
         .map(|(profile, status)| LoadedProfile {
             profile,
             status,
-            accounts: Vec::new(),
             version: None,
         })
         .collect();
@@ -125,6 +124,7 @@ fn loaded(
     AgentsIntent::ProfilesLoaded(LoadedProfiles {
         profiles,
         hidden_profiles: Vec::new(),
+        accounts: otty_agents::FoundAccounts::default(),
         saved: Some(saved),
         problem: None,
         time_zone: None,

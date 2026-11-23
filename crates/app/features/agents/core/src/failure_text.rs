@@ -21,9 +21,6 @@ pub(crate) fn source_error_text(error: &SourceError) -> String {
             &[("reason", &unavailable_text(reason))],
         ),
         SourceError::NeedsUser(need) => need.title().to_string(),
-        SourceError::LoginRefused(_) => {
-            i18n::t(Key::AgentsNeedLoginRefusedTitle).to_string()
-        },
         SourceError::Network(detail) => {
             i18n::filled(Key::TplAgentsFailureNetwork, &[("error", detail)])
         },

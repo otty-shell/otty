@@ -293,7 +293,7 @@ pub enum AgentsOutcome {
     /// and may start the agent's program, as is or in a hidden terminal.
     /// The read stands for every profile of the same account, which is
     /// read once (spec Decision 5); [`Agents::limits_to_read`] tells the
-    /// account and its profiles. Answer [`AgentsIntent::LimitsLoaded`].
+    /// account. Answer [`AgentsIntent::LimitsLoaded`].
     LoadLimits(Profile),
     /// Read the limits of this profile while Agents mode is away: no
     /// part starts the agent's program. Answer
@@ -313,18 +313,13 @@ pub enum AgentsOutcome {
         /// The keys the user gave for it, each under its slot.
         given: Vec<GivenKey>,
     },
-    /// Read the numbers of `account` with the key of its login, read again
-    /// from the files of the first profile of `found_in` and dropped right
-    /// after the request: the money of a key, or the limits of a
-    /// subscription login no profile reads. A key in the system keyring is
-    /// read only while Agents mode is on screen. Answer
-    /// [`AgentsIntent::AccountNumbersLoaded`].
+    /// Read the numbers of `account` through the provider part that
+    /// found it, in the folders it was found in: the money of a key or an
+    /// organization, or the limits of a subscription no profile reads.
+    /// Answer [`AgentsIntent::AccountNumbersLoaded`].
     LoadAccountNumbers {
         /// The account to read.
         account: Account,
-        /// The shown profiles it was found in; the first names the place
-        /// of its key.
-        found_in: Vec<Profile>,
         /// The keys the user gave for it, each under its slot.
         given: Vec<GivenKey>,
         /// Whether its provider part may start the agent's program, while

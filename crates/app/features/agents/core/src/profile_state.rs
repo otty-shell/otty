@@ -1,10 +1,11 @@
-//! One shown profile with what was read of it: the accounts found in it,
-//! its sessions, its limits, the tokens it spent and its bill, and how it
-//! pays (spec Decisions 2, 5 and 9). The
-//! limits and the bill belong to an account: a profile of an account read
-//! through another profile takes a copy of that read. A login two plugins
-//! read is two accounts (issue 29): the profile shows the limits and the
-//! bill of the first one the user did not hide.
+//! One shown profile with what was read of it: the accounts a provider
+//! part found in it, its sessions, its limits, the tokens it spent and its
+//! bill, and how it pays (spec Decisions 2, 5 and 9). The limits and the
+//! bill belong to an account: they are read through the first profile the
+//! account was found in, and a profile of an account read through another
+//! profile takes a copy of that read. The screen links no profile to an
+//! account (spec 2026-11-23-accounts-apart-from-profiles, Decision 1):
+//! this is only how the reads are shared.
 
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -49,7 +50,7 @@ impl ProfileState {
         &self.status
     }
 
-    /// The logins and keys found in the files of the profile.
+    /// The accounts the provider parts found in the profile's folder.
     pub(crate) fn accounts(&self) -> &[Account] {
         &self.accounts
     }
@@ -110,8 +111,8 @@ impl ProfileState {
         &self.bill
     }
 
-    /// The profile with its `status` and the `accounts` found in it,
-    /// before anything was read of it.
+    /// The profile with its `status` and the `accounts` a provider part
+    /// found in it, before anything was read of it.
     pub(crate) fn new(
         profile: Profile,
         status: ProfileStatus,
@@ -148,10 +149,10 @@ impl ProfileState {
             self.accounts.iter().filter(|account| !is_hidden(account));
         self.limits_account = shown
             .clone()
-            .find(|account| account.kind() != AccountKind::Money)
+            .find(|account| account.kind() == AccountKind::Subscription)
             .cloned();
         self.organization = shown
-            .find(|account| account.organization_id().is_some())
+            .find(|account| account.kind() == AccountKind::Organization)
             .cloned();
     }
 
@@ -194,11 +195,11 @@ impl ProfileState {
             .is_some_and(|own| own.is_same_account(account))
     }
 
-    /// Whether the profile pays through the organization `organization`,
-    /// whichever plugin reads it.
+    /// Whether the bill of the profile is the one of the organization
+    /// `organization`.
     pub(crate) fn pays_through(&self, organization: &Account) -> bool {
         self.organization()
-            .is_some_and(|own| own.is_same_login(organization))
+            .is_some_and(|own| own.is_same_account(organization))
     }
 
     /// Whether the profile pays per token with an API key (spec Decision

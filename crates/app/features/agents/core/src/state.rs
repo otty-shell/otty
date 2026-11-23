@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use otty_agents::{
     Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
-    ProviderRef, Registry,
+    Registry,
 };
 use otty_app_domain::plugins::PluginNotes;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -358,20 +358,10 @@ impl AgentsState {
             return None;
         };
 
-        let accounts = self.profiles.all_accounts();
-        let exact = accounts
-            .iter()
-            .position(|account| account.is_same_account(selected));
-        // The same login read by another plugin, or by none: an account
-        // the user just added, or one whose plugin left (issue 29).
-        let same_login = || {
-            accounts
-                .iter()
-                .position(|account| account.is_same_login(selected))
-        };
-
-        let position = exact.or_else(same_login)?;
-        accounts.into_iter().nth(position)
+        self.profiles
+            .all_accounts()
+            .into_iter()
+            .find(|account| account.is_same_account(selected))
     }
 
     /// The accounts the lists show: those not hidden, and the hidden ones
@@ -420,16 +410,6 @@ impl AgentsState {
             .map_or(id.as_str(), |entry| entry.name())
     }
 
-    /// The name of the provider `provider`, such as "Example Cloud", from the
-    /// registry entry that serves it; its id or host for a provider no
-    /// entry serves.
-    pub(crate) fn provider_name<'a>(
-        &'a self,
-        provider: &'a ProviderRef,
-    ) -> &'a str {
-        provider_name(&self.registry, provider)
-    }
-
     /// The icon of the agent with the id `id`: the one of its registry
     /// entry, else the first letter of its name.
     pub(crate) fn agent_icon(&self, id: &AgentId) -> EntryIcon {
@@ -438,11 +418,22 @@ impl AgentsState {
         EntryIcon::of(entry.and_then(|entry| entry.icon()), self.agent_name(id))
     }
 
-    /// The icon of the provider `provider`: the one of the registry entry
-    /// that serves it, else the first letter of its id or of the
-    /// registrable domain of its host.
-    pub(crate) fn provider_icon(&self, provider: &ProviderRef) -> EntryIcon {
-        EntryIcon::of_provider(&self.registry, provider)
+    /// The name of the provider part that found `account`, such as
+    /// "OpenAI".
+    pub(crate) fn account_provider_name<'a>(
+        &'a self,
+        account: &'a Account,
+    ) -> &'a str {
+        account_provider_name(&self.registry, account)
+    }
+
+    /// The icon of the provider part that found `account`: the one of its
+    /// registry entry, else the first letter of its id.
+    pub(crate) fn account_icon(&self, account: &Account) -> EntryIcon {
+        match self.registry.reader_of(account) {
+            Some(entry) => EntryIcon::of(entry.icon(), entry.name()),
+            None => EntryIcon::of(None, account.provider().as_str()),
+        }
     }
 
     /// The sessions of the selected project as its table shows them: the
@@ -803,15 +794,15 @@ impl AgentsState {
     }
 }
 
-/// The name of the provider `provider` in `registry`, such as "Example Cloud";
-/// its id or host for a provider no entry serves.
-pub(crate) fn provider_name<'a>(
+/// The name of the provider part that found `account` in `registry`, such
+/// as "OpenAI"; its id while that part is not in the registry.
+pub(crate) fn account_provider_name<'a>(
     registry: &'a Registry,
-    provider: &'a ProviderRef,
+    account: &'a Account,
 ) -> &'a str {
     registry
-        .provider_of(provider)
-        .map_or(provider.as_str(), |entry| entry.name())
+        .reader_of(account)
+        .map_or(account.provider().as_str(), |entry| entry.name())
 }
 
 /// What the main area shows: a project, a profile, an account, or All

@@ -3,13 +3,16 @@
 //! <https://api-docs.deepseek.com/api/get-user-balance>. The answer lists
 //! the balance in each currency of the account, `total_balance` as decimal
 //! text.
+//!
+//! The part finds no accounts (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 11): no agent of this plugin keeps a login. The read stays for
+//! "paste a key", which gives the key under the slot [`KEY_SLOT`].
 
 use otty_plugin_sdk::agents::{
-    AccountFacts, AccountNumbers, Identity, LoginFacts, Money, Provider,
-    ReadError,
+    Account, AccountNumbers, Money, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, HostError, Key};
+use otty_plugin_sdk::{GivenKey, HostError, Key, given_key};
 use serde_json::Value;
 
 use crate::{DeepSeek, needs};
@@ -20,33 +23,25 @@ const BALANCE_URL: &str = "https://api.deepseek.com/user/balance";
 /// The page where the user makes a new key.
 const KEYS_PAGE: &str = "https://platform.deepseek.com/api_keys";
 
-impl Provider for DeepSeek {
-    /// DeepSeek does not tell whose account a key is: OTTY knows the
-    /// account by the key's fingerprint, so nothing is asked.
-    fn account(
-        _provider: &str,
-        _key: &Key,
-        _found: &LoginFacts,
-    ) -> Result<AccountFacts, ReadError> {
-        Ok(AccountFacts {
-            identity: Identity::default(),
-            plan: None,
-        })
-    }
+/// The slot the key of the account is given under.
+pub(crate) const KEY_SLOT: &str = "key";
 
-    /// The money left on the account of `key`: the total balance of the
-    /// first currency the answer lists. The part asks for no other key.
+impl Provider for DeepSeek {
+    /// The money left on the account of the key given under
+    /// [`KEY_SLOT`]: the total balance of the first currency the answer
+    /// lists.
     ///
-    /// A key that is not at its place now is a normal case: the part has
-    /// no other way to read the account, so it answers nothing and sends
+    /// With no key, or a key that is not at its place now, the part has
+    /// no way to read the account, so it answers nothing and sends
     /// nothing (issue 29).
     fn numbers(
         _provider: &str,
-        _found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
-        _given: &[GivenKey],
+        _account: &Account,
+        given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
+        let Some(key) = given_key(given, KEY_SLOT) else {
+            return Ok(no_numbers());
+        };
         if !is_there(key)? {
             return Ok(no_numbers());
         }
@@ -158,21 +153,33 @@ mod tests {
         TestHost::new(env!("CARGO_MANIFEST_DIR"))
     }
 
-    fn account() -> AccountFacts {
-        AccountFacts {
-            identity: Identity::default(),
+    /// A key account of DeepSeek, as "paste a key" will give one.
+    fn account() -> Account {
+        Account {
+            id: "key:made-up".to_string(),
+            name: "key ••••0000".to_string(),
+            kind: otty_plugin_sdk::agents::AccountKind::Key,
             plan: None,
+            found_in: Vec::new(),
+            needs: Vec::new(),
         }
     }
 
-    /// What OTTY found of an API key of an agent, found in no profile.
-    fn found() -> LoginFacts {
-        LoginFacts {
-            kind: otty_plugin_sdk::agents::LoginKind::ApiKey,
-            identity: Identity::default(),
-            plan: None,
-            found_in: Vec::new(),
-        }
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 11: the
+    /// part finds no accounts, and with no key given it reads nothing.
+    #[test]
+    fn the_part_finds_no_account_and_reads_nothing_with_no_key() {
+        let host = host();
+
+        let found =
+            host.as_provider(PROVIDER, || DeepSeek::accounts(PROVIDER, &[]));
+        let numbers = host.as_provider(PROVIDER, || {
+            DeepSeek::numbers(PROVIDER, &account(), &[])
+        });
+
+        assert!(found.accounts.is_empty());
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty());
     }
 
     /// Issue 29: a key that is not at its place now is nothing, not a
@@ -184,8 +191,10 @@ mod tests {
             "NO_SUCH_KEY".to_string(),
         ));
 
+        let given = [GivenKey::new(KEY_SLOT, key)];
+
         let numbers = host.as_provider(PROVIDER, || {
-            DeepSeek::numbers(PROVIDER, &found(), &account(), &key, &[])
+            DeepSeek::numbers(PROVIDER, &account(), &given)
         });
 
         assert_eq!(numbers, Ok(no_numbers()));
@@ -201,21 +210,22 @@ mod tests {
     ) -> Result<AccountNumbers, ReadError> {
         let key = host.key(MADE_UP_KEY);
 
-        numbers_with(host, &key, status, body)
+        numbers_with(host, key, status, body)
     }
 
-    /// The numbers the part reads with `key` when the balance request
-    /// answers `status` and `body`.
+    /// The numbers the part reads with `key`, given under [`KEY_SLOT`],
+    /// when the balance request answers `status` and `body`.
     fn numbers_with(
         host: &TestHost,
-        key: &Key,
+        key: Key,
         status: u16,
         body: &str,
     ) -> Result<AccountNumbers, ReadError> {
         host.answer("GET", BALANCE_URL, status, body.as_bytes());
+        let given = [GivenKey::new(KEY_SLOT, key)];
 
         host.as_provider(PROVIDER, || {
-            DeepSeek::numbers(PROVIDER, &found(), &account(), key, &[])
+            DeepSeek::numbers(PROVIDER, &account(), &given)
         })
     }
 
@@ -375,20 +385,6 @@ mod tests {
         };
         assert!(text.contains("503"), "{text}");
         assert!(!text.contains("made-up answer text"), "{text}");
-    }
-
-    #[test]
-    fn the_account_of_a_key_is_known_by_its_fingerprint_only() {
-        let host = host();
-        let key = host.key(MADE_UP_KEY);
-        let found = found();
-
-        let facts = host
-            .as_provider(PROVIDER, || DeepSeek::account(PROVIDER, &key, &found))
-            .expect("the account");
-
-        assert_eq!(facts, account());
-        assert!(host.requests().is_empty());
     }
 
     /// The part may send requests to DeepSeek's API host only.

@@ -3,37 +3,39 @@
 The official OpenAI plugin of OTTY. OTTY has no code for any agent by
 name: this plugin teaches it Codex. Its agent part `codex` names Codex's
 default config folder (`~/.codex`, or the one `CODEX_HOME` names; the
-user adds other folders, such as `~/.codex-work`, as profiles), lists
-the sessions of each profile, and reads the tokens of every
-answer, with its session and project, from the session files, plain or
-compressed. It tells which ChatGPT login or API key a profile
-holds and whom it is for, but the plugin never sees a key or a token:
-OTTY hands it handles in their place.
+user adds other folders, such as `~/.codex-work`, as profiles), tells
+whether each profile is logged in, lists the sessions of each profile,
+and reads the tokens of every answer, with its session and project, from
+the session files, plain or compressed. The plugin never sees a key or a
+token: OTTY hands it handles in their place.
 
-Its provider part `openai` reads the numbers of OpenAI accounts any way
-it can, with the handles OTTY gives it: the limits and credits of a
-ChatGPT login from `chatgpt.com`, whichever agent keeps the login (Codex
-or OpenCode), and the costs of an organization with an admin key, from
-`api.openai.com`. When the login's token is not at its place or the
-server gives no answer, it reads the limits Codex knows in a Codex
-profile OTTY found the login in: `codex app-server`, which it asks only
-for the limits and never for the list of sessions, else the last record
-of them in the session files. With no way that works it reads nothing,
-which is no failure.
-A token whose claims say it expired is not sent; a login behind a
-gateway is for the gateway's host and is not read here. A ChatGPT login
-ChatGPT refused, or that expired, the provider part only reports as
-refused: it does not know which agent keeps it, so OTTY asks that
-agent's part (Codex's here, OpenCode's in its own plugin) what to do.
+Its provider part `openai` finds the OpenAI accounts itself, in the
+Codex profile folders OTTY gives it, and reads nothing outside them: the
+ChatGPT login of `auth.json` is a subscription known by its account id
+(`chatgpt:<account id>`, the same after Codex renews the tokens) and
+named by its email, with its plan; an API key is a key known by its
+fingerprint (`key:<fingerprint>`, named such as `key ••••a1f3`), and an
+admin key an organization. One account logged in to two folders is one
+account found in both. A login Codex sends to a gateway is for the
+gateway's host and is no OpenAI account.
+
+It reads the numbers of an account any way it can, only in the folders
+it was found in: the limits and credits of a ChatGPT login from
+`chatgpt.com` with its token; when the server gives no answer, the
+limits Codex knows there, from `codex app-server` started with
+`CODEX_HOME` of that folder, which it asks only for the limits and never
+for the list of sessions, else from the last record of them in the
+session files; and the costs of an organization with an admin key, from
+`api.openai.com`. With no way that works it reads nothing, which is no
+failure. A token whose claims say it expired is not sent.
 
 What only the user can do, the parts ask for themselves, in OTTY's
 language, which they follow when the user picks another: `codex login`
-for a profile nobody is logged in with, `codex` in the profile's folder
-for an expired or refused ChatGPT login of Codex (Codex renews it), and
-a field for the admin key (`sk-admin-…`) when the bill of an
-organization needs one or OpenAI refused the one given.
-While it runs, the files of the `codex` part are refused to it, but for
-the session files, where Codex writes the limits.
+for a profile nobody is logged in with, `codex login` in the folder of
+an account whose ChatGPT login expired or was refused (whether it
+expired is the plugin's call, from the token's claims), and a field for
+the admin key (`sk-admin-…`) when the bill of an organization needs one
+or OpenAI refused the one given.
 
 When Codex is nowhere on the `PATH` of the login shell, the manifest's
 `install` gives its install script, `curl -fsSL

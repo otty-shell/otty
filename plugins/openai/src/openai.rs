@@ -1,78 +1,79 @@
-//! The provider part `openai`: whose account a ChatGPT login or an OpenAI
-//! key is, the limits and credits of a ChatGPT login, and the bill of an
-//! OpenAI organization read with an admin key the part asks the user for.
-//! OTTY gives the part a handle to the login token or the key, never the
-//! key, and only of accounts of OpenAI: a login behind a gateway is not
-//! one.
+//! The provider part `openai`: the OpenAI accounts of the Codex profiles
+//! OTTY gives it (`accounts.rs`), the limits and credits of a ChatGPT
+//! account, and the bill of an OpenAI organization read with an admin key
+//! the part asks the user for. It reads only in the folders of the call,
+//! and gets every key as a handle.
 //!
-//! The limits are read any way the part can (issue 29): from
-//! `chatgpt.com` with the login token; else, with no token at its place or
-//! when the server fails, from what Codex knows in a Codex profile the
-//! login was found in (`codex_limits.rs`); else nothing.
+//! The limits are read any way the part can (issue 29), only in the
+//! account's folders: from `chatgpt.com` with the token of the first of
+//! them that holds the account's login; else, when the server fails, from
+//! what Codex knows there (`codex_limits.rs`); else, with no login in any
+//! of them now, from what Codex wrote in a folder that holds no login;
+//! else nothing.
 
 use otty_plugin_sdk::agents::{
-    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, LoginKind,
+    Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
     Provider, ReadError,
 };
-use otty_plugin_sdk::{GivenKey, HostError, Key, given_key};
+use otty_plugin_sdk::{GivenKey, given_key};
 
+use crate::accounts::{
+    ChatgptLogin, FolderLogin, KeyLogin, codex_folders, has_no_login,
+    login_need,
+};
 use crate::codex_limits::read_codex_limits;
 use crate::limits::Limits;
-use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
-use crate::{OpenAi, chatgpt_usage, organization_costs};
-
-/// The agent part whose profiles know the limits of a ChatGPT login.
-const CODEX: &str = "codex";
+use crate::needs::{self, ADMIN_SLOT};
+use crate::{OpenAi, accounts, chatgpt_usage, organization_costs};
 
 impl Provider for OpenAi {
-    /// The account the agent part found: a ChatGPT login names its account
-    /// id, email and plan in its tokens; a key names nothing, and OTTY
-    /// knows it by its fingerprint. Nothing is asked.
-    fn account(
-        _provider: &str,
-        _key: &Key,
-        found: &LoginFacts,
-    ) -> Result<AccountFacts, ReadError> {
-        Ok(AccountFacts {
-            identity: found.identity.clone(),
-            plan: found.plan.clone(),
-        })
+    /// The ChatGPT logins and API keys of the Codex profile folders: a
+    /// ChatGPT login is a subscription known by its account id, a key is
+    /// known by its fingerprint, and an admin key is an organization.
+    fn accounts(_provider: &str, folders: &[LoginFolder]) -> Found {
+        accounts::accounts(folders)
     }
 
-    /// The limits and credits of a ChatGPT login: from `chatgpt.com`,
-    /// told by its account id, with its token; else what Codex knows in a
-    /// Codex profile of `found`; else nothing. OpenAI tells nothing of the
-    /// money of one API key, so a key has no numbers and nothing is sent.
+    /// The limits and credits of a ChatGPT account: from `chatgpt.com`
+    /// with the token of its login in the first of its folders that
+    /// holds it; else what Codex knows in one of its folders; else
+    /// nothing. A refused or expired login needs the user to log in again
+    /// in that folder. OpenAI tells nothing of the money of one API key,
+    /// so a key has no numbers and nothing is sent.
     fn numbers(
         _provider: &str,
-        found: &LoginFacts,
-        account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
-        if found.kind != LoginKind::Subscription {
+        if account.kind != AccountKind::Subscription {
             return Ok(no_numbers());
         }
 
-        let account_id = account.identity.account_id.as_deref();
-        let server = match account_id {
-            Some(account_id) if is_there(key)? => {
-                Some(chatgpt_usage::chatgpt_limits(key, account_id))
-            },
-            _ => None,
-        };
+        let folders = codex_folders(account);
+        let logins = chatgpt_logins(account, &folders);
+
+        let server = logins.iter().find_map(|(folder, login)| {
+            let token = login.token()?;
+
+            Some(chatgpt_usage::chatgpt_limits(
+                token,
+                login.account_id(),
+                &login_need(folder),
+            ))
+        });
 
         let limits = match server {
             Some(Ok(limits)) => Ok(limits),
-            Some(Err(error)) => match codex_limits(found, key) {
+            Some(Err(error)) => match codex_limits(&folders, &logins) {
                 Some(Ok(limits)) => Ok(limits),
                 _ => Err(error),
             },
-            None => match codex_limits(found, key) {
-                Some(read) => read,
-                None => return Ok(no_numbers()),
+            None => match codex_limits(&folders, &logins) {
+                Some(Ok(limits)) => Ok(limits),
+                _ => return Ok(no_numbers()),
             },
         };
+
         limits.map(Limits::into_numbers)
     }
 
@@ -83,9 +84,7 @@ impl Provider for OpenAi {
     /// [`ADMIN_SLOT`], which the next read takes first.
     fn read_bill(
         _provider: &str,
-        _found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
@@ -93,47 +92,61 @@ impl Provider for OpenAi {
             return organization_costs::bill(admin_key, days);
         }
 
-        let is_bill_key = is_bill_key(key)?;
-        if !is_bill_key {
+        let own = own_admin_key(account);
+        let Some(admin_key) = own.as_ref().and_then(KeyLogin::key) else {
             return Err(ReadError::NeedsUser(needs::bill_key()));
-        }
+        };
 
-        organization_costs::bill(key, days)
+        organization_costs::bill(admin_key, days)
     }
 }
 
-/// Whether `key` reads bills: an admin key. A key that is not at its
-/// place is not one; the part then asks for an admin key.
-fn is_bill_key(key: &Key) -> Result<bool, ReadError> {
-    match key.has_prefix(ADMIN_PREFIX) {
-        Ok(is_bill_key) => Ok(is_bill_key),
-        Err(HostError::NotFound(_)) => Ok(false),
-        Err(error) => Err(ReadError::Host(error)),
-    }
-}
-
-/// Whether the key of `key` is at its place now. A key that is not is a
-/// normal case, such as a login another agent keeps elsewhere.
-fn is_there(key: &Key) -> Result<bool, ReadError> {
-    match key.fingerprint() {
-        Ok(_) => Ok(true),
-        Err(HostError::NotFound(_)) => Ok(false),
-        Err(error) => Err(ReadError::Host(error)),
-    }
-}
-
-/// The limits Codex knows of the login of `key` in the first Codex
-/// profile of `found`; `None` when it was found in none.
-fn codex_limits(
-    found: &LoginFacts,
-    key: &Key,
-) -> Option<Result<Limits, ReadError>> {
-    let profile = found
-        .found_in
+/// The ChatGPT logins of `account` in its Codex profile folders
+/// `folders`, each with its folder. A folder that holds another login now
+/// is left out.
+fn chatgpt_logins<'folder>(
+    account: &Account,
+    folders: &[&'folder str],
+) -> Vec<(&'folder str, ChatgptLogin)> {
+    folders
         .iter()
-        .find(|profile| profile.agent == CODEX)?;
+        .filter_map(|folder| match login_of(account, folder)? {
+            FolderLogin::Chatgpt(login) => Some((*folder, login)),
+            FolderLogin::Key(_) => None,
+        })
+        .collect()
+}
 
-    Some(read_codex_limits(profile, key))
+/// The login of `account` in the Codex profile folder `folder`; `None`
+/// when the folder holds no login of it now.
+fn login_of(account: &Account, folder: &str) -> Option<FolderLogin> {
+    FolderLogin::read(folder).filter(|login| login.id() == account.id)
+}
+
+/// What Codex knows of the limits: in the first folder of `logins`, with
+/// its token; else, with no login of the account in any folder now, what
+/// Codex wrote in the first of `folders` that holds no login. `None` when
+/// there is no such folder.
+fn codex_limits(
+    folders: &[&str],
+    logins: &[(&str, ChatgptLogin)],
+) -> Option<Result<Limits, ReadError>> {
+    if let Some((folder, login)) = logins.first() {
+        return Some(read_codex_limits(folder, login.token()));
+    }
+
+    let folder = folders.iter().find(|folder| has_no_login(folder))?;
+    Some(read_codex_limits(folder, None))
+}
+
+/// The admin key of `account` in the first of its folders that holds it.
+fn own_admin_key(account: &Account) -> Option<KeyLogin> {
+    codex_folders(account).into_iter().find_map(|folder| {
+        match login_of(account, folder)? {
+            FolderLogin::Key(login) if login.is_admin() => Some(login),
+            _ => None,
+        }
+    })
 }
 
 /// Numbers with nothing in them: what the part answers when it has no way
@@ -153,24 +166,29 @@ fn no_numbers() -> AccountNumbers {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::{Identity, LoginKind};
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{
-        GivenKey, HostError, JsonField, KeyPlace, NeedAction, files, keys,
+        GivenKey, HostError, JsonField, KeyPlace, Need, NeedAction, files, keys,
     };
 
     use super::*;
-    use crate::testing::{ACCOUNT, PROVIDER, TEN, found_profile, host, path};
+    use crate::app_server::APP_SERVER_ARGS;
+    use crate::testing::{ACCOUNT, PROVIDER, TEN, codex_folder, host, path};
 
-    /// A made-up token that expires in 2100.
-    const TOKEN: &str =
+    /// The access token of `.codex-plus`, made up.
+    const PLUS_TOKEN: &str =
         "e30.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6Im1hZGUtdXAtYWNjZXNzIn0.c2ln";
+    /// The access token of `.codex-renewed`, made up.
+    const RENEWED_TOKEN: &str = "e30.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6Im1hZGUtdXAtYWNjZXNzLXJlbmV3ZWQifQ.c2ln";
     const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+    const USAGE_ANSWER: &[u8] = br#"{"plan_type": "pro", "rate_limit": {"primary_window": {"used_percent": 42, "limit_window_seconds": 18000}}}"#;
     /// The address of the costs of 2026-11-16, the one day of [`one_day`].
     const COSTS_URL: &str = "https://api.openai.com/v1/organization/costs?start_time=1794787200&end_time=1794873600&bucket_width=1d&limit=31";
-    /// A made-up admin key, never a real one.
+    /// A made-up admin key, never a real one: the key of `.codex-admin`.
     const MADE_UP_ADMIN: &str = "sk-admin-made-up-for-tests";
+    /// Another made-up admin key, given by the user.
+    const GIVEN_ADMIN: &str = "sk-admin-made-up-given";
 
     fn one_day() -> DayRange {
         DayRange {
@@ -179,250 +197,192 @@ mod tests {
         }
     }
 
-    fn organization() -> AccountFacts {
-        AccountFacts {
-            identity: Identity {
-                organization_id: Some("org-made-up".to_string()),
-                ..Identity::default()
-            },
-            plan: None,
+    /// The accounts the part finds in the Codex profile folders `names`.
+    fn accounts_in(host: &TestHost, names: &[&str]) -> Vec<Account> {
+        let folders: Vec<LoginFolder> =
+            names.iter().map(|name| codex_folder(host, name)).collect();
+
+        host.as_provider_in(PROVIDER, &folders, || {
+            OpenAi::accounts(PROVIDER, &folders)
+        })
+        .accounts
+    }
+
+    /// The one account the part finds in the Codex profile folder `name`.
+    fn account_in(host: &TestHost, name: &str) -> Account {
+        accounts_in(host, &[name]).remove(0)
+    }
+
+    /// The ChatGPT account [`ACCOUNT`] as OTTY knows it from an earlier
+    /// read, found in the Codex profile folders `names`.
+    fn known_account(host: &TestHost, names: &[&str]) -> Account {
+        Account {
+            id: format!("chatgpt:{ACCOUNT}"),
+            name: "dev@example.com".to_string(),
+            kind: AccountKind::Subscription,
+            plan: Some("Pro 200".to_string()),
+            found_in: names
+                .iter()
+                .map(|name| codex_folder(host, name))
+                .collect(),
+            needs: Vec::new(),
         }
     }
 
-    fn chatgpt_login() -> LoginFacts {
-        LoginFacts {
-            kind: LoginKind::Subscription,
-            identity: Identity {
-                account_id: Some(ACCOUNT.to_string()),
-                organization_id: None,
-                email: Some("dev@example.com".to_string()),
-            },
-            plan: Some("Plus".to_string()),
-            found_in: Vec::new(),
+    /// The numbers of `account`, read in a call given its folders.
+    fn numbers_of(
+        host: &TestHost,
+        account: &Account,
+    ) -> Result<AccountNumbers, ReadError> {
+        host.as_provider_in(PROVIDER, &account.found_in, || {
+            OpenAi::numbers(PROVIDER, account, &[])
+        })
+    }
+
+    /// The bill of `account` with the keys of `given`, read in a call
+    /// given its folders.
+    fn bill_of(
+        host: &TestHost,
+        account: &Account,
+        given: &[GivenKey],
+    ) -> Result<Bill, ReadError> {
+        host.as_provider_in(PROVIDER, &account.found_in, || {
+            OpenAi::read_bill(PROVIDER, account, given, &one_day())
+        })
+    }
+
+    /// The need of `result`, which must be one.
+    fn need_of<T: std::fmt::Debug>(result: Result<T, ReadError>) -> Need {
+        match result {
+            Err(ReadError::NeedsUser(need)) => need,
+            other => panic!("a need: {other:?}"),
         }
     }
 
-    fn api_key() -> LoginFacts {
-        LoginFacts {
-            kind: LoginKind::ApiKey,
-            identity: Identity::default(),
-            plan: None,
-            found_in: Vec::new(),
-        }
-    }
-
-    /// A handle to the access token of the login of the config folder
-    /// `name`, read at each use.
-    fn token_at(host: &TestHost, name: &str) -> Key {
-        host.key_at(&KeyPlace::JsonField(JsonField {
-            file: path(host, &format!("{name}/auth.json")),
-            pointer: "/tokens/access_token".to_string(),
-        }))
-    }
-
-    /// The ChatGPT login found in the Codex profile `name`.
-    fn login_in(host: &TestHost, name: &str) -> LoginFacts {
-        LoginFacts {
-            found_in: vec![found_profile(host, name, false)],
-            ..chatgpt_login()
-        }
-    }
-
-    /// Issue 29: no token at its place, so the part reads the limits Codex
-    /// wrote in the session files of the profile the login was found in;
-    /// nothing is sent and nothing fails.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the part
+    /// reads the token of `auth.json` in the account's folder itself and
+    /// asks ChatGPT with it, naming the account.
     #[test]
-    fn a_login_with_no_token_reads_the_limits_codex_wrote() {
-        let host = host();
-        let key = token_at(&host, ".codex-empty");
-        let found = login_in(&host, ".codex-limits");
+    fn numbers_of_an_account_read_with_the_token_of_its_folder() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 200, USAGE_ANSWER);
+        let account = account_in(&host, ".codex-renewed");
 
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = OpenAi::account(PROVIDER, &key, &found)?;
-            OpenAi::numbers(PROVIDER, &found, &facts, &key, &[])
-        });
+        let numbers = numbers_of(&host, &account).expect("the numbers");
 
-        let numbers = numbers.expect("the numbers");
+        assert_eq!(numbers.windows.len(), 1);
+        assert_eq!(numbers.windows[0].percent_used, 42.0);
+        assert_eq!(numbers.plan.as_deref(), Some("Pro 200"));
+        let requests = host.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].header("chatgpt-account-id"), Some(ACCOUNT));
+        assert_eq!(
+            requests[0].header("authorization"),
+            Some(format!("Bearer {RENEWED_TOKEN}").as_str())
+        );
+    }
+
+    /// An account in two folders reads with the token of the first.
+    #[test]
+    fn an_account_in_two_folders_reads_with_the_first() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 200, USAGE_ANSWER);
+        let accounts = accounts_in(&host, &[".codex-plus", ".codex-renewed"]);
+
+        numbers_of(&host, &accounts[0]).expect("the numbers");
+
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some(format!("Bearer {PLUS_TOKEN}").as_str())
+        );
+    }
+
+    /// Decision 9: ChatGPT refused the token and Codex knows nothing
+    /// there, so the read needs the user to run `codex login` in that
+    /// folder.
+    #[test]
+    fn a_refused_token_gives_the_login_need_of_its_folder() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 401, b"{}");
+        let account = account_in(&host, ".codex-renewed");
+        let folder = path(&host, ".codex-renewed");
+
+        let need = need_of(numbers_of(&host, &account));
+
+        assert_eq!(need.id, "login-expired");
+        let NeedAction::Run(command) = need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.program, "codex");
+        assert_eq!(command.args, ["login"]);
+        assert_eq!(command.env, [("CODEX_HOME".to_string(), folder)]);
+    }
+
+    /// Issue 29: the server failed, so the part reads what Codex knows in
+    /// the account's folder: `codex app-server` there, else its session
+    /// files.
+    #[test]
+    fn a_failed_server_falls_back_on_what_codex_knows_in_the_folder() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 500, b"{}");
+        let account = account_in(&host, ".codex-limits");
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
         assert_eq!(numbers.plan.as_deref(), Some("Plus"));
         assert!(numbers.recorded_at_ms.is_some());
-        assert!(host.requests().is_empty());
     }
 
-    /// Issue 29: no token and no Codex profile is nothing, not a failure.
+    /// Issue 29: the login is gone from the account's folders since it
+    /// was found, and Codex wrote nothing there: the part reads nothing,
+    /// sends nothing and starts nothing, which is no failure.
     #[test]
-    fn a_login_with_no_token_and_no_profile_reads_nothing() {
+    fn an_account_with_no_login_now_reads_nothing() {
         let host = host();
-        let key = token_at(&host, ".codex-empty");
+        host.answer_talk("codex", &APP_SERVER_ARGS, &[]);
+        let account = known_account(&host, &[".codex-empty"]);
 
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = OpenAi::account(PROVIDER, &key, &chatgpt_login())?;
-            OpenAi::numbers(PROVIDER, &chatgpt_login(), &facts, &key, &[])
-        });
+        let numbers = numbers_of(&host, &account);
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
         assert!(host.started().is_empty());
     }
 
-    /// Issue 29: the server failed, so the part reads what Codex knows in
-    /// the profile the login was found in.
+    /// A folder that holds another account's login now is not read for
+    /// this account.
     #[test]
-    fn a_failed_server_falls_back_on_what_codex_knows() {
-        let host = host().with_now_ms(TEN);
-        host.answer("GET", USAGE_URL, 500, b"{}");
-        let key = host.key(TOKEN);
-        let found = login_in(&host, ".codex-limits");
-
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = OpenAi::account(PROVIDER, &key, &found)?;
-            OpenAi::numbers(PROVIDER, &found, &facts, &key, &[])
-        });
-
-        assert_eq!(
-            numbers.map(|numbers| numbers.plan),
-            Ok(Some("Plus".to_string()))
-        );
-    }
-
-    /// Issue 29: with no login token at its place, an admin key the user
-    /// gave under `admin` still reads the bill.
-    #[test]
-    fn an_admin_key_given_reads_the_bill_without_the_token() {
+    fn a_folder_with_another_login_now_is_not_read() {
         let host = host();
-        host.answer(
-            "GET",
-            COSTS_URL,
-            200,
-            br#"{"data": [], "has_more": false}"#,
-        );
-        let key = token_at(&host, ".codex-empty");
-        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+        let account = known_account(&host, &[".codex-team"]);
 
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
+        let numbers = numbers_of(&host, &account);
 
-        assert!(bill.is_ok(), "{bill:?}");
-        assert_eq!(
-            host.requests()[0].header("authorization"),
-            Some(format!("Bearer {MADE_UP_ADMIN}").as_str())
-        );
-    }
-
-    #[test]
-    fn the_account_of_a_login_is_what_its_agent_part_found() {
-        let host = host();
-        let key = host.key(TOKEN);
-
-        let facts = host.as_provider(PROVIDER, || {
-            OpenAi::account(PROVIDER, &key, &chatgpt_login())
-        });
-
-        assert_eq!(
-            facts,
-            Ok(AccountFacts {
-                identity: chatgpt_login().identity,
-                plan: Some("Plus".to_string()),
-            })
-        );
+        assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
-    }
-
-    #[test]
-    fn a_chatgpt_login_reads_its_limits_with_its_account() {
-        let host = host().with_now_ms(TEN);
-        host.answer(
-            "GET",
-            USAGE_URL,
-            200,
-            br#"{"plan_type": "pro", "rate_limit": {"primary_window": {"used_percent": 42, "limit_window_seconds": 18000}}}"#,
-        );
-        let key = host.key(TOKEN);
-
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = OpenAi::account(PROVIDER, &key, &chatgpt_login())?;
-            OpenAi::numbers(PROVIDER, &chatgpt_login(), &facts, &key, &[])
-        });
-
-        let numbers = numbers.expect("the numbers");
-        assert_eq!(numbers.windows.len(), 1);
-        assert_eq!(numbers.windows[0].percent_used, 42.0);
-        assert_eq!(numbers.plan.as_deref(), Some("Pro 200"));
-        assert_eq!(numbers.left, None);
-        let requests = host.requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].header("chatgpt-account-id"), Some(ACCOUNT));
+        assert!(host.started().is_empty());
     }
 
     #[test]
     fn an_api_key_has_no_numbers_and_sends_nothing() {
         let host = host();
-        let key = host.key("sk-made-up-openai-key-0000");
+        let account = account_in(&host, ".codex-work");
 
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = OpenAi::account(PROVIDER, &key, &api_key())?;
-            OpenAi::numbers(PROVIDER, &api_key(), &facts, &key, &[])
-        });
+        let numbers = numbers_of(&host, &account);
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
     }
 
-    /// With no login token at its place and no admin key given, the bill
-    /// asks for an admin key, as for any key that does not read bills,
-    /// and sends nothing: a key that is not there is not a failure.
+    /// The bill reads only with an admin key: with no admin key given the
+    /// part asks for one under the slot `admin` and sends nothing.
     #[test]
-    fn a_bill_with_no_token_and_no_admin_key_asks_for_one() {
+    fn a_bill_with_no_admin_key_asks_for_one() {
         let host = host();
-        let key = token_at(&host, ".codex-empty");
+        let account = account_in(&host, ".codex-work");
 
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &login_in(&host, ".codex-empty"),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
+        let need = need_of(bill_of(&host, &account, &[]));
 
-        let Err(ReadError::NeedsUser(need)) = bill else {
-            panic!("a need: {bill:?}");
-        };
-        assert_eq!(need.id, "bill-key");
-        assert!(host.requests().is_empty());
-    }
-
-    /// The bill reads only with an admin key: an API key of the account
-    /// is not one, and with no admin key given the part asks for one under
-    /// the slot `admin` and sends nothing.
-    #[test]
-    fn a_bill_with_no_bill_key_asks_for_one() {
-        let host = host();
-        let key = host.key("sk-proj-made-up-openai-key");
-
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
-
-        let Err(ReadError::NeedsUser(need)) = bill else {
-            panic!("a need: {bill:?}");
-        };
         assert_eq!(need.id, "bill-key");
         assert_eq!(need.title, "The real bill needs an admin key");
         let NeedAction::AskKey(ask) = need.action else {
@@ -440,9 +400,10 @@ mod tests {
         assert!(host.requests().is_empty());
     }
 
-    /// The admin key the user gave under `admin` reads the bill.
+    /// Issue 29: an account with no login in its folders now still reads
+    /// its bill with the admin key the user gave under `admin`.
     #[test]
-    fn a_key_given_under_admin_reads_the_bill() {
+    fn an_admin_key_given_reads_the_bill() {
         let host = host();
         host.answer(
             "GET",
@@ -450,19 +411,32 @@ mod tests {
             200,
             br#"{"data": [], "has_more": false}"#,
         );
-        let key = host.key("sk-proj-made-up-openai-key");
-        let given = [GivenKey::new("admin", host.key(MADE_UP_ADMIN))];
+        let account = known_account(&host, &[".codex-empty"]);
+        let given = [GivenKey::new("admin", host.given_key(GIVEN_ADMIN))];
 
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &given);
+
+        assert!(bill.is_ok(), "{bill:?}");
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some(format!("Bearer {GIVEN_ADMIN}").as_str())
+        );
+    }
+
+    /// An organization whose own key is an admin key reads its bill with
+    /// it, read in its folder.
+    #[test]
+    fn an_organizations_own_admin_key_reads_its_bill() {
+        let host = host();
+        host.answer(
+            "GET",
+            COSTS_URL,
+            200,
+            br#"{"data": [], "has_more": false}"#,
+        );
+        let account = account_in(&host, ".codex-admin");
+
+        let bill = bill_of(&host, &account, &[]);
 
         assert!(bill.is_ok(), "{bill:?}");
         assert_eq!(
@@ -471,94 +445,8 @@ mod tests {
         );
     }
 
-    /// An account whose own key is an admin key reads its bill with it.
-    #[test]
-    fn an_account_key_that_reads_bills_reads_its_own() {
-        let host = host();
-        host.answer(
-            "GET",
-            COSTS_URL,
-            200,
-            br#"{"data": [], "has_more": false}"#,
-        );
-        let key = host.key(MADE_UP_ADMIN);
-
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
-
-        assert!(bill.is_ok(), "{bill:?}");
-        assert_eq!(host.requests().len(), 1);
-    }
-
-    /// The need of a bill read with the account's own key `key` and the
-    /// keys of `given` that OpenAI refuses.
-    fn refused_bill_need(
-        host: &otty_plugin_sdk::test_host::TestHost,
-        key: &Key,
-        given: &[GivenKey],
-    ) -> otty_plugin_sdk::Need {
-        host.answer("GET", COSTS_URL, 401, b"{}");
-
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                key,
-                given,
-                &one_day(),
-            )
-        });
-
-        match bill {
-            Err(ReadError::NeedsUser(need)) => need,
-            other => panic!("a need: {other:?}"),
-        }
-    }
-
-    /// The slot the need asks for its key under.
-    fn asked_slot(need: otty_plugin_sdk::Need) -> Option<String> {
-        match need.action {
-            NeedAction::AskKey(ask) => ask.slot,
-            other => panic!("a key to ask for: {other:?}"),
-        }
-    }
-
-    /// Issue 26: an admin key an agent keeps is not OTTY's to replace: the
-    /// new one is asked for under `admin`, and the next bill reads with it.
-    #[test]
-    fn a_refused_own_admin_key_of_an_agent_is_asked_for_under_admin() {
-        let host = host();
-        let key = host.key(MADE_UP_ADMIN);
-
-        let need = refused_bill_need(&host, &key, &[]);
-
-        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
-    }
-
-    /// A refused admin key given under `admin` is asked for again under
-    /// it.
-    #[test]
-    fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
-        let host = host();
-        let key = host.given_key("sk-proj-made-up-openai-key");
-        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
-
-        let need = refused_bill_need(&host, &key, &given);
-
-        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
-    }
-
     /// The admin key given under `admin` reads the bill before the
-    /// account's own admin key, which was refused before it was given.
+    /// account's own admin key.
     #[test]
     fn a_key_given_under_admin_reads_the_bill_before_the_accounts_own() {
         let host = host();
@@ -568,25 +456,37 @@ mod tests {
             200,
             br#"{"data": [], "has_more": false}"#,
         );
-        let key = host.key("sk-admin-made-up-refused");
-        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+        let account = account_in(&host, ".codex-admin");
+        let given = [GivenKey::new("admin", host.given_key(GIVEN_ADMIN))];
 
-        let bill = host.as_provider(PROVIDER, || {
-            OpenAi::read_bill(
-                PROVIDER,
-                &chatgpt_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &given);
 
         assert!(bill.is_ok(), "{bill:?}");
         assert_eq!(
             host.requests()[0].header("authorization"),
-            Some(format!("Bearer {MADE_UP_ADMIN}").as_str())
+            Some(format!("Bearer {GIVEN_ADMIN}").as_str())
         );
+    }
+
+    /// Issue 26: an admin key an agent keeps is not OTTY's to replace: a
+    /// refused one is asked for under `admin`, as a refused given one is
+    /// asked for again, and the next bill reads with it.
+    #[test]
+    fn a_refused_admin_key_is_asked_for_under_admin() {
+        let host = host();
+        host.answer("GET", COSTS_URL, 401, b"{}");
+        let account = account_in(&host, ".codex-admin");
+        let given = [GivenKey::new("admin", host.given_key(GIVEN_ADMIN))];
+
+        let own = need_of(bill_of(&host, &account, &[]));
+        let of_slot = need_of(bill_of(&host, &account, &given));
+
+        for need in [own, of_slot] {
+            let NeedAction::AskKey(ask) = need.action else {
+                panic!("a key to ask for: {need:?}");
+            };
+            assert_eq!(ask.slot.as_deref(), Some(ADMIN_SLOT));
+        }
     }
 
     /// Spec Decision 7: a key handle goes only into a request to a host
@@ -594,7 +494,7 @@ mod tests {
     #[test]
     fn the_part_may_call_no_other_host() {
         let host = host();
-        let key = host.key(TOKEN);
+        let key = host.key(PLUS_TOKEN);
 
         let sent = host.as_provider(PROVIDER, || {
             let request = Request::get("https://api.deepseek.com/user/balance")
@@ -606,15 +506,16 @@ mod tests {
         assert!(host.requests().is_empty());
     }
 
-    /// Spec Decision 7, "Applied by context": while the provider part
-    /// runs, the files and the key places of the plugin's `codex` part are
-    /// refused.
+    /// Spec Decision 7, "Applied by context": in a call given other
+    /// folders, the files and the key places of a Codex profile are
+    /// refused to the provider part.
     #[test]
-    fn the_part_may_not_read_the_files_of_the_codex_part() {
+    fn the_part_may_not_read_codex_files_outside_its_folders() {
         let host = host();
         let auth = path(&host, ".codex-plus/auth.json");
+        let folders = [codex_folder(&host, ".codex-team")];
 
-        let (read, opened) = host.as_provider(PROVIDER, || {
+        let (read, opened) = host.as_provider_in(PROVIDER, &folders, || {
             let read = files::read(&auth, 4096);
             let opened = keys::open(&KeyPlace::JsonField(JsonField {
                 file: auth.clone(),

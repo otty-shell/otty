@@ -9,10 +9,10 @@ use std::time::SystemTime;
 
 use iced::Task;
 use otty_agents::{
-    Account, AccountNumbers, Agent, PluginProvider, Profile, SourceError,
+    Account, AccountNumbers, PluginProvider, Profile, SourceError,
     SourceFailure, SourceId, Unavailable,
 };
-use otty_app_agents::{AgentList, AgentsIntent, LimitsRead, LoadedLimits};
+use otty_app_agents::{AgentsIntent, LimitsRead, LoadedLimits};
 
 use crate::background::{on_own_thread, read_stopped};
 use crate::plugin_parts::ProviderList;
@@ -22,19 +22,16 @@ use crate::plugin_parts::ProviderList;
 /// project.
 pub(crate) const PROBE_FOLDER: &str = "agent-probe";
 
-/// What one read of limits reads: the profile it is read through, the
-/// account whose limits it shows, and every profile the account was found
-/// in, the profile first.
+/// What one read of limits reads: the profile it is read through and the
+/// account whose limits it shows.
 struct LimitsToRead {
     profile: Profile,
     account: Option<Account>,
-    found_in: Vec<Profile>,
 }
 
 /// Read the limits of `profile` in the background: the provider part of
-/// `providers` that reads `account`, the account whose limits the profile
-/// shows, reads them, told of every profile of `found_in` it was found in,
-/// with the agent parts of `agents` that found it. It may start the
+/// `providers` that found `account`, the account whose limits the profile
+/// shows, reads them in the folders it found it in. It may start the
 /// agent's program, as is or in a hidden terminal. With no account there
 /// is nothing to read. The answer comes back as
 /// [`AgentsIntent::LimitsLoaded`].
@@ -46,39 +43,25 @@ struct LimitsToRead {
 /// use std::sync::Arc;
 ///
 /// use otty_agents::{AgentId, Profile};
-/// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("coder"),
 ///     "Coder",
 ///     PathBuf::from("/home/user/.coder"),
 /// );
-/// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
-/// let read = otty_app_agents_io::load_limits(
-///     &agents,
-///     &providers,
-///     profile.clone(),
-///     None,
-///     vec![profile],
-/// );
+/// let read = otty_app_agents_io::load_limits(&providers, profile, None);
 ///
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_limits(
-    agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
     account: Option<Account>,
-    found_in: Vec<Profile>,
 ) -> Task<AgentsIntent> {
-    let asked = LimitsToRead {
-        profile,
-        account,
-        found_in,
-    };
+    let asked = LimitsToRead { profile, account };
 
-    read_task(agents, providers, asked, true)
+    read_task(providers, asked, true)
 }
 
 /// Read the limits of `profile` in the background while Agents mode is not
@@ -86,39 +69,30 @@ pub fn load_limits(
 /// starts no program, neither `codex app-server` nor `claude` in a hidden
 /// terminal, and a read on screen starts it (spec Decision 10).
 pub fn load_limits_in_background(
-    agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
     account: Option<Account>,
-    found_in: Vec<Profile>,
 ) -> Task<AgentsIntent> {
-    let asked = LimitsToRead {
-        profile,
-        account,
-        found_in,
-    };
+    let asked = LimitsToRead { profile, account };
 
-    read_task(agents, providers, asked, false)
+    read_task(providers, asked, false)
 }
 
-/// The read of `asked` with the agents and the provider parts on a thread
-/// of its own, which may start the agent's program when
-/// `starts_programs`.
+/// The read of `asked` with the provider parts on a thread of its own,
+/// which may start the agent's program when `starts_programs`.
 fn read_task(
-    agents: &AgentList,
     providers: &ProviderList,
     asked: LimitsToRead,
     starts_programs: bool,
 ) -> Task<AgentsIntent> {
     let task = format!("reading the limits of {}", asked.profile.name());
-    let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
     let fallback = asked.profile.clone();
     let has_account = asked.account.is_some();
 
     on_own_thread(
         task,
-        move || read_limits(&agents, &providers, asked, starts_programs),
+        move || read_limits(&providers, asked, starts_programs),
         move || stopped_read(fallback, has_account),
         AgentsIntent::LimitsLoaded,
     )
@@ -128,24 +102,17 @@ fn read_task(
 /// part that reads its account answered. The part's programs start only
 /// when `starts_programs`.
 fn read_limits(
-    agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     asked: LimitsToRead,
     starts_programs: bool,
 ) -> LoadedLimits {
-    let LimitsToRead {
-        profile,
-        account,
-        found_in,
-    } = asked;
+    let LimitsToRead { profile, account } = asked;
 
     let limits = match account {
         Some(account) => {
             let numbers = otty_agents::read_account_numbers(
-                agents,
                 providers,
                 &account,
-                &found_in,
                 &[],
                 starts_programs,
                 |_| None,
@@ -205,10 +172,7 @@ fn stopped_read(profile: Profile, has_account: bool) -> LoadedLimits {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        ProviderRef,
-    };
+    use otty_agents::{AccountKind, AgentId, FoundIn, ProviderId};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -240,17 +204,20 @@ mod tests {
         )
     }
 
-    /// The Claude login of [`claude_without_token`], found in `profile`
-    /// and read by the Anthropic plugin.
+    /// The Claude login of [`claude_without_token`], as the Anthropic
+    /// plugin found it in `profile`.
     fn claude_login(profile: &Profile) -> Account {
         Account::new(
-            ProviderRef::of_id("anthropic"),
-            AccountIdentity::AccountId(ACCOUNT_ID.to_string()),
-            AccountLogin::Email(String::from("dev@example.com")),
-            AccountKind::Limits,
-            FoundIn::ProfileFolder(profile.config_dir().to_path_buf()),
+            "anthropic",
+            ProviderId::new("anthropic"),
+            format!("claude:{ACCOUNT_ID}"),
+            "dev@example.com",
+            AccountKind::Subscription,
+            vec![FoundIn::profile(
+                profile.agent().clone(),
+                profile.config_dir().to_path_buf(),
+            )],
         )
-        .with_read_by(Some(String::from("anthropic")))
     }
 
     /// A shell in `home` that only counts its starts, so no real `claude`
@@ -273,7 +240,7 @@ mod tests {
 
     /// Issue 29, the owner's case: no token in the profile's files, so
     /// the Anthropic provider part reads the limits with `claude /usage`
-    /// in the Claude Code profile the login was found in. The shell here
+    /// in the Claude Code folder the account was found in. The shell here
     /// only counts its starts, so the made-up `claude` never shows its
     /// panel; the plugin's own tests read the panel.
     #[test]
@@ -281,15 +248,14 @@ mod tests {
         let home = TempDir::new("agents-limits-semrush");
         let profile = claude_without_token(&home);
         let shell = counting_shell(&home);
-        let (agents, providers) =
+        let (_, providers) =
             agents_and_providers_with_shell(home.path(), &shell);
         let asked = LimitsToRead {
             account: Some(claude_login(&profile)),
-            found_in: vec![profile.clone()],
             profile: profile.clone(),
         };
 
-        let loaded = read_limits(&agents, &providers, asked, true);
+        let loaded = read_limits(&providers, asked, true);
 
         assert!(started(&home), "`claude /usage` was not started");
         assert_eq!(loaded.profile, profile);
@@ -303,15 +269,14 @@ mod tests {
         let home = TempDir::new("agents-limits-background");
         let profile = claude_without_token(&home);
         let shell = counting_shell(&home);
-        let (agents, providers) =
+        let (_, providers) =
             agents_and_providers_with_shell(home.path(), &shell);
         let asked = LimitsToRead {
             account: Some(claude_login(&profile)),
-            found_in: vec![profile.clone()],
             profile,
         };
 
-        let loaded = read_limits(&agents, &providers, asked, false);
+        let loaded = read_limits(&providers, asked, false);
 
         assert!(!started(&home), "the shell was started");
         assert!(
@@ -330,12 +295,11 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
         let asked = LimitsToRead {
-            profile: profile.clone(),
+            profile,
             account: None,
-            found_in: vec![profile],
         };
 
-        let loaded = read_limits(&[], &[], asked, true);
+        let loaded = read_limits(&[], asked, true);
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
     }
@@ -347,11 +311,10 @@ mod tests {
         let profile = claude_without_token(&home);
         let asked = LimitsToRead {
             account: Some(claude_login(&profile)),
-            found_in: vec![profile.clone()],
             profile,
         };
 
-        let loaded = read_limits(&[], &[], asked, true);
+        let loaded = read_limits(&[], asked, true);
 
         assert_eq!(loaded.limits, LimitsRead::NoSources);
     }
@@ -363,23 +326,11 @@ mod tests {
             "Stranger",
             PathBuf::from("/home/user/.stranger"),
         );
-        let agents: AgentList = Arc::from(Vec::new());
         let providers: ProviderList = Arc::from(Vec::new());
 
-        let on_screen = run(load_limits(
-            &agents,
-            &providers,
-            profile.clone(),
-            None,
-            vec![profile.clone()],
-        ));
-        let away = run(load_limits_in_background(
-            &agents,
-            &providers,
-            profile.clone(),
-            None,
-            vec![profile.clone()],
-        ));
+        let on_screen = run(load_limits(&providers, profile.clone(), None));
+        let away =
+            run(load_limits_in_background(&providers, profile.clone(), None));
 
         for answers in [on_screen, away] {
             assert!(matches!(

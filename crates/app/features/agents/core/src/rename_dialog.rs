@@ -94,16 +94,11 @@ impl RenameDialog {
 }
 
 /// Open the dialog of `account` with the name it is shown by; its field
-/// takes the keyboard. An account known only by its key is not renamed:
-/// nothing taken from a key is kept.
+/// takes the keyboard. The name is kept by the account's plugin and id.
 pub(crate) fn open_for_account(
     state: &mut AgentsState,
     account: Account,
 ) -> Vec<AgentsOutcome> {
-    if !account.can_be_saved() {
-        return Vec::new();
-    }
-
     let saved = state.profiles().account_name(&account);
     let name = saved.map_or_else(
         || own_account_name(state.registry(), &account),
@@ -225,10 +220,7 @@ fn submit(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{
-        Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-        KeyFingerprint, Profile, ProviderRef, SavedProfiles,
-    };
+    use otty_agents::{Profile, SavedProfiles};
     use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
@@ -322,19 +314,11 @@ mod tests {
         assert_eq!(account_names(&state), ["you@example.com"]);
     }
 
-    /// A key is known only by its fingerprint, which is not kept, so its
-    /// name could not be saved.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 8: a key
+    /// account is renamed by its plugin and id like any account.
     #[test]
-    fn an_account_known_only_by_its_key_is_not_renamed() {
-        let key = Account::new(
-            ProviderRef::of_id("deepseek"),
-            AccountIdentity::KeyFingerprint(KeyFingerprint::of(
-                "sk-made-up-deepseek-key",
-            )),
-            AccountLogin::Key(Some(String::from("-key"))),
-            AccountKind::Money,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
-        );
+    fn a_key_account_is_renamed_like_any_account() {
+        let key = crate::testing::found_key("deepseek");
         let mut state = with_accounts(
             &[(claude(), connected(), vec![key.clone()])],
             SavedProfiles::default(),
@@ -342,7 +326,7 @@ mod tests {
 
         rename_account(&mut state, key);
 
-        assert!(state.rename().is_none());
+        assert!(state.rename().is_some());
     }
 
     #[test]

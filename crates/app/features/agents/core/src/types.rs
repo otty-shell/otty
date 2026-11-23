@@ -5,9 +5,9 @@ use std::time::SystemTime;
 use jiff::tz::TimeZone;
 use otty_agents::{
     Account, AccountNumbers, Agent, AgentEnv, AgentId, AgentSession, Answer,
-    Bill, FetchedPrices, GivenKey, Limits, Profile, ProfileStatus,
-    ProjectStats, Registry, SavedProfiles, SessionId, SessionStats,
-    SourceError, SourceFailure, Spend,
+    Bill, FetchedPrices, FoundAccounts, GivenKey, Limits, Profile,
+    ProfileStatus, ProjectStats, Registry, SavedProfiles, SessionId,
+    SessionStats, SourceError, SourceFailure, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -59,6 +59,10 @@ pub struct LoadedProfiles {
     /// The profiles the user hid, in their order: they were not checked
     /// and nothing of them is read (spec 2026-11-19, Decision 7).
     pub hidden_profiles: Vec<Profile>,
+    /// The accounts the provider parts found in the shown profiles of
+    /// their own plugins, and their needs that belong to no account (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 5).
+    pub accounts: FoundAccounts,
     /// What `agents.json` holds; `None` when it could not be read, so the
     /// feature does not write over it.
     pub saved: Option<SavedProfiles>,
@@ -74,17 +78,13 @@ pub struct LoadedProfiles {
     pub read_at: SystemTime,
 }
 
-/// One profile, whether it can be used, and the accounts found in it.
+/// One profile, whether it can be used, and the version of its agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedProfile {
     /// The profile.
     pub profile: Profile,
     /// Whether it is installed and logged in.
     pub status: ProfileStatus,
-    /// The logins and keys found in its files (spec Decision 2): the
-    /// limits and the bill of an account are read once for all the
-    /// profiles it was found in.
-    pub accounts: Vec<Account>,
     /// The version of the agent's program, from the profile's session
     /// files or else from the program itself; `None` when neither tells.
     pub version: Option<String>,

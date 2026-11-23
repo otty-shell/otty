@@ -67,13 +67,12 @@ pub trait Agent {
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&str>) -> Command;
 
-    /// What the user must do now that a provider part refused `login` of
-    /// the profile, or saw it expired
-    /// ([`ReadError::LoginRefused`]): the provider part does not know
-    /// which agent keeps the login, so OTTY asks the agent part that
-    /// found it, such as a need that runs the agent in the profile's
-    /// folder so it renews its login. Default: `None`, and OTTY says the
-    /// login was refused, with no button.
+    /// What the user must do now that a provider refused `login` of the
+    /// profile, or it expired. OTTY no longer asks: a provider part says
+    /// it with a need of the account it found the login in (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 9), and the
+    /// function leaves the contract with the other login functions.
+    /// Default: `None`.
     fn login_refused(_profile: &Profile, _login: &LoginRef) -> Option<Need> {
         None
     }

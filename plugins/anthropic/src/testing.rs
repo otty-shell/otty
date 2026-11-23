@@ -1,11 +1,10 @@
 //! Test-only values shared by the tests of this crate: the test host over
-//! `fixtures/`, which stands for the home folder, and the profiles of its
-//! made-up config folders.
+//! `fixtures/`, which stands for the home folder, the profiles of its
+//! made-up config folders, and those folders as OTTY gives them to the
+//! provider part.
 
-use otty_plugin_sdk::agents::{FoundProfile, Profile};
+use otty_plugin_sdk::agents::{LoginFolder, Profile};
 use otty_plugin_sdk::test_host::TestHost;
-
-use crate::claude_code::start_command;
 
 /// The agent part the tests call.
 pub(crate) const AGENT: &str = "claude-code";
@@ -36,22 +35,10 @@ pub(crate) fn profile(
     }
 }
 
-/// The config folder `name` of `host` as the provider part is told an
-/// account was found in it: by the agent part `claude-code`, with the
-/// command it starts Claude Code with there.
-pub(crate) fn found_profile(
-    host: &TestHost,
-    name: &str,
-    is_default: bool,
-) -> FoundProfile {
-    let profile = profile(host, name, is_default);
-
-    FoundProfile {
-        plugin: String::from("anthropic"),
-        agent: AGENT.to_string(),
-        launch: start_command(&profile, Vec::new()),
-        folder: profile.folder,
-    }
+/// The config folder `name` of `host` as OTTY gives it to the provider
+/// part: a profile of the agent part `claude-code`.
+pub(crate) fn login_folder(host: &TestHost, name: &str) -> LoginFolder {
+    LoginFolder::Profile((AGENT.to_string(), path(host, name)))
 }
 
 /// Runs `run` as the part `claude-code` of `host`.
@@ -59,7 +46,13 @@ pub(crate) fn as_part<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
     host.as_agent(AGENT, run)
 }
 
-/// Runs `run` as the part `anthropic` of `host`.
-pub(crate) fn as_provider<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
-    host.as_provider(PROVIDER, run)
+/// Runs `run` as the part `anthropic` of `host` in a call given the login
+/// folders `folders`, as OTTY calls `accounts`, or `numbers` and
+/// `read_bill` with the folders of an account.
+pub(crate) fn as_provider_in<R>(
+    host: &TestHost,
+    folders: &[LoginFolder],
+    run: impl FnOnce() -> R,
+) -> R {
+    host.as_provider_in(PROVIDER, folders, run)
 }

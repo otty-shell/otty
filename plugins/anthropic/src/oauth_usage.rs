@@ -4,17 +4,17 @@
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/ClaudeOAuthUsageFetcher.swift>.
 //! The answer is read in `usage_answer.rs`.
 //!
-//! The part never sees `.credentials.json`, so it does not know when the
-//! token expires or whether it may read the usage (`user:profile`): it
-//! sends the request (issue 12 of spec 2026-11-19-agent-plugins). The
-//! token is never renewed. A refusal is only a refused login (issue 20):
-//! the part does not know which agent keeps it, so OTTY asks the agent
-//! part that found it what the user must do.
+//! The part does not know whether the token may read the usage
+//! (`user:profile`): it sends the request (issue 12 of spec
+//! 2026-11-19-agent-plugins). The token is never renewed: a refused one
+//! is the need that runs Claude Code in the folder the token was read in,
+//! which renews the login or asks to log in again.
 
-use otty_plugin_sdk::Key;
 use otty_plugin_sdk::agents::ReadError;
 use otty_plugin_sdk::http::Request;
+use otty_plugin_sdk::{Command, Key};
 
+use crate::needs;
 use crate::requests::json_answer;
 use crate::usage_answer::{UsageNumbers, usage_numbers};
 
@@ -24,20 +24,27 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 
 /// The windows and the extra usage of the Claude login whose token is
-/// `key`.
-pub(crate) fn claude_usage(key: &Key) -> Result<UsageNumbers, ReadError> {
+/// `key`. A refused token is the need that runs `claude`, Claude Code in
+/// the folder of the token.
+pub(crate) fn claude_usage(
+    key: &Key,
+    claude: &Command,
+) -> Result<UsageNumbers, ReadError> {
     let request = Request::get(USAGE_URL)
         .header_with_key("authorization", "Bearer ", key)
         .header("accept", "application/json")
         .header("anthropic-beta", OAUTH_BETA);
 
-    let answer = json_answer(&request, USAGE_URL, || ReadError::LoginRefused)?;
+    let answer = json_answer(&request, USAGE_URL, || {
+        ReadError::NeedsUser(needs::login_expired(claude.clone()))
+    })?;
 
     usage_numbers(&answer)
 }
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
@@ -45,6 +52,18 @@ mod tests {
 
     /// A made-up login token, never a real one.
     const TOKEN: &str = "made-up-access-token";
+
+    /// Claude Code in a made-up config folder.
+    fn claude() -> Command {
+        Command {
+            program: "claude".to_string(),
+            args: Vec::new(),
+            env: vec![(
+                "CLAUDE_CONFIG_DIR".to_string(),
+                "/home/dev/.claude-work".to_string(),
+            )],
+        }
+    }
 
     fn usage_with(
         status: u16,
@@ -54,7 +73,8 @@ mod tests {
         host.answer("GET", USAGE_URL, status, body.as_bytes());
         let key = host.key(TOKEN);
 
-        let usage = host.as_provider("anthropic", || claude_usage(&key));
+        let usage =
+            host.as_provider("anthropic", || claude_usage(&key, &claude()));
         (host, usage)
     }
 
@@ -77,14 +97,19 @@ mod tests {
     }
 
     /// Issue 12: an expired token, or one that may not read the usage, is
-    /// refused by the server; the part renews nothing. Issue 20: it only
-    /// says the login was refused and names no agent to run.
+    /// refused by the server; the part renews nothing. Spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 9: the need runs
+    /// Claude Code in the folder of the token.
     #[test]
-    fn a_refused_request_is_only_a_refused_login() {
+    fn a_refused_request_needs_claude_in_the_folder_of_the_token() {
         for status in [401, 403] {
             let (_, usage) = usage_with(status, r#"{"error": "x"}"#);
 
-            assert_eq!(usage, Err(ReadError::LoginRefused), "{status}");
+            let Err(ReadError::NeedsUser(need)) = usage else {
+                panic!("a need: {usage:?}");
+            };
+            assert_eq!(need.id, "login-expired", "{status}");
+            assert_eq!(need.action, NeedAction::Run(claude()), "{status}");
         }
     }
 

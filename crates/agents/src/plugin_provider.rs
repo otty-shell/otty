@@ -1,40 +1,45 @@
 //! A provider read by a provider part of a plugin (spec
-//! 2026-11-19-agent-plugins, Decisions 4 and 5): for an account of its
-//! own provider id or hosts, the part gets a handle to the key at the
-//! place an agent part found it, says whose account it is and reads its
-//! numbers, once per account per refresh, and the bill of an
-//! organization. With each read it gets the keys the user gave for the
-//! account after a need of the part asked for them, each under its slot
-//! (issue 20), and the profiles the account was found in, where it may
-//! ask the agent itself (issue 29). It never sees a key.
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 8): the part
+//! finds its accounts in the folders of the shown profiles of the agent
+//! parts its manifest names in `logins`, and reads the numbers and the
+//! bill of each of them in the folders it was found in. With each read it
+//! gets the keys the user gave for the account after a need of the part
+//! asked for them, each under its slot (spec 2026-11-19-agent-plugins,
+//! issue 20). It never sees a key and never the profiles of another
+//! plugin.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use otty_plugin_host::agents::agent::Login;
 use otty_plugin_host::agents::provider::{
-    AccountFacts, AccountNumbers as PartNumbers, Bill as PartBill, DayRange,
-    FoundProfile, LoginFacts, Money,
+    Account as PartAccount, AccountKind as PartKind,
+    AccountNumbers as PartNumbers, Bill as PartBill, DayRange, LoginFolder,
+    Money,
 };
 use otty_plugin_host::{
     CallBatch, CalledPart, KeySource, KeyText, LoadedPlugin, PartHealth,
     PartRef,
 };
 
-use crate::account::{Account, AccountKind};
+use crate::account::{Account, AccountKind, FoundIn};
 use crate::account_numbers::AccountNumbers;
+use crate::agent::{Agent, AgentId, agent_of};
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::bill::Bill;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenSecret, KeySecret};
 use crate::limits::{Billing, ExtraUsage, Limits, UsageWindows};
+use crate::part_need::PartNeed;
 use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
-use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
+use crate::profile::Profile;
+use crate::provider::{ProviderEntry, ProviderId};
 use crate::source_id::SourceId;
 use crate::walk::Answer;
 
+/// The name of the read of a part's accounts in reports.
+const READ_ACCOUNTS: &str = "accounts";
 /// The name of the read of an account's numbers in reports.
 const READ_NUMBERS: &str = "numbers";
 /// The name of the read of a bill in reports.
@@ -45,25 +50,28 @@ const READ_BILL: &str = "read-bill";
 /// real implementation calls the part.
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ProviderPartCalls: Send + Sync {
-    /// Whose account the key of `key` is, then its numbers, in one read
-    /// of the part, with the keys of `given` under their slots. The read
-    /// starts the programs and hidden terminals the part declares only
-    /// when `starts_programs`.
+    /// The accounts the part finds in `folders`, and its needs that belong
+    /// to no account, as OTTY shows them.
+    fn accounts(
+        &self,
+        folders: &[LoginFolder],
+    ) -> Result<(Vec<Account>, Vec<PartNeed>), SourceError>;
+
+    /// The numbers of `account`, read in its folders with the keys of
+    /// `given` under their slots. The read starts the programs and hidden
+    /// terminals the part declares only when `starts_programs`.
     fn read_numbers(
         &self,
-        key: &KeySource,
-        found: &LoginFacts,
+        account: &PartAccount,
         given: &[(String, KeySource)],
         starts_programs: bool,
-    ) -> Result<(AccountFacts, PartNumbers), SourceError>;
+    ) -> Result<PartNumbers, SourceError>;
 
-    /// Whose organization the key of `key` is, then its bill over `days`,
-    /// in one read of the part, with the keys of `given` under their
-    /// slots.
+    /// The bill of the organization `account` over `days`, read in its
+    /// folders with the keys of `given` under their slots.
     fn read_bill(
         &self,
-        key: &KeySource,
-        found: &LoginFacts,
+        account: &PartAccount,
         given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<PartBill, SourceError>;
@@ -74,6 +82,7 @@ pub(crate) trait ProviderPartCalls: Send + Sync {
 pub struct PluginProvider {
     entry: ProviderEntry,
     health: PartHealth,
+    login_agents: Vec<AgentId>,
     calls: Box<dyn ProviderPartCalls>,
 }
 
@@ -125,9 +134,15 @@ impl PluginProvider {
         if let Some(name) = manifest_part.priced_as() {
             entry = entry.with_priced_as(name);
         }
+        let login_agents = manifest_part
+            .logins()
+            .iter()
+            .map(|rule| AgentId::new(rule.agent()))
+            .collect();
 
         let health = part.health().clone();
-        Some(Self::of_calls(entry, health, Box::new(PartCalls { part })))
+        let calls = Box::new(PartCalls { part });
+        Some(Self::of_calls(entry, health, calls).with_logins_of(login_agents))
     }
 
     /// The same provider with the SVG `icon` from the plugin's package.
@@ -136,132 +151,116 @@ impl PluginProvider {
         self
     }
 
-    /// Whether the part serves `account`: the account's provider is the
-    /// part's id, or a host of the part's hosts. A part gets keys of no
-    /// other account.
-    pub fn serves(&self, account: &Account) -> bool {
-        self.serves_provider(account.provider())
-    }
-
-    /// Whether the part serves the provider `provider`: the part's id, or
-    /// a host of the part's hosts.
-    pub fn serves_provider(&self, provider: &ProviderRef) -> bool {
-        match provider {
-            ProviderRef::Id(id) => id == self.entry.id(),
-            ProviderRef::Host(host) => self.entry.serves_host(host),
-        }
-    }
-
-    /// Whether the part reads `account`: it serves the account, which is
-    /// read by the part's plugin (issue 29).
+    /// Whether the part reads `account`: it found it, so the account is
+    /// of the part's provider id and of the part's plugin. A part reads no
+    /// other account (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 1).
     pub fn reads(&self, account: &Account) -> bool {
-        self.serves(account)
-            && account.read_by() == Some(self.entry.part().plugin())
+        account.provider() == self.entry.id()
+            && account.plugin() == self.entry.part().plugin()
     }
 
-    /// The numbers of `account`, read once with the key of `login`, the
-    /// login an agent part found it by, the keys the user gave for it
-    /// (`given`) and the profiles it was found in (`found_in`): the money
-    /// of a key, or the limits of a subscription, which the part may read
-    /// any way it can. The part's programs and hidden terminals start only
-    /// when `starts_programs`. An account the part does not serve is not
-    /// read, and the part gets no key.
+    /// The accounts the part finds in the folders of `profiles` it reads:
+    /// the profiles of the agent parts its manifest names in `logins`, of
+    /// its own plugin, as `agents` tell, and its needs that belong to no
+    /// account. A part with no such profile is not called and finds none
+    /// (spec Decision 11).
+    pub(crate) fn accounts(
+        &self,
+        agents: &[Box<dyn Agent>],
+        profiles: &[Profile],
+    ) -> Result<(Vec<Account>, Vec<PartNeed>), SourceError> {
+        let folders: Vec<LoginFolder> = profiles
+            .iter()
+            .filter(|profile| self.reads_logins_of(agents, profile))
+            .map(|profile| {
+                LoginFolder::Profile((
+                    profile.agent().as_str().to_string(),
+                    profile.config_dir().display().to_string(),
+                ))
+            })
+            .collect();
+
+        if folders.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        self.calls.accounts(&folders)
+    }
+
+    /// The numbers of `account`, read once by the part in the folders it
+    /// was found in, with the keys the user gave for it (`given`): the
+    /// money of a key or an organization, or the limits of a subscription,
+    /// which the part may read any way it can. The part's programs and
+    /// hidden terminals start only when `starts_programs`. An account the
+    /// part does not read is not read.
+    ///
+    /// What the user must do, such as log in again, comes from the part
+    /// as its need. Numbers with nothing in them are the part's
+    /// "nothing": limits with no window and no credits, or a balance with
+    /// nothing in it.
     pub(crate) fn read(
         &self,
         account: &Account,
-        login: &Login,
-        found_in: Vec<FoundProfile>,
         given: &[GivenSecret],
         starts_programs: bool,
     ) -> Result<AccountNumbers, SourceError> {
-        let key = KeySource::Place(login.place.clone());
-        let found = login_facts(login, found_in);
-
-        self.read_with(account, &key, &found, given, starts_programs)
-    }
-
-    /// The bill up to `now` of the organization `account`, read once with
-    /// the key of `login`, the login an agent part found it by in the
-    /// profiles `found_in`, and the keys the user gave for it (`given`).
-    /// An account the part does not serve is not read, and the part gets
-    /// no key.
-    pub(crate) fn read_bill(
-        &self,
-        account: &Account,
-        login: &Login,
-        found_in: Vec<FoundProfile>,
-        given: &[GivenSecret],
-        now: SystemTime,
-    ) -> Result<Bill, SourceError> {
-        let key = KeySource::Place(login.place.clone());
-        let found = login_facts(login, found_in);
-
-        self.read_bill_with(account, &key, &found, given, now)
-    }
-
-    /// The bill up to `now` of `account`, read once with the key of
-    /// `key`, which `found` tells of, and the keys of `given`. A part that
-    /// reads no bill answers "no bill"; one that needs a key asks the
-    /// user with its need.
-    fn read_bill_with(
-        &self,
-        account: &Account,
-        key: &KeySource,
-        found: &LoginFacts,
-        given: &[GivenSecret],
-        now: SystemTime,
-    ) -> Result<Bill, SourceError> {
-        if !self.serves(account) {
-            return Err(SourceError::NotAvailable(Unavailable::NoBill));
-        }
-
-        let given = given_sources(given)?;
-        let days = BillDays::up_to(now);
-        let read = self.calls.read_bill(key, found, &given, &days.range())?;
-
-        Ok(days.bill_of(&read))
-    }
-
-    /// The numbers of `account`, read once with the key of `key`, which
-    /// `found` tells of, and the keys of `given`; the part gets no key of
-    /// an account it does not serve. What the user must do, such as log
-    /// in again, comes from the part as its need. Numbers with nothing in
-    /// them are the part's "nothing": limits with no window and no
-    /// credits, or a balance with nothing in it.
-    fn read_with(
-        &self,
-        account: &Account,
-        key: &KeySource,
-        found: &LoginFacts,
-        given: &[GivenSecret],
-        starts_programs: bool,
-    ) -> Result<AccountNumbers, SourceError> {
-        if !self.serves(account) {
+        if !self.reads(account) {
             return Err(SourceError::NotAvailable(
                 Unavailable::NoAccountSource,
             ));
         }
 
         let given = given_sources(given)?;
-        let (facts, numbers) =
-            self.calls
-                .read_numbers(key, found, &given, starts_programs)?;
+        let numbers = self.calls.read_numbers(
+            &part_account(account),
+            &given,
+            starts_programs,
+        )?;
 
-        let plan = numbers.plan.clone().or(facts.plan);
         Ok(match account.kind() {
-            AccountKind::Money => AccountNumbers::Balance(balance_of(&numbers)),
-            _ => {
+            AccountKind::Subscription => {
+                let plan = numbers
+                    .plan
+                    .clone()
+                    .or_else(|| account.plan().map(String::from));
                 let limits = subscription_limits(&numbers, plan);
                 AccountNumbers::Limits(Answer::first(
                     limits,
                     SourceId::ProviderPart,
                 ))
             },
+            _ => AccountNumbers::Balance(balance_of(&numbers)),
         })
     }
 
+    /// The bill up to `now` of the organization `account`, read once by
+    /// the part in the folders it was found in, with the keys the user
+    /// gave for it (`given`). A part that reads no bill answers "no bill";
+    /// one that needs a key asks the user with its need. An account the
+    /// part does not read is not read.
+    pub(crate) fn read_bill(
+        &self,
+        account: &Account,
+        given: &[GivenSecret],
+        now: SystemTime,
+    ) -> Result<Bill, SourceError> {
+        if !self.reads(account) {
+            return Err(SourceError::NotAvailable(Unavailable::NoBill));
+        }
+
+        let given = given_sources(given)?;
+        let days = BillDays::up_to(now);
+        let read = self.calls.read_bill(
+            &part_account(account),
+            &given,
+            &days.range(),
+        )?;
+
+        Ok(days.bill_of(&read))
+    }
+
     /// A provider with the entry `entry` whose part is called through
-    /// `calls`.
+    /// `calls`, reading the logins of no agent part.
     pub(crate) fn of_calls(
         entry: ProviderEntry,
         health: PartHealth,
@@ -270,18 +269,43 @@ impl PluginProvider {
         Self {
             entry,
             health,
+            login_agents: Vec::new(),
             calls,
         }
+    }
+
+    /// The same provider reading the logins in the profiles of `agents`,
+    /// agent parts of its own plugin.
+    pub(crate) fn with_logins_of(mut self, agents: Vec<AgentId>) -> Self {
+        self.login_agents = agents;
+        self
+    }
+
+    /// Whether the part reads the logins of `profile`: a profile of an
+    /// agent part its manifest names, which the plugin of the part serves.
+    fn reads_logins_of(
+        &self,
+        agents: &[Box<dyn Agent>],
+        profile: &Profile,
+    ) -> bool {
+        let is_named = self.login_agents.contains(profile.agent());
+        let is_of_plugin =
+            agent_of(agents, profile.agent()).is_some_and(|agent| {
+                agent.entry().part().plugin() == self.entry.part().plugin()
+            });
+
+        is_named && is_of_plugin
     }
 }
 
 #[cfg(test)]
 impl PluginProvider {
-    /// The provider `id` serving `hosts`, whose part is called through
+    /// The provider `id` of the plugin `example`, which reads the logins
+    /// in the profiles of `logins_of`, whose part is called through
     /// `calls`.
     pub(crate) fn made_up(
         id: &str,
-        hosts: &[&str],
+        logins_of: &[&str],
         calls: MockProviderPartCalls,
     ) -> Self {
         let part = otty_plugin_host::PluginPart::new(
@@ -291,10 +315,11 @@ impl PluginProvider {
             "https://github.com/otty-shell/otty-plugin-example",
             id,
         );
-        let entry = ProviderEntry::new(ProviderId::new(id), id, part)
-            .with_hosts(hosts.iter().copied());
+        let entry = ProviderEntry::new(ProviderId::new(id), id, part);
+        let agents = logins_of.iter().copied().map(AgentId::new).collect();
 
         Self::of_calls(entry, PartHealth::default(), Box::new(calls))
+            .with_logins_of(agents)
     }
 }
 
@@ -304,23 +329,36 @@ struct PartCalls {
 }
 
 impl ProviderPartCalls for PartCalls {
+    fn accounts(
+        &self,
+        folders: &[LoginFolder],
+    ) -> Result<(Vec<Account>, Vec<PartNeed>), SourceError> {
+        let found = self
+            .part
+            .read(READ_ACCOUNTS, |batch| batch.provider()?.accounts(folders))?;
+
+        let need_of = |need| PartNeed::of_called_part(&self.part, need);
+        let part = self.part.named();
+        let accounts = found
+            .accounts
+            .iter()
+            .map(|account| {
+                let needs = account.needs.iter().filter_map(need_of).collect();
+                account_of(part.plugin(), part.part(), account, needs)
+            })
+            .collect();
+        let needs = found.needs.iter().filter_map(need_of).collect();
+        Ok((accounts, needs))
+    }
+
     fn read_numbers(
         &self,
-        key: &KeySource,
-        found: &LoginFacts,
+        account: &PartAccount,
         given: &[(String, KeySource)],
         starts_programs: bool,
-    ) -> Result<(AccountFacts, PartNumbers), SourceError> {
+    ) -> Result<PartNumbers, SourceError> {
         let read = |batch: &mut CallBatch<'_>| {
-            let mut calls = batch.provider()?;
-
-            let facts = match calls.account(key, found)? {
-                Ok(facts) => facts,
-                Err(error) => return Ok(Err(error)),
-            };
-            let numbers = calls.numbers(found, &facts, key, given)?;
-
-            Ok(numbers.map(|numbers| (facts, numbers)))
+            batch.provider()?.numbers(account, given)
         };
         let answer = match starts_programs {
             true => self.part.read(READ_NUMBERS, read)?,
@@ -337,20 +375,12 @@ impl ProviderPartCalls for PartCalls {
 
     fn read_bill(
         &self,
-        key: &KeySource,
-        found: &LoginFacts,
+        account: &PartAccount,
         given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<PartBill, SourceError> {
         let answer = self.part.read(READ_BILL, |batch| {
-            let mut calls = batch.provider()?;
-
-            let facts = match calls.account(key, found)? {
-                Ok(facts) => facts,
-                Err(error) => return Ok(Err(error)),
-            };
-
-            calls.read_bill(found, &facts, key, given, days)
+            batch.provider()?.read_bill(account, given, days)
         })?;
 
         answer.map_err(|error| {
@@ -358,6 +388,68 @@ impl ProviderPartCalls for PartCalls {
 
             read_error(&self.part, READ_BILL, &error, not_supported, None)
         })
+    }
+}
+
+/// The account `account` the provider part `provider` of the plugin
+/// `plugin` found, with the needs it gave for it as OTTY shows them.
+fn account_of(
+    plugin: &str,
+    provider: &str,
+    account: &PartAccount,
+    needs: Vec<PartNeed>,
+) -> Account {
+    let kind = match account.kind {
+        PartKind::Subscription => AccountKind::Subscription,
+        PartKind::Key => AccountKind::Key,
+        PartKind::Organization => AccountKind::Organization,
+    };
+    let found_in = account
+        .found_in
+        .iter()
+        .map(|LoginFolder::Profile((agent, folder))| {
+            FoundIn::profile(AgentId::new(agent.as_str()), folder)
+        })
+        .collect();
+
+    Account::new(
+        plugin,
+        ProviderId::new(provider),
+        account.id.as_str(),
+        account.name.as_str(),
+        kind,
+        found_in,
+    )
+    .with_plan(account.plan.clone())
+    .with_needs(needs)
+}
+
+/// `account` as its part is given it to read: its id, name, kind, plan
+/// and folders. Its needs are OTTY's to show, so they are not sent back.
+fn part_account(account: &Account) -> PartAccount {
+    let kind = match account.kind() {
+        AccountKind::Subscription => PartKind::Subscription,
+        AccountKind::Key => PartKind::Key,
+        AccountKind::Organization => PartKind::Organization,
+    };
+    let found_in = account
+        .found_in()
+        .iter()
+        .map(|place| match place {
+            FoundIn::ProfileFolder { agent, folder } => LoginFolder::Profile((
+                agent.as_str().to_string(),
+                folder.display().to_string(),
+            )),
+        })
+        .collect();
+
+    PartAccount {
+        id: account.key().id().to_string(),
+        name: account.name().to_string(),
+        kind,
+        plan: account.plan().map(String::from),
+        found_in,
+        needs: Vec::new(),
     }
 }
 
@@ -379,16 +471,6 @@ fn given_sources(
             Ok((given.slot().to_string(), given_source(given.secret())?))
         })
         .collect()
-}
-
-/// What the agent part found of `login`, in the profiles `found_in`.
-fn login_facts(login: &Login, found_in: Vec<FoundProfile>) -> LoginFacts {
-    LoginFacts {
-        kind: login.kind,
-        identity: login.identity.clone(),
-        plan: login.plan.clone(),
-        found_in,
-    }
 }
 
 /// What a key told in `numbers`: the money left, the key's own limit, the
@@ -447,223 +529,59 @@ fn amount_of(money: &Money) -> Option<Amount> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_host::agents::agent::{
-        Identity, JsonField, KeyPlace, LoginKind,
-    };
+    use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::account::{AccountIdentity, AccountLogin, FoundIn};
     use crate::given_key::GivenSecret;
-    use crate::key_fingerprint::KeyFingerprint;
     use crate::limits::Credits;
-    use crate::testing::{NOW, at, no_identity};
+    use crate::testing::{NOW, at};
 
-    fn key_login() -> Login {
-        Login {
-            kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
-                "example-cloud".to_string(),
-            ),
-            place: KeyPlace::JsonField(JsonField {
-                file: "/home/dev/.example-agent/auth.json".to_string(),
-                pointer: "/api_key".to_string(),
-            }),
-            identity: no_identity(),
-            plan: None,
-        }
+    /// The made-up agent part `coder` of the plugin `plugin`.
+    fn coder_of(plugin: &str) -> Box<dyn Agent> {
+        let mut agent = crate::testing::MockAgent::new();
+        let part = otty_plugin_host::PluginPart::new(
+            plugin, plugin, "0.1.0", "", "coder",
+        );
+        let entry = crate::agent::AgentEntry::new(
+            AgentId::new("coder"),
+            "Coder",
+            "coder",
+            "Example Cloud",
+            part,
+        );
+        agent.expect_entry().return_const(entry);
+
+        Box::new(agent)
     }
 
-    fn key_account(provider: ProviderRef, folders: &[&str]) -> Account {
-        let mut account = Account::new(
-            provider,
-            AccountIdentity::KeyFingerprint(KeyFingerprint::of("made-up")),
-            AccountLogin::Key(None),
-            AccountKind::Money,
-            FoundIn::ProfileFolder(folders[0].into()),
-        );
-        for folder in &folders[1..] {
-            let copy = Account::new(
-                account.provider().clone(),
-                account.identity().clone(),
-                AccountLogin::Key(None),
-                AccountKind::Money,
-                FoundIn::ProfileFolder((*folder).into()),
-            );
-            account =
-                crate::account::join_copies(vec![account, copy]).remove(0);
-        }
-        account
+    /// A profile of the agent `agent` in `folder`.
+    fn profile_of(agent: &str, folder: &str) -> Profile {
+        Profile::added(AgentId::new(agent), folder, PathBuf::from(folder))
     }
 
-    fn twelve_dollars_left() -> PartNumbers {
-        PartNumbers {
-            windows: Vec::new(),
-            credits: None,
-            extra_usage: None,
-            left: Some(Money {
-                amount: 12.5,
-                currency: "USD".to_string(),
-            }),
-            key_limit: None,
-            spent_this_month: None,
-            plan: None,
-            recorded_at_ms: None,
-        }
-    }
-
-    fn facts() -> AccountFacts {
-        AccountFacts {
-            identity: no_identity(),
-            plan: None,
-        }
-    }
-
-    /// Spec "How plugins talk to OTTY": an account found in two profiles
-    /// is one account, read with one call.
-    #[test]
-    fn an_account_in_two_profiles_is_read_with_one_call() {
-        let account = key_account(
-            ProviderRef::of_id("example-cloud"),
-            &["/home/dev/.example-agent", "/home/dev/.example-agent-work"],
-        );
-        let mut calls = MockProviderPartCalls::new();
-        calls
-            .expect_read_numbers()
-            .times(1)
-            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
-        let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
-
-        let numbers =
-            provider.read(&account, &key_login(), Vec::new(), &[], true);
-
-        assert_eq!(account.found_in().len(), 2);
-        assert_eq!(
-            numbers,
-            Ok(AccountNumbers::Balance(Balance::new(
-                Amount::new(12.5, "USD"),
-                None
-            )))
-        );
-    }
-
-    /// Spec Decision 7: a provider part gets keys only of accounts of its
-    /// own provider id or hosts.
-    #[test]
-    fn a_part_gets_no_key_of_an_account_of_another_provider() {
-        let other = key_account(
-            ProviderRef::of_id("deepseek"),
-            &["/home/dev/.example-agent"],
-        );
-        let by_host = key_account(
-            ProviderRef::Host("api.example.com".to_string()),
-            &["/home/dev/.example-agent"],
-        );
-        let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().never();
-        let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
-
-        let numbers =
-            provider.read(&other, &key_login(), Vec::new(), &[], true);
-
-        assert_eq!(
-            numbers,
-            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
-        );
-        assert!(!provider.serves(&other));
-        assert!(provider.serves(&by_host));
-    }
-
-    #[test]
-    fn a_subscription_gives_its_limits_with_the_plan() {
-        let account = Account::new(
-            ProviderRef::of_id("example-cloud"),
-            AccountIdentity::AccountId("acct_1".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Limits,
-            FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
-        );
-        let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _, _| {
-            let facts = AccountFacts {
-                identity: no_identity(),
-                plan: Some("Team".to_string()),
-            };
-            Ok((facts, twelve_dollars_left()))
-        });
-        let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
-
-        let numbers =
-            provider.read(&account, &key_login(), Vec::new(), &[], true);
-
-        let Ok(AccountNumbers::Limits(limits)) = numbers else {
-            panic!("the limits: {numbers:?}");
-        };
-        assert_eq!(limits.source(), SourceId::ProviderPart);
-        assert_eq!(limits.value().plan(), Some("Team"));
-        assert_eq!(
-            limits.value().billing(),
-            &Billing::UsageWindows(UsageWindows::default())
-        );
-    }
-
-    /// Issue 16: a DeepSeek key Claude Code sends to
-    /// `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic` is a key for
-    /// the host `api.deepseek.com`, which the DeepSeek part serves; it gets
-    /// a handle to the key's place in `settings.json`.
-    #[test]
-    fn a_deepseek_key_behind_claude_codes_base_url_is_read_by_the_deepseek_part()
-     {
-        let settings = "/home/dev/.claude-deepseek/settings.json";
-        let account = key_account(
-            ProviderRef::Host("api.deepseek.com".to_string()),
-            &["/home/dev/.claude-deepseek"],
-        );
-        let login = Login {
-            kind: LoginKind::ApiKey,
-            for_whom: otty_plugin_host::agents::agent::ProviderRef::Host(
-                "api.deepseek.com".to_string(),
-            ),
-            place: KeyPlace::JsonField(JsonField {
-                file: settings.to_string(),
-                pointer: "/env/ANTHROPIC_AUTH_TOKEN".to_string(),
-            }),
-            identity: no_identity(),
-            plan: None,
-        };
-        let mut calls = MockProviderPartCalls::new();
-        calls
-            .expect_read_numbers()
-            .withf(move |key, _, _, _| {
-                let KeySource::Place(KeyPlace::JsonField(field)) = key else {
-                    return false;
-                };
-                field.file == settings
-                    && field.pointer == "/env/ANTHROPIC_AUTH_TOKEN"
-            })
-            .times(1)
-            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
-        let provider =
-            PluginProvider::made_up("deepseek", &["deepseek.com"], calls);
-
-        let numbers = provider.read(&account, &login, Vec::new(), &[], true);
-
-        assert!(provider.serves(&account));
-        assert!(
-            matches!(numbers, Ok(AccountNumbers::Balance(_))),
-            "{numbers:?}"
-        );
-    }
-
-    fn subscription(provider: &str) -> Account {
+    /// A subscription of the plugin `example` found in the Coder profile
+    /// `/home/dev/.coder`.
+    fn subscription() -> Account {
         Account::new(
-            ProviderRef::of_id(provider),
-            AccountIdentity::AccountId("made-up-account".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Limits,
-            FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
+            "example",
+            ProviderId::new("example-cloud"),
+            "chatgpt:made-up",
+            "dev@example.com",
+            AccountKind::Subscription,
+            vec![FoundIn::profile(AgentId::new("coder"), "/home/dev/.coder")],
+        )
+    }
+
+    /// A key of the plugin `example` found in the Coder profile
+    /// `/home/dev/.coder`.
+    fn key() -> Account {
+        Account::new(
+            "example",
+            ProviderId::new("example-cloud"),
+            "key:made-up",
+            "key ••••a1f3",
+            AccountKind::Key,
+            vec![FoundIn::profile(AgentId::new("coder"), "/home/dev/.coder")],
         )
     }
 
@@ -687,8 +605,194 @@ mod tests {
         }
     }
 
-    /// Issue 20: what the user must do comes from the part as its need,
-    /// the same for a subscription and a key; OTTY writes none of it.
+    /// The folders of `folders`, as text.
+    fn folders_of(folders: &[LoginFolder]) -> Vec<(&str, &str)> {
+        folders
+            .iter()
+            .map(|LoginFolder::Profile((agent, folder))| {
+                (agent.as_str(), folder.as_str())
+            })
+            .collect()
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the part
+    /// is asked for accounts with the folders of the profiles of the agent
+    /// parts its `logins` name, of its own plugin, and of no other.
+    #[test]
+    fn the_part_gets_the_folders_of_its_own_agent_parts_only() {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_accounts()
+            .withf(|folders| {
+                folders_of(folders)
+                    == [
+                        ("coder", "/home/dev/.coder"),
+                        ("coder", "/home/dev/.w"),
+                    ]
+            })
+            .times(1)
+            .returning(|_| Ok((vec![subscription()], Vec::new())));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let profiles = [
+            profile_of("coder", "/home/dev/.coder"),
+            profile_of("other", "/home/dev/.other"),
+            profile_of("coder", "/home/dev/.w"),
+        ];
+
+        let found = provider.accounts(&[coder_of("example")], &profiles);
+
+        assert_eq!(found, Ok((vec![subscription()], Vec::new())));
+    }
+
+    /// Decision 5: a profile of an agent part of another plugin gives the
+    /// part no folder, even with the same agent id, and a part with no
+    /// folder is not asked.
+    #[test]
+    fn a_part_with_no_folder_of_its_plugin_is_not_asked() {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_accounts().never();
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let profiles = [profile_of("coder", "/home/dev/.coder")];
+
+        let found = provider.accounts(&[coder_of("another")], &profiles);
+
+        assert_eq!(found, Ok((Vec::new(), Vec::new())));
+    }
+
+    /// Decision 11: a part whose manifest names no `logins` finds no
+    /// account, such as DeepSeek or OpenRouter.
+    #[test]
+    fn a_part_with_no_logins_finds_no_account() {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_accounts().never();
+        let provider = PluginProvider::made_up("example-cloud", &[], calls);
+        let profiles = [profile_of("coder", "/home/dev/.coder")];
+
+        let found = provider.accounts(&[coder_of("example")], &profiles);
+
+        assert_eq!(found, Ok((Vec::new(), Vec::new())));
+    }
+
+    /// Decision 8: what the part tells of an account is the account, its
+    /// folders by the agent part that holds them.
+    #[test]
+    fn an_account_of_the_part_keeps_its_id_name_kind_plan_and_folders() {
+        let part = PartAccount {
+            id: "chatgpt:made-up".to_string(),
+            name: "dev@example.com".to_string(),
+            kind: PartKind::Subscription,
+            plan: Some("Plus".to_string()),
+            found_in: vec![
+                LoginFolder::Profile((
+                    "coder".to_string(),
+                    "/home/dev/.coder".to_string(),
+                )),
+                LoginFolder::Profile((
+                    "coder".to_string(),
+                    "/home/dev/.w".to_string(),
+                )),
+            ],
+            needs: Vec::new(),
+        };
+
+        let account = account_of("example", "example-cloud", &part, Vec::new());
+
+        assert_eq!(account.key().plugin(), "example");
+        assert_eq!(account.key().id(), "chatgpt:made-up");
+        assert_eq!(account.provider(), &ProviderId::new("example-cloud"));
+        assert_eq!(account.name(), "dev@example.com");
+        assert_eq!(account.kind(), AccountKind::Subscription);
+        assert_eq!(account.plan(), Some("Plus"));
+        let folders: Vec<&Path> =
+            account.found_in().iter().map(FoundIn::folder).collect();
+        assert_eq!(
+            folders,
+            [Path::new("/home/dev/.coder"), Path::new("/home/dev/.w")]
+        );
+        assert_eq!(
+            format!("{:?}", part_account(&account)),
+            format!("{part:?}")
+        );
+    }
+
+    /// The part reads an account of its own plugin and provider id only.
+    #[test]
+    fn a_part_reads_no_account_of_another_plugin_or_provider() {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().never();
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let of_another_plugin = Account::new(
+            "another",
+            ProviderId::new("example-cloud"),
+            "chatgpt:made-up",
+            "dev@example.com",
+            AccountKind::Subscription,
+            Vec::new(),
+        );
+        let of_another_provider = Account::new(
+            "example",
+            ProviderId::new("other-cloud"),
+            "chatgpt:made-up",
+            "dev@example.com",
+            AccountKind::Subscription,
+            Vec::new(),
+        );
+
+        for account in [of_another_plugin, of_another_provider] {
+            assert!(!provider.reads(&account));
+            assert_eq!(
+                provider.read(&account, &[], true),
+                Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
+            );
+        }
+    }
+
+    /// Decision 5: the part reads an account with its id and its folders,
+    /// and starts its programs only when the read may.
+    #[test]
+    fn a_subscription_is_read_in_its_folders_and_gives_its_limits() {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(|account, given, starts_programs| {
+                account.id == "chatgpt:made-up"
+                    && folders_of(&account.found_in)
+                        == [("coder", "/home/dev/.coder")]
+                    && given.is_empty()
+                    && !*starts_programs
+            })
+            .times(1)
+            .returning(|_, _, _| {
+                Ok(PartNumbers {
+                    windows: vec![
+                        otty_plugin_host::agents::provider::LimitWindow {
+                            length_minutes: Some(300),
+                            model: None,
+                            percent_used: 40.0,
+                            resets_at_ms: None,
+                            reset_text: None,
+                        },
+                    ],
+                    ..nothing()
+                })
+            });
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let account = subscription().with_plan(Some("Plus".into()));
+
+        let numbers = provider.read(&account, &[], false);
+
+        let Ok(AccountNumbers::Limits(limits)) = numbers else {
+            panic!("the limits: {numbers:?}");
+        };
+        assert_eq!(limits.value().plan(), Some("Plus"));
+    }
+
+    /// Issue 20: what the user must do comes from the part as its need;
+    /// OTTY writes none of it.
     #[test]
     fn a_need_of_the_part_is_the_answer_of_the_read_as_it_is() {
         let need = || {
@@ -698,54 +802,37 @@ mod tests {
                 "admin",
             ))
         };
-        let asking = || {
-            let mut calls = MockProviderPartCalls::new();
-            calls.expect_read_numbers().times(1).returning(
-                move |_, _, _, _| Err(SourceError::NeedsUser(need())),
-            );
-            PluginProvider::made_up("example-cloud", &["example.com"], calls)
-        };
-        let key = key_account(
-            ProviderRef::of_id("example-cloud"),
-            &["/home/dev/.example-agent"],
-        );
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .times(1)
+            .returning(move |_, _, _| Err(SourceError::NeedsUser(need())));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let login = asking().read(
-            &subscription("example-cloud"),
-            &key_login(),
-            Vec::new(),
-            &[],
-            true,
-        );
-        let api_key = asking().read(&key, &key_login(), Vec::new(), &[], true);
+        let numbers = provider.read(&key(), &[], true);
 
-        assert_eq!(login, Err(SourceError::NeedsUser(need())));
-        assert_eq!(api_key, Err(SourceError::NeedsUser(need())));
+        assert_eq!(numbers, Err(SourceError::NeedsUser(need())));
     }
 
     /// Issue 20: the keys the user gave for the account reach the part's
     /// read with their slots, each as a handle to the key OTTY read.
     #[test]
     fn the_given_keys_reach_the_read_with_their_slots() {
-        let account = key_account(
-            ProviderRef::of_id("example-cloud"),
-            &["/home/dev/.example-agent"],
-        );
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|_, _, given, _| {
+            .withf(|_, given, _| {
                 matches!(given, [(slot, KeySource::Given(key))]
                     if slot == "admin" && key.as_str() == "sk-made-up-admin-1")
             })
             .times(1)
-            .returning(|_, _, _, _| Ok((facts(), twelve_dollars_left())));
+            .returning(|_, _, _| Ok(nothing()));
         let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
         let given = [GivenSecret::made_up("admin", "sk-made-up-admin-1")];
 
-        let numbers =
-            provider.read(&account, &key_login(), Vec::new(), &given, true);
+        let numbers = provider.read(&key(), &given, true);
 
         assert!(
             matches!(numbers, Ok(AccountNumbers::Balance(_))),
@@ -757,15 +844,11 @@ mod tests {
     /// credits its provider tells, next to the money left.
     #[test]
     fn a_key_gives_its_money_spent_this_month_and_its_credits() {
-        let account = key_account(
-            ProviderRef::of_id("example-cloud"),
-            &["/home/dev/.example-agent"],
-        );
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _, _| {
-            let numbers = PartNumbers {
+        calls.expect_read_numbers().returning(|_, _, _| {
+            Ok(PartNumbers {
                 spent_this_month: Some(usd(4.2)),
-                credits: Some(otty_plugin_host::agents::agent::Credits {
+                credits: Some(otty_plugin_host::agents::provider::Credits {
                     left: Some(80.0),
                     used: Some(20.0),
                     pool: Some(100.0),
@@ -773,14 +856,12 @@ mod tests {
                     is_unlimited: false,
                 }),
                 ..nothing()
-            };
-            Ok((facts(), numbers))
+            })
         });
         let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let numbers =
-            provider.read(&account, &key_login(), Vec::new(), &[], true);
+        let numbers = provider.read(&key(), &[], true);
 
         let Ok(AccountNumbers::Balance(balance)) = numbers else {
             panic!("a balance: {numbers:?}");
@@ -800,8 +881,8 @@ mod tests {
     #[test]
     fn a_subscription_keeps_the_extra_usage_next_to_its_windows() {
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _, _| {
-            let numbers = PartNumbers {
+        calls.expect_read_numbers().returning(|_, _, _| {
+            Ok(PartNumbers {
                 extra_usage: Some(
                     otty_plugin_host::agents::provider::ExtraUsage {
                         used: Some(8.3),
@@ -810,19 +891,12 @@ mod tests {
                     },
                 ),
                 ..nothing()
-            };
-            Ok((facts(), numbers))
+            })
         });
         let provider =
-            PluginProvider::made_up("example-cloud", &["example.com"], calls);
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let numbers = provider.read(
-            &subscription("example-cloud"),
-            &key_login(),
-            Vec::new(),
-            &[],
-            true,
-        );
+        let numbers = provider.read(&subscription(), &[], true);
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -840,131 +914,29 @@ mod tests {
         );
     }
 
-    /// Issue 14 and 15: a ChatGPT login found only in OpenCode is read by
-    /// the provider part once, with a handle to the place OpenCode keeps
-    /// its token: a field of `auth.json`, or a field of the `credential`
-    /// row of its database.
-    #[test]
-    fn a_chatgpt_login_found_in_opencode_is_read_once_with_its_place() {
-        use otty_plugin_host::agents::agent::SqliteField;
-
-        let auth = KeyPlace::JsonField(JsonField {
-            file: "/home/dev/.local/share/opencode/auth.json".to_string(),
-            pointer: "/openai/access".to_string(),
-        });
-        let row = KeyPlace::SqliteField(SqliteField {
-            database: "/home/dev/.local/share/opencode/opencode.db".to_string(),
-            table: "credential".to_string(),
-            column: "value".to_string(),
-            row_id: 3,
-            pointer: Some("/access".to_string()),
-        });
-
-        for place in [auth, row] {
-            let login = Login {
-                kind: LoginKind::Subscription,
-                for_whom: otty_plugin_host::agents::agent::ProviderRef::Id(
-                    "openai".to_string(),
-                ),
-                place: place.clone(),
-                identity: Identity {
-                    account_id: Some("made-up-account".to_string()),
-                    organization_id: None,
-                    email: Some("dev@example.com".to_string()),
-                },
-                plan: Some("Plus".to_string()),
-            };
-            let mut calls = MockProviderPartCalls::new();
-            calls
-                .expect_read_numbers()
-                .withf(move |key, found, _, _| {
-                    matches!(key, KeySource::Place(sent)
-                        if crate::plugin_values::is_same_place(sent, &place))
-                        && found.kind == LoginKind::Subscription
-                        && found.identity.account_id.as_deref()
-                            == Some("made-up-account")
-                })
-                .times(1)
-                .returning(|_, found, _, _| {
-                    let facts = AccountFacts {
-                        identity: found.identity.clone(),
-                        plan: found.plan.clone(),
-                    };
-                    Ok((facts, nothing()))
-                });
-            let provider = PluginProvider::made_up(
-                "openai",
-                &["openai.com", "chatgpt.com"],
-                calls,
-            );
-
-            let numbers = provider.read(
-                &subscription("openai"),
-                &login,
-                Vec::new(),
-                &[],
-                true,
-            );
-
-            let Ok(AccountNumbers::Limits(limits)) = numbers else {
-                panic!("the limits: {numbers:?}");
-            };
-            assert_eq!(limits.value().plan(), Some("Plus"));
-        }
-    }
-
-    /// Issue 11: a ChatGPT login behind a gateway is for the gateway's
-    /// host; the `openai` part does not serve it, so its token never goes
-    /// to ChatGPT.
-    #[test]
-    fn a_login_behind_a_gateway_is_not_read_by_the_openai_part() {
-        let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().never();
-        let provider = PluginProvider::made_up(
-            "openai",
-            &["openai.com", "chatgpt.com"],
-            calls,
-        );
-        let gateway = Account::new(
-            ProviderRef::Host("gateway.example.com".to_string()),
-            AccountIdentity::AccountId("made-up-account".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Limits,
-            FoundIn::ProfileFolder("/home/dev/.codex-gateway".into()),
-        );
-
-        let numbers =
-            provider.read(&gateway, &key_login(), Vec::new(), &[], true);
-
-        assert!(!provider.serves(&gateway));
-        assert_eq!(
-            numbers,
-            Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
-        );
-    }
-
-    /// An organization found in a profile, read by the Anthropic part.
-    fn found_organization() -> Account {
+    /// An organization of the plugin `example`, found in a Coder profile.
+    fn organization() -> Account {
         Account::new(
-            ProviderRef::of_id("anthropic"),
-            AccountIdentity::OrganizationId("made-up-org".into()),
-            AccountLogin::Unnamed,
-            AccountKind::Money,
-            FoundIn::ProfileFolder("/home/dev/.example-agent".into()),
+            "example",
+            ProviderId::new("example-cloud"),
+            "org:made-up",
+            "Made-up org",
+            AccountKind::Organization,
+            vec![FoundIn::profile(AgentId::new("coder"), "/home/dev/.coder")],
         )
     }
 
-    /// Issue 15 and 20: the key of the login and the keys given for the
-    /// organization reach the part only as handles, once, for the 31 UTC
-    /// days up to today; the bill holds each of them.
+    /// Issue 15 and 20: the keys given for the organization reach the
+    /// part only as handles, once, for the 31 UTC days up to today; the
+    /// bill holds each of them.
     #[test]
     fn a_given_key_reads_the_bill_of_the_31_days_up_to_today() {
         let given = [GivenSecret::made_up("admin", "sk-made-up-org-key")];
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_bill()
-            .withf(|key, _, given, days| {
-                matches!(key, KeySource::Place(KeyPlace::JsonField(_)))
+            .withf(|account, given, days| {
+                account.id == "org:made-up"
                     && matches!(given, [(slot, KeySource::Given(org))]
                         if slot == "admin"
                             && org.as_str() == "sk-made-up-org-key")
@@ -972,7 +944,7 @@ mod tests {
                     && days.last == "2026-11-16"
             })
             .times(1)
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _| {
                 Ok(PartBill {
                     days: vec![otty_plugin_host::agents::provider::DayCost {
                         day: "2026-11-16".to_string(),
@@ -981,16 +953,10 @@ mod tests {
                 })
             });
         let provider =
-            PluginProvider::made_up("anthropic", &["anthropic.com"], calls);
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
 
         let bill = provider
-            .read_bill(
-                &found_organization(),
-                &key_login(),
-                Vec::new(),
-                &given,
-                at(NOW),
-            )
+            .read_bill(&organization(), &given, at(NOW))
             .expect("the bill");
 
         assert_eq!(bill.days().len(), 31);
@@ -998,19 +964,12 @@ mod tests {
     }
 
     #[test]
-    fn a_part_gets_no_key_of_a_bill_of_another_provider() {
+    fn a_part_reads_no_bill_of_another_provider() {
         let mut calls = MockProviderPartCalls::new();
         calls.expect_read_bill().never();
-        let provider =
-            PluginProvider::made_up("openai", &["openai.com"], calls);
+        let provider = PluginProvider::made_up("openai", &["coder"], calls);
 
-        let bill = provider.read_bill(
-            &found_organization(),
-            &key_login(),
-            Vec::new(),
-            &[],
-            at(NOW),
-        );
+        let bill = provider.read_bill(&organization(), &[], at(NOW));
 
         assert_eq!(bill, Err(SourceError::NotAvailable(Unavailable::NoBill)));
     }

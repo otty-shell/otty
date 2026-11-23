@@ -5,8 +5,7 @@
 use std::time::SystemTime;
 
 use otty_agents::{
-    Answer, Limits, PartNeed, RefusedLogin, SourceError, SourceFailure,
-    SourceId,
+    Answer, Limits, PartNeed, SourceError, SourceFailure, SourceId,
 };
 
 use super::freshness::{ReadState, Which};
@@ -70,23 +69,6 @@ impl ProfileLimits {
             .filter(|failure| failure.source() != SourceId::AgentPart);
 
         of_agent.chain(of_others).filter_map(need_of).collect()
-    }
-
-    /// The logins a provider part refused at the latest read, when no
-    /// part answered and the agent part that keeps the login said nothing
-    /// about it.
-    pub(crate) fn refused_logins(&self) -> Vec<&RefusedLogin> {
-        let Some(failures) = &self.failures else {
-            return Vec::new();
-        };
-
-        failures
-            .iter()
-            .filter_map(|failure| match failure.error() {
-                SourceError::LoginRefused(refused) => Some(refused.as_ref()),
-                _ => None,
-            })
-            .collect()
     }
 
     /// Whether the limits need a read for `which`: unlike

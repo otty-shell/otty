@@ -45,7 +45,7 @@ mod tests {
     use otty_plugin_sdk::HostError;
 
     use super::*;
-    use crate::testing::{as_provider, host, path};
+    use crate::testing::{as_provider_in, host, login_folder, path};
 
     const PROBE_FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
     const PROJECT: &str =
@@ -55,8 +55,9 @@ mod tests {
     fn only_the_session_files_of_the_probe_folder_are_removed() {
         let host = host();
         let folder = path(&host, ".claudeprobe");
+        let folders = [login_folder(&host, ".claudeprobe")];
 
-        as_provider(&host, || {
+        as_provider_in(&host, &folders, || {
             remove_probe_sessions(&folder, &[PROBE_FOLDER.to_string()]);
         });
 
@@ -79,8 +80,9 @@ mod tests {
         let folder = path(&host, ".claudeprobe");
         let other =
             path(&host, ".claudeprobe/projects/-home-dev-shop/c3.jsonl");
+        let folders = [login_folder(&host, ".claudeprobe")];
 
-        let refused = as_provider(&host, || {
+        let refused = as_provider_in(&host, &folders, || {
             remove_probe_sessions(&folder, &["/home/dev/shop".to_string()]);
             files::remove(&other)
         });
@@ -93,8 +95,9 @@ mod tests {
     fn a_profile_with_no_probe_folder_is_left_alone() {
         let host = host();
         let folder = path(&host, ".claude-work");
+        let folders = [login_folder(&host, ".claude-work")];
 
-        as_provider(&host, || {
+        as_provider_in(&host, &folders, || {
             remove_probe_sessions(&folder, &[PROBE_FOLDER.to_string()]);
         });
 

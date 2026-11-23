@@ -1439,29 +1439,12 @@ pub enum Key {
     AgentsColumnNow,
     /// An account with windows of limits.
     AgentsReadsLimits,
-    /// An account with a pool of credits.
-    AgentsReadsCredits,
     /// An account paid per token: money left and spent.
     AgentsReadsMoney,
-    /// A key shown by its last characters. Placeholder: `{last}`.
-    TplAgentsAccountKey,
-    /// An account one of two plugins reads, with the plugin's name.
-    /// Placeholders: `{name}`, `{plugin}`.
-    TplAgentsAccountOfPlugin,
-    /// A key too short to show any of it.
-    AgentsAccountKey,
-    /// A login whose files name no email, no key and no plan.
-    AgentsAccountUnknown,
     /// Title of the needs of the accounts.
     AgentsAccountsNeedYou,
     /// Title of the needs of the profiles.
     AgentsProfilesNeedYou,
-    /// Need of an account whose provider no plugin serves.
-    AgentsNeedNoProviderTitle,
-    /// What the need of an account with no provider plugin means, such as "Key for api.example.com found in Coder: no provider plugin". Placeholders: `{host}`, `{agent}`.
-    TplAgentsNeedNoProviderText,
-    /// Button of the need of an account with no provider plugin: adds a plugin (off until Plugins mode).
-    AgentsAddPlugin,
     /// Title of the Accounts section of the Agents mode left panel.
     AgentsSectionAccounts,
     /// The first row of the Accounts section and the title of its page: every account.
@@ -1480,8 +1463,6 @@ pub enum Key {
     AgentsNeedsFromYou,
     /// Title of the facts of an account, on its page.
     AgentsAccountInfo,
-    /// Label of the email an account is logged in with.
-    AgentsFieldEmail,
     /// Label of the key of an account paid with a key.
     AgentsFieldKey,
     /// Row of the money an account spent this month.
@@ -1666,8 +1647,6 @@ pub enum Key {
     AgentsShowAgain,
     /// Item of the profile menu that shows its folder in the Files panel.
     AgentsOpenFolder,
-    /// Under the menu of an account known only by its key: why Rename and Hide are off.
-    AgentsKeyNotSaved,
     /// Item of the All accounts menu that lists the hidden accounts. Placeholder: `{count}`.
     TplAgentsShowHiddenAccounts,
     /// Item of the All accounts menu that takes the hidden accounts out of the lists again.
@@ -1853,9 +1832,6 @@ pub enum Key {
     PluginsGroupLogins,
     /// Group of permissions: sites the part sends requests to.
     PluginsGroupSites,
-    /// Group of permissions: logins and keys of the provider's accounts
-    /// that agent plugins found.
-    PluginsGroupFoundLogins,
     /// Group of permissions OTTY can not sort, as written in plugins.json.
     PluginsGroupOther,
     /// Muted line under Files: read only.
@@ -1876,14 +1852,8 @@ pub enum Key {
     PluginsGroupLoginsMeaning,
     /// Muted line under Sites: sends requests only to these.
     PluginsGroupSitesMeaning,
-    /// Muted line under Found logins: {provider} accounts agent plugins found.
-    TplPluginsGroupFoundLoginsMeaning,
     /// Muted words after a keyring entry.
     PluginsPlaceKeyringNote,
-    /// Muted words before a host in Found logins: keys for `example.com`.
-    PluginsPlaceKeysFor,
-    /// A place of "Found logins": {provider} accounts.
-    TplPluginsPlaceAccounts,
     /// Group of permissions: what a provider part reads in the profiles of
     /// an agent part of its plugin, "Logins in {agent} profiles".
     TplPluginsGroupProfileLogins,
@@ -1970,21 +1940,24 @@ pub enum Key {
     TplPluginsLastFailure,
     /// Fact of Account info and Profile info: the plugin that reads it.
     AgentsFieldReadBy,
+    /// Fact of Account info: the name the provider part gives the account, such as an email or a short key.
+    AgentsFieldName,
+    /// Fact of Account info: what kind of account it is.
+    AgentsFieldKind,
+    /// Kind of an account: a subscription, such as a ChatGPT or a Claude plan.
+    AgentsKindSubscription,
+    /// Kind of an account: a key paid per token.
+    AgentsKindKey,
+    /// Kind of an account: an organization whose bill may be read.
+    AgentsKindOrganization,
+    /// Fact of Account info: where the provider part found the account.
+    AgentsFieldSource,
+    /// Source of an account: a profile folder it was found in. Placeholders: `{folder}`.
+    TplAgentsSourceFoundIn,
     /// Read by: no plugin serves the provider.
     AgentsReadByNoPlugin,
     /// Read by: a part that is off; {plugin} is its plugin and version.
     TplAgentsReadByOff,
-    /// Title of the need of a plugin part that is off.
-    AgentsNeedPartOffTitle,
-    /// Line of the need of a part that is off: {part}, {plugin}.
-    TplAgentsNeedPartOffText,
-    /// Title of OTTY's own need of a login a provider refused, when the
-    /// agent part that keeps it said nothing.
-    AgentsNeedLoginRefusedTitle,
-    /// Line of the need of a refused login: {provider}, {profile}.
-    TplAgentsNeedLoginRefusedText,
-    /// Button of the need of a part that is off.
-    AgentsTurnOn,
     /// Place of the need of a plugin update.
     AgentsPluginsPlace,
     /// Title of the need of a plugin update that waits.
@@ -2012,7 +1985,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 939] = [
+    pub(super) const ALL: [Self; 927] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2673,17 +2646,9 @@ impl Key {
         Self::AgentsColumnReads,
         Self::AgentsColumnNow,
         Self::AgentsReadsLimits,
-        Self::AgentsReadsCredits,
         Self::AgentsReadsMoney,
-        Self::TplAgentsAccountKey,
-        Self::TplAgentsAccountOfPlugin,
-        Self::AgentsAccountKey,
-        Self::AgentsAccountUnknown,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,
-        Self::AgentsNeedNoProviderTitle,
-        Self::TplAgentsNeedNoProviderText,
-        Self::AgentsAddPlugin,
         Self::AgentsSectionAccounts,
         Self::AgentsAllAccounts,
         Self::AgentsAllProfiles,
@@ -2693,7 +2658,6 @@ impl Key {
         Self::TplAgentsAmountThisMonth,
         Self::AgentsNeedsFromYou,
         Self::AgentsAccountInfo,
-        Self::AgentsFieldEmail,
         Self::AgentsFieldKey,
         Self::AgentsSpentThisMonth,
         Self::AgentsSourceFormatChanged,
@@ -2786,7 +2750,6 @@ impl Key {
         Self::AgentsHide,
         Self::AgentsShowAgain,
         Self::AgentsOpenFolder,
-        Self::AgentsKeyNotSaved,
         Self::TplAgentsShowHiddenAccounts,
         Self::AgentsHideHiddenAccounts,
         Self::TplAgentsShowHiddenProfiles,
@@ -2877,7 +2840,6 @@ impl Key {
         Self::PluginsGroupKeyring,
         Self::PluginsGroupLogins,
         Self::PluginsGroupSites,
-        Self::PluginsGroupFoundLogins,
         Self::PluginsGroupOther,
         Self::PluginsGroupFilesMeaning,
         Self::PluginsGroupChangesFilesMeaning,
@@ -2888,10 +2850,7 @@ impl Key {
         Self::PluginsGroupKeyringMeaning,
         Self::PluginsGroupLoginsMeaning,
         Self::PluginsGroupSitesMeaning,
-        Self::TplPluginsGroupFoundLoginsMeaning,
         Self::PluginsPlaceKeyringNote,
-        Self::PluginsPlaceKeysFor,
-        Self::TplPluginsPlaceAccounts,
         Self::TplPluginsGroupProfileLogins,
         Self::PluginsGroupProfileLoginsMeaning,
         Self::PluginsPlaceGivenAsHandles,
@@ -2934,13 +2893,15 @@ impl Key {
         Self::TplPluginsErrorNotLocal,
         Self::TplPluginsLastFailure,
         Self::AgentsFieldReadBy,
+        Self::AgentsFieldName,
+        Self::AgentsFieldKind,
+        Self::AgentsKindSubscription,
+        Self::AgentsKindKey,
+        Self::AgentsKindOrganization,
+        Self::AgentsFieldSource,
+        Self::TplAgentsSourceFoundIn,
         Self::AgentsReadByNoPlugin,
         Self::TplAgentsReadByOff,
-        Self::AgentsNeedPartOffTitle,
-        Self::TplAgentsNeedPartOffText,
-        Self::AgentsNeedLoginRefusedTitle,
-        Self::TplAgentsNeedLoginRefusedText,
-        Self::AgentsTurnOn,
         Self::AgentsPluginsPlace,
         Self::AgentsNeedPluginUpdateTitle,
         Self::TplAgentsNeedPluginUpdateText,

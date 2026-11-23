@@ -70,7 +70,7 @@ impl AccountTableRowViewModel {
                 state.profiles().saved(),
                 &account,
             ),
-            provider: state.provider_name(account.provider()).to_string(),
+            provider: state.account_provider_name(&account).to_string(),
             now,
             is_hidden: state.profiles().is_account_hidden(&account),
             account,
@@ -263,11 +263,11 @@ mod tests {
         );
     }
 
-    /// Issue 29: two plugins read one ChatGPT login; each reading is an
-    /// account row of its own, labelled with its plugin, so the user can
-    /// hide the one they do not want.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: two
+    /// plugins find one ChatGPT login; each is an account row of its own,
+    /// so the user can hide the one they do not want.
     #[test]
-    fn a_login_two_plugins_read_is_two_rows_each_with_its_plugin() {
+    fn a_login_two_plugins_find_is_two_rows() {
         let fork = otty_agents::ProviderEntry::new(
             otty_agents::ProviderId::new("openai"),
             "OpenAI",
@@ -287,28 +287,36 @@ mod tests {
             registry.agents().to_vec(),
             providers,
         ));
-        let found = crate::testing::chatgpt_login().with_read_by(None);
+        let of_fork = otty_agents::Account::new(
+            "openai-fork",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-account",
+            "you@example.com",
+            otty_agents::AccountKind::Subscription,
+            Vec::new(),
+        );
         let state = crate::testing::with_accounts_in(
             registry,
-            &[(codex(), connected(), vec![found])],
+            &[(
+                codex(),
+                connected(),
+                vec![crate::testing::chatgpt_login(), of_fork],
+            )],
             SavedProfiles::default(),
         );
 
         let vm = AllAccountsViewModel::from_state(&state);
 
-        let rows: Vec<(Option<&str>, &str)> = vm
+        let rows: Vec<(&str, &str)> = vm
             .rows
             .iter()
-            .map(|row| (row.account.read_by(), row.name.as_str()))
+            .map(|row| (row.account.plugin(), row.name.as_str()))
             .collect();
         assert_eq!(
             rows,
             [
-                (Some("openai"), "OpenAI · you@example.com (OpenAI)"),
-                (
-                    Some("openai-fork"),
-                    "OpenAI · you@example.com (OpenAI Fork)"
-                ),
+                ("openai", "OpenAI · you@example.com"),
+                ("openai-fork", "OpenAI · you@example.com"),
             ]
         );
     }

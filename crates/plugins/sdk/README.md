@@ -10,8 +10,8 @@ domain has its own module and its own WIT packages, so two domains may
 each have a "provider". The `agents` domain, Agents mode, is
 `otty_plugin_sdk::agents`: the `Agent` and `Provider` traits and every
 type only they use, with the WIT packages `otty:agents-agent` (whose
-`types` interface holds the values both share, such as `ReadError` and
-`LimitWindow`) and `otty:agents-provider`. The host operations, keys and
+`types` interface holds the values both share, such as `ReadError`) and
+`otty:agents-provider`. The host operations, keys and
 needs are at the crate root and in `otty:host`, since no domain owns
 them. The optional `Language` trait of the whole plugin belongs to no
 domain (`otty:language`). A plugin names what it exports as
@@ -23,16 +23,18 @@ It also holds a test host, so a plugin's tests run natively with plain
 against the permissions of the part being tested. The test host is never
 built for `wasm32-wasip2`.
 
-Where a number comes from is the plugin's business. A provider part
-reads an account's numbers any way it can: from the provider's server
-with the key, or by asking the agent itself in a profile the account was
-found in, which `LoginFacts::found_in` lists with the command its agent
-part starts the agent with there; the provider world imports files,
-programs and hidden terminals for that, under the part's own
-permissions. A key that is not at its place is a normal case: using its
-handle fails with `HostError::NotFound`, and `TestHost::key_at` makes
-such a handle in tests. With no way that works the part answers numbers
-with nothing in them, not an error.
+A provider part owns its accounts. OTTY calls `Provider::accounts` with
+the profile folders of the agent parts its manifest names in `logins`
+(`LoginFolder::Profile`), and the part reads the logins there with its
+own permissions, keys as handles. Each account has an id the part keeps
+stable, also after its tokens are renewed, a name, a kind, the folders it
+was found in and its needs. Where a number comes from is the plugin's
+business: `numbers` reads an account any way it can, only in the folders
+of `Account::found_in`, from the provider's server with the login there,
+or by asking the agent itself; the provider world imports files,
+programs and hidden terminals for that. With no way that works the part
+answers numbers with nothing in them, not an error. In tests,
+`TestHost::as_provider_in` runs a call with its folders.
 
 What the user must do for an agent or a provider is the part's to say,
 as a `Need`: a stable id, a title, a text and one button, a `NeedAction`
@@ -44,15 +46,10 @@ OTTY shows it as it is, with the plugin's name. A key the user gave for
 an `ask-key` comes back to `Provider::numbers` and `Provider::read_bill`
 as a `GivenKey` handle with its slot; `given_key(given, slot)` finds it.
 
-A provider part that reads with a login an agent keeps, such as a
-ChatGPT or a Claude login, does not know which agent keeps it. When the
-provider refuses it or it expired, the part answers only
-`ReadError::LoginRefused`; OTTY asks the agent part that found the login,
-through `Agent::login_refused(profile, login)`, what the user must do,
-such as run the agent in the profile's folder so it renews the login.
-The default gives no need, and OTTY then says itself that the login was
-refused. `ReadError::NeedsUser` stays for keys the provider part itself
-asks for, such as an admin key.
+A provider part that sees a login refused or expired says so with a need
+of the account, in `Account::needs` or as `ReadError::NeedsUser` of a
+read, such as one that runs the agent's login command in the folder the
+account was found in. Whether a login expired is the plugin's call.
 
 The texts are in the language `env::language()` names, or in English;
 `env::in_language` picks one of the part's own translations.

@@ -1,6 +1,8 @@
 //! The login file of a Codex profile, `<config>/auth.json`. It holds keys,
 //! so the host gives it with every key replaced by a handle: the plugin
 //! learns whether a key is there and the claims of a token, never the key.
+//! The agent part reads it to tell whether a profile is logged in, the
+//! provider part to find the accounts of its folders.
 
 use otty_plugin_sdk::{JsonWithKeys, Key, files};
 use serde::{Deserialize, Deserializer};
@@ -8,9 +10,6 @@ use serde_json::Value;
 
 /// The name of the login file in the config folder.
 const AUTH_FILE: &str = "auth.json";
-
-/// Where the API key of a login with a key sits in the file.
-pub(crate) const API_KEY_FIELD: &str = "/OPENAI_API_KEY";
 
 /// Where the access token of a ChatGPT login sits in the file.
 pub(crate) const ACCESS_TOKEN_FIELD: &str = "/tokens/access_token";
@@ -131,18 +130,38 @@ impl AuthFile {
 
     /// Whether the file holds an API key.
     pub(crate) fn has_api_key(&self) -> bool {
-        self.key(self.fields.api_key).is_some()
+        self.api_key().is_some()
     }
 
     /// Whether the file holds the access token of a ChatGPT login.
     pub(crate) fn has_access_token(&self) -> bool {
+        self.access_token().is_some()
+    }
+
+    /// The handle of the API key, when the file holds one.
+    pub(crate) fn api_key(&self) -> Option<&Key> {
+        self.key(self.fields.api_key)
+    }
+
+    /// The handle of the access token of a ChatGPT login, when the file
+    /// holds one.
+    pub(crate) fn access_token(&self) -> Option<&Key> {
         self.key(self.tokens().and_then(|tokens| tokens.access_token))
-            .is_some()
     }
 
     /// The ChatGPT workspace the tokens name, when they name one.
     pub(crate) fn account_id(&self) -> Option<&str> {
         filled(self.tokens()?.account_id.as_deref())
+    }
+
+    /// The ChatGPT workspace of the login: the one the tokens name, else
+    /// the one of the id token.
+    pub(crate) fn chatgpt_account_id(&self) -> Option<String> {
+        if let Some(account_id) = self.account_id() {
+            return Some(account_id.to_string());
+        }
+
+        self.id_claims().account_id().map(String::from)
     }
 
     /// What the id token tells of the login; nothing when there is no id
@@ -194,7 +213,7 @@ fn filled(text: Option<&str>) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{as_part, host, path};
+    use crate::testing::{ACCOUNT, as_part, host, path};
 
     /// The issue's test host check: the plugin gets `auth.json` with every
     /// token and key replaced by a handle, and reads the claims of the id
@@ -229,5 +248,24 @@ mod tests {
         );
         assert!(as_part(&host, || auth.has_access_token()));
         assert!(!as_part(&host, || auth.has_api_key()));
+    }
+
+    /// A file whose tokens name no workspace still names it in the id
+    /// token.
+    #[test]
+    fn the_chatgpt_account_comes_from_the_tokens_else_the_id_token() {
+        let host = host();
+        let read = |name: &str| {
+            let folder = path(&host, name);
+
+            as_part(&host, || {
+                AuthFile::read(&folder)
+                    .and_then(|auth| auth.chatgpt_account_id())
+            })
+        };
+
+        assert_eq!(read(".codex-plus").as_deref(), Some(ACCOUNT));
+        assert_eq!(read(".codex-idtoken").as_deref(), Some(ACCOUNT));
+        assert_eq!(read(".codex-nameless"), None);
     }
 }

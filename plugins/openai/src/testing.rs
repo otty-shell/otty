@@ -1,12 +1,10 @@
 //! Test-only values shared by the tests of this crate: the test host over
-//! `fixtures/`, which stands for the home folder, and the profiles of its
-//! made-up config folders.
+//! `fixtures/`, which stands for the home folder, and the profiles and
+//! login folders of its made-up config folders.
 
-use otty_plugin_sdk::agents::{FoundProfile, Profile};
+use otty_plugin_sdk::agents::{LoginFolder, Profile};
 use otty_plugin_sdk::files::FileInfo;
 use otty_plugin_sdk::test_host::TestHost;
-
-use crate::OpenAi;
 
 /// The agent part the tests call.
 pub(crate) const AGENT: &str = "codex";
@@ -18,7 +16,8 @@ pub(crate) const PROVIDER: &str = "openai";
 pub(crate) const TEN: i64 = 1_794_823_200_000;
 
 /// The ChatGPT account of the made-up logins of `.codex-plus`,
-/// `.codex-idtoken`, `.codex-expired` and `.codex-gateway`.
+/// `.codex-renewed`, `.codex-limits`, `.codex-idtoken`, `.codex-expired`
+/// and `.codex-gateway`.
 pub(crate) const ACCOUNT: &str = "00000000-0000-4000-8000-0000000000c1";
 
 /// The session of the default fixture folder in `/home/dev/shop`.
@@ -61,24 +60,20 @@ pub(crate) fn as_provider<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
     host.as_provider(PROVIDER, run)
 }
 
-/// The config folder `name` of `host` as the provider part is told an
-/// account was found in it: by the agent part `codex`, with the command
-/// it starts Codex with there.
-pub(crate) fn found_profile(
+/// Runs `run` as the part `openai` of `host` in a call given the config
+/// folder `name` as a login folder, as OTTY reads an account found there.
+pub(crate) fn as_provider_in<R>(
     host: &TestHost,
     name: &str,
-    is_default: bool,
-) -> FoundProfile {
-    use otty_plugin_sdk::agents::Agent;
+    run: impl FnOnce() -> R,
+) -> R {
+    host.as_provider_in(PROVIDER, &[codex_folder(host, name)], run)
+}
 
-    let profile = profile(host, name, is_default);
-
-    FoundProfile {
-        plugin: String::from("openai"),
-        agent: AGENT.to_string(),
-        launch: OpenAi::launch(&profile, None),
-        folder: profile.folder,
-    }
+/// The config folder `name` of `host` as OTTY gives it to the provider
+/// part: a profile folder of the agent part `codex`.
+pub(crate) fn codex_folder(host: &TestHost, name: &str) -> LoginFolder {
+    LoginFolder::Profile((AGENT.to_string(), path(host, name)))
 }
 
 /// A file a listing found at `path`, changed at `changed_ms`.

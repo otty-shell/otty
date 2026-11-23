@@ -1,86 +1,67 @@
-//! The provider part `anthropic`: whose account a Claude login or an
-//! Anthropic key is, the limits of a Claude login, and the bill of an
-//! Anthropic organization read with an admin key the part asks the user
-//! for. OTTY gives the part a handle to the login token or the key, never
-//! the key, and only of accounts of Anthropic: a key behind another
-//! server, such as DeepSeek's, is not one.
+//! The provider part `anthropic`: the accounts of Anthropic found in the
+//! Claude Code profiles OTTY gives it (`logins.rs`), the limits of a
+//! Claude login, and the bill of an Anthropic organization read with an
+//! admin key. The part reads the login files itself, only in the folders
+//! of the call, and gets every key as a handle, never the key.
 //!
-//! The limits are read any way the part can (issue 29): from Anthropic's
-//! server with the login token; else, with no token at its place or when
-//! the server fails, from the `/usage` panel of `claude` in a Claude Code
-//! profile the login was found in; else nothing.
+//! The limits are read any way the part can (issue 29), only in the
+//! folders the account was found in: from Anthropic's server with the
+//! login token of one of them; else, with no token there or when the
+//! server fails, from the `/usage` panel of `claude` in that folder; else
+//! nothing. A token Anthropic refuses is the need that runs `claude` in
+//! its folder, which renews the login or asks to log in again.
 
 use otty_plugin_sdk::agents::{
-    AccountFacts, AccountNumbers, Bill, DayRange, LoginFacts, LoginKind,
+    Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
     Provider, ReadError,
 };
 use otty_plugin_sdk::{GivenKey, HostError, Key, given_key};
 
+use crate::claude_code::claude_in_folder;
+use crate::logins::{Access, logins};
 use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{Anthropic, cost_report, oauth_usage, usage_probe};
 
-/// How the token of a Claude login starts; an API key (`sk-ant-api`) or an
-/// admin key (`sk-ant-admin`) does not.
-const LOGIN_TOKEN_PREFIX: &str = "sk-ant-oat";
-
-/// The agent part whose profiles show the `/usage` panel.
-const CLAUDE_CODE: &str = "claude-code";
-
-/// What the key of an account is, as far as the part may tell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyKind {
-    /// The token of a Claude login.
-    LoginToken,
-    /// Another key, such as an API key.
-    OtherKey,
-    /// No key at its place now, such as a Claude Code profile whose
-    /// `.credentials.json` is `{}` while Claude Code still works.
-    NotThere,
-}
-
 impl Provider for Anthropic {
-    /// The account the agent part found: a Claude login names its account
-    /// and email in Claude Code's global config; a key names nothing, and
-    /// OTTY knows it by its fingerprint. Nothing is asked.
-    fn account(
-        _provider: &str,
-        _key: &Key,
-        found: &LoginFacts,
-    ) -> Result<AccountFacts, ReadError> {
-        Ok(AccountFacts {
-            identity: found.identity.clone(),
-            plan: found.plan.clone(),
-        })
+    /// The accounts of the logins in `folders`. One account found in two
+    /// folders is one account with two places and the needs of both. A
+    /// folder with no login gives nothing: the agent part says it is not
+    /// logged in.
+    fn accounts(_provider: &str, folders: &[LoginFolder]) -> Found {
+        let mut accounts: Vec<Account> = Vec::new();
+
+        for folder in folders {
+            for login in logins(folder) {
+                let (account, _) = login.into_parts();
+                add_account(&mut accounts, account);
+            }
+        }
+
+        Found {
+            accounts,
+            needs: Vec::new(),
+        }
     }
 
-    /// The windows and the extra usage of a Claude login: from Anthropic's
-    /// server with its token, else from the `/usage` panel in a Claude
-    /// Code profile of `found`, else nothing. Anthropic tells nothing of
-    /// the money of one API key, so a key has no numbers and nothing is
-    /// sent.
+    /// The windows and the extra usage of a Claude login, read in one of
+    /// the account's folders: from Anthropic's server with its token, else
+    /// from the `/usage` panel there, else nothing. Anthropic tells
+    /// nothing of the money of one API key, so a key has no numbers and
+    /// nothing is sent.
     fn numbers(
         _provider: &str,
-        found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
-        match key_kind(key)? {
-            KeyKind::OtherKey => Ok(no_numbers()),
-            KeyKind::NotThere => {
-                usage_panel(found).unwrap_or_else(|| Ok(no_numbers()))
+        let Some((folder, access)) = account_access(account) else {
+            return Ok(no_numbers());
+        };
+
+        match access {
+            Access::Claude(token) => {
+                claude_numbers(account.kind, &folder, token.as_ref())
             },
-            KeyKind::LoginToken => match oauth_usage::claude_usage(key) {
-                Ok(usage) => Ok(AccountNumbers {
-                    windows: usage.windows,
-                    extra_usage: usage.extra_usage,
-                    ..no_numbers()
-                }),
-                Err(error) => match usage_panel(found) {
-                    Some(Ok(numbers)) => Ok(numbers),
-                    _ => Err(error),
-                },
-            },
+            Access::Key(_) => Ok(no_numbers()),
         }
     }
 
@@ -91,9 +72,7 @@ impl Provider for Anthropic {
     /// [`ADMIN_SLOT`], which the next read takes first.
     fn read_bill(
         _provider: &str,
-        _found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
@@ -101,12 +80,110 @@ impl Provider for Anthropic {
             return cost_report::bill(admin_key, days);
         }
 
-        let is_bill_key = is_bill_key(key)?;
-        if !is_bill_key {
+        let own_key = match account_access(account) {
+            Some((_, Access::Key(key))) => Some(key),
+            _ => None,
+        };
+        let Some(own_key) = own_key else {
+            return Err(ReadError::NeedsUser(needs::bill_key()));
+        };
+        if !is_bill_key(&own_key)? {
             return Err(ReadError::NeedsUser(needs::bill_key()));
         }
 
-        cost_report::bill(key, days)
+        cost_report::bill(&own_key, days)
+    }
+}
+
+/// Adds `account`, found in one folder, to `accounts`: an account with
+/// the same id gets its places and needs, each once.
+fn add_account(accounts: &mut Vec<Account>, account: Account) {
+    let Some(known) = accounts.iter_mut().find(|known| known.id == account.id)
+    else {
+        accounts.push(account);
+        return;
+    };
+
+    for folder in account.found_in {
+        if !known.found_in.contains(&folder) {
+            known.found_in.push(folder);
+        }
+    }
+    for need in account.needs {
+        if !known.needs.contains(&need) {
+            known.needs.push(need);
+        }
+    }
+}
+
+/// The folder to read `account` in and how: the first of its folders
+/// whose login holds a key or a token, else the first that still holds
+/// its login. `None` when none of its folders holds it now.
+fn account_access(account: &Account) -> Option<(String, Access)> {
+    let mut without_token: Option<(String, Access)> = None;
+
+    for folder in &account.found_in {
+        let LoginFolder::Profile((_, path)) = folder;
+        let Some(login) = logins(folder)
+            .into_iter()
+            .find(|login| login.account().id == account.id)
+        else {
+            continue;
+        };
+
+        let (_, access) = login.into_parts();
+        match access {
+            Access::Claude(None) => {
+                without_token.get_or_insert((path.clone(), access));
+            },
+            _ => return Some((path.clone(), access)),
+        }
+    }
+
+    without_token
+}
+
+/// The numbers of a Claude login of the kind `kind` in the profile folder
+/// `folder`: from Anthropic's server with its `token`, else, for a
+/// subscription, from the `/usage` panel of `claude` there. A need of the
+/// panel, such as a login it asks for, comes first; else the server's
+/// error, which for a refused token is the need that runs `claude` in
+/// the folder.
+fn claude_numbers(
+    kind: AccountKind,
+    folder: &str,
+    token: Option<&Key>,
+) -> Result<AccountNumbers, ReadError> {
+    let claude = claude_in_folder(folder);
+
+    let server_error =
+        match token.map(|token| oauth_usage::claude_usage(token, &claude)) {
+            Some(Ok(usage)) => {
+                return Ok(AccountNumbers {
+                    windows: usage.windows,
+                    extra_usage: usage.extra_usage,
+                    ..no_numbers()
+                });
+            },
+            Some(Err(error)) => Some(error),
+            None => None,
+        };
+
+    // Only a subscription has limits in the `/usage` panel.
+    if kind != AccountKind::Subscription {
+        return match server_error {
+            Some(error) => Err(error),
+            None => Ok(no_numbers()),
+        };
+    }
+
+    match usage_probe::read_windows(folder, &claude) {
+        Ok(windows) => Ok(AccountNumbers {
+            windows,
+            ..no_numbers()
+        }),
+        Err(ReadError::NeedsUser(need)) => Err(ReadError::NeedsUser(need)),
+        Err(probe_error) => Err(server_error.unwrap_or(probe_error)),
     }
 }
 
@@ -118,37 +195,6 @@ fn is_bill_key(key: &Key) -> Result<bool, ReadError> {
         Err(HostError::NotFound(_)) => Ok(false),
         Err(error) => Err(ReadError::Host(error)),
     }
-}
-
-/// What `key` is: a login token, another key, or no key at its place.
-fn key_kind(key: &Key) -> Result<KeyKind, ReadError> {
-    match key.has_prefix(LOGIN_TOKEN_PREFIX) {
-        Ok(true) => Ok(KeyKind::LoginToken),
-        Ok(false) => Ok(KeyKind::OtherKey),
-        Err(HostError::NotFound(_)) => Ok(KeyKind::NotThere),
-        Err(error) => Err(ReadError::Host(error)),
-    }
-}
-
-/// The windows of the `/usage` panel of `claude` in the first Claude Code
-/// profile of `found`, for a subscription login; `None` when the login is
-/// none or was found in no Claude Code profile.
-fn usage_panel(
-    found: &LoginFacts,
-) -> Option<Result<AccountNumbers, ReadError>> {
-    if found.kind != LoginKind::Subscription {
-        return None;
-    }
-    let profile = found
-        .found_in
-        .iter()
-        .find(|profile| profile.agent == CLAUDE_CODE)?;
-
-    let windows = usage_probe::read_windows(profile);
-    Some(windows.map(|windows| AccountNumbers {
-        windows,
-        ..no_numbers()
-    }))
 }
 
 /// Numbers with nothing in them: what the part answers when it has no way
@@ -168,7 +214,6 @@ fn no_numbers() -> AccountNumbers {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::Identity;
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{
@@ -176,17 +221,27 @@ mod tests {
     };
 
     use super::*;
-    use crate::testing::{found_profile, host, path};
+    use crate::profiles::CONFIG_VARIABLE;
+    use crate::testing::{PROVIDER, as_provider_in, host, login_folder, path};
 
-    const PROVIDER: &str = "anthropic";
-    /// A made-up login token, never a real one.
-    const TOKEN: &str = "sk-ant-oat01-made-up-login-token";
     const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
     /// The address of the cost report of 2026-11-16, the one day of
     /// [`one_day`].
     const REPORT_URL: &str = "https://api.anthropic.com/v1/organizations/cost_report?starting_at=2026-11-16T00:00:00Z&ending_at=2026-11-17T00:00:00Z&bucket_width=1d&limit=31";
     /// A made-up admin key, never a real one.
     const MADE_UP_ADMIN: &str = "sk-ant-admin01-made-up-for-tests";
+    /// The made-up admin key of the settings of `.claude-admin`.
+    const OWN_ADMIN: &str = "sk-ant-admin01-made-up-own-key";
+    /// The working folder of the hidden terminals of the tests.
+    const PROBE_FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
+    /// The arguments the probe starts `claude` with.
+    const PROBE_ARGS: [&str; 5] = [
+        "--allowed-tools",
+        "",
+        "--strict-mcp-config",
+        "--settings",
+        r#"{"remoteControlAtStartup":false,"disableAllHooks":true}"#,
+    ];
 
     fn one_day() -> DayRange {
         DayRange {
@@ -195,45 +250,46 @@ mod tests {
         }
     }
 
-    fn organization() -> AccountFacts {
-        AccountFacts {
-            identity: Identity {
-                organization_id: Some("made-up-organization".to_string()),
-                ..Identity::default()
-            },
-            plan: None,
-        }
+    /// What the part finds in the folders `names` of `host`, in a call
+    /// given them.
+    fn found_in(host: &TestHost, names: &[&str]) -> Found {
+        let folders: Vec<LoginFolder> =
+            names.iter().map(|name| login_folder(host, name)).collect();
+
+        as_provider_in(host, &folders, || {
+            Anthropic::accounts(PROVIDER, &folders)
+        })
     }
 
-    fn claude_login() -> LoginFacts {
-        LoginFacts {
-            kind: LoginKind::Subscription,
-            identity: Identity {
-                account_id: Some("made-up-account".to_string()),
-                organization_id: None,
-                email: Some("dev@example.com".to_string()),
-            },
-            plan: Some("Max 20x".to_string()),
-            found_in: Vec::new(),
-        }
+    /// The first account the part finds in the folders `names` of `host`.
+    fn account_in(host: &TestHost, names: &[&str]) -> Account {
+        found_in(host, names)
+            .accounts
+            .into_iter()
+            .next()
+            .expect("an account")
     }
 
-    /// The Claude login found in the Claude Code profile `.claude-no-token`
-    /// of `host`, whose `.credentials.json` is `{}`.
-    fn login_in_profile(host: &TestHost) -> LoginFacts {
-        LoginFacts {
-            found_in: vec![found_profile(host, ".claude-no-token", false)],
-            ..claude_login()
-        }
+    /// The numbers of `account`, read in a call given its folders.
+    fn numbers_of(
+        host: &TestHost,
+        account: &Account,
+    ) -> Result<AccountNumbers, ReadError> {
+        as_provider_in(host, &account.found_in, || {
+            Anthropic::numbers(PROVIDER, account, &[])
+        })
     }
 
-    /// A handle to the login token of `.claude-no-token`, which is not
-    /// there.
-    fn missing_token(host: &TestHost) -> Key {
-        host.key_at(&KeyPlace::JsonField(JsonField {
-            file: path(host, ".claude-no-token/.credentials.json"),
-            pointer: "/claudeAiOauth/accessToken".to_string(),
-        }))
+    /// The bill of `account` with the keys of `given`, read in a call
+    /// given its folders.
+    fn bill_of(
+        host: &TestHost,
+        account: &Account,
+        given: &[GivenKey],
+    ) -> Result<Bill, ReadError> {
+        as_provider_in(host, &account.found_in, || {
+            Anthropic::read_bill(PROVIDER, account, given, &one_day())
+        })
     }
 
     /// The screens of `claude` in a hidden terminal: its prompt, then the
@@ -244,133 +300,107 @@ mod tests {
         host.answer_terminal("claude", &PROBE_ARGS, &[prompt, panel]);
     }
 
-    /// The arguments the probe starts `claude` with.
-    const PROBE_ARGS: [&str; 5] = [
-        "--allowed-tools",
-        "",
-        "--strict-mcp-config",
-        "--settings",
-        r#"{"remoteControlAtStartup":false,"disableAllHooks":true}"#,
-    ];
-
-    /// Issue 29, the owner's case: Claude Code keeps no token in the
-    /// profile's `.credentials.json`, yet works; the part reads the limits
-    /// from the `/usage` panel of `claude` in that profile, and nothing
-    /// fails.
-    #[test]
-    fn a_login_with_no_token_reads_the_usage_panel_of_its_profile() {
-        let host =
-            host().with_terminal_folder("/home/dev/.cache/otty/agent-probe");
-        usage_screens(&host);
-        let key = missing_token(&host);
-        let found = login_in_profile(&host);
-
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = Anthropic::account(PROVIDER, &key, &found)?;
-            Anthropic::numbers(PROVIDER, &found, &facts, &key, &[])
-        });
-
-        let numbers = numbers.expect("the numbers");
-        assert_eq!(numbers.windows.len(), 1);
-        assert_eq!(numbers.windows[0].percent_used, 29.0);
-        assert!(host.requests().is_empty(), "nothing is sent");
-        assert_eq!(host.started().len(), 1);
+    /// The variable and its value a started program got for the config
+    /// folder, if any.
+    fn config_folder_of(host: &TestHost) -> Option<String> {
+        host.started()[0]
+            .env()
+            .iter()
+            .find(|(name, _)| name == CONFIG_VARIABLE)
+            .map(|(_, value)| value.clone())
     }
 
-    /// Issue 29: no token and no Claude Code profile to ask is nothing,
-    /// not a failure, and nothing is sent or started.
+    /// An account found in no folder.
+    fn account_with_no_folder() -> Account {
+        Account {
+            id: "claude:made-up".to_string(),
+            name: "dev@example.com".to_string(),
+            kind: AccountKind::Subscription,
+            plan: None,
+            found_in: Vec::new(),
+            needs: Vec::new(),
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 8: one Claude
+    /// account logged in to two folders is one account with two places.
     #[test]
-    fn a_login_with_no_token_and_no_profile_reads_nothing() {
+    fn one_login_in_two_folders_is_one_account_with_two_places() {
         let host = host();
-        let key = missing_token(&host);
 
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = Anthropic::account(PROVIDER, &key, &claude_login())?;
-            Anthropic::numbers(PROVIDER, &claude_login(), &facts, &key, &[])
-        });
+        let found = found_in(&host, &[".claude-helper", ".claude-account"]);
 
-        assert_eq!(numbers, Ok(no_numbers()));
-        assert!(host.requests().is_empty());
-        assert!(host.started().is_empty());
-    }
-
-    /// Issue 29: the server failed, so the part asks Claude Code in the
-    /// profile the login was found in.
-    #[test]
-    fn a_failed_server_falls_back_on_the_usage_panel() {
-        let host =
-            host().with_terminal_folder("/home/dev/.cache/otty/agent-probe");
-        host.answer("GET", USAGE_URL, 500, b"{}");
-        usage_screens(&host);
-        let key = host.key(TOKEN);
-        let found = login_in_profile(&host);
-
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = Anthropic::account(PROVIDER, &key, &found)?;
-            Anthropic::numbers(PROVIDER, &found, &facts, &key, &[])
-        });
-
-        assert_eq!(numbers.map(|numbers| numbers.windows.len()), Ok(1));
-        assert_eq!(host.requests().len(), 1);
-    }
-
-    /// Issue 29: with no login token at its place, an admin key the user
-    /// gave under `admin` still reads the bill.
-    #[test]
-    fn an_admin_key_given_reads_the_bill_without_the_token() {
-        let host = host();
-        host.answer(
-            "GET",
-            REPORT_URL,
-            200,
-            br#"{"data": [], "has_more": false}"#,
+        assert_eq!(found.accounts.len(), 1);
+        let account = &found.accounts[0];
+        assert_eq!(account.id, "claude:00000000-0000-4000-8000-00000000000a");
+        assert_eq!(account.name, "dev@example.com · Example Org");
+        assert_eq!(
+            account.found_in,
+            [
+                login_folder(&host, ".claude-helper"),
+                login_folder(&host, ".claude-account")
+            ]
         );
-        let key = missing_token(&host);
-        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
-
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
-
-        assert!(bill.is_ok(), "{bill:?}");
-        assert_eq!(host.requests()[0].header("x-api-key"), Some(MADE_UP_ADMIN));
     }
 
-    /// With no login token at its place and no admin key given, the bill
-    /// asks for an admin key, as for any key that does not read bills,
-    /// and sends nothing: a key that is not there is not a failure.
+    /// Two accounts in two folders stay two; a key of the settings is an
+    /// account of its own.
     #[test]
-    fn a_bill_with_no_token_and_no_admin_key_asks_for_one() {
+    fn each_account_and_key_is_its_own_account() {
         let host = host();
-        let key = missing_token(&host);
 
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &login_in_profile(&host),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
+        let found = found_in(&host, &[".claude-mixed", ".claude-work"]);
 
-        let Err(ReadError::NeedsUser(need)) = bill else {
-            panic!("a need: {bill:?}");
-        };
-        assert_eq!(need.id, "bill-key");
-        assert!(host.requests().is_empty());
+        let names: Vec<&str> = found
+            .accounts
+            .iter()
+            .map(|account| account.name.as_str())
+            .collect();
+        assert_eq!(names.len(), 3);
+        assert_eq!(names[0], "dev@example.com · Example Org");
+        assert!(names[1].starts_with("key ••••"), "{}", names[1]);
+        assert_eq!(names[2], "own@example.com · Example Org");
     }
 
+    /// One key in two places is one account.
     #[test]
-    fn a_claude_login_reads_its_windows_with_the_plan_it_was_found_with() {
+    fn one_key_in_two_folders_is_one_account() {
+        let host = host();
+
+        let found = found_in(&host, &[".claude-console", ".claude-api"]);
+
+        assert_eq!(found.accounts.len(), 1);
+        assert_eq!(found.accounts[0].found_in.len(), 2);
+    }
+
+    /// Decision 9: a folder with no login gives neither an account nor a
+    /// need; that need is the agent part's. A DeepSeek key is no
+    /// Anthropic account.
+    #[test]
+    fn folders_with_no_anthropic_login_give_nothing() {
+        let host = host();
+
+        let found = found_in(&host, &[".claude-nothing", ".claude-deepseek"]);
+
+        assert_eq!(found.accounts, []);
+        assert_eq!(found.needs, []);
+    }
+
+    /// Decision 5: the part reads the login only in the folders of the
+    /// call; with none it finds nothing.
+    #[test]
+    fn a_call_with_no_folder_finds_nothing() {
+        let host = host();
+
+        let found = found_in(&host, &[]);
+
+        assert_eq!(found.accounts, []);
+    }
+
+    /// The token of the account's folder reads the limits, from the folder
+    /// that holds one.
+    #[test]
+    fn a_claude_login_reads_its_limits_with_the_token_of_its_folder() {
         let host = host();
         host.answer(
             "GET",
@@ -379,68 +409,120 @@ mod tests {
             br#"{"five_hour": {"utilization": 42.0, "resets_at": null},
                  "extra_usage": {"is_enabled": true, "used_credits": 830}}"#,
         );
-        let key = host.key(TOKEN);
+        let account = account_in(&host, &[".claude-renewed"]);
 
-        let (facts, numbers) = host
-            .as_provider(PROVIDER, || {
-                let facts =
-                    Anthropic::account(PROVIDER, &key, &claude_login())?;
-                let numbers = Anthropic::numbers(
-                    PROVIDER,
-                    &claude_login(),
-                    &facts,
-                    &key,
-                    &[],
-                )?;
-                Ok::<_, ReadError>((facts, numbers))
-            })
-            .expect("the numbers");
+        let numbers = numbers_of(&host, &account).expect("the numbers");
 
-        assert_eq!(facts.plan.as_deref(), Some("Max 20x"));
-        assert_eq!(facts.identity, claude_login().identity);
         assert_eq!(numbers.windows.len(), 1);
         assert_eq!(numbers.extra_usage.and_then(|extra| extra.used), Some(8.3));
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some("Bearer made-up-access-token-0003")
+        );
+        assert!(host.started().is_empty());
+    }
+
+    /// Issue 29, the owner's case: Claude Code keeps no token in the
+    /// folder's `.credentials.json`, yet works; the part reads the limits
+    /// from the `/usage` panel of `claude` pointed at that folder, and
+    /// nothing fails.
+    #[test]
+    fn a_login_with_no_token_reads_the_usage_panel_in_its_folder() {
+        let host = host().with_terminal_folder(PROBE_FOLDER);
+        usage_screens(&host);
+        let account = account_in(&host, &[".claude-account"]);
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
+        assert_eq!(numbers.windows.len(), 1);
+        assert_eq!(numbers.windows[0].percent_used, 29.0);
+        assert!(host.requests().is_empty(), "nothing is sent");
+        assert_eq!(host.started().len(), 1);
+        assert_eq!(
+            config_folder_of(&host),
+            Some(path(&host, ".claude-account"))
+        );
+    }
+
+    /// Issue 29: the server failed, so the part asks Claude Code in the
+    /// folder of the token. Here it is the default folder, which
+    /// `CLAUDE_CONFIG_DIR` names, so `claude` gets no variable.
+    #[test]
+    fn a_failed_server_falls_back_on_the_usage_panel_of_the_folder() {
+        let host = host();
+        let work = path(&host, ".claude-work");
+        let host = host
+            .with_var(CONFIG_VARIABLE, &work)
+            .with_terminal_folder(PROBE_FOLDER);
+        host.answer("GET", USAGE_URL, 500, b"{}");
+        usage_screens(&host);
+        let account = account_in(&host, &[".claude-work"]);
+
+        let numbers = numbers_of(&host, &account);
+
+        assert_eq!(numbers.map(|numbers| numbers.windows.len()), Ok(1));
         assert_eq!(host.requests().len(), 1);
+        assert_eq!(config_folder_of(&host), None);
+    }
+
+    /// Decision 9: a token Anthropic refuses, which the `/usage` panel
+    /// could not get past either, is the need that runs `claude` in the
+    /// folder the token was read in.
+    #[test]
+    fn a_refused_token_needs_claude_in_its_folder() {
+        let host = host();
+        host.answer("GET", USAGE_URL, 401, b"{}");
+        let account = account_in(&host, &[".claude-work"]);
+
+        let numbers = numbers_of(&host, &account);
+
+        let Err(ReadError::NeedsUser(need)) = numbers else {
+            panic!("a need: {numbers:?}");
+        };
+        assert_eq!(need.id, "login-expired");
+        let NeedAction::Run(command) = need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.program, "claude");
+        assert_eq!(
+            command.env,
+            [(CONFIG_VARIABLE.to_string(), path(&host, ".claude-work"))]
+        );
+    }
+
+    /// Issue 29: an account none of whose folders is given reads nothing,
+    /// and nothing is sent or started.
+    #[test]
+    fn an_account_found_in_no_folder_reads_nothing() {
+        let host = host();
+
+        let numbers = numbers_of(&host, &account_with_no_folder());
+
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty());
+        assert!(host.started().is_empty());
     }
 
     #[test]
     fn an_api_key_has_no_numbers_and_sends_nothing() {
         let host = host();
-        let key = host.key("sk-ant-api03-made-up-key");
-        let found = LoginFacts {
-            kind: LoginKind::ApiKey,
-            identity: Identity::default(),
-            plan: None,
-            found_in: Vec::new(),
-        };
+        let account = account_in(&host, &[".claude-api"]);
 
-        let numbers = host.as_provider(PROVIDER, || {
-            let facts = Anthropic::account(PROVIDER, &key, &found)?;
-            Anthropic::numbers(PROVIDER, &found, &facts, &key, &[])
-        });
+        let numbers = numbers_of(&host, &account);
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty());
     }
 
-    /// The bill reads only with an admin key: an API key of the account
-    /// is not one, and with no admin key given the part asks for one under
-    /// the slot `admin` and sends nothing.
+    /// The bill reads only with an admin key: a Console login is no admin
+    /// key, and with no admin key given the part asks for one under the
+    /// slot `admin` and sends nothing.
     #[test]
-    fn a_bill_with_no_bill_key_asks_for_one() {
+    fn a_bill_with_no_admin_key_asks_for_one() {
         let host = host();
-        let key = host.key("sk-ant-api03-made-up-key");
+        let account = account_in(&host, &[".claude-prepaid"]);
 
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &[]);
 
         let Err(ReadError::NeedsUser(need)) = bill else {
             panic!("a need: {bill:?}");
@@ -470,19 +552,10 @@ mod tests {
             200,
             br#"{"data": [], "has_more": false}"#,
         );
-        let key = host.key("sk-ant-api03-made-up-key");
-        let given = [GivenKey::new("admin", host.key(MADE_UP_ADMIN))];
+        let account = account_in(&host, &[".claude-prepaid"]);
+        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
 
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &given);
 
         assert!(bill.is_ok(), "{bill:?}");
         assert_eq!(host.requests()[0].header("x-api-key"), Some(MADE_UP_ADMIN));
@@ -490,7 +563,7 @@ mod tests {
 
     /// An account whose own key is an admin key reads its bill with it.
     #[test]
-    fn an_account_key_that_reads_bills_reads_its_own() {
+    fn an_admin_key_of_the_settings_reads_its_own_bill() {
         let host = host();
         host.answer(
             "GET",
@@ -498,80 +571,12 @@ mod tests {
             200,
             br#"{"data": [], "has_more": false}"#,
         );
-        let key = host.key(MADE_UP_ADMIN);
+        let account = account_in(&host, &[".claude-admin"]);
 
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                &key,
-                &[],
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &[]);
 
         assert!(bill.is_ok(), "{bill:?}");
-        assert_eq!(host.requests().len(), 1);
-    }
-
-    /// The need of a bill read with the account's own key `key` and the
-    /// keys of `given` that Anthropic refuses.
-    fn refused_bill_need(
-        host: &otty_plugin_sdk::test_host::TestHost,
-        key: &Key,
-        given: &[GivenKey],
-    ) -> otty_plugin_sdk::Need {
-        host.answer("GET", REPORT_URL, 401, b"{}");
-
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                key,
-                given,
-                &one_day(),
-            )
-        });
-
-        match bill {
-            Err(ReadError::NeedsUser(need)) => need,
-            other => panic!("a need: {other:?}"),
-        }
-    }
-
-    /// The slot the need asks for its key under.
-    fn asked_slot(need: otty_plugin_sdk::Need) -> Option<String> {
-        match need.action {
-            NeedAction::AskKey(ask) => ask.slot,
-            other => panic!("a key to ask for: {other:?}"),
-        }
-    }
-
-    /// Issue 26: an admin key an agent keeps is not OTTY's to replace: the
-    /// new one is asked for under `admin`, and the next bill reads with it.
-    #[test]
-    fn a_refused_own_admin_key_of_an_agent_is_asked_for_under_admin() {
-        let host = host();
-        let key = host.key(MADE_UP_ADMIN);
-
-        let need = refused_bill_need(&host, &key, &[]);
-
-        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
-    }
-
-    /// A refused admin key given under `admin` is asked for again under
-    /// it.
-    #[test]
-    fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
-        let host = host();
-        let key = host.given_key("sk-ant-api03-made-up-key");
-        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
-
-        let need = refused_bill_need(&host, &key, &given);
-
-        assert_eq!(asked_slot(need).as_deref(), Some(ADMIN_SLOT));
+        assert_eq!(host.requests()[0].header("x-api-key"), Some(OWN_ADMIN));
     }
 
     /// The admin key given under `admin` reads the bill before the
@@ -585,30 +590,44 @@ mod tests {
             200,
             br#"{"data": [], "has_more": false}"#,
         );
-        let key = host.key("sk-ant-admin01-made-up-refused");
+        let account = account_in(&host, &[".claude-admin"]);
         let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
 
-        let bill = host.as_provider(PROVIDER, || {
-            Anthropic::read_bill(
-                PROVIDER,
-                &claude_login(),
-                &organization(),
-                &key,
-                &given,
-                &one_day(),
-            )
-        });
+        let bill = bill_of(&host, &account, &given);
 
         assert!(bill.is_ok(), "{bill:?}");
         assert_eq!(host.requests()[0].header("x-api-key"), Some(MADE_UP_ADMIN));
     }
 
-    /// Spec Decision 7: a key handle goes only into a request to a host
-    /// the part declares.
+    /// Issue 26: an admin key an agent keeps is not OTTY's to replace: a
+    /// refused one is asked for again under `admin`, and so is a refused
+    /// key given there.
+    #[test]
+    fn a_refused_admin_key_is_asked_for_under_admin() {
+        let host = host();
+        host.answer("GET", REPORT_URL, 401, b"{}");
+        let account = account_in(&host, &[".claude-admin"]);
+        let given = [GivenKey::new("admin", host.given_key(MADE_UP_ADMIN))];
+
+        for given in [&[][..], &given[..]] {
+            let bill = bill_of(&host, &account, given);
+
+            let Err(ReadError::NeedsUser(need)) = bill else {
+                panic!("a need: {bill:?}");
+            };
+            let NeedAction::AskKey(ask) = need.action else {
+                panic!("a key to ask for: {need:?}");
+            };
+            assert_eq!(ask.slot.as_deref(), Some(ADMIN_SLOT));
+        }
+    }
+
+    /// Spec 2026-11-19-agent-plugins, Decision 7: a key handle goes only
+    /// into a request to a host the part declares.
     #[test]
     fn the_part_may_call_no_other_host() {
         let host = host();
-        let key = host.key(TOKEN);
+        let key = host.key("made-up-access-token");
 
         let sent = host.as_provider(PROVIDER, || {
             let request = Request::get("https://api.deepseek.com/user/balance")
@@ -620,16 +639,15 @@ mod tests {
         assert!(host.requests().is_empty());
     }
 
-    /// Spec Decision 7, "Applied by context": while the provider part
-    /// runs, the files and the key places of the plugin's `claude-code`
-    /// part are refused.
+    /// Decision 5: outside a call given the folder, the files and the key
+    /// places of the plugin's `claude-code` part are refused.
     #[test]
-    fn the_part_may_not_read_the_files_of_the_claude_code_part() {
+    fn the_part_may_not_read_a_login_outside_the_folders_of_its_call() {
         let host = host();
-        let credentials = path(&host, ".claude/.credentials.json");
+        let credentials = path(&host, ".claude-work/.credentials.json");
 
         let (read, opened) = host.as_provider(PROVIDER, || {
-            let read = files::read(&credentials, 4096);
+            let read = files::json_with_keys(&credentials).map(|_| ());
             let opened = keys::open(&KeyPlace::JsonField(JsonField {
                 file: credentials.clone(),
                 pointer: "/claudeAiOauth/accessToken".to_string(),

@@ -29,11 +29,11 @@
 use otty_plugin_sdk::agents::{
     Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
 };
-use otty_plugin_sdk::{KeyPlace, files};
+use otty_plugin_sdk::{JsonField, KeyPlace, files};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::accounts::place_of_account;
+use crate::auth_file::{ACCESS_TOKEN_FIELD, AuthFile};
 use crate::timestamp::millis_of;
 
 /// What marks the lines the tokens are read from: the answers, the turns
@@ -333,7 +333,7 @@ pub(crate) fn read_profile_answers(
 
     let login = session
         .creator_account_id()
-        .and_then(|account_id| place_of_account(folder, account_id));
+        .and_then(|account_id| login_of_account(folder, account_id));
 
     Ok(session.paid_by(login).into_answers())
 }
@@ -357,6 +357,23 @@ fn read_session(path: &str) -> Result<SessionTokens, ReadError> {
     }
 
     Ok(session)
+}
+
+/// The place of the ChatGPT login of the profile in `folder` when it is of
+/// the account `account_id`, the account a session file names as its
+/// creator.
+fn login_of_account(folder: &str, account_id: &str) -> Option<KeyPlace> {
+    let auth = AuthFile::read(folder)?;
+    let is_chatgpt_login = !auth.is_api_key() && auth.has_access_token();
+    let is_of_account =
+        auth.chatgpt_account_id().as_deref() == Some(account_id);
+
+    (is_chatgpt_login && is_of_account).then(|| {
+        KeyPlace::JsonField(JsonField {
+            file: auth.path().to_string(),
+            pointer: ACCESS_TOKEN_FIELD.to_string(),
+        })
+    })
 }
 
 /// Whether `line` holds `marker`.

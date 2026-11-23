@@ -13,7 +13,6 @@ use crate::agent::AgentId;
 use crate::given_key::KeyRef;
 use crate::part_need::PartNeed;
 use crate::record_format::FormatChange;
-use crate::refused_login::RefusedLogin;
 use crate::session::SessionId;
 
 /// Why a source gave no answer. Any of these moves on to the next source
@@ -25,14 +24,11 @@ pub enum SourceError {
     #[error("not available: {0}")]
     NotAvailable(Unavailable),
     /// The plugin part can not read until the user does what its need
-    /// asks, such as log in again or give a key the provider refused
-    /// (spec 2026-11-19-agent-plugins, issue 20).
+    /// asks, such as log in again when the provider refused the login or
+    /// it expired, or give a key (spec 2026-11-19-agent-plugins, issue
+    /// 20).
     #[error("{}", .0.title())]
     NeedsUser(Box<PartNeed>),
-    /// A provider part refused the login it read with, or saw it expired,
-    /// and no agent part said what the user must do about it (issue 20).
-    #[error("{} refused the login", .0.provider().name())]
-    LoginRefused(Box<RefusedLogin>),
     /// The server could not be reached. The text is the network library's
     /// own reason.
     #[error("network error: {0}")]

@@ -90,11 +90,7 @@ pub(crate) fn can_access_dialog(
 
     Some(CanAccessDialogViewModel {
         title: i18n::filled(Key::TplPluginsCanAccessTitle, &[("part", &name)]),
-        groups: granted_groups(
-            installed.granted(),
-            plugin.manifest.as_ref(),
-            &name,
-        ),
+        groups: granted_groups(installed.granted(), plugin.manifest.as_ref()),
     })
 }
 
@@ -115,16 +111,13 @@ pub(crate) fn install_dialog(
     let parts = manifest
         .parts()
         .iter()
-        .map(|part| {
-            let name = part_name(Some(manifest), part);
-            PartPermissionsViewModel {
-                kind: kind_text(part),
-                description: part_description(Some(manifest), part),
-                mark: None,
-                is_removed: false,
-                groups: grouped(part_places(manifest, part), &name),
-                name,
-            }
+        .map(|part| PartPermissionsViewModel {
+            name: part_name(Some(manifest), part),
+            kind: kind_text(part),
+            description: part_description(Some(manifest), part),
+            mark: None,
+            is_removed: false,
+            groups: grouped(part_places(manifest, part)),
         })
         .collect();
 
@@ -187,16 +180,13 @@ fn part_change(
     old: Option<&Manifest>,
 ) -> PartPermissionsViewModel {
     match change {
-        PartChange::New { part, .. } => {
-            let name = part_name(Some(new), part);
-            PartPermissionsViewModel {
-                kind: kind_text(part),
-                description: part_description(Some(new), part),
-                mark: Some(i18n::t(Key::PluginsNewPart)),
-                is_removed: false,
-                groups: grouped(part_places(new, part), &name),
-                name,
-            }
+        PartChange::New { part, .. } => PartPermissionsViewModel {
+            name: part_name(Some(new), part),
+            kind: kind_text(part),
+            description: part_description(Some(new), part),
+            mark: Some(i18n::t(Key::PluginsNewPart)),
+            is_removed: false,
+            groups: grouped(part_places(new, part)),
         },
         PartChange::Removed { part } => PartPermissionsViewModel {
             name: part_name(old, part),
@@ -229,14 +219,13 @@ fn part_change(
                 granted_place(line, old).marked(PlaceMark::NoLonger)
             }));
 
-            let name = part_name(Some(new), part);
             PartPermissionsViewModel {
+                name: part_name(Some(new), part),
                 kind: kind_text(part),
                 description: part_description(Some(new), part),
                 mark: None,
                 is_removed: false,
-                groups: grouped(places, &name),
-                name,
+                groups: grouped(places),
             }
         },
     }
@@ -260,8 +249,6 @@ mod tests {
         PlaceViewModel {
             group: PermissionGroup::Sites,
             text: String::from(host),
-            is_words: false,
-            lead: None,
             note: None,
             profiles_of: None,
             mark,
@@ -293,7 +280,7 @@ mod tests {
         );
         assert_eq!(
             dialog.groups,
-            granted_groups(&granted, plugin.manifest.as_ref(), "Example Cloud")
+            granted_groups(&granted, plugin.manifest.as_ref())
         );
         assert_eq!(
             dialog.groups[0].label,
@@ -302,10 +289,8 @@ mod tests {
                 &[("agent", "Example Agent")]
             )
         );
-        assert_eq!(
-            dialog.groups[2].label,
-            i18n::t(Key::PluginsGroupFoundLogins)
-        );
+        assert_eq!(dialog.groups[1].label, i18n::t(Key::PluginsGroupSites));
+        assert_eq!(dialog.groups.len(), 2);
     }
 
     /// A part the plugin no longer has opens no dialog.
@@ -360,11 +345,11 @@ mod tests {
         );
         assert_eq!(
             dialog.parts[0].groups,
-            grouped(part_places(&manifest, &agent()), "Example Agent")
+            grouped(part_places(&manifest, &agent()))
         );
         assert_eq!(
             dialog.parts[1].groups,
-            grouped(part_places(&manifest, &provider()), "Example Cloud")
+            grouped(part_places(&manifest, &provider()))
         );
         assert_eq!(
             dialog.parts[1].groups[1].label,
@@ -405,9 +390,12 @@ mod tests {
                 site("api.example.com", Some(PlaceMark::NoLonger)),
             ]
         );
-        for unchanged in [&part.groups[0], &part.groups[2]] {
-            assert!(unchanged.places.iter().all(|place| place.mark.is_none()));
-        }
+        assert!(
+            part.groups[0]
+                .places
+                .iter()
+                .all(|place| place.mark.is_none())
+        );
     }
 
     /// A new part is marked new with all its permissions.

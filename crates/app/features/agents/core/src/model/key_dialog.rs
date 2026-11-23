@@ -6,7 +6,7 @@ use otty_app_i18n::{self as i18n, Key};
 
 use super::super::key_dialog::can_submit;
 use super::super::key_place_field::{KeyPlaceChoice, KeyPlaceProblem};
-use super::super::state::{AgentsState, provider_name};
+use super::super::state::{AgentsState, account_provider_name};
 use super::needs::open_page_label;
 
 /// The open dialog of a key a part asks for.
@@ -45,7 +45,7 @@ impl<'a> KeyDialogViewModel<'a> {
 
         let ask = dialog.ask();
         let provider =
-            provider_name(state.registry(), dialog.account().provider());
+            account_provider_name(state.registry(), dialog.account());
         let key_error = match dialog.key().key_place(state.env().home()) {
             Err(KeyPlaceProblem::KeyPathNotFull) => {
                 Some(i18n::t(Key::AgentsErrorKeyPathNotFull))

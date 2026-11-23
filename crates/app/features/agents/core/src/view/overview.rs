@@ -265,10 +265,7 @@ mod tests {
     use std::path::PathBuf;
 
     use iced_test::simulator;
-    use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-        ProviderRef,
-    };
+    use otty_agents::AgentId;
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
@@ -284,13 +281,7 @@ mod tests {
     }
 
     fn chatgpt() -> Account {
-        Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::AccountId(String::from("made-up-account")),
-            AccountLogin::Email(String::from("you@example.com")),
-            AccountKind::Limits,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
-        )
+        crate::testing::chatgpt_login()
     }
 
     fn log_in_need() -> NeedViewModel {

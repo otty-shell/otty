@@ -1,11 +1,13 @@
 //! The provider part `example-cloud`: a made-up provider whose API tells
-//! whose account a key is and how much money is left on it. It reads the
-//! key of a login itself in the example agent's profile folders OTTY
-//! gives it, as its manifest's `logins` declare.
+//! how much money is left on a key. It finds its accounts itself, in the
+//! example agent's profile folders OTTY gives it, as its manifest's
+//! `logins` declare: the key of `auth.json` in each folder is one account,
+//! known by the key's fingerprint, and the same key in two folders is one
+//! account with two places.
 
 use otty_plugin_sdk::agents::{
-    AccountFacts, AccountNumbers, Bill, DayCost, DayRange, Identity,
-    LoginFacts, Money, Provider, ReadError,
+    Account, AccountKind, AccountNumbers, Bill, DayCost, DayRange, Found,
+    LoginFolder, Money, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
 use otty_plugin_sdk::{GivenKey, HostError, Key, Need, files, given_key};
@@ -16,9 +18,6 @@ use crate::{Example, needs};
 
 /// The provider's API.
 const API: &str = "https://api.example.com/v1";
-
-/// The id of this plugin, as OTTY names it in a found profile.
-const PLUGIN: &str = "example";
 
 /// The agent part whose profiles hold the logins the part reads.
 const AGENT: &str = "example-agent";
@@ -32,7 +31,8 @@ const KEYS_PAGE: &str = "https://example.com/keys";
 /// The slot the admin key is given under: the part's own name for it.
 const ADMIN_SLOT: &str = "admin";
 
-/// What an admin key starts with.
+/// What an admin key starts with: the key of an organization, whose bill
+/// it reads.
 const ADMIN_PREFIX: &str = "ex-admin-";
 
 /// The page where the user makes an admin key.
@@ -43,6 +43,7 @@ const BILL_KEYS_PAGE: &str = "https://example.com/keys/admin";
 #[derive(Debug, Deserialize)]
 struct AuthFile {
     api_key: Option<KeyMarker>,
+    email: Option<String>,
 }
 
 /// `{"$key": n}`: where the host put a key.
@@ -52,12 +53,10 @@ struct KeyMarker {
     index: usize,
 }
 
-/// The answer of `/me`.
-#[derive(Debug, Deserialize)]
-struct Me {
-    account_id: String,
+/// The login of one folder: its key, and the email it names.
+struct FolderLogin {
+    key: Key,
     email: Option<String>,
-    plan: Option<String>,
 }
 
 /// The answer of `/balance`.
@@ -81,53 +80,68 @@ struct BillDay {
 }
 
 impl Provider for Example {
-    /// Whose account the key is, asked of the provider. With no key at its
-    /// place now, the account is what the agent part found of it.
-    fn account(
-        _provider: &str,
-        key: &Key,
-        found: &LoginFacts,
-    ) -> Result<AccountFacts, ReadError> {
-        if !is_there(key)? {
-            return Ok(AccountFacts {
-                identity: found.identity.clone(),
-                plan: found.plan.clone(),
+    /// One account per key of `auth.json` in the folders, known by the
+    /// key's fingerprint, which stays the same while the key does. It is
+    /// named by the email of the file, else by the end of the
+    /// fingerprint. An admin key is an organization. A folder with no
+    /// login gives nothing: the agent part says it is not logged in.
+    fn accounts(_provider: &str, folders: &[LoginFolder]) -> Found {
+        let mut accounts: Vec<Account> = Vec::new();
+
+        for folder in folders {
+            let LoginFolder::Profile((agent, path)) = folder;
+            if agent != AGENT {
+                continue;
+            }
+            let Some(login) = folder_login(path) else {
+                continue;
+            };
+            let Ok(fingerprint) = login.key.fingerprint() else {
+                continue;
+            };
+
+            let id = format!("key:{fingerprint}");
+            if let Some(known) =
+                accounts.iter_mut().find(|known| known.id == id)
+            {
+                known.found_in.push(folder.clone());
+                continue;
+            }
+            let is_admin = login.key.has_prefix(ADMIN_PREFIX).unwrap_or(false);
+            accounts.push(Account {
+                id,
+                name: login.email.unwrap_or_else(|| short_key(&fingerprint)),
+                kind: match is_admin {
+                    true => AccountKind::Organization,
+                    false => AccountKind::Key,
+                },
+                plan: None,
+                found_in: vec![folder.clone()],
+                needs: Vec::new(),
             });
         }
 
-        let me: Me = get_json(&format!("{API}/me"), key, refused_key_need)?;
-
-        Ok(AccountFacts {
-            identity: Identity {
-                account_id: Some(me.account_id),
-                email: me.email,
-                ..Identity::default()
-            },
-            plan: me.plan,
-        })
+        Found {
+            accounts,
+            needs: Vec::new(),
+        }
     }
 
-    /// The money left on the key of the login: the one the part reads
-    /// itself in a profile folder of the example agent, else the key OTTY
-    /// lends. A key that is not at its place now, such as a variable the
-    /// user unset, is a normal case: the part has no other way to read the
-    /// account, so it answers nothing, and sends nothing.
+    /// The money left on the key of the account, read with the key of
+    /// the first of its folders that still holds one. With no key there
+    /// now, such as a key taken out of the file, the part has no other way
+    /// to read the account, so it answers nothing and sends nothing.
     fn numbers(
         _provider: &str,
-        found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
-        let own = login_key(found)?;
-        let key = own.as_ref().unwrap_or(key);
-
-        if !is_there(key)? {
+        let Some(login) = account_login(account) else {
             return Ok(no_numbers());
-        }
+        };
 
         let url = format!("{API}/balance");
-        let balance: Balance = get_json(&url, key, refused_key_need)?;
+        let balance: Balance = get_json(&url, &login.key, refused_key_need)?;
 
         Ok(AccountNumbers {
             left: Some(Money {
@@ -145,18 +159,20 @@ impl Provider for Example {
     /// given one under its slot.
     fn read_bill(
         _provider: &str,
-        _found: &LoginFacts,
-        _account: &AccountFacts,
-        key: &Key,
+        account: &Account,
         given: &[GivenKey],
         days: &DayRange,
     ) -> Result<Bill, ReadError> {
         let url = format!("{API}/bill?from={}&to={}", days.first, days.last);
-        let is_bill_key = is_bill_key(key)?;
+        let own = account_login(account).map(|login| login.key);
+        let is_bill_key = match &own {
+            Some(key) => is_bill_key(key)?,
+            None => false,
+        };
 
-        let answer: BillAnswer = match is_bill_key {
-            true => get_json(&url, key, refused_key_need)?,
-            false => {
+        let answer: BillAnswer = match (own, is_bill_key) {
+            (Some(key), true) => get_json(&url, &key, refused_key_need)?,
+            _ => {
                 let bill_key = given_key(given, ADMIN_SLOT)
                     .ok_or_else(|| ReadError::NeedsUser(admin_key_need()))?;
 
@@ -179,38 +195,37 @@ impl Provider for Example {
     }
 }
 
-/// The key of `auth.json` in the first profile folder of the example agent
-/// where the login was found that holds one, as a handle. Only a profile
-/// of this plugin is a login folder of the call; a folder with no
-/// `auth.json` is passed over.
-fn login_key(found: &LoginFacts) -> Result<Option<Key>, ReadError> {
-    let folders = found
-        .found_in
-        .iter()
-        .filter(|profile| profile.plugin == PLUGIN && profile.agent == AGENT)
-        .map(|profile| profile.folder.as_str());
+/// The login of the first folder of `account` that holds one.
+fn account_login(account: &Account) -> Option<FolderLogin> {
+    account.found_in.iter().find_map(|folder| {
+        let LoginFolder::Profile((agent, path)) = folder;
 
-    for folder in folders {
-        let document =
-            match files::json_with_keys(&format!("{folder}/auth.json")) {
-                Ok(document) => document,
-                Err(HostError::NotFound(_)) => continue,
-                Err(error) => return Err(ReadError::Host(error)),
-            };
-        let (json, keys) = document.into_parts();
-        let Ok(auth) = serde_json::from_str::<AuthFile>(&json) else {
-            continue;
-        };
+        (agent == AGENT).then(|| folder_login(path)).flatten()
+    })
+}
 
-        let key = auth
-            .api_key
-            .and_then(|marker| keys.into_iter().nth(marker.index));
-        if key.is_some() {
-            return Ok(key);
-        }
-    }
+/// The key of `auth.json` in the profile folder `folder`, as a handle,
+/// with the email the file names; `None` when the file is not there, not
+/// in the shape the part reads, or holds no key.
+fn folder_login(folder: &str) -> Option<FolderLogin> {
+    let document =
+        files::json_with_keys(&format!("{folder}/auth.json")).ok()?;
+    let (json, keys) = document.into_parts();
+    let auth = serde_json::from_str::<AuthFile>(&json).ok()?;
 
-    Ok(None)
+    let key = keys.into_iter().nth(auth.api_key?.index)?;
+    Some(FolderLogin {
+        key,
+        email: auth.email,
+    })
+}
+
+/// A key shown by the end of its fingerprint, such as `key ••••a1f3`:
+/// the key itself is never read.
+fn short_key(fingerprint: &str) -> String {
+    let start = fingerprint.len().saturating_sub(4);
+
+    format!("key ••••{}", &fingerprint[start..])
 }
 
 /// Whether `key` reads bills: an admin key. A key that is not at its
@@ -218,16 +233,6 @@ fn login_key(found: &LoginFacts) -> Result<Option<Key>, ReadError> {
 fn is_bill_key(key: &Key) -> Result<bool, ReadError> {
     match key.has_prefix(ADMIN_PREFIX) {
         Ok(is_bill_key) => Ok(is_bill_key),
-        Err(HostError::NotFound(_)) => Ok(false),
-        Err(error) => Err(ReadError::Host(error)),
-    }
-}
-
-/// Whether the key of `key` is at its place now. A key that is not is a
-/// normal case, such as a variable the user unset, not a failure.
-fn is_there(key: &Key) -> Result<bool, ReadError> {
-    match key.fingerprint() {
-        Ok(_) => Ok(true),
         Err(HostError::NotFound(_)) => Ok(false),
         Err(error) => Err(ReadError::Host(error)),
     }
@@ -286,63 +291,140 @@ fn get_json<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::{FoundProfile, LoginKind};
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{Command, GivenKey, HostError, NeedAction, files};
+    use otty_plugin_sdk::{GivenKey, HostError, NeedAction, files};
 
     use super::*;
 
     const PROVIDER: &str = "example-cloud";
-    const KEY: &str = "ex-made-up-key-0001";
 
     fn host() -> TestHost {
         TestHost::new(env!("CARGO_MANIFEST_DIR"))
     }
 
-    fn account() -> AccountFacts {
-        AccountFacts {
-            identity: Identity::default(),
-            plan: None,
-        }
+    /// The profile folder `folder` of the home folder, of the agent part
+    /// `agent`, as OTTY gives it.
+    fn profile(host: &TestHost, agent: &str, folder: &str) -> LoginFolder {
+        let path = host.home().join(folder).display().to_string();
+
+        LoginFolder::Profile((agent.to_string(), path))
     }
 
-    /// What OTTY found of an API key of an agent, found in no profile.
-    fn found() -> LoginFacts {
-        LoginFacts {
-            kind: LoginKind::ApiKey,
-            identity: Identity::default(),
+    /// What the part finds in `folders`, in a call given them.
+    fn accounts_in(host: &TestHost, folders: &[LoginFolder]) -> Found {
+        host.as_provider_in(PROVIDER, folders, || {
+            Example::accounts(PROVIDER, folders)
+        })
+    }
+
+    /// The account the part finds in the profile folder `folder` of the
+    /// example agent.
+    fn account_in(host: &TestHost, folder: &str) -> Account {
+        let folders = [profile(host, AGENT, folder)];
+
+        accounts_in(host, &folders)
+            .accounts
+            .pop()
+            .expect("an account")
+    }
+
+    /// An account found in no folder.
+    fn account_with_no_folder() -> Account {
+        Account {
+            id: "key:made-up".to_string(),
+            name: "key ••••made".to_string(),
+            kind: AccountKind::Key,
             plan: None,
             found_in: Vec::new(),
+            needs: Vec::new(),
         }
     }
 
-    /// What OTTY found of a login in the profile in `folder` of the home
-    /// folder, of the example agent of the plugin `plugin`.
-    fn found_in_profile(
+    /// The numbers of `account`, read in a call given its folders.
+    fn numbers_of(
         host: &TestHost,
-        plugin: &str,
-        folder: &str,
-    ) -> LoginFacts {
-        LoginFacts {
-            found_in: vec![FoundProfile {
-                plugin: plugin.to_string(),
-                agent: "example-agent".to_string(),
-                folder: host.home().join(folder).display().to_string(),
-                launch: Command {
-                    program: "example-agent".to_string(),
-                    args: Vec::new(),
-                    env: Vec::new(),
-                },
-            }],
-            ..found()
-        }
+        account: &Account,
+    ) -> Result<AccountNumbers, ReadError> {
+        host.as_provider_in(PROVIDER, &account.found_in, || {
+            Example::numbers(PROVIDER, account, &[])
+        })
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 8: the key
+    /// of a profile folder is a key account, named by the email of its
+    /// file and known by a stable id.
+    #[test]
+    fn the_key_of_a_folder_is_an_account_named_by_its_email() {
+        let host = host();
+
+        let account = account_in(&host, ".example-agent");
+
+        assert_eq!(account.name, "dev@example.com");
+        assert_eq!(account.kind, AccountKind::Key);
+        assert!(account.id.starts_with("key:"), "{}", account.id);
+        assert_eq!(account.found_in, [profile(&host, AGENT, ".example-agent")]);
+        assert_eq!(account, account_in(&host, ".example-agent"));
+    }
+
+    /// Two folders with two keys are two accounts; a folder with no key
+    /// gives none, and no need: that need is the agent part's.
+    #[test]
+    fn each_key_is_its_own_account() {
+        let host = host();
+        let folders = [
+            profile(&host, AGENT, ".example-agent"),
+            profile(&host, AGENT, ".example-agent-work"),
+            profile(&host, AGENT, ".example-agent-nobody"),
+        ];
+
+        let found = accounts_in(&host, &folders);
+
+        let names: Vec<&str> = found
+            .accounts
+            .iter()
+            .map(|account| account.name.as_str())
+            .collect();
+        assert_eq!(names, ["dev@example.com", "dev@work.example.com"]);
+        assert_ne!(found.accounts[0].id, found.accounts[1].id);
+        assert!(found.needs.is_empty());
+    }
+
+    /// One key in two folders is one account with two places.
+    #[test]
+    fn one_key_in_two_folders_is_one_account() {
+        let host = host();
+        let folders = [
+            profile(&host, AGENT, ".example-agent"),
+            profile(&host, AGENT, ".example-agent"),
+        ];
+
+        let found = accounts_in(&host, &folders);
+
+        assert_eq!(found.accounts.len(), 1);
+        assert_eq!(found.accounts[0].found_in.len(), 2);
+    }
+
+    /// A folder of another agent part is not read.
+    #[test]
+    fn a_folder_of_another_agent_part_gives_no_account() {
+        let host = host();
+        let folders = [profile(&host, "other-agent", ".example-agent")];
+
+        let found = accounts_in(&host, &folders);
+
+        assert!(found.accounts.is_empty());
+    }
+
+    #[test]
+    fn a_key_is_named_by_its_fingerprint_when_no_email_names_it() {
+        assert_eq!(short_key("27c8d30e"), "key ••••d30e");
     }
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the part
-    /// reads the key of `auth.json` in a profile folder OTTY gives it
-    /// itself, as a handle, and reads the balance with it.
+    /// reads the key of `auth.json` in the account's folder itself, as a
+    /// handle, and reads the balance with it.
     #[test]
-    fn numbers_read_with_the_key_of_the_login_folder() {
+    fn numbers_read_with_the_key_of_the_accounts_folder() {
         let host = host();
         host.answer(
             "GET",
@@ -350,16 +432,9 @@ mod tests {
             200,
             br#"{"balance": 12.5, "currency": "USD"}"#,
         );
-        let unset = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
-            "EXAMPLE_CLOUD_KEY".to_string(),
-        ));
-        let found = found_in_profile(&host, "example", ".example-agent-work");
+        let account = account_in(&host, ".example-agent-work");
 
-        let numbers = host
-            .as_provider_in(PROVIDER, &found, || {
-                Example::numbers(PROVIDER, &found, &account(), &unset, &[])
-            })
-            .expect("the numbers");
+        let numbers = numbers_of(&host, &account).expect("the numbers");
 
         assert_eq!(numbers.left.map(|left| left.amount), Some(12.5));
         assert_eq!(
@@ -368,92 +443,16 @@ mod tests {
         );
     }
 
-    /// A profile of another plugin is no login folder of the call: the
-    /// part reads no key there and sends nothing.
-    #[test]
-    fn a_profile_of_another_plugin_gives_no_key() {
-        let host = host();
-        let unset = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
-            "EXAMPLE_CLOUD_KEY".to_string(),
-        ));
-        let found = found_in_profile(&host, "another", ".example-agent-work");
-
-        let numbers = host.as_provider_in(PROVIDER, &found, || {
-            Example::numbers(PROVIDER, &found, &account(), &unset, &[])
-        });
-
-        assert_eq!(numbers, Ok(no_numbers()));
-        assert!(host.requests().is_empty(), "nothing is sent");
-    }
-
-    /// Issue 29: a key that is not at its place now is no failure: the
+    /// Issue 29: an account whose key is not there now is no failure: the
     /// part answers nothing and sends nothing.
     #[test]
-    fn a_key_that_is_not_there_reads_nothing() {
+    fn an_account_with_no_key_there_reads_nothing() {
         let host = host();
-        let key = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
-            "EXAMPLE_CLOUD_KEY".to_string(),
-        ));
 
-        let numbers = host.as_provider(PROVIDER, || {
-            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
-        });
+        let numbers = numbers_of(&host, &account_with_no_folder());
 
         assert_eq!(numbers, Ok(no_numbers()));
         assert!(host.requests().is_empty(), "nothing is sent");
-    }
-
-    #[test]
-    fn numbers_read_the_balance_with_the_key_in_the_header() {
-        let host = host();
-        host.answer(
-            "GET",
-            "https://api.example.com/v1/balance",
-            200,
-            br#"{"balance": 12.5, "currency": "USD"}"#,
-        );
-        let key = host.key(KEY);
-
-        let numbers = host
-            .as_provider(PROVIDER, || {
-                Example::numbers(PROVIDER, &found(), &account(), &key, &[])
-            })
-            .expect("the numbers");
-
-        assert_eq!(
-            numbers.left,
-            Some(Money {
-                amount: 12.5,
-                currency: "USD".to_string(),
-            })
-        );
-        let requests = host.requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(
-            requests[0].header("authorization"),
-            Some("Bearer ex-made-up-key-0001")
-        );
-    }
-
-    #[test]
-    fn the_account_of_a_key_is_its_id_and_email() {
-        let host = host();
-        host.answer(
-            "GET",
-            "https://api.example.com/v1/me",
-            200,
-            br#"{"account_id": "acct_1", "email": "dev@example.com", "plan": "Pay as you go"}"#,
-        );
-        let key = host.key(KEY);
-        let found = found();
-
-        let facts = host
-            .as_provider(PROVIDER, || Example::account(PROVIDER, &key, &found))
-            .expect("the account");
-
-        assert_eq!(facts.identity.account_id.as_deref(), Some("acct_1"));
-        assert_eq!(facts.identity.email.as_deref(), Some("dev@example.com"));
-        assert_eq!(facts.plan.as_deref(), Some("Pay as you go"));
     }
 
     fn days() -> DayRange {
@@ -463,50 +462,26 @@ mod tests {
         }
     }
 
-    /// With the account's key not at its place and no admin key given,
-    /// the part asks for an admin key and sends nothing: a key that is
-    /// not there is not a failure.
-    #[test]
-    fn a_bill_with_no_key_there_and_no_admin_key_asks_for_one() {
-        let host = host();
-        let key = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
-            "EXAMPLE_CLOUD_KEY".to_string(),
-        ));
-
-        let bill = host.as_provider(PROVIDER, || {
-            Example::read_bill(
-                PROVIDER,
-                &found(),
-                &account(),
-                &key,
-                &[],
-                &days(),
-            )
-        });
-
-        assert!(
-            matches!(bill, Err(ReadError::NeedsUser(_))),
-            "a need: {bill:?}"
-        );
-        assert!(host.requests().is_empty(), "nothing is sent");
+    /// The bill of `account` with the keys of `given`, read in a call
+    /// given its folders.
+    fn bill_of(
+        host: &TestHost,
+        account: &Account,
+        given: &[GivenKey],
+    ) -> Result<Bill, ReadError> {
+        host.as_provider_in(PROVIDER, &account.found_in, || {
+            Example::read_bill(PROVIDER, account, given, &days())
+        })
     }
 
-    /// With no admin key the part asks for one, under its slot.
+    /// With no admin key the part asks for one, under its slot, and sends
+    /// nothing.
     #[test]
     fn a_bill_with_no_key_for_the_admin_slot_asks_for_one() {
         let host = host();
-        let key = host.key(KEY);
+        let account = account_in(&host, ".example-agent");
 
-        let bill = host.as_provider(PROVIDER, || {
-            Example::read_bill(
-                PROVIDER,
-                &found(),
-                &account(),
-                &key,
-                &[],
-                &days(),
-            )
-        });
+        let bill = bill_of(&host, &account, &[]);
 
         let Err(ReadError::NeedsUser(need)) = bill else {
             panic!("a need: {bill:?}");
@@ -531,21 +506,10 @@ mod tests {
             200,
             br#"{"days": [{"day": "2026-11-02", "usd": 3.5}]}"#,
         );
-        let key = host.key(KEY);
+        let account = account_in(&host, ".example-agent");
         let given = [GivenKey::new("admin", host.key("ex-admin-made-up-01"))];
 
-        let bill = host
-            .as_provider(PROVIDER, || {
-                Example::read_bill(
-                    PROVIDER,
-                    &found(),
-                    &account(),
-                    &key,
-                    &given,
-                    &days(),
-                )
-            })
-            .expect("the bill");
+        let bill = bill_of(&host, &account, &given).expect("the bill");
 
         assert_eq!(bill.days.len(), 1);
         assert_eq!(bill.days[0].cost.amount, 3.5);
@@ -555,62 +519,28 @@ mod tests {
         );
     }
 
-    /// The need of a refused bill read with the account's own admin key
-    /// `own` and the keys of `given`.
-    fn refused_bill_need(
-        host: &TestHost,
-        own: &Key,
-        given: &[GivenKey],
-    ) -> otty_plugin_sdk::Need {
+    /// A refused admin key given under the slot is asked for again under
+    /// that slot.
+    #[test]
+    fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
+        let host = host();
         host.answer(
             "GET",
             "https://api.example.com/v1/bill?from=2026-11-01&to=2026-11-02",
             401,
             b"{}",
         );
-
-        let bill = host.as_provider(PROVIDER, || {
-            Example::read_bill(
-                PROVIDER,
-                &found(),
-                &account(),
-                own,
-                given,
-                &days(),
-            )
-        });
-
-        match bill {
-            Err(ReadError::NeedsUser(need)) => need,
-            other => panic!("a need: {other:?}"),
-        }
-    }
-
-    /// The account's own admin key reads the bill; refused, it is
-    /// replaced where the agent keeps it: the button opens the keys page.
-    #[test]
-    fn a_refused_own_admin_key_is_replaced_where_the_agent_keeps_it() {
-        let host = host();
-        let found = host.key("ex-admin-made-up-02");
-
-        let need = refused_bill_need(&host, &found, &[]);
-
-        assert_eq!(need.action, NeedAction::OpenPage(KEYS_PAGE.to_string()));
-    }
-
-    /// A refused admin key given under the slot is asked for again under
-    /// that slot.
-    #[test]
-    fn a_refused_admin_key_of_the_slot_is_asked_for_again_under_it() {
-        let host = host();
-        let key = host.key(KEY);
+        let account = account_in(&host, ".example-agent");
         let given = [GivenKey::new(
             "admin",
             host.given_key("ex-admin-made-up-01"),
         )];
 
-        let need = refused_bill_need(&host, &key, &given);
+        let bill = bill_of(&host, &account, &given);
 
+        let Err(ReadError::NeedsUser(need)) = bill else {
+            panic!("a need: {bill:?}");
+        };
         let NeedAction::AskKey(ask) = need.action else {
             panic!("a field for the key: {need:?}");
         };
@@ -623,11 +553,9 @@ mod tests {
     fn a_refused_key_of_an_agent_asks_for_a_new_one() {
         let host = host();
         host.answer("GET", "https://api.example.com/v1/balance", 401, b"{}");
-        let key = host.key(KEY);
+        let account = account_in(&host, ".example-agent");
 
-        let numbers = host.as_provider(PROVIDER, || {
-            Example::numbers(PROVIDER, &found(), &account(), &key, &[])
-        });
+        let numbers = numbers_of(&host, &account);
 
         let Err(ReadError::NeedsUser(need)) = numbers else {
             panic!("a need: {numbers:?}");
@@ -638,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn the_provider_part_may_not_read_the_agents_files() {
+    fn the_provider_part_may_not_read_the_agents_files_outside_a_call() {
         let host = host();
         let state = host.home().join(".example-agent/state.json");
 

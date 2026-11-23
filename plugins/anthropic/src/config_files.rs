@@ -6,24 +6,12 @@
 
 use std::path::Path;
 
-use otty_plugin_sdk::{JsonWithKeys, files};
+use otty_plugin_sdk::{JsonWithKeys, Key, files};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::plan::plan_name;
-
-/// The JSON pointer of the token in `.credentials.json`.
-pub(crate) const TOKEN_FIELD: &str = "/claudeAiOauth/accessToken";
-
-/// The JSON pointer of the Console API key in `.claude.json`.
-pub(crate) const PRIMARY_API_KEY_FIELD: &str = "/primaryApiKey";
-
-/// The JSON pointer of `ANTHROPIC_AUTH_TOKEN` in `settings.json`.
-pub(crate) const AUTH_TOKEN_FIELD: &str = "/env/ANTHROPIC_AUTH_TOKEN";
-
-/// The JSON pointer of `ANTHROPIC_API_KEY` in `settings.json`.
-pub(crate) const API_KEY_FIELD: &str = "/env/ANTHROPIC_API_KEY";
 
 /// The billing types of `oauthAccount` in `.claude.json` that mean an
 /// Anthropic Console organization, paid per token.
@@ -41,17 +29,11 @@ pub(crate) struct KeyMarker(usize);
 /// handles of its keys.
 #[derive(Debug)]
 pub(crate) struct KeyFile<T> {
-    path: String,
     fields: T,
     document: JsonWithKeys,
 }
 
 impl<T> KeyFile<T> {
-    /// Where the file is.
-    pub(crate) fn path(&self) -> &str {
-        &self.path
-    }
-
     /// The fields the plugin reads.
     pub(crate) fn fields(&self) -> &T {
         &self.fields
@@ -68,20 +50,28 @@ impl<T> KeyFile<T> {
             .key(index)
             .is_some_and(|key| key.fingerprint().is_ok())
     }
+
+    /// The key `marker` stands for, when it is there; the rest of the
+    /// file is dropped.
+    pub(crate) fn into_key(self, marker: Option<KeyMarker>) -> Option<Key> {
+        if !self.holds_key(marker) {
+            return None;
+        }
+        let KeyMarker(index) = marker?;
+
+        let (_, keys) = self.document.into_parts();
+        keys.into_iter().nth(index)
+    }
 }
 
 impl<T: DeserializeOwned> KeyFile<T> {
     /// The key file at `path`; `None` when it is missing, broken, of
     /// another shape or not allowed.
-    pub(crate) fn read(path: String) -> Option<Self> {
-        let document = files::json_with_keys(&path).ok()?;
+    pub(crate) fn read(path: &str) -> Option<Self> {
+        let document = files::json_with_keys(path).ok()?;
         let fields = serde_json::from_str(document.json()).ok()?;
 
-        Some(Self {
-            path,
-            fields,
-            document,
-        })
+        Some(Self { fields, document })
     }
 }
 
@@ -105,6 +95,10 @@ impl Credentials {
 pub(crate) struct OauthLogin {
     #[serde(default, deserialize_with = "key_marker")]
     access_token: Option<KeyMarker>,
+    #[serde(default, deserialize_with = "key_marker")]
+    refresh_token: Option<KeyMarker>,
+    /// When the token expires, in milliseconds since 1970.
+    expires_at: Option<Value>,
     subscription_type: Option<String>,
     rate_limit_tier: Option<String>,
 }
@@ -113,6 +107,22 @@ impl OauthLogin {
     /// Where the token is, when the file names one.
     pub(crate) fn token(&self) -> Option<KeyMarker> {
         self.access_token
+    }
+
+    /// Where the refresh token is, which Claude Code renews the token
+    /// with, when the file names one.
+    pub(crate) fn refresh_token(&self) -> Option<KeyMarker> {
+        self.refresh_token
+    }
+
+    /// When the token expires, in milliseconds since 1970, when the file
+    /// tells.
+    pub(crate) fn expires_at_ms(&self) -> Option<i64> {
+        let expires_at = self.expires_at.as_ref()?;
+
+        expires_at
+            .as_i64()
+            .or_else(|| expires_at.as_f64().map(|millis| millis as i64))
     }
 
     /// The plan as Claude Code names it, such as "Pro" or "Max 20x".
@@ -153,6 +163,7 @@ impl GlobalConfig {
 pub(crate) struct OauthAccount {
     account_uuid: Option<String>,
     organization_uuid: Option<String>,
+    organization_name: Option<String>,
     email_address: Option<String>,
     /// How the organization of the login pays, such as
     /// `stripe_subscription` for a Claude plan or `prepaid` for an
@@ -169,6 +180,12 @@ impl OauthAccount {
     /// The id of the organization of the login, when the file names one.
     pub(crate) fn organization_id(&self) -> Option<&str> {
         filled(self.organization_uuid.as_deref())
+    }
+
+    /// The name of the organization of the login, when the file names
+    /// one.
+    pub(crate) fn organization_name(&self) -> Option<&str> {
+        filled(self.organization_name.as_deref())
     }
 
     /// The email of the login, when the file names one.
@@ -241,7 +258,7 @@ struct SettingsEnv {
 
 /// The login file of the profile in `folder`.
 pub(crate) fn read_credentials(folder: &str) -> Option<KeyFile<Credentials>> {
-    KeyFile::read(credentials_path(folder))
+    KeyFile::read(&format!("{folder}/.credentials.json"))
 }
 
 /// The global config files of the profile in `folder` that can be read,
@@ -249,19 +266,14 @@ pub(crate) fn read_credentials(folder: &str) -> Option<KeyFile<Credentials>> {
 pub(crate) fn read_global_configs(folder: &str) -> Vec<KeyFile<GlobalConfig>> {
     global_config_paths(folder)
         .into_iter()
-        .filter_map(KeyFile::read)
+        .filter_map(|path| KeyFile::read(&path))
         .collect()
 }
 
 /// The settings of the profile in `folder`; `None` when the file is
 /// missing or broken.
 pub(crate) fn read_settings(folder: &str) -> Option<KeyFile<Settings>> {
-    KeyFile::read(format!("{folder}/settings.json"))
-}
-
-/// Where the login file of the profile in `folder` is.
-pub(crate) fn credentials_path(folder: &str) -> String {
-    format!("{folder}/.credentials.json")
+    KeyFile::read(&format!("{folder}/settings.json"))
 }
 
 /// Where the global config file of the profile in `folder` can be, in the
@@ -334,8 +346,8 @@ mod tests {
 
         let configs = as_part(&host, || read_global_configs(&folder));
 
+        // `.claude` holds no `.claude.json`: the one read is next to it.
         assert_eq!(configs.len(), 1);
-        assert_eq!(configs[0].path(), path(&host, ".claude.json"));
         let account = configs[0].fields().oauth_account();
         assert_eq!(
             account.and_then(OauthAccount::email),

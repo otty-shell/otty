@@ -22,10 +22,10 @@
 //! <https://github.com/steipete/CodexBar/blob/main/Sources/CodexBarCore/Providers/Codex/CodexProviderDescriptor.swift>.
 
 use otty_plugin_sdk::Key;
-use otty_plugin_sdk::agents::Credits;
+use otty_plugin_sdk::agents::{Credits, ReadError};
 use serde_json::Value;
 
-use crate::chatgpt_usage::{login_refused, usage_request};
+use crate::chatgpt_usage::usage_request;
 use crate::rate_limits::{codex_number, no_numbers};
 use crate::requests::{json_answer, percent_encoded};
 
@@ -104,7 +104,9 @@ fn ask_account(ask: &WorkspaceAsk<'_>, path: &str) -> Option<Value> {
     let url = format!("{}/accounts/{account}{path}", ask.backend_api_url);
     let request = usage_request(&url, ask.key, ask.account_id);
 
-    json_answer(&request, &url, login_refused).ok()
+    let refused = || ReadError::Failed(format!("{url} refused the login"));
+
+    json_answer(&request, &url, refused).ok()
 }
 
 /// The credits of a monthly usage answer: the pool is the workspace limit

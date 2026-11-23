@@ -1,271 +1,525 @@
-//! The login found in a Codex profile: the ChatGPT login or the API key of
-//! its `auth.json`, named by where its key sits, never by the key.
+//! The accounts the provider part `openai` finds in the Codex profile
+//! folders OTTY gives it (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decisions 5 and 8). The `auth.json` of each folder logs in with a
+//! ChatGPT login or an API key, as its `auth_mode` says; the part reads it
+//! with every key replaced by a handle.
 //!
-//! A ChatGPT login is told by its account id, from `tokens.account_id` or
-//! from the id token; the id token, a JWT, also names the email and the
-//! plan (`chatgpt_plan_type`). OTTY gives the plugin only the claims of
-//! the id token, through its handle. An API key tells nothing of its
-//! account: OTTY tells it by the key's fingerprint.
+//! A ChatGPT login is a subscription known by its account id, from
+//! `tokens.account_id` or the id token, so the account keeps its id after
+//! Codex renews the tokens. The id token, a JWT, also names the email and
+//! the plan (`chatgpt_plan_type`); OTTY gives the plugin only its claims.
+//! An API key tells nothing of its account: it is known by its
+//! fingerprint. One account found in two folders is one account with two
+//! places. A login Codex sends to a gateway (`base_url.rs`) is for the
+//! gateway's host and is no OpenAI account.
+//!
+//! Whether a login expired is the plugin's call (Decision 9): a ChatGPT
+//! login whose access token says it expired gets the need to run
+//! `codex login` in its folder.
 
-use otty_plugin_sdk::agents::{Identity, Login, LoginKind};
-use otty_plugin_sdk::{JsonField, KeyPlace};
+use otty_plugin_sdk::agents::{
+    Account, AccountKind, Found, LoginFolder, ProviderRef,
+};
+use otty_plugin_sdk::{Command, Key, Need};
 
-use crate::auth_file::{ACCESS_TOKEN_FIELD, API_KEY_FIELD, AuthFile};
-use crate::base_url::CodexConfig;
+use crate::auth_file::AuthFile;
+use crate::base_url::{CodexConfig, OPENAI};
+use crate::codex::PROGRAM;
+use crate::needs::{self, ADMIN_PREFIX};
+use crate::profiles::CONFIG_VARIABLE;
 use crate::rate_limits::plan_name;
+use crate::token_expiry::has_expired;
 
-/// The logins of the profile in `folder`: the one its `auth.json` logs in
-/// with, as its `auth_mode` says, or none.
-///
-/// A ChatGPT login whose files name no account id and no email can not be
-/// told from the others, so it is none.
-pub(crate) fn logins(folder: &str) -> Vec<Login> {
-    let Some(auth) = AuthFile::read(folder) else {
-        return Vec::new();
-    };
-    let config = CodexConfig::read(folder);
+/// The agent part whose profiles hold the logins the part reads.
+pub(crate) const CODEX: &str = "codex";
 
-    let login = if auth.is_api_key() {
-        api_key_login(&auth, &config)
-    } else {
-        chatgpt_login(&auth, &config)
-    };
-
-    login.into_iter().collect()
+/// The ChatGPT login of a folder.
+pub(crate) struct ChatgptLogin {
+    auth: AuthFile,
+    account_id: String,
+    email: Option<String>,
+    plan: Option<String>,
 }
 
-/// The place of the login of the profile in `folder` whose account id is
-/// `account_id`, the account a session file names as its creator.
-pub(crate) fn place_of_account(
-    folder: &str,
-    account_id: &str,
-) -> Option<KeyPlace> {
-    logins(folder)
-        .into_iter()
-        .find(|login| login.identity.account_id.as_deref() == Some(account_id))
-        .map(|login| login.place)
+impl ChatgptLogin {
+    /// The ChatGPT workspace of the login, which the usage request names.
+    pub(crate) fn account_id(&self) -> &str {
+        &self.account_id
+    }
+
+    /// The handle of the access token.
+    pub(crate) fn token(&self) -> Option<&Key> {
+        self.auth.access_token()
+    }
+
+    /// The id of the account: the same in every folder and after the
+    /// tokens are renewed.
+    fn id(&self) -> String {
+        format!("chatgpt:{}", self.account_id)
+    }
+
+    /// The email of the login, else the end of its account id.
+    fn name(&self) -> String {
+        match &self.email {
+            Some(email) => email.clone(),
+            None => format!("ChatGPT ••••{}", last_four(&self.account_id)),
+        }
+    }
+
+    /// Whether the access token says it expired.
+    fn has_expired(&self) -> bool {
+        self.token().is_some_and(has_expired)
+    }
 }
 
-/// The API key of `auth`, for the server the config sends it to.
-fn api_key_login(auth: &AuthFile, config: &CodexConfig) -> Option<Login> {
-    if !auth.has_api_key() {
+/// The API key of a folder.
+pub(crate) struct KeyLogin {
+    auth: AuthFile,
+    fingerprint: String,
+    is_admin: bool,
+}
+
+impl KeyLogin {
+    /// The handle of the key.
+    pub(crate) fn key(&self) -> Option<&Key> {
+        self.auth.api_key()
+    }
+
+    /// Whether the key is an admin key, which reads the bill of its
+    /// organization.
+    pub(crate) fn is_admin(&self) -> bool {
+        self.is_admin
+    }
+
+    /// The id of the account: the key's fingerprint.
+    fn id(&self) -> String {
+        format!("key:{}", self.fingerprint)
+    }
+
+    /// The key shown by the end of its fingerprint, such as
+    /// `key ••••a1f3`: the key itself is never read.
+    fn name(&self) -> String {
+        format!("key ••••{}", last_four(&self.fingerprint))
+    }
+}
+
+/// The OpenAI login of one Codex profile folder.
+pub(crate) enum FolderLogin {
+    /// A ChatGPT login, paid for by a subscription.
+    Chatgpt(ChatgptLogin),
+    /// An API key, paid per token.
+    Key(KeyLogin),
+}
+
+impl FolderLogin {
+    /// The login of `auth.json` in `folder`, the one its `auth_mode`
+    /// says Codex logs in with; `None` when there is none, it is for a
+    /// gateway, or it names no account it can be known by.
+    pub(crate) fn read(folder: &str) -> Option<Self> {
+        let auth = AuthFile::read(folder)?;
+        let config = CodexConfig::read(folder);
+
+        match auth.is_api_key() {
+            true => key_login(auth, &config).map(Self::Key),
+            false => chatgpt_login(auth, &config).map(Self::Chatgpt),
+        }
+    }
+
+    /// The id of the account the login is of, such as
+    /// `chatgpt:<account id>` or `key:<fingerprint>`.
+    pub(crate) fn id(&self) -> String {
+        match self {
+            Self::Chatgpt(login) => login.id(),
+            Self::Key(login) => login.id(),
+        }
+    }
+
+    /// The account of the login, found in `folder` at `path`.
+    fn account(&self, folder: &LoginFolder, path: &str) -> Account {
+        let (name, kind, plan) = match self {
+            Self::Chatgpt(login) => {
+                (login.name(), AccountKind::Subscription, login.plan.clone())
+            },
+            Self::Key(login) if login.is_admin => {
+                (login.name(), AccountKind::Organization, None)
+            },
+            Self::Key(login) => (login.name(), AccountKind::Key, None),
+        };
+
+        Account {
+            id: self.id(),
+            name,
+            kind,
+            plan,
+            found_in: vec![folder.clone()],
+            needs: self.needs(path),
+        }
+    }
+
+    /// What the user must do for the login in the folder at `path`: log
+    /// in again when its token expired.
+    fn needs(&self, path: &str) -> Vec<Need> {
+        match self {
+            Self::Chatgpt(login) if login.has_expired() => {
+                vec![login_need(path)]
+            },
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// The accounts whose logins sit in `folders`, the Codex profile folders
+/// of one call, in the order they were given. A folder with no OpenAI
+/// login gives nothing: the agent part says when nobody is logged in.
+pub(crate) fn accounts(folders: &[LoginFolder]) -> Found {
+    let mut accounts: Vec<Account> = Vec::new();
+
+    for folder in folders {
+        let Some(path) = codex_folder(folder) else {
+            continue;
+        };
+        let Some(login) = FolderLogin::read(path) else {
+            continue;
+        };
+
+        let id = login.id();
+        match accounts.iter_mut().find(|known| known.id == id) {
+            Some(known) if known.found_in.contains(folder) => {},
+            Some(known) => {
+                known.found_in.push(folder.clone());
+                known.needs.extend(login.needs(path));
+            },
+            None => accounts.push(login.account(folder, path)),
+        }
+    }
+
+    Found {
+        accounts,
+        needs: Vec::new(),
+    }
+}
+
+/// The Codex profile folders `account` was found in.
+pub(crate) fn codex_folders(account: &Account) -> Vec<&str> {
+    account.found_in.iter().filter_map(codex_folder).collect()
+}
+
+/// Whether the Codex profile folder `folder` holds no login at all, of
+/// OpenAI or of a gateway.
+pub(crate) fn has_no_login(folder: &str) -> bool {
+    AuthFile::read(folder).is_none_or(|auth| !auth.is_logged_in())
+}
+
+/// The need of an expired or refused ChatGPT login of the Codex profile
+/// folder `folder`: its button runs `codex login` there. OTTY never renews
+/// a login itself.
+pub(crate) fn login_need(folder: &str) -> Need {
+    let login = Command {
+        program: PROGRAM.to_string(),
+        args: vec!["login".to_string()],
+        env: vec![(CONFIG_VARIABLE.to_string(), folder.to_string())],
+    };
+
+    needs::login_expired(login)
+}
+
+/// The path of `folder` when it is a profile folder of Codex.
+fn codex_folder(folder: &LoginFolder) -> Option<&str> {
+    let LoginFolder::Profile((agent, path)) = folder;
+
+    (agent == CODEX).then_some(path.as_str())
+}
+
+/// The API key of `auth`, when the config sends it to OpenAI.
+fn key_login(auth: AuthFile, config: &CodexConfig) -> Option<KeyLogin> {
+    if !is_openai(&config.api_key_for()) {
         return None;
     }
 
-    Some(Login {
-        kind: LoginKind::ApiKey,
-        for_whom: config.api_key_for(),
-        place: json_field(auth.path(), API_KEY_FIELD),
-        identity: Identity::default(),
-        plan: None,
+    let key = auth.api_key()?;
+    let fingerprint = key.fingerprint().ok()?;
+    let is_admin = key.has_prefix(ADMIN_PREFIX).unwrap_or(false);
+
+    Some(KeyLogin {
+        auth,
+        fingerprint,
+        is_admin,
     })
 }
 
-/// The ChatGPT login of `auth`: told by its account id, else its email,
-/// with the plan its id token names; its key is the access token.
-fn chatgpt_login(auth: &AuthFile, config: &CodexConfig) -> Option<Login> {
-    if !auth.has_access_token() {
+/// The ChatGPT login of `auth`, when the config sends it to OpenAI and it
+/// names its account.
+fn chatgpt_login(auth: AuthFile, config: &CodexConfig) -> Option<ChatgptLogin> {
+    if !is_openai(&config.chatgpt_login_for()) || !auth.has_access_token() {
         return None;
     }
 
+    let account_id = auth.chatgpt_account_id()?;
     let claims = auth.id_claims();
-    let account_id = auth.account_id().or(claims.account_id());
-    let email = claims.email();
-    if account_id.is_none() && email.is_none() {
-        return None;
-    }
+    let email = claims.email().map(String::from);
+    let plan = claims.plan_type().and_then(plan_name);
 
-    Some(Login {
-        kind: LoginKind::Subscription,
-        for_whom: config.chatgpt_login_for(),
-        place: json_field(auth.path(), ACCESS_TOKEN_FIELD),
-        identity: Identity {
-            account_id: account_id.map(String::from),
-            organization_id: None,
-            email: email.map(String::from),
-        },
-        plan: claims.plan_type().and_then(plan_name),
+    Some(ChatgptLogin {
+        auth,
+        account_id,
+        email,
+        plan,
     })
 }
 
-/// The field `pointer` of the JSON file `file` as a key place.
-fn json_field(file: &str, pointer: &str) -> KeyPlace {
-    KeyPlace::JsonField(JsonField {
-        file: file.to_string(),
-        pointer: pointer.to_string(),
-    })
+/// Whether `provider` is OpenAI itself.
+fn is_openai(provider: &ProviderRef) -> bool {
+    matches!(provider, ProviderRef::Id(id) if id == OPENAI)
+}
+
+/// The last four characters of `text`.
+fn last_four(text: &str) -> String {
+    let count = text.chars().count();
+
+    text.chars().skip(count.saturating_sub(4)).collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::ProviderRef;
-    use otty_plugin_sdk::keys;
+    use otty_plugin_sdk::NeedAction;
+    use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
-    use crate::base_url::OPENAI;
-    use crate::testing::{ACCOUNT, as_part, host, path};
+    use crate::testing::{ACCOUNT, PROVIDER, TEN, codex_folder, host};
 
-    fn logins_of(folder: &str) -> Vec<Login> {
-        let host = host();
-        let folder = path(&host, folder);
+    /// What the part finds in the Codex profile folders `names`, in a
+    /// call given them.
+    fn found_in(host: &TestHost, names: &[&str]) -> Found {
+        let folders: Vec<LoginFolder> =
+            names.iter().map(|name| codex_folder(host, name)).collect();
 
-        as_part(&host, || logins(&folder))
+        host.as_provider_in(PROVIDER, &folders, || accounts(&folders))
     }
 
-    fn openai() -> ProviderRef {
-        ProviderRef::Id(OPENAI.to_string())
+    /// The one account the part finds in the Codex profile folder `name`.
+    fn account_in(host: &TestHost, name: &str) -> Account {
+        let mut found = found_in(host, &[name]).accounts;
+
+        assert_eq!(found.len(), 1, "{name}: {found:?}");
+        found.remove(0)
     }
 
-    fn place(folder: &str, pointer: &str) -> KeyPlace {
-        let host = host();
+    /// The fingerprint the host gives the made-up key `value`.
+    fn fingerprint_of(host: &TestHost, value: &str) -> String {
+        let key = host.key(value);
 
-        json_field(&path(&host, &format!("{folder}/auth.json")), pointer)
+        host.as_provider(PROVIDER, || key.fingerprint())
+            .expect("a fingerprint")
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 8: a ChatGPT
+    /// login is a subscription named by its email, with its plan, and one
+    /// account logged in to two folders is one account with two places.
     #[test]
-    fn a_chatgpt_login_is_an_openai_account_with_its_plan() {
+    fn one_chatgpt_account_in_two_folders_is_one_subscription() {
+        let host = host();
+
+        let found = found_in(&host, &[".codex-plus", ".codex-renewed"]);
+
         assert_eq!(
-            logins_of(".codex-plus"),
-            [Login {
-                kind: LoginKind::Subscription,
-                for_whom: openai(),
-                place: place(".codex-plus", ACCESS_TOKEN_FIELD),
-                identity: Identity {
-                    account_id: Some(ACCOUNT.to_string()),
-                    organization_id: None,
-                    email: Some("dev@example.com".to_string()),
-                },
+            found.accounts,
+            [Account {
+                id: format!("chatgpt:{ACCOUNT}"),
+                name: "dev@example.com".to_string(),
+                kind: AccountKind::Subscription,
                 plan: Some("Pro 200".to_string()),
+                found_in: vec![
+                    codex_folder(&host, ".codex-plus"),
+                    codex_folder(&host, ".codex-renewed"),
+                ],
+                needs: Vec::new(),
             }]
         );
+        assert!(found.needs.is_empty());
+    }
+
+    /// Decision 8: OTTY keeps the user's name and Hide by the id, so the
+    /// account keeps it after Codex renews the tokens of `auth.json`.
+    #[test]
+    fn an_account_keeps_its_id_after_its_tokens_are_renewed() {
+        let host = host();
+
+        let before = account_in(&host, ".codex-plus");
+        let after = account_in(&host, ".codex-renewed");
+
+        assert_eq!(before.id, after.id);
     }
 
     #[test]
-    fn the_account_id_can_come_from_the_id_token() {
-        let found = logins_of(".codex-idtoken");
+    fn two_chatgpt_accounts_are_two_subscriptions() {
+        let host = host();
 
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].identity.account_id.as_deref(), Some(ACCOUNT));
-        assert_eq!(found[0].plan.as_deref(), Some("Plus"));
+        let found = found_in(&host, &[".codex-plus", ".codex-team"]);
+
+        let names: Vec<&str> = found
+            .accounts
+            .iter()
+            .map(|account| account.name.as_str())
+            .collect();
+        assert_eq!(names, ["dev@example.com", "dev@team.example.com"]);
+        assert_ne!(found.accounts[0].id, found.accounts[1].id);
+        assert_eq!(found.accounts[1].plan.as_deref(), Some("Business"));
     }
 
-    /// The id token can be missing or not a JWT; the account id of the
-    /// tokens still tells the account.
+    /// An API key is a key known by its fingerprint and named by its end;
+    /// the same key in two folders is one account.
     #[test]
-    fn a_login_with_no_readable_id_token_has_no_email_and_no_plan() {
+    fn an_api_key_is_a_key_named_by_its_fingerprint() {
+        let host = host();
+        let fingerprint = fingerprint_of(&host, "sk-made-up-key");
+        let end = last_four(&fingerprint);
+
+        let found = found_in(&host, &[".codex-work", ".codex-nomode"]);
+
         assert_eq!(
-            logins_of(".codex"),
-            [Login {
-                kind: LoginKind::Subscription,
-                for_whom: openai(),
-                place: place(".codex", ACCESS_TOKEN_FIELD),
-                identity: Identity {
-                    account_id: Some(
-                        "00000000-0000-4000-8000-000000000000".to_string()
-                    ),
-                    organization_id: None,
-                    email: None,
-                },
+            found.accounts,
+            [Account {
+                id: format!("key:{fingerprint}"),
+                name: format!("key ••••{end}"),
+                kind: AccountKind::Key,
                 plan: None,
+                found_in: vec![
+                    codex_folder(&host, ".codex-work"),
+                    codex_folder(&host, ".codex-nomode"),
+                ],
+                needs: Vec::new(),
             }]
         );
     }
 
     #[test]
-    fn a_login_whose_files_name_no_account_and_no_email_is_none() {
-        assert_eq!(logins_of(".codex-nameless"), []);
-    }
+    fn an_admin_key_is_an_organization() {
+        let host = host();
 
-    #[test]
-    fn an_api_key_login_is_an_openai_key() {
-        assert_eq!(
-            logins_of(".codex-work"),
-            [Login {
-                kind: LoginKind::ApiKey,
-                for_whom: openai(),
-                place: place(".codex-work", API_KEY_FIELD),
-                identity: Identity::default(),
-                plan: None,
-            }]
-        );
-        assert_eq!(logins_of(".codex-nomode")[0].kind, LoginKind::ApiKey);
+        let account = account_in(&host, ".codex-admin");
+
+        assert_eq!(account.kind, AccountKind::Organization);
+        assert!(account.id.starts_with("key:"), "{}", account.id);
     }
 
     /// Older versions of Codex kept a key next to a ChatGPT login: the
     /// mode tells which one Codex logs in with.
     #[test]
     fn the_mode_of_the_file_picks_the_login() {
-        let found = logins_of(".codex-both");
-
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].kind, LoginKind::Subscription);
-    }
-
-    #[test]
-    fn a_login_behind_a_gateway_is_for_the_gateway() {
-        let found = logins_of(".codex-gateway");
-
-        assert_eq!(
-            found[0].for_whom,
-            ProviderRef::Host("gateway.example.com".to_string())
-        );
-        assert_eq!(found[0].plan.as_deref(), Some("Business"));
-    }
-
-    #[test]
-    fn a_key_sent_to_a_server_of_the_users_config_is_for_its_host() {
-        assert_eq!(
-            logins_of(".codex-proxy"),
-            [Login {
-                kind: LoginKind::ApiKey,
-                for_whom: ProviderRef::Host("llm.example.com".to_string()),
-                place: place(".codex-proxy", API_KEY_FIELD),
-                identity: Identity::default(),
-                plan: None,
-            }]
-        );
-    }
-
-    #[test]
-    fn a_missing_broken_or_logged_out_auth_file_has_no_login() {
-        for folder in [
-            ".codex-gone",
-            ".codex-broken",
-            ".codex-loggedout",
-            ".codex-blank",
-            ".codex-emptyauth",
-            ".codex-notokens",
-        ] {
-            assert_eq!(logins_of(folder), [], "{folder}");
-        }
-    }
-
-    #[test]
-    fn the_place_of_an_account_is_the_place_of_its_login() {
         let host = host();
-        let folder = path(&host, ".codex-plus");
 
-        let own = as_part(&host, || place_of_account(&folder, ACCOUNT));
-        let other = as_part(&host, || {
-            place_of_account(&folder, "00000000-0000-4000-8000-0000000000ff")
-        });
+        let account = account_in(&host, ".codex-both");
 
-        assert_eq!(own, Some(place(".codex-plus", ACCESS_TOKEN_FIELD)));
-        assert_eq!(other, None);
+        assert_eq!(account.kind, AccountKind::Subscription);
+    }
+
+    /// The id token can be missing or not a JWT: the account id of the
+    /// tokens still tells the account, and names it by its end.
+    #[test]
+    fn a_login_with_no_readable_id_token_is_named_by_its_account() {
+        let host = host();
+
+        let account = account_in(&host, ".codex");
+
+        assert_eq!(account.id, "chatgpt:00000000-0000-4000-8000-000000000000");
+        assert_eq!(account.name, "ChatGPT ••••0000");
+        assert_eq!(account.plan, None);
+    }
+
+    /// A login Codex sends to a gateway, the ChatGPT login of
+    /// `chatgpt_base_url` or the key of a provider of the user's config,
+    /// is for the gateway's host: no OpenAI account.
+    #[test]
+    fn a_login_behind_a_gateway_is_no_account() {
+        let host = host();
+
+        let found = found_in(&host, &[".codex-gateway", ".codex-proxy"]);
+
+        assert!(found.accounts.is_empty(), "{found:?}");
+        assert!(found.needs.is_empty());
+    }
+
+    /// Decision 9: a folder nobody is logged in with gives no account and
+    /// no need here; that need is the agent part's.
+    #[test]
+    fn a_folder_with_no_login_gives_no_account_and_no_need() {
+        let host = host();
+
+        let found = found_in(
+            &host,
+            &[
+                ".codex-gone",
+                ".codex-empty",
+                ".codex-broken",
+                ".codex-loggedout",
+                ".codex-blank",
+                ".codex-emptyauth",
+                ".codex-notokens",
+                ".codex-nameless",
+            ],
+        );
+
+        assert!(found.accounts.is_empty(), "{found:?}");
+        assert!(found.needs.is_empty());
+    }
+
+    /// Decision 9: the files show the token expired, so the account needs
+    /// `codex login` in the folder it was found in, in the language of
+    /// OTTY.
+    #[test]
+    fn an_expired_login_needs_codex_login_in_its_folder() {
+        let host = host().with_now_ms(TEN).with_language("ru");
+        let LoginFolder::Profile((_, folder)) =
+            codex_folder(&host, ".codex-expired");
+
+        let account = account_in(&host, ".codex-expired");
+
+        assert_eq!(account.needs.len(), 1);
+        let need = &account.needs[0];
+        assert_eq!(need.id, "login-expired");
+        assert_eq!(need.title, "Вход истёк");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(Command {
+                program: "codex".to_string(),
+                args: vec!["login".to_string()],
+                env: vec![("CODEX_HOME".to_string(), folder)],
+            })
+        );
     }
 
     #[test]
-    fn no_key_or_token_reaches_the_plugin() {
-        let found: Vec<Login> = [
-            ".codex",
-            ".codex-plus",
-            ".codex-work",
-            ".codex-proxy",
-            ".codex-gateway",
-        ]
-        .iter()
-        .flat_map(|folder| logins_of(folder))
-        .collect();
+    fn a_fresh_login_needs_nothing() {
+        let host = host().with_now_ms(TEN);
+
+        let account = account_in(&host, ".codex-plus");
+
+        assert!(account.needs.is_empty());
+    }
+
+    /// Decision 5: the part reads only the profiles of its own plugin's
+    /// agent part.
+    #[test]
+    fn a_folder_of_another_agent_part_is_not_read() {
+        let host = host();
+        let LoginFolder::Profile((_, folder)) =
+            codex_folder(&host, ".codex-plus");
+        let folders = [LoginFolder::Profile(("opencode".to_string(), folder))];
+
+        let found =
+            host.as_provider_in(PROVIDER, &folders, || accounts(&folders));
+
+        assert!(found.accounts.is_empty());
+    }
+
+    #[test]
+    fn no_key_or_token_reaches_an_account() {
+        let host = host();
+
+        let found = found_in(
+            &host,
+            &[".codex", ".codex-plus", ".codex-work", ".codex-admin"],
+        );
 
         let text = format!("{found:?}");
         for secret in [
@@ -273,24 +527,9 @@ mod tests {
             "made-up-access-token",
             "made-up-refresh-token",
             "sk-made-up",
+            "sk-admin-made-up",
         ] {
             assert!(!text.contains(secret), "{secret} in {text}");
         }
-    }
-
-    #[test]
-    fn the_key_of_a_login_opens_as_a_handle() {
-        let host = host();
-        let found = logins_of(".codex-plus");
-
-        let claims =
-            as_part(&host, || keys::open(&found[0].place)?.jwt_claims());
-
-        assert_eq!(
-            claims,
-            Ok(Some(
-                r#"{"exp":4102444800,"sub":"made-up-access"}"#.to_string()
-            ))
-        );
     }
 }

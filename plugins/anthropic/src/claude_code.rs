@@ -1,17 +1,17 @@
 //! The agent part `claude-code`: Claude Code, Anthropic's coding agent,
 //! and the commands that start it.
 
+use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, LoginRef, Place, PlaceItem, PlaceKind, Profile,
-    ProfilePlace, ProfileStatus, ReadError, Session,
+    Agent, Answers, Login, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session,
 };
-use otty_plugin_sdk::{Command, Need};
 
 use crate::glob::escaped;
-use crate::profiles::{CONFIG_VARIABLE, profiles};
+use crate::profiles::{CONFIG_VARIABLE, default_folder, profiles};
 use crate::project_folder::projects_folder;
 use crate::provider::profile_provider;
-use crate::{Anthropic, detect, logins, needs, sessions, spend_file, version};
+use crate::{Anthropic, detect, sessions, spend_file, version};
 
 /// The program, looked up on `PATH`.
 pub(crate) const PROGRAM: &str = "claude";
@@ -32,8 +32,11 @@ impl Agent for Anthropic {
         version::version(&profile.folder)
     }
 
-    fn logins(profile: &Profile) -> Vec<Login> {
-        logins::logins(&profile.folder)
+    /// None: OTTY no longer asks an agent part for logins. The provider
+    /// part `anthropic` finds the accounts in the profile folders itself
+    /// (`logins.rs`), and the function leaves the contract later.
+    fn logins(_profile: &Profile) -> Vec<Login> {
+        Vec::new()
     }
 
     /// Every `*.jsonl` file in the project folders: the files of helper
@@ -84,28 +87,33 @@ impl Agent for Anthropic {
 
         start_command(profile, args)
     }
-
-    /// A provider part refused the Claude login of the profile, wherever
-    /// it read it: Claude Code itself renews it in the profile's config
-    /// folder, or asks to log in again. The same need as the `/usage`
-    /// panel of the provider part `anthropic` gives, so it shows once.
-    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
-        let claude = start_command(profile, Vec::new());
-
-        Some(needs::login_expired(claude))
-    }
 }
 
-/// `claude` with `args` for `profile`, with `CLAUDE_CONFIG_DIR` when its
-/// folder is not the default one. A profile in the default folder sets
-/// nothing: with the variable set, Claude Code would look for its
-/// `.claude.json` inside the folder instead of next to it, and lose the
-/// login of the default profile.
+/// `claude` with `args` for `profile`, as [`command_in`] gives it.
 pub(crate) fn start_command(profile: &Profile, args: Vec<String>) -> Command {
-    let env = if profile.is_default {
+    command_in(&profile.folder, profile.is_default, args)
+}
+
+/// `claude` with no arguments in the config folder `folder`, as the agent
+/// part starts it in a profile there. The provider part runs it so, for
+/// the `/usage` panel or to renew a login, and knows the default folder
+/// by where it is.
+pub(crate) fn claude_in_folder(folder: &str) -> Command {
+    let is_default = folder == default_folder();
+
+    command_in(folder, is_default, Vec::new())
+}
+
+/// `claude` with `args` in the config folder `folder`, with
+/// `CLAUDE_CONFIG_DIR` when the folder is not the default one. The
+/// default folder sets nothing: with the variable set, Claude Code would
+/// look for its `.claude.json` inside the folder instead of next to it,
+/// and lose the login of the default profile.
+fn command_in(folder: &str, is_default: bool, args: Vec<String>) -> Command {
+    let env = if is_default {
         Vec::new()
     } else {
-        vec![(CONFIG_VARIABLE.to_string(), profile.folder.clone())]
+        vec![(CONFIG_VARIABLE.to_string(), folder.to_string())]
     };
 
     Command {
@@ -120,7 +128,7 @@ mod tests {
     use otty_plugin_sdk::NeedAction;
 
     use super::*;
-    use crate::testing::{AGENT, as_part, host, path, profile};
+    use crate::testing::{AGENT, PROVIDER, as_part, host, path, profile};
 
     const SESSION: &str = "0b6c4e8a-1f2d-4c3b-9a7e-5d1f2e3c4b5a";
 
@@ -205,25 +213,20 @@ mod tests {
         assert_eq!(need.action, NeedAction::Run(command(&[], &[])));
     }
 
-    /// Issue 20: a provider part refused the Claude login of a profile;
-    /// the need runs Claude Code in that profile's config folder.
+    /// The provider part knows the default folder by where it is: there
+    /// `claude` sets no variable, anywhere else it gets the folder.
     #[test]
-    fn a_refused_login_runs_claude_in_the_profiles_folder() {
+    fn claude_in_a_folder_sets_the_variable_only_outside_the_default_one() {
         let host = host();
-        let added = profile(&host, ".claude-work", false);
-        let login = LoginRef::EnvVar("ANTHROPIC_API_KEY".to_string());
+        let default = path(&host, ".claude");
+        let work = path(&host, ".claude-work");
 
-        let need = as_part(&host, || Anthropic::login_refused(&added, &login))
-            .expect("a need");
+        let (in_default, in_work) = host.as_provider(PROVIDER, || {
+            (claude_in_folder(&default), claude_in_folder(&work))
+        });
 
-        assert_eq!(need.id, "login-expired");
-        assert_eq!(
-            need.action,
-            NeedAction::Run(command(
-                &[],
-                &[(CONFIG_VARIABLE, added.folder.as_str())]
-            ))
-        );
+        assert_eq!(in_default, command(&[], &[]));
+        assert_eq!(in_work, command(&[], &[(CONFIG_VARIABLE, work.as_str())]));
     }
 
     /// The host walks the spend place: every session file of a project

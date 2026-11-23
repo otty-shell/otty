@@ -52,7 +52,7 @@
 //! use std::sync::Arc;
 //!
 //! use otty_agents::{
-//!     AgentEnv, AgentId, Profile, ProfileStatus, SavedProfiles,
+//!     AgentEnv, AgentId, FoundAccounts, Profile, ProfileStatus, SavedProfiles,
 //! };
 //! use otty_app_agents::{
 //!     Agents, AgentsCtx, AgentsIntent, AgentsOutcome, LoadedProfile,
@@ -80,10 +80,10 @@
 //!         profiles: vec![LoadedProfile {
 //!             profile: coder.clone(),
 //!             status: ProfileStatus::NotLoggedIn(None),
-//!             accounts: Vec::new(),
 //!             version: Some(String::from("1.4.2")),
 //!         }],
 //!         hidden_profiles: Vec::new(),
+//!         accounts: FoundAccounts::default(),
 //!         saved: Some(SavedProfiles::default()),
 //!         problem: None,
 //!         time_zone: None,
@@ -277,13 +277,8 @@ impl Agents {
 
     /// Return what a read of the limits of the shown `profile` reads
     /// ([`AgentsOutcome::LoadLimits`]): the account whose limits it
-    /// shows, `None` when it has none, and every shown profile the account
-    /// was found in, `profile` first, which the provider part is told of
-    /// (spec 2026-11-19-agent-plugins, issue 29).
-    pub fn limits_to_read(
-        &self,
-        profile: &Profile,
-    ) -> (Option<Account>, Vec<Profile>) {
+    /// shows, `None` when it has none.
+    pub fn limits_to_read(&self, profile: &Profile) -> Option<Account> {
         self.state.profiles().limits_to_read(profile)
     }
 

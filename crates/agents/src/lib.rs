@@ -41,37 +41,30 @@
 //! project, and OTTY sums them with the same dedupe as the totals;
 //! [`MoneyTotal::of_models`] prices their tokens.
 //!
-//! Limits, credits and bills belong to an [`Account`]: a login or a key at
-//! a provider, named by a [`ProviderRef`], found in the files of each
-//! profile by
-//! [`Agent::accounts`] and made one per account by [`merge_accounts`]. The
-//! app reads them once per account, with the files of one profile it was
-//! found in. [`read_bill`] reads the real [`Bill`] of an organization
-//! through the provider part that serves it. Nothing links the tokens of a
-//! profile to an account: an account's money is only what its provider
-//! tells.
-//!
-//! Every account is read by the provider part of each plugin that serves
-//! it, a key known by its host by every part that serves the host under
-//! its own provider id, and each plugin's reading is an account of its own
-//! ([`Account::read_by`]; issues 29 and 31): [`read_account_numbers`] reads the
-//! [`Balance`] of a key or the [`Limits`] of a subscription login with the
-//! key of a login an agent part found, and tells the part every profile
-//! the account was found in, so it may also ask the agent there. Where a
-//! part reads the numbers from is its business; with no way that works it
-//! answers nothing. Accounts are not added by hand (spec 2026-11-23,
-//! Decision 10).
+//! Limits, credits and bills belong to an [`Account`]: a subscription, a
+//! key or an organization at a provider (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 8). Each
+//! provider part finds its own accounts with [`find_accounts`], in the
+//! folders of the shown profiles of the agent parts of its own plugin that
+//! its manifest names, and gives each a stable id ([`AccountKey`]). OTTY
+//! joins no accounts: two plugins that read one provider give two
+//! accounts (Decision 1). [`read_account_numbers`] reads the [`Balance`]
+//! of a key or the [`Limits`] of a subscription through the part that
+//! found it, in the folders it was found in, and [`read_bill`] reads the
+//! real [`Bill`] of an organization the same way. Where a part reads the
+//! numbers from is its business; with no way that works it answers
+//! nothing. Nothing links the tokens of a profile to an account: an
+//! account's money is only what its provider tells. Accounts are not
+//! added by hand (Decision 10).
 //!
 //! What the user must do for an agent or a provider comes from its part
 //! as a [`PartNeed`], in the language the host tells the part: a profile
-//! nobody is logged in with ([`ProfileStatus::NotLoggedIn`]), or a read
-//! that waits for the user ([`SourceError::NeedsUser`]). A login a
-//! provider part refused is the need of the agent part that found it in
-//! the profile; when that part gives none, the read fails with
-//! [`SourceError::LoginRefused`]. A key a part asks
-//! for is a [`GivenKey`]: OTTY keeps only its [`KeyRef`], the file or the
-//! variable that holds it, saved for the account in [`SavedProfiles`],
-//! and gives it to the part's next reads under its slot.
+//! nobody is logged in with ([`ProfileStatus::NotLoggedIn`]), an account
+//! whose login expired ([`Account::needs`]), or a read that waits for the
+//! user ([`SourceError::NeedsUser`]). A key a part asks for is a
+//! [`GivenKey`]: OTTY keeps only its [`KeyRef`], the file or the variable
+//! that holds it, saved for the account in [`SavedProfiles`], and gives it
+//! to the part's next reads under its slot.
 //!
 //! [`read_bill`], [`read_session_stats`] and [`read_project_stats`] find
 //! the source of an agent with [`agent_of`] and read through it;
@@ -80,14 +73,13 @@
 //! The [`Registry`] is the one list of the agents and providers OTTY knows
 //! right now: names, icons, usage pages and hosts come only from it (spec
 //! 2026-11-19-agent-plugins, "Links in the interface"). The parts of the
-//! plugins that are on fill it ([`Registry::of_readers`]). An account whose
-//! provider no entry serves stays known by the host of its key.
+//! plugins that are on fill it ([`Registry::of_readers`]).
 //!
 //! A [`PluginAgent`] is an agent part of a plugin as an [`Agent`]: OTTY
 //! walks the spend places it names, reads only the files that changed,
 //! counts an answer once and judges "format changed" from what the part
-//! saw. A [`PluginProvider`] reads the numbers of the accounts of its own
-//! provider id or hosts, with a handle to the key an agent part found. A
+//! saw. A [`PluginProvider`] finds the accounts of its part and reads
+//! their numbers, the part reading the logins itself. A
 //! trap or a missed deadline fails that read only, as a `PluginFailure`
 //! of `otty-plugin-host`, which calls the parts of any domain; three in a
 //! row pause the part (`PartHealth`). This crate turns only what the
@@ -118,7 +110,6 @@ pub mod fixtures;
 mod given_key;
 mod hidden_terminal;
 mod https;
-mod key_fingerprint;
 mod limits;
 mod litellm;
 mod local_time;
@@ -143,7 +134,6 @@ mod project;
 mod provider;
 mod read_failure;
 mod record_format;
-mod refused_login;
 mod registry;
 mod saved_profiles;
 mod session;
@@ -160,11 +150,10 @@ mod timestamp;
 mod token_count;
 mod walk;
 
-pub use crate::account::{
-    Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-    merge_accounts,
+pub use crate::account::{Account, AccountKey, AccountKind, FoundIn};
+pub use crate::account_numbers::{
+    AccountNumbers, FoundAccounts, find_accounts, read_account_numbers,
 };
-pub use crate::account_numbers::{AccountNumbers, read_account_numbers};
 pub use crate::agent::{
     Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder, agent_of,
 };
@@ -181,7 +170,6 @@ pub use crate::given_key::{GivenKey, KeyRef, KeySecret};
 pub use crate::hidden_terminal::{
     RunningTerminal, ScreenOutput, StartTerminal,
 };
-pub use crate::key_fingerprint::KeyFingerprint;
 pub use crate::limits::{
     Billing, BillingKind, Credits, ExtraUsage, LimitWindow, Limits,
     UsageWindows, WindowId,
@@ -206,7 +194,6 @@ pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
 pub use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
 pub use crate::record_format::FormatChange;
-pub use crate::refused_login::RefusedLogin;
 pub use crate::registry::Registry;
 pub use crate::saved_profiles::{
     DefaultProfileChanges, SavedProfiles, SavedProfilesError,

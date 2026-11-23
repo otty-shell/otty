@@ -6,22 +6,23 @@
 //! [`load_profiles`] reads `agents.json` next to `modes.json`, finds the
 //! default profile of each agent and checks each profile: its program is
 //! looked up through the user's login shell, the way the agent tab starts
-//! it. [`load_sessions`] reads the sessions of one profile and finds the
-//! project folders that no longer exist. [`load_limits`] reads the limits
-//! of one profile through the provider part of the account whose limits
-//! it shows, told of every profile the account was found in, which may
-//! ask the provider's server, or start the agent's program and read its
-//! screen in a hidden terminal;
+//! it. With the profiles it asks each provider part for the accounts it
+//! finds in the shown profiles of its own plugin. [`load_sessions`] reads
+//! the sessions of one profile and finds the project folders that no
+//! longer exist. [`load_limits`] reads the limits of one profile through
+//! the provider part that found the account whose limits it shows, in the
+//! folders it found it in, which may ask the provider's server, or start
+//! the agent's program and read its screen in a hidden terminal;
 //! [`load_limits_in_background`] does the same while Agents mode is away,
-//! without starting the agent's program. [`load_spend`] counts
-//! the tokens one profile spent from its session files, by the days of the
-//! user's time zone, which it asks from the system. [`load_bill`] reads the real bill of an API key
-//! profile with its admin key, read from its file or from a variable as
-//! the user's login shell sees it, and dropped right after the request.
-//! [`load_account_numbers`] reads the numbers of one account with its own
-//! key, read again from where it was found and dropped right after the
-//! request: the money left, a key limit, the bill of an organization the
-//! user added or the limits of a subscription login no profile reads.
+//! without starting the agent's program. [`load_spend`] counts the tokens
+//! one profile spent from its session files, by the days of the user's
+//! time zone, which it asks from the system. [`load_bill`] reads the real
+//! bill of an organization through the part that found it, with the admin
+//! key the user gave, read from its file or from a variable as the user's
+//! login shell sees it, and dropped right after the request.
+//! [`load_account_numbers`] reads the numbers of one account through the
+//! part that found it: the money left, a key limit or the limits of a
+//! subscription no profile reads.
 //! [`load_prices`] reads the list prices of the money at API prices: the
 //! LiteLLM price table, fetched at most once a day and kept in OTTY's cache
 //! folder.

@@ -152,8 +152,9 @@ mod tests {
 
     /// Spec 2026-11-23-accounts-apart-from-profiles: a part that names
     /// `STAND_IN_HOME` only as the `folder_env` of its logins starts
-    /// `stand-in` pointed at a login folder of the call, never at another
-    /// folder, and in a call with no login folder not at all.
+    /// `stand-in` pointed at a login folder of the call, never at a folder
+    /// of an agent part its logins do not name, and in a call with no
+    /// login folder not at all.
     #[test]
     fn a_program_gets_the_folder_variable_only_with_a_login_folder() {
         let cache = TempDir::new();
@@ -176,22 +177,17 @@ mod tests {
         let mut batch = plugin
             .start_calls(&PartRef::provider("test-provider"))
             .expect("a listed part");
-        let other = "/home/test-user/.test-agent-other";
         let refused = "ReadError::Host(HostError::NotAllowed(\"variable \
                        STAND_IN_HOME\"))";
 
         let in_folder =
-            read_in_profiles(&mut batch, &[("test-plugin", FOLDER)], "run");
-        let at_another_folder = read_in_profiles(
-            &mut batch,
-            &[("another-plugin", other), ("test-plugin", FOLDER)],
-            "run",
-        );
-        let with_no_folder =
-            read_in_profiles(&mut batch, &[("another-plugin", other)], "run");
+            read_in_profiles(&mut batch, &[("test-agent", FOLDER)], "run");
+        let of_another_agent =
+            read_in_profiles(&mut batch, &[("other-agent", FOLDER)], "run");
+        let with_no_folder = read_in_profiles(&mut batch, &[], "run");
 
         assert_same(plan_of(in_folder), Ok("stand-in 1.2.3".to_string()));
-        assert_same(plan_of(at_another_folder), Err(refused.to_string()));
+        assert_same(plan_of(of_another_agent), Err(refused.to_string()));
         assert_same(plan_of(with_no_folder), Err(refused.to_string()));
     }
 
@@ -270,10 +266,10 @@ mod tests {
     }
 
     /// A reading that ran a program runs once in five minutes per part
-    /// and profile; another profile, and a reading that ran no program,
+    /// and account; another account, and a reading that ran no program,
     /// read again.
     #[test]
-    fn pacing_skips_a_second_reading_of_a_profile_within_five_minutes() {
+    fn pacing_skips_a_second_reading_of_an_account_within_five_minutes() {
         let cache = TempDir::new();
         let mut starter = MockStartProgram::new();
         starter.expect_run().times(2).returning(|command, _, _| {
@@ -296,12 +292,12 @@ mod tests {
 
         let first = read(work, "run");
         let second = read(work, "run");
-        let other_profile = read(FOLDER, "run");
+        let other_account = read(FOLDER, "run");
         let no_program = [read(quick, "none"), read(quick, "none")];
 
         assert_eq!(first.as_deref(), Some(work));
         assert_eq!(second, first);
-        assert_eq!(other_profile.as_deref(), Some(FOLDER));
+        assert_eq!(other_account.as_deref(), Some(FOLDER));
         assert_eq!(
             no_program,
             [

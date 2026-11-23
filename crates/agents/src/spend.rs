@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use jiff::civil::Date;
 
-use crate::account::AccountIdentity;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
@@ -242,8 +241,8 @@ impl HourSpend {
 }
 
 /// The tokens one model spent in one project: a part of a day or of an
-/// hour, so that the usage can be split by project, by model and by
-/// account at once.
+/// hour, so that the usage can be split by project and by model at
+/// once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectModelTokens {
     project: Option<PathBuf>,
@@ -256,7 +255,7 @@ impl ProjectModelTokens {
         self.project.as_deref()
     }
 
-    /// The tokens of the model, with its provider and account.
+    /// The tokens of the model, with its provider.
     pub fn tokens(&self) -> &ModelTokens {
         &self.tokens
     }
@@ -268,7 +267,8 @@ impl ProjectModelTokens {
 }
 
 /// The tokens one model spent, and in how many requests, through one
-/// provider and, when the agent writes it, one account (spec Decision 4).
+/// provider. Nothing ties them to an account (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 1).
 ///
 /// Some models cost more for a request with a long prompt, one over a
 /// limit their prices name. The counter does not know the prices, so it
@@ -279,7 +279,6 @@ impl ProjectModelTokens {
 pub struct ModelTokens {
     model: Option<String>,
     provider: Option<ProviderRef>,
-    account: Option<AccountIdentity>,
     tokens: TokenCount,
     requests: u64,
     cost: Option<Dollars>,
@@ -298,12 +297,6 @@ impl ModelTokens {
     /// known, such as a local model or a server OTTY does not know.
     pub fn provider(&self) -> Option<&ProviderRef> {
         self.provider.as_ref()
-    }
-
-    /// The account that paid, when the agent writes it for each session.
-    /// `None` when the agent does not tell.
-    pub fn account(&self) -> Option<&AccountIdentity> {
-        self.account.as_ref()
     }
 
     /// The tokens.
@@ -359,7 +352,6 @@ impl ModelTokens {
         Self {
             model: model.map(String::from),
             provider: None,
-            account: None,
             tokens,
             requests,
             cost: None,
@@ -380,16 +372,9 @@ impl ModelTokens {
     ///     tokens.provider(),
     ///     Some(&ProviderRef::of_id("example-cloud"))
     /// );
-    /// assert_eq!(tokens.account(), None);
     /// ```
     pub fn with_provider(mut self, provider: Option<ProviderRef>) -> Self {
         self.provider = provider;
-        self
-    }
-
-    /// The same tokens, paid by `account`, or by an account not told.
-    pub fn with_account(mut self, account: Option<AccountIdentity>) -> Self {
-        self.account = account;
         self
     }
 
@@ -519,7 +504,7 @@ pub trait SpendCounter: Send {
 }
 
 /// Sorts `models` the most tokens first; models with as many tokens by
-/// their name, the unnamed one last, then by their provider and account.
+/// their name, the unnamed one last, then by their provider.
 pub(crate) fn sort_models(models: &mut [ModelTokens]) {
     models.sort_by(|a, b| {
         b.tokens
@@ -528,7 +513,6 @@ pub(crate) fn sort_models(models: &mut [ModelTokens]) {
             .then_with(|| a.model.is_none().cmp(&b.model.is_none()))
             .then_with(|| a.model.cmp(&b.model))
             .then_with(|| a.provider.cmp(&b.provider))
-            .then_with(|| a.account.cmp(&b.account))
     });
 }
 
@@ -539,17 +523,15 @@ pub(crate) fn total_tokens(models: &[ModelTokens]) -> TokenCount {
         .fold(TokenCount::default(), |sum, model| sum + model.tokens)
 }
 
-/// The tokens of the same model through the same provider and account
-/// among `models` added up, the most first.
+/// The tokens of the same model through the same provider among
+/// `models` added up, the most first.
 pub(crate) fn merge_models<'a>(
     models: impl Iterator<Item = &'a ModelTokens>,
 ) -> Vec<ModelTokens> {
     let mut by_model: Vec<ModelTokens> = Vec::new();
     for model in models {
         let same = by_model.iter_mut().find(|kept| {
-            kept.model == model.model
-                && kept.provider == model.provider
-                && kept.account == model.account
+            kept.model == model.model && kept.provider == model.provider
         });
 
         match same {

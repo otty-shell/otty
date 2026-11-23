@@ -18,7 +18,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::account::AccountIdentity;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::{
@@ -32,9 +31,9 @@ use crate::spend::Spend;
 use crate::spend_tally::{first_counted_day, tally};
 use crate::token_count::TokenCount;
 
-/// One answer of the model found in a session file. Its project, provider
-/// and account, when a plugin part names them for each answer, go before
-/// the ones of its file.
+/// One answer of the model found in a session file. Its project and
+/// provider, when a plugin part names them for each answer, go before the
+/// ones of its file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CountedAnswer {
     identity: Option<u64>,
@@ -45,7 +44,6 @@ pub(crate) struct CountedAnswer {
     cost: Option<Dollars>,
     project: Option<PathBuf>,
     provider: Option<ProviderRef>,
-    account: Option<AccountIdentity>,
 }
 
 impl CountedAnswer {
@@ -91,11 +89,6 @@ impl CountedAnswer {
         self.provider.as_ref()
     }
 
-    /// The account that paid for this answer, when named for it alone.
-    pub(crate) fn account(&self) -> Option<&AccountIdentity> {
-        self.account.as_ref()
-    }
-
     /// An answer written at `at` by `model`, with no identity.
     pub(crate) fn new(
         at: SystemTime,
@@ -111,7 +104,6 @@ impl CountedAnswer {
             cost: None,
             project: None,
             provider: None,
-            account: None,
         }
     }
 
@@ -133,11 +125,6 @@ impl CountedAnswer {
     /// The same answer, served by `provider`.
     pub(crate) fn with_provider(self, provider: Option<ProviderRef>) -> Self {
         Self { provider, ..self }
-    }
-
-    /// The same answer, paid by `account`.
-    pub(crate) fn with_account(self, account: Option<AccountIdentity>) -> Self {
-        Self { account, ..self }
     }
 
     /// The same answer with the identity made of `parts`, such as the ids

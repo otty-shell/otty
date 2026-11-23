@@ -34,34 +34,33 @@ the folder into a new repository and replace what the parts read.
   must name the same contracts. A plugin with only agent parts and texts
   in English only writes `export!(Example with agents::agent)` and only
   `agents.agent` in `[api]`.
-- A provider part reads an account's numbers any way it can: from the
-  provider's server with the key, or by asking the agent in a profile
-  the account was found in (`found.found_in`, each with the command its
-  agent part starts the agent with there), under the provider part's
-  own permissions. A key that is not at its place is a normal case:
-  using its handle fails with `HostError::NotFound`. With no way that
-  works, answer numbers with nothing in them, not an error. The
-  template's provider part has only its server, so a key that is not
-  there reads nothing.
-- A provider part reads logins in the profiles of the agent parts of its
-  own plugin with `[[agents.provider.logins]]`: the agent part, the
-  files it reads inside each profile folder (`read`), the key files
-  there with their key fields (`keys`, keys as handles), and the
-  variable that points the agent at a folder (`folder_env`). OTTY gives
-  the part those folders for the call about a login found there,
-  wherever the folder is, and the rules apply only inside them and only
-  for that call. The template's provider part reads the key of
-  `auth.json` in such a folder itself. Its tests run it with
-  `TestHost::as_provider_in`, which gives the folders as OTTY does.
+- A provider part owns its accounts. It names the profiles of the agent
+  parts of its own plugin it reads with `[[agents.provider.logins]]`: the
+  agent part, the files it reads inside each profile folder (`read`),
+  the key files there with their key fields (`keys`, keys as handles),
+  and the variable that points the agent at a folder (`folder_env`).
+  OTTY calls `accounts` with the folders of those profiles, wherever
+  they are, and the rules apply only inside them and only for that call.
+  The part gives each account it finds a stable id (OTTY keeps the
+  user's name and Hide by it), a name, a kind, the folders it was found
+  in and its needs; the same login in two folders is one account with
+  two places. The template's account is the key of `auth.json`, known by
+  its fingerprint and named by the email of the file.
+- A provider part reads an account's numbers any way it can, only in the
+  folders the account was found in (`account.found_in`): from the
+  provider's server with the login there, or by asking the agent there,
+  under the provider part's own permissions. With no way that works,
+  answer numbers with nothing in them, not an error. The template's
+  provider part has only its server, so an account whose key is gone
+  reads nothing. Its tests run it with `TestHost::as_provider_in`, which
+  gives the folders as OTTY does.
 - What the user must do for the agent or the provider, the part says
   itself as a need: an id, a title, a text and one button
   (`src/needs.rs`). The agent part gives one when nobody is logged in
-  (its button runs `example-agent login`), and one from `login_refused`
-  when a provider part refused a login it found: a provider part only
-  answers `ReadError::LoginRefused` for a login an agent keeps, since it
-  does not know which agent that is. The provider part asks for an
+  (its button runs `example-agent login`). The provider part asks for an
   admin key under its slot `admin` when the bill needs one, and for a new
-  key when the provider refused it. The texts are in the language of
+  key when the provider refused it. A refused or expired login of an
+  account is the provider part's need too, on that account. The texts are in the language of
   OTTY's interface (`env::language()`, the one OTTY shows at that call),
   or in English. The template has every text in OTTY's ten languages, so
   it implements `Language`: OTTY calls it when the user picks another

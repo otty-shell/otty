@@ -24,11 +24,11 @@
 //! answer in between.
 //!
 //! The provider part `anthropic` reads the panel (issue 29): in a Claude
-//! Code profile the account was found in, with the command the agent part
-//! `claude-code` starts Claude Code with there, under the provider part's
-//! own permissions.
+//! Code profile folder the account was found in, with Claude Code pointed
+//! at that folder as the agent part `claude-code` starts it there, under
+//! the provider part's own permissions.
 
-use otty_plugin_sdk::agents::{FoundProfile, LimitWindow, ReadError};
+use otty_plugin_sdk::agents::{LimitWindow, ReadError};
 use otty_plugin_sdk::terminal::{self, HiddenTerminal};
 use otty_plugin_sdk::{Command, HostError, clock};
 
@@ -115,14 +115,15 @@ struct Timing {
     look_ms: u32,
 }
 
-/// The windows of the `/usage` panel of `claude` in the Claude Code
-/// profile `profile` an account was found in. The panel tells no plan:
-/// OTTY takes it from the login.
+/// The windows of the `/usage` panel of `claude`, the command that starts
+/// Claude Code in the profile folder `folder` an account was found in.
+/// The panel tells no plan: the part takes it from the login.
 pub(crate) fn read_windows(
-    profile: &FoundProfile,
+    folder: &str,
+    claude: &Command,
 ) -> Result<Vec<LimitWindow>, ReadError> {
     let folders = terminal::working_folders().map_err(ReadError::Host)?;
-    let command = probe_command(&profile.launch);
+    let command = probe_command(claude);
 
     // The terminal is dropped at the end of the block, which stops
     // `claude` before its files are removed.
@@ -135,10 +136,10 @@ pub(crate) fn read_windows(
             ROWS,
         )
         .map_err(ReadError::Host)?;
-        read_panel(&terminal, &folders, &profile.launch, TIMING)
+        read_panel(&terminal, &folders, claude, TIMING)
     };
 
-    remove_probe_sessions(&profile.folder, &folders);
+    remove_probe_sessions(folder, &folders);
 
     answer
 }
@@ -342,7 +343,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::testing::{as_provider, found_profile, host, path};
+    use crate::claude_code::claude_in_folder;
+    use crate::testing::{as_provider_in, host, login_folder, path};
 
     const FOLDER: &str = "/home/dev/.cache/otty/agent-probe";
     const PROJECT: &str =
@@ -770,16 +772,19 @@ mod tests {
     }
 
     /// Through the test host: the provider part starts `claude` with the
-    /// arguments and the variables its manifest declares, in the profile
-    /// the account was found in, and the session files of the run are
-    /// removed.
+    /// arguments and the variables its manifest declares, pointed at the
+    /// profile folder the account was found in, and the session files of
+    /// the run are removed.
     #[test]
     fn claude_starts_as_declared_and_its_session_files_are_removed() {
         let host = host().with_terminal_folder(FOLDER);
         host.answer_terminal("claude", &ARGS, &[PROMPT, PANEL]);
-        let profile = found_profile(&host, ".claudeprobe", false);
+        let folder = path(&host, ".claudeprobe");
+        let folders = [login_folder(&host, ".claudeprobe")];
 
-        let windows = as_provider(&host, || read_windows(&profile));
+        let windows = as_provider_in(&host, &folders, || {
+            read_windows(&folder, &claude_in_folder(&folder))
+        });
 
         let started = host.started();
         assert_eq!(windows, Ok(panel_windows()));
@@ -789,7 +794,7 @@ mod tests {
         assert_eq!(
             started[0].env(),
             [
-                ("CLAUDE_CONFIG_DIR".to_string(), profile.folder.clone()),
+                ("CLAUDE_CONFIG_DIR".to_string(), folder.clone()),
                 ("DISABLE_AUTOUPDATER".to_string(), "1".to_string()),
             ]
         );

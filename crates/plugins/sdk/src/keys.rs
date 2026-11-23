@@ -1,8 +1,6 @@
 //! Keys and login tokens: a plugin holds a handle and never the key.
 
 use std::fmt;
-#[cfg(target_arch = "wasm32")]
-use std::mem::ManuallyDrop;
 
 #[cfg(target_arch = "wasm32")]
 use crate::bindings::host::otty::host::keys as wit;
@@ -32,18 +30,6 @@ impl Key {
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn from_wasm(handle: wit::Key) -> Self {
         Self { handle }
-    }
-
-    /// The key OTTY lends a provider call: the handle stays OTTY's, so it
-    /// is never dropped here.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn lent(key: &wit::Key) -> ManuallyDrop<Self> {
-        // SAFETY: the handle is a borrow OTTY gave for this call. It is
-        // used only while the call runs and `ManuallyDrop` keeps it from
-        // being dropped, which only its owner may do.
-        let handle = unsafe { wit::Key::from_handle(key.handle()) };
-
-        ManuallyDrop::new(Self { handle })
     }
 
     #[cfg(not(target_arch = "wasm32"))]

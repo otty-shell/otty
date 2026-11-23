@@ -120,12 +120,8 @@ impl AccountRowViewModel {
             selected.is_some_and(|selected| selected.is_same_account(&account));
         Self {
             is_selected,
-            icon: state.provider_icon(account.provider()),
-            name: short_account_name(
-                state.registry(),
-                state.profiles().saved(),
-                &account,
-            ),
+            icon: state.account_icon(&account),
+            name: short_account_name(state.profiles().saved(), &account),
             number: account_number(state, &account),
             account,
         }
@@ -342,10 +338,11 @@ mod tests {
         assert_eq!(names, ["Work", "you@example.com"]);
     }
 
-    /// Issue 34: a login two plugins read keeps its plugin after the
-    /// login, so the two rows tell apart.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: a login
+    /// two plugins find is two accounts, one row each, logo and name as
+    /// any account: no plugin after the name.
     #[test]
-    fn an_account_row_two_plugins_read_names_its_plugin() {
+    fn a_login_two_plugins_find_is_two_rows() {
         let fork = otty_agents::ProviderEntry::new(
             otty_agents::ProviderId::new("openai"),
             "OpenAI",
@@ -357,10 +354,17 @@ mod tests {
                 "openai",
             ),
         );
-        let found = chatgpt_login().with_read_by(None);
+        let of_fork = otty_agents::Account::new(
+            "openai-fork",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-account",
+            "you@example.com",
+            otty_agents::AccountKind::Subscription,
+            Vec::new(),
+        );
         let state = crate::testing::with_accounts_in(
             crate::testing::registry_with(fork),
-            &[(codex(), connected(), vec![found])],
+            &[(codex(), connected(), vec![chatgpt_login(), of_fork])],
             SavedProfiles::default(),
         );
 
@@ -372,10 +376,7 @@ mod tests {
             .iter()
             .map(|row| row.name.as_str())
             .collect();
-        assert_eq!(
-            names,
-            ["you@example.com (OpenAI)", "you@example.com (OpenAI Fork)"]
-        );
+        assert_eq!(names, ["you@example.com", "you@example.com"]);
     }
 
     #[test]

@@ -1,17 +1,16 @@
 //! The agent part `codex`: Codex, OpenAI's coding agent, and the commands
 //! that start it.
 
+use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, LoginRef, Place, PlaceItem, PlaceKind, Profile,
-    ProfilePlace, ProfileStatus, ReadError, Session,
+    Agent, Answers, Login, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session,
 };
-use otty_plugin_sdk::{Command, KeyPlace, Need};
 
-use crate::auth_file::ACCESS_TOKEN_FIELD;
 use crate::glob::escaped;
 use crate::profiles::{CONFIG_VARIABLE, profiles};
 use crate::sessions::session_file_globs;
-use crate::{OpenAi, accounts, detect, needs, sessions, spend_file, version};
+use crate::{OpenAi, detect, sessions, spend_file, version};
 
 /// The program, looked up on `PATH`.
 pub(crate) const PROGRAM: &str = "codex";
@@ -33,9 +32,11 @@ impl Agent for OpenAi {
         version::version(&profile.folder)
     }
 
-    /// The ChatGPT login or the API key of `auth.json`.
-    fn logins(profile: &Profile) -> Vec<Login> {
-        accounts::logins(&profile.folder)
+    /// None: the provider part `openai` finds the accounts of a profile
+    /// itself (spec 2026-11-23-accounts-apart-from-profiles, Decision 5),
+    /// and OTTY no longer asks.
+    fn logins(_profile: &Profile) -> Vec<Login> {
+        Vec::new()
     }
 
     /// Every session file, plain or compressed, in both session folders,
@@ -80,20 +81,6 @@ impl Agent for OpenAi {
 
         start_command(profile, args)
     }
-
-    /// A provider part refused the ChatGPT login of the profile, or saw it
-    /// expired, wherever it read it: Codex itself renews it in the
-    /// profile's config folder, or asks to log in again. The same need as
-    /// the provider part `openai` gives for an expired login it reads in
-    /// the profile, so it shows once. An API key is no login Codex renews.
-    fn login_refused(profile: &Profile, login: &LoginRef) -> Option<Need> {
-        if !is_chatgpt_login(login) {
-            return None;
-        }
-
-        let codex = start_command(profile, Vec::new());
-        Some(needs::login_expired(codex))
-    }
 }
 
 /// `codex` with `args` for `profile`.
@@ -115,15 +102,9 @@ fn profile_env(profile: &Profile) -> Vec<(String, String)> {
     vec![(CONFIG_VARIABLE.to_string(), profile.folder.clone())]
 }
 
-/// Whether `login` is the access token of a ChatGPT login.
-fn is_chatgpt_login(login: &LoginRef) -> bool {
-    matches!(login, KeyPlace::JsonField(field) if field.pointer == ACCESS_TOKEN_FIELD)
-}
-
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{JsonField, NeedAction};
+    use otty_plugin_sdk::NeedAction;
 
     use super::*;
     use crate::testing::{AGENT, BLOG_SESSION, as_part, host, path, profile};
@@ -157,58 +138,16 @@ mod tests {
         }
     }
 
-    /// The access token of the login of the config folder `name`.
-    fn token_of(host: &TestHost, name: &str) -> LoginRef {
-        KeyPlace::JsonField(JsonField {
-            file: path(host, &format!("{name}/auth.json")),
-            pointer: ACCESS_TOKEN_FIELD.to_string(),
-        })
-    }
-
-    /// Issue 20: a provider part refused the ChatGPT login of a profile;
-    /// the need runs Codex in that profile's config folder, as the part's
-    /// own read gives it.
+    /// The provider part finds the accounts: the agent part gives no
+    /// login.
     #[test]
-    fn a_refused_login_runs_codex_in_the_profiles_folder() {
-        let host = host();
-        let profile = profile(&host, ".codex-plus", false);
-        let login = token_of(&host, ".codex-plus");
-
-        let need = as_part(&host, || OpenAi::login_refused(&profile, &login))
-            .expect("a need");
-
-        assert_eq!(need.id, "login-expired");
-        assert_eq!(
-            need.action,
-            NeedAction::Run(command(
-                &[],
-                &[(CONFIG_VARIABLE, profile.folder.as_str())]
-            ))
-        );
-    }
-
-    /// An API key is no login Codex renews: the part says nothing.
-    #[test]
-    fn a_refused_api_key_gives_no_need_of_codex() {
-        let host = host();
-        let profile = profile(&host, ".codex-work", false);
-        let key = as_part(&host, || OpenAi::logins(&profile)).remove(0);
-
-        let need =
-            as_part(&host, || OpenAi::login_refused(&profile, &key.place));
-
-        assert_eq!(need, None);
-    }
-
-    #[test]
-    fn the_logins_of_a_profile_are_its_auth_file() {
+    fn the_agent_part_gives_no_login() {
         let host = host();
         let profile = profile(&host, ".codex-plus", false);
 
         let logins = as_part(&host, || OpenAi::logins(&profile));
 
-        assert_eq!(logins.len(), 1);
-        assert_eq!(logins[0].place, token_of(&host, ".codex-plus"));
+        assert!(logins.is_empty());
     }
 
     #[test]

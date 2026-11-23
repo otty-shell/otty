@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 
 use otty_plugin_host::PluginPart;
 
-use crate::account::Account;
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
@@ -84,10 +83,6 @@ impl Agent for StandIn {
         );
 
         ProfileStatus::NotLoggedIn(Some(Box::new(need)))
-    }
-
-    fn accounts(&self, _profile: &Profile) -> Vec<Account> {
-        Vec::new()
     }
 
     fn version(&self, _profile: &Profile) -> Option<String> {

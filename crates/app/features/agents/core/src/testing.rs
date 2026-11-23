@@ -8,13 +8,13 @@ use std::time::{Duration, SystemTime};
 use jiff::ToSpan;
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountIdentity, AccountKind, AccountLogin, AgentCommand,
-    AgentEnv, AgentId, AgentSession, Answer, Bill, Billing, DayCost, DaySpend,
-    Dollars, FetchedPrices, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow,
-    Limits, ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile,
-    ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef,
-    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
-    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    Account, AccountKind, AgentCommand, AgentEnv, AgentId, AgentSession,
+    Answer, Bill, Billing, DayCost, DaySpend, Dollars, FetchedPrices,
+    FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow, Limits,
+    ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile, ProfileStatus,
+    ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef, Registry,
+    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
+    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -230,20 +230,40 @@ pub(crate) fn api_key() -> ProfileStatus {
     }
 }
 
-/// A key of OpenAI OTTY found in a profile, known only by its
-/// fingerprint: `agents.json` can keep nothing of it. The OpenAI plugin
-/// reads it.
+/// A key of OpenAI the OpenAI plugin found in the default Codex profile,
+/// known by the fingerprint of the key.
 pub(crate) fn key_account() -> Account {
     Account::new(
-        ProviderRef::of_id("openai"),
-        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
-            "sk-made-up-0001",
-        )),
-        AccountLogin::Key(None),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
+        "openai",
+        ProviderId::new("openai"),
+        "key:made-up-0001",
+        "key ••••0001",
+        AccountKind::Key,
+        vec![found_in(codex_id(), "/home/user/.codex")],
     )
-    .with_read_by(Some(String::from("openai")))
+}
+
+/// The profile folder `folder` of the agent `agent`, where a provider part
+/// found an account.
+pub(crate) fn found_in(agent: AgentId, folder: &str) -> FoundIn {
+    FoundIn::profile(agent, PathBuf::from(folder))
+}
+
+/// `account` as its part found it in the folders `found_in`.
+pub(crate) fn found_in_folders(
+    account: &Account,
+    found_in: Vec<FoundIn>,
+) -> Account {
+    Account::new(
+        account.plugin(),
+        account.provider().clone(),
+        account.key().id(),
+        account.name(),
+        account.kind(),
+        found_in,
+    )
+    .with_plan(account.plan().map(String::from))
+    .with_needs(account.needs().to_vec())
 }
 
 /// The admin key the provider part of Anthropic asks for under the slot
@@ -542,17 +562,17 @@ pub(crate) fn spend_loaded(
     })
 }
 
-/// A made-up Anthropic Console organization, paid per token, found in
-/// the default Claude Code folder and read by the Anthropic plugin.
+/// A made-up Anthropic Console organization, paid per token, the
+/// Anthropic plugin found in the default Claude Code folder.
 pub(crate) fn organization() -> Account {
     Account::new(
-        ProviderRef::of_id("anthropic"),
-        AccountIdentity::OrganizationId(String::from("made-up-org")),
-        AccountLogin::Email(String::from("dev@example.com")),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
+        "anthropic",
+        ProviderId::new("anthropic"),
+        "org:made-up-org",
+        "dev@example.com",
+        AccountKind::Organization,
+        vec![found_in(claude_id(), "/home/user/.claude")],
     )
-    .with_read_by(Some(String::from("anthropic")))
 }
 
 /// The icon the built-in registry gives the agent `id`, such as `codex`.
@@ -623,18 +643,17 @@ pub(crate) fn with_registry_and_profiles(
     state
 }
 
-/// A made-up key of `provider` found in the Claude Code folder, read by
-/// the plugin of its provider.
+/// A made-up key the provider part `provider` of the plugin of the same
+/// id found in the Claude Code folder.
 pub(crate) fn found_key(provider: &str) -> Account {
-    read_by_its_plugin(Account::new(
-        ProviderRef::of_id(provider),
-        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
-            &format!("sk-made-up-{provider}"),
-        )),
-        AccountLogin::Key(None),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
-    ))
+    Account::new(
+        provider,
+        ProviderId::new(provider),
+        format!("key:made-up-{provider}"),
+        "key ••••a1f3",
+        AccountKind::Key,
+        vec![found_in(claude_id(), "/home/user/.claude")],
+    )
 }
 
 /// Claude Code with the key `account` found in it, whose own read
@@ -661,53 +680,22 @@ pub(crate) fn with_key_read(
     state
 }
 
-/// A made-up key for `api.deepseek.com` found in the settings of the
-/// Claude Code folder, as Claude Code with a DeepSeek base URL keeps it.
-pub(crate) fn deepseek_key_by_host() -> Account {
-    Account::new(
-        ProviderRef::Host(String::from("api.deepseek.com")),
-        AccountIdentity::KeyFingerprint(otty_agents::KeyFingerprint::of(
-            "sk-made-up-deepseek",
-        )),
-        AccountLogin::Key(Some(String::from("seek"))),
-        AccountKind::Money,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.claude")),
-    )
-}
-
-/// `account` read by the plugin the registry of the tests reads its
-/// provider with: the plugin whose id is the provider's (issue 29).
-pub(crate) fn read_by_its_plugin(account: Account) -> Account {
-    let plugin = account.provider().as_str().to_string();
-
-    account.with_read_by(Some(plugin))
-}
-
-/// A made-up ChatGPT login with a subscription, found in the Codex
-/// folders and read by the OpenAI plugin.
+/// A made-up ChatGPT subscription the OpenAI plugin found in the default
+/// Codex folder.
 pub(crate) fn chatgpt_login() -> Account {
-    Account::new(
-        ProviderRef::of_id("openai"),
-        AccountIdentity::AccountId(String::from("made-up-account")),
-        AccountLogin::Email(String::from("you@example.com")),
-        AccountKind::Limits,
-        FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
-    )
-    .with_read_by(Some(String::from("openai")))
+    chatgpt_login_in("/home/user/.codex")
 }
 
 /// The [`chatgpt_login`] as found in the Codex folder `folder`.
 pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
-    let login = chatgpt_login();
-
     Account::new(
-        login.provider().clone(),
-        login.identity().clone(),
-        login.login().clone(),
-        login.kind(),
-        FoundIn::ProfileFolder(PathBuf::from(folder)),
+        "openai",
+        ProviderId::new("openai"),
+        "chatgpt:made-up-account",
+        "you@example.com",
+        AccountKind::Subscription,
+        vec![found_in(codex_id(), folder)],
     )
-    .with_read_by(login.read_by().map(String::from))
 }
 
 /// The key the user gave for [`organization`] under the slot `admin`,
@@ -752,7 +740,9 @@ pub(crate) fn with_accounts_in(
 }
 
 /// The answer of a profiles read that found `profiles`, each with the
-/// accounts found in it, and `saved` in `agents.json`.
+/// accounts a provider part found in its folder, and `saved` in
+/// `agents.json`. An account given for two profiles is one account found
+/// in both folders, as its part tells it.
 pub(crate) fn profiles_with_accounts_loaded(
     profiles: &[(Profile, ProfileStatus, Vec<Account>)],
     saved: SavedProfiles,
@@ -761,11 +751,32 @@ pub(crate) fn profiles_with_accounts_loaded(
         .iter()
         .map(|(profile, status, _)| (profile.clone(), status.clone()))
         .collect();
-    let mut loaded = loaded_profiles(&shown, saved);
-    for (entry, (_, _, accounts)) in loaded.profiles.iter_mut().zip(profiles) {
-        entry.accounts = accounts.clone();
+    let mut accounts: Vec<Account> = Vec::new();
+    for (profile, _, found) in profiles {
+        let place = FoundIn::profile(
+            profile.agent().clone(),
+            profile.config_dir().to_path_buf(),
+        );
+        for account in found {
+            match accounts
+                .iter_mut()
+                .find(|kept| kept.is_same_account(account))
+            {
+                Some(kept) => {
+                    let mut places = kept.found_in().to_vec();
+                    places.push(place.clone());
+                    *kept = found_in_folders(kept, places);
+                },
+                None => accounts
+                    .push(found_in_folders(account, vec![place.clone()])),
+            }
+        }
     }
 
+    let loaded = LoadedProfiles {
+        accounts: FoundAccounts::new(accounts, Vec::new()),
+        ..loaded_profiles(&shown, saved)
+    };
     AgentsIntent::ProfilesLoaded(loaded)
 }
 
@@ -830,6 +841,21 @@ pub(crate) fn load_bill(profile: &Profile) -> AgentsOutcome {
         profile: profile.clone(),
         organization: organization(),
         given: vec![given_key()],
+    }
+}
+
+/// The profile and the organization of a read of a bill, `None` for any
+/// other outcome.
+pub(crate) fn bill_read_of(
+    outcome: &AgentsOutcome,
+) -> Option<(Profile, otty_agents::AccountKey)> {
+    match outcome {
+        AgentsOutcome::LoadBill {
+            profile,
+            organization,
+            ..
+        } => Some((profile.clone(), organization.key().clone())),
+        _ => None,
     }
 }
 
@@ -1039,11 +1065,11 @@ fn loaded_profiles(
             .map(|(profile, status)| LoadedProfile {
                 profile: profile.clone(),
                 status: status.clone(),
-                accounts: Vec::new(),
                 version: Some(String::from(SESSION_VERSION)),
             })
             .collect(),
         hidden_profiles: Vec::new(),
+        accounts: FoundAccounts::default(),
         saved: Some(saved),
         problem: None,
         time_zone: Some(TimeZone::UTC),

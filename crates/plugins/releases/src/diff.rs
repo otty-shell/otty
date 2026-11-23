@@ -104,8 +104,7 @@ pub enum PartChange {
 }
 
 /// The permissions of the part `part` of `manifest` in plain words, as the
-/// user grants them. A provider part also names each host whose keys it
-/// gets, so a new host asks again.
+/// user grants them.
 pub(crate) fn granted_lines(
     manifest: &Manifest,
     part: &PartRef,
@@ -121,25 +120,12 @@ pub(crate) fn granted_lines(
             .find(|agent| agent.id() == part.id())
             .map(|agent| as_text(agent.permission_lines()))
             .unwrap_or_default(),
-        PartKind::Provider => {
-            let Some(provider) = manifest
-                .providers()
-                .iter()
-                .find(|provider| provider.id() == part.id())
-            else {
-                return Vec::new();
-            };
-
-            let mut lines = as_text(provider.permission_lines());
-            lines.extend(
-                provider
-                    .hosts()
-                    .iter()
-                    .map(|host| format!("Gets the keys found for `{host}`")),
-            );
-
-            lines
-        },
+        PartKind::Provider => manifest
+            .providers()
+            .iter()
+            .find(|provider| provider.id() == part.id())
+            .map(|provider| as_text(provider.permission_lines()))
+            .unwrap_or_default(),
     }
 }
 
@@ -210,8 +196,11 @@ mod tests {
         assert!(!diff.asks_for_more());
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: a
+    /// provider part gets no key found for its hosts, so a new host asks
+    /// for nothing more.
     #[test]
-    fn a_new_host_of_a_provider_asks_again() {
+    fn a_new_host_of_a_provider_asks_for_nothing_more() {
         let old = Manifest::parse(&template_manifest("0.1.0")).expect("valid");
         let new = Manifest::parse(&template_manifest("0.2.0").replace(
             r#"hosts = ["example.com"]"#,
@@ -221,7 +210,7 @@ mod tests {
 
         let diff = PermissionDiff::between(&template_parts(&old), &new);
 
-        assert!(diff.asks_for_more());
+        assert!(!diff.asks_for_more());
     }
 
     #[test]

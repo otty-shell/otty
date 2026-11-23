@@ -1,6 +1,6 @@
 //! The official OpenAI plugin of OTTY. Its agent part `codex` reads
-//! Codex: its config folders (profiles), the login of each, its sessions
-//! and the tokens of its answers. Codex keeps
+//! Codex: its config folders (profiles), whether each is logged in, its
+//! sessions and the tokens of its answers. Codex keeps
 //! everything in its config folder, `CODEX_HOME` or `~/.codex`: the login
 //! in `auth.json`, one file for each session in
 //! `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` (older ones compressed
@@ -11,21 +11,26 @@
 //! list of sessions: that request repairs Codex's own index of sessions
 //! and can delete from it (spec Decision 13).
 //!
-//! Its provider part `openai` reads the numbers of OpenAI accounts any way
-//! it can (issue 29): the limits and credits of a ChatGPT login from
-//! `chatgpt.com` with its token, whichever agent keeps the login, else
-//! the limits Codex tells in a Codex profile the login was found in
-//! (`codex app-server` and the records of its session files); and the
+//! Its provider part `openai` finds its accounts itself (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 8), in the
+//! Codex profile folders OTTY gives it, and reads only there: the ChatGPT
+//! login of `auth.json` is a subscription known by its account id
+//! (`chatgpt:<account id>`), an API key is a key known by its fingerprint
+//! (`key:<fingerprint>`), and one account in two folders is one account
+//! with two places (`accounts.rs`). A login behind a gateway is no OpenAI
+//! account. It reads the numbers any way it can (issue 29), only in the
+//! account's folders: the limits and credits of a ChatGPT login from
+//! `chatgpt.com` with its token, else the limits Codex tells there
+//! (`codex app-server` and the records of its session files), and the
 //! costs of an organization with an admin key from `api.openai.com`. With
-//! no way that works it reads nothing. A ChatGPT
-//! login it sees refused or expired it only reports as refused: OTTY asks
-//! the agent part that keeps it, Codex's or another plugin's, what the
-//! user must do.
+//! no way that works it reads nothing. Whether a login expired is its
+//! call: an expired or refused ChatGPT login needs `codex login` in its
+//! folder.
 //!
 //! What only the user can do, the parts give as needs (`needs.rs`): log
-//! in to Codex, run Codex so it renews an expired login, and give or
-//! replace the admin key of an organization's bill. The texts come in
-//! every language of OTTY, so the plugin exports the language receiver.
+//! in to Codex, log in again when a login expired, and give or replace
+//! the admin key of an organization's bill. The texts come in every
+//! language of OTTY, so the plugin exports the language receiver.
 
 // A `ReadError` may hold a need, a record the contract can not box.
 #![allow(clippy::result_large_err)]

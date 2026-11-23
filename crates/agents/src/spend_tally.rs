@@ -8,7 +8,6 @@ use std::path::Path;
 use jiff::ToSpan;
 use jiff::civil::Date;
 
-use crate::account::AccountIdentity;
 use crate::local_time::{LocalNow, days_before};
 use crate::provider::ProviderRef;
 use crate::spend::{
@@ -18,13 +17,9 @@ use crate::spend::{
 use crate::spend_files::{CountedAnswer, FileSpend};
 use crate::token_count::TokenCount;
 
-/// What the tokens of the answers are added up by: the provider, the
-/// account and the model.
-type ModelKey<'a> = (
-    Option<&'a ProviderRef>,
-    Option<&'a AccountIdentity>,
-    Option<&'a str>,
-);
+/// What the tokens of the answers are added up by: the provider and the
+/// model.
+type ModelKey<'a> = (Option<&'a ProviderRef>, Option<&'a str>);
 
 /// The tokens of each model in each project, by the project and the
 /// [`ModelKey`].
@@ -152,58 +147,44 @@ pub(crate) fn once_each<'a>(
     answers
 }
 
-/// Counts `answer` among `models`, under its provider, account and model.
-/// An answer that names no provider is counted under `profile_provider`.
+/// Counts `answer` among `models`, under its provider and model. An
+/// answer that names no provider is counted under `profile_provider`.
 fn count_answer<'a>(
     models: &mut HashMap<ModelKey<'a>, ModelTokens>,
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let (provider, account) = payer_of(answer, profile_provider);
-    let key = (provider, account, answer.model());
+    let provider = answer.provider().or(profile_provider);
+    let key = (provider, answer.model());
 
     models
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
-                .with_account(account.cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
 }
 
-/// Counts `answer` of `file` among `parts`, under its project, provider,
-/// account and model, as [`count_answer`] does.
+/// Counts `answer` of `file` among `parts`, under its project, provider
+/// and model, as [`count_answer`] does.
 fn count_part<'a>(
     parts: &mut Parts<'a>,
     file: &'a FileSpend,
     answer: &'a CountedAnswer,
     profile_provider: Option<&'a ProviderRef>,
 ) {
-    let (provider, account) = payer_of(answer, profile_provider);
+    let provider = answer.provider().or(profile_provider);
     let project = answer.project().or(file.project());
-    let key = (project, (provider, account, answer.model()));
+    let key = (project, (provider, answer.model()));
 
     parts
         .entry(key)
         .or_insert_with(|| {
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
-                .with_account(account.cloned())
         })
         .count_request(answer.tokens(), prompt_of(answer), answer.cost());
-}
-
-/// The provider and the account of `answer`: the provider of the answer,
-/// else the profile's; the account of the answer.
-fn payer_of<'a>(
-    answer: &'a CountedAnswer,
-    profile_provider: Option<&'a ProviderRef>,
-) -> (Option<&'a ProviderRef>, Option<&'a AccountIdentity>) {
-    let provider = answer.provider().or(profile_provider);
-    let account = answer.account();
-
-    (provider, account)
 }
 
 /// The size of the prompt of `answer`, which tells whether the request
@@ -243,7 +224,6 @@ fn sorted_parts(parts: Parts) -> Vec<ProjectModelTokens> {
             .then_with(|| a.project().cmp(&b.project()))
             .then_with(|| a_tokens.model().cmp(&b_tokens.model()))
             .then_with(|| a_tokens.provider().cmp(&b_tokens.provider()))
-            .then_with(|| a_tokens.account().cmp(&b_tokens.account()))
     });
     parts
 }
@@ -274,7 +254,6 @@ mod tests {
     use jiff::tz::TimeZone;
 
     use super::*;
-    use crate::account::AccountIdentity;
     use crate::testing::{NOW, at, berlin, hours_east, utc_now};
 
     /// 2026-11-16T10:00:00Z, a Monday.
@@ -600,24 +579,20 @@ mod tests {
     }
 
     #[test]
-    fn the_tokens_of_each_provider_and_account_are_kept_apart() {
-        let one = AccountIdentity::AccountId("made-up-one".into());
-        let two = AccountIdentity::AccountId("made-up-two".into());
+    fn the_tokens_of_each_provider_are_kept_apart() {
         let files = [
             file(
                 "/a",
                 vec![
                     answer(NOW, "gpt-5", input(1))
-                        .with_provider(Some(ProviderRef::of_id("openai")))
-                        .with_account(Some(one.clone())),
+                        .with_provider(Some(ProviderRef::of_id("openai"))),
                 ],
             ),
             file(
                 "/a",
                 vec![
                     answer(NOW, "gpt-5", input(2))
-                        .with_provider(Some(ProviderRef::of_id("openai")))
-                        .with_account(Some(two.clone())),
+                        .with_provider(Some(ProviderRef::of_id("openai"))),
                 ],
             ),
             file("/a", vec![answer(NOW, "gpt-5", input(4))]),
@@ -625,15 +600,10 @@ mod tests {
 
         let spend = tally(files.iter(), &utc_now(), None);
 
-        let openai = |tokens, account: &AccountIdentity| {
-            ModelTokens::new(Some("gpt-5"), tokens, 1)
-                .with_provider(Some(ProviderRef::of_id("openai")))
-                .with_account(Some(account.clone()))
-        };
         let expected = [
             ModelTokens::new(Some("gpt-5"), input(4), 1),
-            openai(input(2), &two),
-            openai(input(1), &one),
+            ModelTokens::new(Some("gpt-5"), input(3), 2)
+                .with_provider(Some(ProviderRef::of_id("openai"))),
         ];
         assert_eq!(spend.last_30_days_by_day()[29].models(), expected);
         assert_eq!(spend.this_month_by_model(), expected);
@@ -678,16 +648,14 @@ mod tests {
         assert!(spend.last_30_days().is_zero());
         assert_eq!(spend.last_30_days_by_day()[0].models(), []);
     }
-    /// A plugin part names the project, the provider and the account of
-    /// each answer (spec 2026-11-19-agent-plugins, "SDK"): they go before
-    /// the project of the file and the provider of the profile.
+    /// A plugin part names the project and the provider of each answer
+    /// (spec 2026-11-19-agent-plugins, "SDK"): they go before the project
+    /// of the file and the provider of the profile.
     #[test]
-    fn the_project_provider_and_account_of_an_answer_go_first() {
-        let one = AccountIdentity::Email("dev@example.com".into());
+    fn the_project_and_provider_of_an_answer_go_first() {
         let own = answer(NOW, "m", input(1))
             .with_project(Some(PathBuf::from("/b")))
-            .with_provider(Some(ProviderRef::of_id("example-cloud")))
-            .with_account(Some(one.clone()));
+            .with_provider(Some(ProviderRef::of_id("example-cloud")));
         let files = [file("/a", vec![own, answer(NOW, "m", input(2))])];
 
         let spend = tally(
@@ -714,8 +682,7 @@ mod tests {
                 ModelTokens::new(Some("m"), input(2), 1)
                     .with_provider(Some(ProviderRef::of_id("anthropic"))),
                 ModelTokens::new(Some("m"), input(1), 1)
-                    .with_provider(Some(ProviderRef::of_id("example-cloud")))
-                    .with_account(Some(one)),
+                    .with_provider(Some(ProviderRef::of_id("example-cloud"))),
             ]
         );
     }

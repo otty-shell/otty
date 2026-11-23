@@ -210,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::rate_limits::no_numbers;
-    use crate::testing::{as_provider, host};
+    use crate::testing::{as_provider, as_provider_in, host, path};
 
     /// The only methods the plugin may ever send to `codex app-server`.
     const ALLOWED_METHODS: [&str; 3] =
@@ -310,12 +310,9 @@ mod tests {
             &APP_SERVER_ARGS,
             &[INITIALIZE_ANSWER, LIMITS_ANSWER],
         );
-        let env = [(
-            "CODEX_HOME".to_string(),
-            "/home/dev/.codex-work".to_string(),
-        )];
+        let env = [("CODEX_HOME".to_string(), path(&host, ".codex-work"))];
 
-        let result = as_provider(&host, || read_limits(&env));
+        let result = as_provider_in(&host, ".codex-work", || read_limits(&env));
 
         assert!(result.is_ok(), "{result:?}");
         let started = host.started();
@@ -533,6 +530,24 @@ mod tests {
 
         assert!(matches!(result, Err(ReadError::Host(_))), "{result:?}");
         assert!(host.sent().is_empty());
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5:
+    /// `CODEX_HOME` reaches `codex app-server` only set to a login folder
+    /// of the call.
+    #[test]
+    fn the_config_folder_of_another_profile_is_refused() {
+        let host = host();
+        host.answer_talk(PROGRAM, &APP_SERVER_ARGS, &[INITIALIZE_ANSWER]);
+        let env = [("CODEX_HOME".to_string(), path(&host, ".codex-team"))];
+
+        let result = as_provider_in(&host, ".codex-work", || read_limits(&env));
+
+        assert!(
+            matches!(result, Err(ReadError::Host(HostError::NotAllowed(_)))),
+            "{result:?}"
+        );
+        assert!(host.started().is_empty());
     }
 
     #[test]

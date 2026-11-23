@@ -22,7 +22,7 @@ use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
 /// The values of the `agents` domain both its contracts use, in the
 /// newest version.
 pub use crate::agents::agent::v0_1::otty::agents_agent::types::{
-    Credits, Identity, LimitWindow, LoginKind, ReadError,
+    Identity, LoginKind, ReadError,
 };
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::AgentVersion;

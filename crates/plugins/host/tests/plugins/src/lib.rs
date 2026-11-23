@@ -129,35 +129,23 @@ fn version() -> Option<String> {
 
 #[cfg(feature = "programs")]
 impl otty_plugin_sdk::agents::Provider for Plugin {
-    fn account(
-        _provider: &str,
-        _key: &otty_plugin_sdk::Key,
-        found: &otty_plugin_sdk::agents::LoginFacts,
-    ) -> Result<otty_plugin_sdk::agents::AccountFacts, ReadError> {
-        Ok(otty_plugin_sdk::agents::AccountFacts {
-            identity: found.identity.clone(),
-            plan: None,
-        })
-    }
-
-    /// The numbers read the way the account id says, such as `run`, in
-    /// the first profile the account was found in: the tests choose the
+    /// The numbers read the way the account's name says, such as `run`, in
+    /// the first folder the account was found in: the tests choose the
     /// way with the account they pass.
     fn numbers(
         _provider: &str,
-        found: &otty_plugin_sdk::agents::LoginFacts,
-        account: &otty_plugin_sdk::agents::AccountFacts,
-        _key: &otty_plugin_sdk::Key,
+        account: &otty_plugin_sdk::agents::Account,
         _given: &[otty_plugin_sdk::GivenKey],
     ) -> Result<otty_plugin_sdk::agents::AccountNumbers, ReadError> {
-        let way = account.identity.account_id.as_deref().unwrap_or("none");
-        let folder = found
+        use otty_plugin_sdk::agents::LoginFolder;
+
+        let folder = account
             .found_in
             .first()
-            .map(|profile| profile.folder.clone())
+            .map(|LoginFolder::Profile((_, folder))| folder.clone())
             .unwrap_or_default();
 
-        let plan = programs_plan(&folder, way)?;
+        let plan = programs_plan(&folder, &account.name)?;
 
         Ok(otty_plugin_sdk::agents::AccountNumbers {
             windows: Vec::new(),

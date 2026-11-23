@@ -89,14 +89,9 @@ fn numbers_block<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use iced::widget::container;
     use iced_test::simulator;
-    use otty_agents::{
-        Account, AccountIdentity, AccountKind, AccountLogin, FoundIn,
-        ProviderRef,
-    };
+    use otty_agents::Account;
     use otty_app_i18n::{self as i18n, Key};
     use otty_app_theme::theme::ThemeManager;
 
@@ -111,13 +106,7 @@ mod tests {
     const WIDTH: f32 = 1000.0;
 
     fn chatgpt() -> Account {
-        Account::new(
-            ProviderRef::of_id("openai"),
-            AccountIdentity::AccountId(String::from("made-up-account")),
-            AccountLogin::Email(String::from("you@example.com")),
-            AccountKind::Limits,
-            FoundIn::ProfileFolder(PathBuf::from("/home/user/.codex")),
-        )
+        crate::testing::chatgpt_login()
     }
 
     fn page() -> AccountPageViewModel {

@@ -50,6 +50,7 @@ impl Delivery for AgentsIntent {
         match outcome {
             AgentsOutcome::LoadProfiles => agents_io::load_profiles(
                 app.agents.known_agents(),
+                &app.plugin_providers,
                 app.agents.env(),
                 &app.config_dir,
                 app.shell_session.program(),
@@ -71,27 +72,19 @@ impl Delivery for AgentsIntent {
                 agents_io::load_sessions(app.agents.known_agents(), profile)
                     .map(AppEvent::Agents)
             },
-            // The account the profile shows the limits of, and the
-            // profiles it was found in, which its provider part is told of.
+            // The account the profile shows the limits of, which the
+            // provider part that found it reads.
             AgentsOutcome::LoadLimits(profile) => {
-                let (account, found_in) = app.agents.limits_to_read(&profile);
-                agents_io::load_limits(
-                    app.agents.known_agents(),
-                    &app.plugin_providers,
-                    profile,
-                    account,
-                    found_in,
-                )
-                .map(AppEvent::Agents)
+                let account = app.agents.limits_to_read(&profile);
+                agents_io::load_limits(&app.plugin_providers, profile, account)
+                    .map(AppEvent::Agents)
             },
             AgentsOutcome::LoadLimitsInBackground(profile) => {
-                let (account, found_in) = app.agents.limits_to_read(&profile);
+                let account = app.agents.limits_to_read(&profile);
                 agents_io::load_limits_in_background(
-                    app.agents.known_agents(),
                     &app.plugin_providers,
                     profile,
                     account,
-                    found_in,
                 )
                 .map(AppEvent::Agents)
             },
@@ -104,7 +97,6 @@ impl Delivery for AgentsIntent {
                 organization,
                 given,
             } => agents_io::load_bill(
-                app.agents.known_agents(),
                 &app.plugin_providers,
                 profile,
                 organization,
@@ -114,14 +106,11 @@ impl Delivery for AgentsIntent {
             .map(AppEvent::Agents),
             AgentsOutcome::LoadAccountNumbers {
                 account,
-                found_in,
                 given,
                 may_start_programs,
             } => agents_io::load_account_numbers(
-                app.agents.known_agents(),
                 &app.plugin_providers,
                 account,
-                found_in,
                 given,
                 may_start_programs,
                 app.shell_session.program(),
@@ -438,13 +427,15 @@ mod tests {
             otty_agents::KeyRef::EnvVar(String::from("OTTY_TEST_NO_SUCH_KEY")),
         );
         let organization = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("anthropic"),
-            otty_agents::AccountIdentity::OrganizationId(String::from(
-                "made-up-org",
-            )),
-            otty_agents::AccountLogin::Unnamed,
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(profile.config_dir().into()),
+            "anthropic",
+            otty_agents::ProviderId::new("anthropic"),
+            "org:made-up-org",
+            "Made-up org",
+            otty_agents::AccountKind::Organization,
+            vec![otty_agents::FoundIn::profile(
+                profile.agent().clone(),
+                profile.config_dir(),
+            )],
         );
 
         let task = AgentsIntent::read(
@@ -459,30 +450,27 @@ mod tests {
         assert_eq!(task.units(), 1);
     }
 
-    /// The numbers of an account are read with its own key in the
-    /// background; nothing is read here, the profile is made up.
+    /// The numbers of an account are read by its part in the background;
+    /// nothing is read here, the account is made up.
     #[test]
     fn the_numbers_of_an_account_are_read_in_the_background() {
         let mut app = app();
-        let folder = PathBuf::from("/no/such/.stranger");
         let account = otty_agents::Account::new(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AccountIdentity::AccountId(String::from("made-up")),
-            otty_agents::AccountLogin::Unnamed,
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder(folder.clone()),
-        );
-        let profile = otty_agents::Profile::default_for(
-            otty_agents::AgentId::new("stranger"),
-            "Stranger",
-            folder,
+            "deepseek",
+            otty_agents::ProviderId::new("deepseek"),
+            "key:made-up",
+            "key ••••made",
+            otty_agents::AccountKind::Key,
+            vec![otty_agents::FoundIn::profile(
+                otty_agents::AgentId::new("stranger"),
+                PathBuf::from("/no/such/.stranger"),
+            )],
         );
 
         let task = AgentsIntent::read(
             &mut app,
             AgentsOutcome::LoadAccountNumbers {
                 account,
-                found_in: vec![profile],
                 given: Vec::new(),
                 may_start_programs: false,
             },

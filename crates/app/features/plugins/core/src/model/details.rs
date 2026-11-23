@@ -168,7 +168,7 @@ fn page(
             let reference = part.part();
             let is_paused = is_paused(state, id, &reference);
             let name = plugin.part_name(&reference);
-            let places = granted_groups(part.granted(), manifest, &name)
+            let places = granted_groups(part.granted(), manifest)
                 .iter()
                 .map(|group| group.places.len())
                 .sum();
@@ -471,10 +471,9 @@ mod tests {
             Some("Reads the limits of Example Cloud accounts.")
         );
         // Two folders, a variable and two login files; a login file and
-        // the sessions in the example agent's profiles, a site, the
-        // accounts and the keys of one host.
+        // the sessions in the example agent's profiles, and a site.
         assert_eq!(page.parts[0].places, 5);
-        assert_eq!(page.parts[1].places, 5);
+        assert_eq!(page.parts[1].places, 3);
     }
 
     /// Issue 36: a part whose manifest says nothing of what it does shows

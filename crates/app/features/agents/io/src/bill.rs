@@ -1,29 +1,27 @@
-//! The read of the real bill of one organization, through one profile that
-//! pays through it (spec Decision 9). It reads the keys the user gave for
-//! the organization from their files or their environment variables,
-//! hands the provider part of the organization's provider a handle to
-//! each and to the login of the profile, and drops them, so it runs on a
-//! thread of its own.
+//! The read of the real bill of one organization, through one profile it
+//! was found in (spec Decision 9). The provider part that found the
+//! organization reads it, with the keys the user gave for it read from
+//! their files or their environment variables and handed over as handles,
+//! then dropped, so it runs on a thread of its own.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Account, Agent, GivenKey, PluginProvider, Profile};
-use otty_app_agents::{AgentList, AgentsIntent, LoadedBill};
+use otty_agents::{Account, GivenKey, PluginProvider, Profile};
+use otty_app_agents::{AgentsIntent, LoadedBill};
 
 use crate::background::{on_own_thread, read_stopped};
 use crate::plugin_parts::ProviderList;
 use crate::shell_variable::shell_variable;
 
-/// Read the bill of `organization`, which `profile` pays through, in the
-/// background, with the provider part of `providers` that serves it, the
-/// login the agent part of `agents` found it by in the profile and the
-/// keys the user gave for it (`given`). Each given key is read from its
-/// file, or from its variable as the user's login shell at `shell` sees
-/// it, so a variable set in `~/.zshrc` is found when OTTY was started from
-/// the desktop. The keys are used for this read only and never logged.
-/// The answer comes back as [`AgentsIntent::BillLoaded`].
+/// Read the bill of `organization`, read through `profile`, in the
+/// background, by the provider part of `providers` that found it, with
+/// the keys the user gave for it (`given`). Each given key is read from
+/// its file, or from its variable as the user's login shell at `shell`
+/// sees it, so a variable set in `~/.zshrc` is found when OTTY was started
+/// from the desktop. The keys are used for this read only and never
+/// logged. The answer comes back as [`AgentsIntent::BillLoaded`].
 ///
 /// # Example
 ///
@@ -31,11 +29,7 @@ use crate::shell_variable::shell_variable;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{
-///     Account, AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn,
-///     Profile, ProviderRef,
-/// };
-/// use otty_app_agents::AgentList;
+/// use otty_agents::{Account, AccountKind, AgentId, Profile, ProviderId};
 ///
 /// let profile = Profile::default_for(
 ///     AgentId::new("claude-code"),
@@ -43,16 +37,15 @@ use crate::shell_variable::shell_variable;
 ///     PathBuf::from("/home/user/.coder"),
 /// );
 /// let organization = Account::new(
-///     ProviderRef::of_id("anthropic"),
-///     AccountIdentity::OrganizationId("made-up-org".into()),
-///     AccountLogin::Unnamed,
-///     AccountKind::Money,
-///     FoundIn::ProfileFolder(PathBuf::from("/home/user/.coder")),
+///     "anthropic",
+///     ProviderId::new("anthropic"),
+///     "org:made-up-org",
+///     "Made-up org",
+///     AccountKind::Organization,
+///     Vec::new(),
 /// );
-/// let agents: AgentList = Arc::from(Vec::new());
 /// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
 /// let read = otty_app_agents_io::load_bill(
-///     &agents,
 ///     &providers,
 ///     profile,
 ///     organization,
@@ -63,7 +56,6 @@ use crate::shell_variable::shell_variable;
 /// assert_eq!(read.units(), 1);
 /// ```
 pub fn load_bill(
-    agents: &AgentList,
     providers: &ProviderList,
     profile: Profile,
     organization: Account,
@@ -71,7 +63,6 @@ pub fn load_bill(
     shell: &str,
 ) -> Task<AgentsIntent> {
     let task = format!("reading the bill through {}", profile.name());
-    let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
     let fallback = (profile.clone(), given.clone());
     let shell = shell.to_string();
@@ -80,7 +71,6 @@ pub fn load_bill(
         task,
         move || {
             read_bill(
-                &agents,
                 &providers,
                 profile,
                 &organization,
@@ -99,11 +89,10 @@ pub fn load_bill(
     )
 }
 
-/// The bill up to `now` of `organization`, which `profile` pays through,
-/// read with the keys of `given`; `env_var` gives the value of an
-/// environment variable.
+/// The bill up to `now` of `organization`, read through `profile`, with
+/// the keys of `given`; `env_var` gives the value of an environment
+/// variable.
 fn read_bill(
-    agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     profile: Profile,
     organization: &Account,
@@ -111,15 +100,8 @@ fn read_bill(
     now: SystemTime,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedBill {
-    let bill = otty_agents::read_bill(
-        agents,
-        providers,
-        organization,
-        &profile,
-        &given,
-        now,
-        env_var,
-    );
+    let bill =
+        otty_agents::read_bill(providers, organization, &given, now, env_var);
 
     LoadedBill {
         profile,
@@ -134,20 +116,15 @@ mod tests {
     use std::path::Path;
 
     use otty_agents::{
-        AccountIdentity, AccountKind, AccountLogin, AgentId, FoundIn, KeyRef,
-        ProviderRef, SourceError, Unavailable,
+        AccountKind, AgentId, FoundIn, KeyRef, ProviderId, SourceError,
+        Unavailable,
     };
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
     use crate::testing::{fake_shell, providers_with_plugins, run};
 
-    /// No environment variable is set: no test reads the real environment.
-    fn no_variables(_: &str) -> Option<String> {
-        None
-    }
-
-    /// A Coder API key profile in a made-up folder.
+    /// A Claude Code API key profile in a made-up folder.
     fn claude_api(home: &Path) -> Profile {
         Profile::added(
             AgentId::new("claude-code"),
@@ -156,17 +133,20 @@ mod tests {
         )
     }
 
-    /// A made-up organization at `provider`, found in `home` and read by
-    /// the plugin of the same id.
+    /// A made-up organization the provider part `provider` of the plugin
+    /// of the same id found in `home`.
     fn organization(home: &Path, provider: &str) -> Account {
         Account::new(
-            ProviderRef::of_id(provider),
-            AccountIdentity::OrganizationId(String::from("made-up-org")),
-            AccountLogin::Unnamed,
-            AccountKind::Money,
-            FoundIn::ProfileFolder(home.join(".claude-api")),
+            provider,
+            ProviderId::new(provider),
+            "org:made-up-org",
+            "Made-up org",
+            AccountKind::Organization,
+            vec![FoundIn::profile(
+                AgentId::new("claude-code"),
+                home.join(".claude-api"),
+            )],
         )
-        .with_read_by(Some(provider.to_string()))
     }
 
     fn given(key: KeyRef) -> Vec<GivenKey> {
@@ -174,7 +154,7 @@ mod tests {
     }
 
     /// Issue 15 of spec 2026-11-19-agent-plugins: with no provider part
-    /// that serves the organization, nothing is read or sent.
+    /// that found the organization, nothing is read or sent.
     #[test]
     fn a_provider_with_no_part_has_no_bill() {
         let home = TempDir::new("agents-bill-no-part");
@@ -183,7 +163,6 @@ mod tests {
         let before = SystemTime::now();
 
         let loaded = read_bill(
-            &[],
             &providers_with_plugins(home.path()),
             profile.clone(),
             &organization(home.path(), "example-cloud"),
@@ -201,26 +180,25 @@ mod tests {
         );
     }
 
-    /// The login of the profile is gone, so nothing is read: no agent
-    /// finds it, and no given key is looked at.
+    /// A given key that is not where the user said fails the read before
+    /// the part is asked.
     #[test]
-    fn a_profile_whose_login_is_gone_reads_no_bill() {
-        let home = TempDir::new("agents-bill-no-login");
+    fn a_missing_given_key_reads_no_bill() {
+        let home = TempDir::new("agents-bill-no-key");
         let key = KeyRef::EnvVar(String::from("OTTY_TEST_ORG_KEY"));
 
         let loaded = read_bill(
-            &[],
             &providers_with_plugins(home.path()),
             claude_api(home.path()),
             &organization(home.path(), "anthropic"),
-            given(key),
+            given(key.clone()),
             SystemTime::now(),
-            no_variables,
+            |_| None,
         );
 
         assert_eq!(
             loaded.bill,
-            Err(SourceError::NotAvailable(Unavailable::KeyGone))
+            Err(SourceError::NotAvailable(Unavailable::KeyMissing(key)))
         );
     }
 
@@ -229,11 +207,9 @@ mod tests {
         let home = TempDir::new("agents-bill-task");
         let shell = fake_shell(&home);
         let profile = claude_api(home.path());
-        let agents: AgentList = Arc::from(Vec::new());
         let providers = providers_with_plugins(home.path());
 
         let answers = run(load_bill(
-            &agents,
             &providers,
             profile.clone(),
             organization(home.path(), "anthropic"),

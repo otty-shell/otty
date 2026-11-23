@@ -228,7 +228,6 @@ fn profile_menu(
 
     menu = menu.separator().item(hide_item(
         vm.is_hidden,
-        true,
         act(ProfileAction::Hide),
         act(ProfileAction::ShowAgain),
     ));
@@ -244,41 +243,33 @@ fn profile_menu(
 }
 
 /// The menu of an account: Rename…, Open usage page, then after a line
-/// Hide (or Show again for a hidden account). A key can not be renamed
-/// or hidden yet: those items are off and say why on hover.
+/// Hide (or Show again for a hidden account).
 fn account_menu(
     vm: &AccountMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let act = AgentsIntent::AccountMenu;
 
-    let mut rename = MenuItem::new(i18n::t(Key::AgentsRename))
-        .disabled_reason(i18n::t(Key::AgentsKeyNotSaved));
-    if vm.can_save {
-        rename = rename.on_press(act(AccountAction::Rename));
-    }
-    let hide = hide_item(
-        vm.is_hidden,
-        vm.can_save,
-        act(AccountAction::Hide),
-        act(AccountAction::ShowAgain),
-    );
-
     Menu::new(palette)
-        .item(rename)
+        .item(
+            MenuItem::new(i18n::t(Key::AgentsRename))
+                .on_press(act(AccountAction::Rename)),
+        )
         .item(
             MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
                 .on_press(act(AccountAction::OpenUsagePage)),
         )
         .separator()
-        .item(hide.disabled_reason(i18n::t(Key::AgentsKeyNotSaved)))
+        .item(hide_item(
+            vm.is_hidden,
+            act(AccountAction::Hide),
+            act(AccountAction::ShowAgain),
+        ))
 }
 
-/// Hide, or Show again while `is_hidden`; it sends nothing unless
-/// `can_act`.
+/// Hide, or Show again while `is_hidden`.
 fn hide_item(
     is_hidden: bool,
-    can_act: bool,
     hide: AgentsIntent,
     show_again: AgentsIntent,
 ) -> MenuItem<AgentsIntent> {
@@ -288,11 +279,7 @@ fn hide_item(
         (Key::AgentsHide, hide)
     };
 
-    let item = MenuItem::new(i18n::t(key));
-    if !can_act {
-        return item;
-    }
-    item.on_press(intent)
+    MenuItem::new(i18n::t(key)).on_press(intent)
 }
 
 /// The "⋯" of All accounts: Show hidden accounts (N), off while none is
@@ -691,10 +678,9 @@ mod tests {
         );
     }
 
-    fn account_menu(can_save: bool, is_hidden: bool) -> MenuViewModel {
+    fn account_menu(is_hidden: bool) -> MenuViewModel {
         MenuViewModel::Account(AccountMenuViewModel {
             place: place(),
-            can_save,
             is_hidden,
         })
     }
@@ -709,12 +695,12 @@ mod tests {
 
         for (key, action) in items {
             assert_eq!(
-                pressed(account_menu(true, false), i18n::t(key)),
+                pressed(account_menu(false), i18n::t(key)),
                 [AgentsIntent::AccountMenu(action)]
             );
         }
         assert_eq!(
-            pressed(account_menu(true, true), i18n::t(Key::AgentsShowAgain)),
+            pressed(account_menu(true), i18n::t(Key::AgentsShowAgain)),
             [AgentsIntent::AccountMenu(AccountAction::ShowAgain)]
         );
     }
@@ -725,7 +711,7 @@ mod tests {
     fn the_account_menu_has_no_edit_key_and_no_remove() {
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MenuProps {
-            vm: account_menu(true, false),
+            vm: account_menu(false),
             theme: ThemeProps::new(themes.current()),
         }));
 
@@ -770,35 +756,6 @@ mod tests {
             .expect("the menu should draw")
             .matches_hash(reference)
             .expect("reference should be readable")
-    }
-
-    /// Issue 42: a key can not be renamed or hidden yet. Rename… and Hide
-    /// are off and send nothing, the menu has no note, and each item says
-    /// why on hover.
-    #[test]
-    fn rename_and_hide_of_a_key_send_nothing_and_say_why_on_hover() {
-        let folder = TempDir::new("agents-key-menu");
-        let idle = folder.path().join("idle");
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(MenuProps {
-            vm: account_menu(false, false),
-            theme: ThemeProps::new(themes.current()),
-        }));
-        let rename = i18n::t(Key::AgentsRename);
-        let hide = i18n::t(Key::AgentsHide);
-
-        let has_note = ui.find(i18n::t(Key::AgentsKeyNotSaved)).is_ok();
-        assert!(draws(account_menu(false, false), None, &idle), "save");
-
-        assert!(!has_note, "the menu has no note");
-        assert!(pressed(account_menu(false, false), rename).is_empty());
-        assert!(pressed(account_menu(false, false), hide).is_empty());
-        for label in [rename, hide] {
-            assert!(
-                !draws(account_menu(false, false), Some(label), &idle),
-                "{label} says why on hover"
-            );
-        }
     }
 
     #[test]

@@ -12,17 +12,13 @@ use super::profile_actions::{save, unread_file};
 use super::state::AgentsState;
 
 /// Save `account` hidden, or shown again. The change shows at once; the
-/// page of the account gives way to All accounts when it is hidden. An
-/// account known only by its key can not be hidden: nothing taken from a
-/// key is kept.
+/// page of the account gives way to All accounts when it is hidden. It is
+/// kept by the account's plugin and id, so it stays after a new read.
 pub(crate) fn set_account_hidden(
     state: &mut AgentsState,
     account: &Account,
     is_hidden: bool,
 ) -> Vec<AgentsOutcome> {
-    if !account.can_be_saved() {
-        return Vec::new();
-    }
     let Some(saved) = state.profiles().saved() else {
         return vec![unread_file()];
     };
@@ -240,26 +236,21 @@ mod tests {
         crate::testing::registry_with(fork)
     }
 
-    /// A made-up DeepSeek login known by its email, found in the Claude
-    /// Code folder, read by no plugin yet.
-    fn deepseek_login() -> Account {
+    /// The made-up DeepSeek key the plugin `plugin` found in the Claude
+    /// Code folder: the DeepSeek plugin and its fork find the same key.
+    fn deepseek_copy(plugin: &str) -> Account {
         Account::new(
-            otty_agents::ProviderRef::of_id("deepseek"),
-            otty_agents::AccountIdentity::Email(String::from(
-                "dev@example.com",
-            )),
-            otty_agents::AccountLogin::Email(String::from("dev@example.com")),
-            otty_agents::AccountKind::Money,
-            otty_agents::FoundIn::ProfileFolder("/home/user/.claude".into()),
+            plugin,
+            otty_agents::ProviderId::new("deepseek"),
+            "key:made-up-deepseek",
+            "dev@example.com",
+            otty_agents::AccountKind::Key,
+            Vec::new(),
         )
     }
 
-    /// The copy of [`deepseek_login`] that `plugin` reads.
-    fn deepseek_copy(plugin: &str) -> Account {
-        deepseek_login().with_read_by(Some(String::from(plugin)))
-    }
-
-    /// Codex with its login, and Claude Code with the DeepSeek login.
+    /// Codex with its login, and Claude Code with the DeepSeek key each
+    /// plugin found.
     fn deepseek_profiles()
     -> [(Profile, otty_agents::ProfileStatus, Vec<Account>); 2] {
         [
@@ -267,7 +258,7 @@ mod tests {
             (
                 crate::testing::claude(),
                 crate::testing::api_key(),
-                vec![deepseek_login()],
+                vec![deepseek_copy("deepseek"), deepseek_copy("deepseek-fork")],
             ),
         ]
     }
@@ -292,9 +283,10 @@ mod tests {
             .collect()
     }
 
-    /// Issue 31: an account that two plugins read is two copies; hiding
-    /// one saves only that copy hidden, and the other stays listed, read
-    /// and among the accounts counted.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: one key
+    /// two plugins find is two accounts; hiding one saves only that one
+    /// hidden, by its plugin and id, and the other stays listed, read and
+    /// among the accounts counted.
     #[test]
     fn hiding_one_copy_of_an_account_keeps_the_other_shown_and_read() {
         let fork_hidden = report_shown()
@@ -319,7 +311,7 @@ mod tests {
                 .into_iter()
                 .map(|(name, _)| name)
                 .collect::<Vec<_>>(),
-            ["you@example.com", "dev@example.com (DeepSeek)"]
+            ["you@example.com", "dev@example.com"]
         );
         assert!(
             state

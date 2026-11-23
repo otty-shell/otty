@@ -52,8 +52,8 @@ impl AccountNumbersViewModel {
         now: SystemTime,
     ) -> Option<Self> {
         match account.kind() {
-            AccountKind::Money => money(state, account, now).map(Self::Money),
-            _ => limits(state, account, now),
+            AccountKind::Subscription => limits(state, account, now),
+            _ => money(state, account, now).map(Self::Money),
         }
     }
 }
@@ -80,7 +80,7 @@ fn limits(
         profiles.time_zone(),
     )?;
 
-    if account.kind() == AccountKind::Credits || limits.credits.is_some() {
+    if limits.credits.is_some() {
         return Some(AccountNumbersViewModel::Credits(limits));
     }
     Some(AccountNumbersViewModel::Limits(limits))
