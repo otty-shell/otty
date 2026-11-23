@@ -166,7 +166,7 @@ use model::{
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
 use new_session_dialog::NewSessionDialogViewModel;
-use otty_agents::{Account, AgentEnv, Profile, Registry};
+use otty_agents::{Account, AgentEnv, ApiPrices, Profile, Registry};
 use otty_app_slots::{
     Component, MainArea, MainContent, Overlay, Overlays, StatusBar,
 };
@@ -280,6 +280,17 @@ impl Agents {
     /// shows, `None` when it has none.
     pub fn limits_to_read(&self, profile: &Profile) -> Option<Account> {
         self.state.profiles().limits_to_read(profile)
+    }
+
+    /// Return the list prices the agent parts price the tokens at in a
+    /// read of the tokens or of the statistics
+    /// ([`AgentsOutcome::LoadSpend`], [`AgentsOutcome::LoadSessionStats`],
+    /// [`AgentsOutcome::LoadProjectStats`]): the money of a profile comes
+    /// from its agent part (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 3). The same value until the prices change, and the
+    /// feature then counts the tokens again.
+    pub fn api_prices(&self) -> &Arc<ApiPrices> {
+        self.state.profiles().api_prices()
     }
 
     /// Return what the agents look at in the environment: the home folder

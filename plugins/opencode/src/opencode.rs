@@ -2,15 +2,16 @@
 //! the commands that start it.
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
-    ProfileStatus, ReadError, Session,
+    Agent, Answers, Place, PlaceItem, Profile, ProfilePlace, ProfileStatus,
+    ReadError, Session,
 };
-use otty_plugin_sdk::{Command, Need};
+use otty_plugin_sdk::{Command, files};
 
 use crate::database::{Database, database_places};
+use crate::glob::escaped;
 use crate::location::{database_of, profiles, start_command};
 use crate::sessions::newest_version;
-use crate::{OpenCode, answers, logins, needs, sessions};
+use crate::{OpenCode, answers, sessions};
 
 impl Agent for OpenCode {
     /// The default data folder; OpenCode has no other.
@@ -18,10 +19,15 @@ impl Agent for OpenCode {
         profiles()
     }
 
-    /// Connected with any login it keeps; paid per token when one of
-    /// them is a key. Looking for the program on `PATH` is left to OTTY.
+    /// Found whenever its data folder is there: OpenCode works with no
+    /// login, with its free models, so the part never says a login is
+    /// missing (spec 2026-11-23-accounts-apart-from-profiles, Decision 9).
+    /// Looking for the program on `PATH` is left to OTTY.
     fn detect(profile: &Profile) -> ProfileStatus {
-        logins::status(profile)
+        match folder_exists(&profile.folder) {
+            true => ProfileStatus::Found,
+            false => ProfileStatus::ConfigFolderNotFound,
+        }
     }
 
     /// The version of OpenCode that wrote the session that changed last.
@@ -30,10 +36,6 @@ impl Agent for OpenCode {
         let sessions = database.sessions().ok()?;
 
         newest_version(&sessions)
-    }
-
-    fn logins(profile: &Profile) -> Vec<Login> {
-        logins::logins(profile)
     }
 
     /// The database and its write-ahead log; none while the database is
@@ -75,30 +77,25 @@ impl Agent for OpenCode {
 
         start_command(profile, args)
     }
+}
 
-    /// A provider refused a login OpenCode keeps, such as a ChatGPT login
-    /// the `openai` provider part read: OpenCode logs in again with
-    /// `opencode auth login`, in the profile's data folder. Never Codex:
-    /// the login is OpenCode's.
-    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
-        let login = start_command(
-            profile,
-            vec!["auth".to_string(), "login".to_string()],
-        );
+/// Whether the data folder `folder` holds any file. A folder is never
+/// listed itself, so an empty folder counts as missing.
+fn folder_exists(folder: &str) -> bool {
+    let folder = escaped(folder);
+    let has_files =
+        |glob: String| files::list(&glob).is_ok_and(|found| !found.is_empty());
 
-        Some(needs::login_refused(login))
-    }
+    has_files(format!("{folder}/*")) || has_files(format!("{folder}/**"))
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::{
-        Billing, Connection, LoginKind, PlaceKind, ProviderRef,
-    };
+    use otty_plugin_sdk::agents::{AnswerCost, PlaceKind};
 
     use super::*;
     use crate::location::DATABASE_VARIABLE;
-    use crate::testing::{AGENT, NOW, as_part, host, millis, path};
+    use crate::testing::{AGENT, DataFolder, NOW, as_part, host, millis, path};
 
     /// The ChatGPT session of the fixtures, in `/home/dev/shop`.
     const SHOP_SESSION: &str = "ses_shop";
@@ -119,24 +116,6 @@ mod tests {
         }
     }
 
-    /// Issue 20: a ChatGPT login OpenCode keeps, refused by the `openai`
-    /// provider part, is logged in again with OpenCode, not Codex.
-    #[test]
-    fn a_refused_login_logs_in_again_with_opencode() {
-        let host = host();
-        let profile = default_profile(&host);
-        let login = LoginRef::EnvVar("OPENAI_API_KEY".to_string());
-
-        let need = as_part(&host, || OpenCode::login_refused(&profile, &login))
-            .expect("a need");
-
-        assert_eq!(need.id, "login-refused");
-        assert_eq!(
-            need.action,
-            otty_plugin_sdk::NeedAction::Run(command(&["auth", "login"]))
-        );
-    }
-
     #[test]
     fn a_session_is_continued_with_its_id() {
         let host = host();
@@ -149,19 +128,16 @@ mod tests {
         );
     }
 
-    /// The fixture data folder: a ChatGPT login in `auth.json`, a DeepSeek
-    /// key in the `credential` table, two sessions and their answers.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 11: OpenCode
+    /// is an agent only. The fixture data folder keeps a ChatGPT login and
+    /// a DeepSeek key, and the profile is found with no word on them.
     #[test]
-    fn the_fixture_folder_is_a_connected_profile_with_its_logins() {
+    fn the_fixture_folder_is_a_found_profile() {
         let host = host();
         let profile = default_profile(&host);
 
-        let (places, status, logins) = as_part(&host, || {
-            (
-                OpenCode::profiles(AGENT),
-                OpenCode::detect(&profile),
-                OpenCode::logins(&profile),
-            )
+        let (places, status) = as_part(&host, || {
+            (OpenCode::profiles(AGENT), OpenCode::detect(&profile))
         });
 
         assert_eq!(
@@ -171,28 +147,23 @@ mod tests {
                 is_default: true,
             }]
         );
-        assert_eq!(
-            status,
-            ProfileStatus::Connected(Connection {
-                account: None,
-                plan: None,
-                billing: Some(Billing::ApiKey),
-            })
-        );
-        let kinds: Vec<(LoginKind, ProviderRef)> = logins
-            .into_iter()
-            .map(|login| (login.kind, login.for_whom))
-            .collect();
-        assert_eq!(
-            kinds,
-            [
-                (
-                    LoginKind::Subscription,
-                    ProviderRef::Id("openai".to_string())
-                ),
-                (LoginKind::ApiKey, ProviderRef::Id("deepseek".to_string())),
-            ]
-        );
+        assert_eq!(status, ProfileStatus::Found);
+    }
+
+    /// Decision 9: OpenCode works with no login, so a data folder with no
+    /// login is found too, and one that is not there is not found.
+    #[test]
+    fn a_folder_with_no_login_is_found_and_an_empty_one_is_not() {
+        let no_login = DataFolder::new();
+        let _database = no_login.first_shape();
+        let empty = DataFolder::new();
+
+        let no_login_status =
+            no_login.run(|| OpenCode::detect(&no_login.profile()));
+        let empty_status = empty.run(|| OpenCode::detect(&empty.profile()));
+
+        assert_eq!(no_login_status, ProfileStatus::Found);
+        assert_eq!(empty_status, ProfileStatus::ConfigFolderNotFound);
     }
 
     #[test]
@@ -221,7 +192,8 @@ mod tests {
 
     /// The host walks the spend places, the database and its log, and
     /// asks for the answers of what changed: every answer of the history,
-    /// the old one too, each naming its session.
+    /// the old one too, each naming its session, with the cost OpenCode
+    /// wrote, exact (Decision 3).
     #[test]
     fn the_answers_of_the_fixture_database_are_read() {
         let host = host().with_now_ms(millis(NOW));
@@ -239,10 +211,10 @@ mod tests {
             })
         );
         assert!(
-            answers
-                .answers
-                .iter()
-                .all(|answer| answer.cost_microdollars.is_some())
+            answers.answers.iter().all(|answer| matches!(
+                answer.cost,
+                Some(AnswerCost::Written(_))
+            ))
         );
         assert_eq!((answers.records.seen, answers.records.understood), (3, 3));
     }

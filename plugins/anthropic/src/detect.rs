@@ -1,41 +1,38 @@
-//! Whether a Claude Code profile is logged in, and how it pays.
+//! Whether a Claude Code profile can be used: its config folder and
+//! whether a login is there. Whose login it is and how it pays, the agent
+//! part does not say: the provider part `anthropic` finds the account
+//! (spec 2026-11-23-accounts-apart-from-profiles, Decision 2).
 
-use otty_plugin_sdk::agents::{Billing, Connection, ProfileStatus};
+use otty_plugin_sdk::agents::ProfileStatus;
 use otty_plugin_sdk::{Command, files};
 
 use crate::config_files::{
-    OauthAccount, OauthLogin, read_credentials, read_global_configs,
-    read_settings,
+    OauthLogin, read_credentials, read_global_configs, read_settings,
 };
 use crate::glob::escaped;
 use crate::needs;
 
-/// Whether the profile in `folder` is logged in, as [`connection`] tells.
-/// A profile nobody is logged in with needs the user to run `login`,
-/// Claude Code's login.
+/// Whether the profile in `folder` can be used: found when it holds a
+/// login ([`has_login`]), else not logged in with the need to run
+/// `login`, Claude Code's login.
 pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
     if !folder_exists(folder) {
         return ProfileStatus::ConfigFolderNotFound;
     }
 
-    match connection(folder) {
-        Some(connection) => ProfileStatus::Connected(connection),
-        None => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    match has_login(folder) {
+        true => ProfileStatus::Found,
+        false => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
     }
 }
 
-/// The login of the profile in `folder`; `None` when nobody is logged in.
-///
-/// A profile with an API key in its settings (`env.ANTHROPIC_API_KEY`,
-/// `env.ANTHROPIC_AUTH_TOKEN` or `apiKeyHelper`) or a `primaryApiKey` in its global config file is an
-/// API key profile; it has no subscription plan. So is a login to an
-/// Anthropic Console organization (`billingType` `prepaid`) whose login
-/// file names no plan: it pays for its tokens. Else a profile is logged
-/// in, with a subscription, when its login file holds a token, or when its
-/// global config file names an account: the login file can be an empty
-/// object while the token is kept elsewhere. A blank key or token counts
-/// as none.
-pub(crate) fn connection(folder: &str) -> Option<Connection> {
+/// Whether the profile in `folder` holds a login Claude Code can use: an
+/// API key in its settings (`env.ANTHROPIC_API_KEY`,
+/// `env.ANTHROPIC_AUTH_TOKEN` or `apiKeyHelper`), a `primaryApiKey` in its
+/// global config file, a token in its login file, or an account its
+/// global config file names: the login file can be an empty object while
+/// the token is kept elsewhere. A blank key or token counts as none.
+fn has_login(folder: &str) -> bool {
     let credentials = read_credentials(folder);
     let configs = read_global_configs(folder);
     let settings = read_settings(folder);
@@ -48,41 +45,15 @@ pub(crate) fn connection(folder: &str) -> Option<Connection> {
     let has_console_key = configs
         .iter()
         .any(|config| config.holds_key(config.fields().primary_api_key()));
-    let account = configs
+    let has_account = configs
         .iter()
-        .find_map(|config| config.fields().oauth_account());
-    let login = credentials
-        .as_ref()
-        .and_then(|credentials| credentials.fields().login());
-    let email = account.and_then(OauthAccount::email).map(String::from);
-    let plan = login.and_then(OauthLogin::plan);
-    let is_console = account.is_some_and(OauthAccount::is_console);
-
-    if has_settings_key || has_console_key || (is_console && plan.is_none()) {
-        return Some(connected(email, None, Billing::ApiKey));
-    }
-
+        .any(|config| config.fields().oauth_account().is_some());
     let has_token = credentials.as_ref().is_some_and(|credentials| {
+        let login = credentials.fields().login();
         credentials.holds_key(login.and_then(OauthLogin::token))
     });
-    if !has_token && account.is_none() {
-        return None;
-    }
 
-    Some(connected(email, plan, Billing::UsageWindows))
-}
-
-/// A login as `account` with `plan`, paid as `billing`.
-fn connected(
-    account: Option<String>,
-    plan: Option<String>,
-    billing: Billing,
-) -> Connection {
-    Connection {
-        account,
-        plan,
-        billing: Some(billing),
-    }
+    has_settings_key || has_console_key || has_account || has_token
 }
 
 /// Whether the config folder `folder` holds any file. A folder is never
@@ -102,27 +73,6 @@ mod tests {
     use super::*;
     use crate::testing::{as_part, host, path};
 
-    /// A connected profile paid for by a subscription.
-    fn subscription(
-        account: Option<&str>,
-        plan: Option<&str>,
-    ) -> ProfileStatus {
-        ProfileStatus::Connected(connected(
-            account.map(String::from),
-            plan.map(String::from),
-            Billing::UsageWindows,
-        ))
-    }
-
-    /// A connected profile paid for by an API key.
-    fn api_key(account: Option<&str>) -> ProfileStatus {
-        ProfileStatus::Connected(connected(
-            account.map(String::from),
-            None,
-            Billing::ApiKey,
-        ))
-    }
-
     fn status_of(folder: &str) -> ProfileStatus {
         let host = host();
         let folder = path(&host, folder);
@@ -140,40 +90,28 @@ mod tests {
         matches!(status_of(folder), ProfileStatus::NotLoggedIn(_))
     }
 
+    /// Decision 2: a token, an account the global config names, a key in
+    /// the settings or the global config, and a Console login are all
+    /// found, with no word on whose login it is or how it pays.
     #[test]
-    fn a_profile_with_a_token_is_connected_with_its_plan() {
-        assert_eq!(
-            status_of(".claude-token"),
-            subscription(None, Some("Max 20x"))
-        );
-    }
-
-    #[test]
-    fn the_account_comes_from_the_global_config_file() {
-        assert_eq!(
-            status_of(".claude-work"),
-            subscription(Some("own@example.com"), Some("Max 20x"))
-        );
-    }
-
-    #[test]
-    fn the_default_folder_finds_the_global_config_file_next_to_it() {
-        assert_eq!(
-            status_of(".claude"),
-            subscription(Some("dev@example.com"), Some("Max 20x"))
-        );
-    }
-
-    #[test]
-    fn an_empty_credentials_file_with_an_account_is_connected() {
-        assert_eq!(
-            status_of(".claude-account"),
-            subscription(Some("dev@example.com"), None)
-        );
-        assert_eq!(
-            status_of(".claude-email"),
-            subscription(Some("dev@example.com"), None)
-        );
+    fn every_kind_of_login_is_found() {
+        for folder in [
+            ".claude-token",
+            ".claude-work",
+            ".claude",
+            ".claude-account",
+            ".claude-email",
+            ".claude-api",
+            ".claude-gateway",
+            ".claude-helper",
+            ".claude-console",
+            ".claude-nullkey",
+            ".claude-prepaid",
+            ".claude-prepaid-max",
+            ".claude-deepseek",
+        ] {
+            assert_eq!(status_of(folder), ProfileStatus::Found, "{folder}");
+        }
     }
 
     /// `~/.claude.json` names an account, but it belongs to `~/.claude`.
@@ -187,72 +125,10 @@ mod tests {
         assert!(is_not_logged_in(".claude-broken"));
     }
 
-    #[test]
-    fn an_api_key_in_the_settings_makes_an_api_key_profile() {
-        assert_eq!(status_of(".claude-api"), api_key(None));
-        assert_eq!(status_of(".claude-gateway"), api_key(None));
-    }
-
-    #[test]
-    fn an_api_key_helper_in_the_settings_makes_an_api_key_profile() {
-        assert_eq!(
-            status_of(".claude-helper"),
-            api_key(Some("dev@example.com"))
-        );
-    }
-
-    #[test]
-    fn a_primary_api_key_in_the_global_config_makes_an_api_key_profile() {
-        assert_eq!(status_of(".claude-console"), api_key(None));
-    }
-
-    #[test]
-    fn an_empty_or_null_api_key_is_no_api_key() {
-        assert_eq!(
-            status_of(".claude-nullkey"),
-            subscription(None, Some("Max 20x"))
-        );
-    }
-
     /// A blank text is no text: the host finds no key in it.
     #[test]
     fn a_blank_token_or_api_key_is_none() {
         assert!(is_not_logged_in(".claude-blank"));
-    }
-
-    #[test]
-    fn broken_settings_are_skipped() {
-        assert_eq!(
-            status_of(".claude-token"),
-            subscription(None, Some("Max 20x"))
-        );
-    }
-
-    /// A login to a Console organization is paid per token, even with no
-    /// API key in the files.
-    #[test]
-    fn a_prepaid_console_login_with_no_plan_is_an_api_key_profile() {
-        assert_eq!(
-            status_of(".claude-prepaid"),
-            api_key(Some("dev@example.com"))
-        );
-    }
-
-    /// The plan in the login file is a subscription the files tell for
-    /// sure, so it wins over a prepaid billing type.
-    #[test]
-    fn a_plan_in_the_login_file_wins_over_a_prepaid_billing_type() {
-        assert_eq!(
-            status_of(".claude-prepaid-max"),
-            subscription(Some("dev@example.com"), Some("Max 20x"))
-        );
-    }
-
-    /// Claude Code sends `ANTHROPIC_AUTH_TOKEN` as its key, such as a
-    /// DeepSeek key behind DeepSeek's server.
-    #[test]
-    fn an_auth_token_in_the_settings_makes_an_api_key_profile() {
-        assert_eq!(status_of(".claude-deepseek"), api_key(None));
     }
 
     #[test]

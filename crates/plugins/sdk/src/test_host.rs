@@ -47,7 +47,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
 pub use self::programs::StartedProgram;
-use crate::agents::{LoginFolder, Place, PlaceItem};
+use crate::agents::{LoginFolder, ModelPrice, Place, PlaceItem, ProviderRef};
 use crate::files::{Batch, FileInfo};
 use crate::http::{Request, Response};
 use crate::log::Level;
@@ -141,6 +141,7 @@ impl TestHost {
             requests: Vec::new(),
             removed: Vec::new(),
             log: Vec::new(),
+            prices: Vec::new(),
             programs: programs::Programs::default(),
         };
 
@@ -198,6 +199,25 @@ impl TestHost {
     /// `ru`; English until then.
     pub fn with_language(self, tag: &str) -> Self {
         self.state.borrow_mut().language = tag.to_string();
+
+        self
+    }
+
+    /// The same host whose price list gives `price` for `model` served by
+    /// `provider`, or for the maker's own `model` with no provider: a
+    /// model served by a provider with no price of its own gets the
+    /// maker's, as OTTY gives it. With no price the list has none.
+    pub fn with_price(
+        self,
+        model: &str,
+        provider: Option<ProviderRef>,
+        price: ModelPrice,
+    ) -> Self {
+        self.state.borrow_mut().prices.push((
+            model.to_string(),
+            provider,
+            price,
+        ));
 
         self
     }
@@ -449,6 +469,7 @@ struct HostState {
     requests: Vec<SentRequest>,
     removed: Vec<PathBuf>,
     log: Vec<String>,
+    prices: Vec<(String, Option<ProviderRef>, ModelPrice)>,
     programs: programs::Programs,
 }
 
@@ -768,6 +789,33 @@ pub(crate) fn var(name: &str) -> Option<String> {
 pub(crate) fn home() -> String {
     with_host(|state, _| Ok(state.home.display().to_string()))
         .unwrap_or_default()
+}
+
+/// The price of `model` served by `provider` the test gave
+/// ([`TestHost::with_price`]): the provider's own, else the maker's.
+pub(crate) fn price_of(
+    model: &str,
+    provider: Option<&ProviderRef>,
+) -> Option<ModelPrice> {
+    let price_by = |by: Option<&ProviderRef>| {
+        with_host(|state, _| {
+            let price = state
+                .prices
+                .iter()
+                .find(|(priced, priced_by, _)| {
+                    priced == model && priced_by.as_ref() == by
+                })
+                .map(|(_, _, price)| *price);
+
+            Ok(price)
+        })
+        .ok()
+        .flatten()
+    };
+
+    provider
+        .and_then(|provider| price_by(Some(provider)))
+        .or_else(|| price_by(None))
 }
 
 pub(crate) fn language() -> String {

@@ -150,7 +150,6 @@ fn usage_block(
         prices: profiles.prices().last_good(),
         can_show_money: money_reason.is_none(),
         home: state.env().home(),
-        registry: state.registry(),
         time_zone: profiles.time_zone(),
     };
     let block = UsageBlockViewModel::of(&subject, state.usage(), now);
@@ -250,9 +249,9 @@ mod tests {
     use crate::need::NeedAction;
     use crate::reducer::reduce;
     use crate::testing::{
-        SESSION_VERSION, api_key, chatgpt_login, claude, codex, connected,
-        month_spend, now, price_table, read, session, set_prices, spend_loaded,
-        with_accounts,
+        SESSION_VERSION, api_key, at_list_prices, chatgpt_login, claude, codex,
+        connected, month_spend, now, price_table, read, session, set_prices,
+        spend_loaded, with_accounts,
     };
     use crate::types::SpendCount;
     use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
@@ -261,7 +260,8 @@ mod tests {
     fn spend() -> Spend {
         let tokens =
             ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000, 0, 0), 1)
-                .with_provider(Some(ProviderRef::of_id("openai")));
+                .with_provider(Some(ProviderRef::of_id("openai")))
+                .with_money(at_list_prices(1_000));
         let part = ProjectModelTokens::new(
             Some(PathBuf::from("/work/otty")),
             tokens.clone(),

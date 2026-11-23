@@ -125,8 +125,8 @@ impl Billing {
     }
 }
 
-/// The kind of a billing, without its numbers: what the files of a profile
-/// tell before any limits are read.
+/// The kind of a billing, without its numbers, such as what a limits
+/// answer tells of how an account pays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BillingKind {
     /// A subscription with usage windows.

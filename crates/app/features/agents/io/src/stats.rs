@@ -9,7 +9,9 @@ use std::time::SystemTime;
 
 use iced::Task;
 use jiff::tz::TimeZone;
-use otty_agents::{Agent, LocalNow, Profile, ProjectStats, SessionId};
+use otty_agents::{
+    Agent, ApiPrices, LocalNow, Profile, ProjectStats, SessionId,
+};
 use otty_app_agents::{
     AgentList, AgentsIntent, LoadedProjectStats, LoadedSessionStats,
     ProjectStatsFailure,
@@ -19,8 +21,9 @@ use crate::background::{on_own_thread, read_stopped};
 use crate::time_zone::user_time_zone;
 
 /// Read the statistics of the session `session` of `profile` in the
-/// background, with the agent of `agents` the profile belongs to. The
-/// answer comes back as [`AgentsIntent::SessionStatsLoaded`].
+/// background, with the agent of `agents` the profile belongs to, whose
+/// part prices the answers at `prices`. The answer comes back as
+/// [`AgentsIntent::SessionStatsLoaded`].
 ///
 /// # Example
 ///
@@ -28,7 +31,7 @@ use crate::time_zone::user_time_zone;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{AgentId, Profile, SessionId};
+/// use otty_agents::{AgentId, ApiPrices, Profile, SessionId};
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
@@ -41,6 +44,7 @@ use crate::time_zone::user_time_zone;
 ///     &agents,
 ///     profile,
 ///     SessionId::new("a1"),
+///     &Arc::new(ApiPrices::default()),
 /// );
 ///
 /// assert_eq!(read.units(), 1);
@@ -49,10 +53,12 @@ pub fn load_session_stats(
     agents: &AgentList,
     profile: Profile,
     session: SessionId,
+    prices: &Arc<ApiPrices>,
 ) -> Task<AgentsIntent> {
     let task =
         format!("reading the statistics of a session of {}", profile.name());
     let agents = Arc::clone(agents);
+    let prices = Arc::clone(prices);
     let fallback = (profile.clone(), session.clone());
 
     on_own_thread(
@@ -60,7 +66,7 @@ pub fn load_session_stats(
         move || {
             let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
             let now = LocalNow::new(SystemTime::now(), time_zone);
-            read_session_stats(&agents, profile, session, &now)
+            read_session_stats(&agents, profile, session, &now, &prices)
         },
         move || {
             let (profile, session) = fallback;
@@ -76,7 +82,8 @@ pub fn load_session_stats(
 
 /// Read the statistics of the project `folder` in the background, from
 /// the files of each of `profiles` with the agent of `agents` it belongs
-/// to. The answer comes back as [`AgentsIntent::ProjectStatsLoaded`].
+/// to, whose part prices the answers at `prices`. The answer comes back as
+/// [`AgentsIntent::ProjectStatsLoaded`].
 ///
 /// # Example
 ///
@@ -84,6 +91,7 @@ pub fn load_session_stats(
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
+/// use otty_agents::ApiPrices;
 /// use otty_app_agents::AgentList;
 ///
 /// let agents: AgentList = Arc::from(Vec::new());
@@ -91,6 +99,7 @@ pub fn load_session_stats(
 ///     &agents,
 ///     PathBuf::from("/work/otty"),
 ///     Vec::new(),
+///     &Arc::new(ApiPrices::default()),
 /// );
 ///
 /// assert_eq!(read.units(), 1);
@@ -99,14 +108,16 @@ pub fn load_project_stats(
     agents: &AgentList,
     folder: PathBuf,
     profiles: Vec<Profile>,
+    prices: &Arc<ApiPrices>,
 ) -> Task<AgentsIntent> {
     let task = format!("reading the statistics of {}", folder.display());
     let agents = Arc::clone(agents);
+    let prices = Arc::clone(prices);
     let fallback = folder.clone();
 
     on_own_thread(
         task,
-        move || read_project_stats(&agents, folder, &profiles),
+        move || read_project_stats(&agents, folder, &profiles, &prices),
         move || LoadedProjectStats {
             folder: fallback,
             parts: Err(ProjectStatsFailure {
@@ -119,15 +130,18 @@ pub fn load_project_stats(
 }
 
 /// The statistics of `session` of `profile`, its days counted up to
-/// `now`, or why they could not be read.
+/// `now` and its answers priced at `prices`, or why they could not be
+/// read.
 fn read_session_stats(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     session: SessionId,
     now: &LocalNow,
+    prices: &Arc<ApiPrices>,
 ) -> LoadedSessionStats {
-    let stats =
-        otty_agents::read_session_stats(agents, &profile, &session, now);
+    let stats = otty_agents::read_session_stats(
+        agents, &profile, &session, now, prices,
+    );
 
     LoadedSessionStats {
         profile,
@@ -143,11 +157,12 @@ fn read_project_stats(
     agents: &[Box<dyn Agent>],
     folder: PathBuf,
     profiles: &[Profile],
+    prices: &Arc<ApiPrices>,
 ) -> LoadedProjectStats {
     let parts = profiles
         .iter()
         .map(|profile| {
-            let part = part(agents, profile, &folder)?;
+            let part = part(agents, profile, &folder, prices)?;
             Ok((profile.clone(), part))
         })
         .collect();
@@ -161,13 +176,14 @@ fn part(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
     folder: &Path,
+    prices: &Arc<ApiPrices>,
 ) -> Result<ProjectStats, ProjectStatsFailure> {
-    otty_agents::read_project_stats(agents, profile, folder).map_err(|error| {
-        ProjectStatsFailure {
+    otty_agents::read_project_stats(agents, profile, folder, prices).map_err(
+        |error| ProjectStatsFailure {
             profile_name: Some(profile.name().to_string()),
             error,
-        }
-    })
+        },
+    )
 }
 
 #[cfg(all(test, unix))]
@@ -177,7 +193,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{agents_with_plugins, run, write};
+    use crate::testing::{agents_with_plugins, no_prices, run, write};
 
     fn utc_now() -> LocalNow {
         LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
@@ -240,6 +256,7 @@ mod tests {
             profile.clone(),
             SessionId::new("c1"),
             &utc_now(),
+            &no_prices(),
         );
 
         assert_eq!(read.profile, profile);
@@ -261,12 +278,14 @@ mod tests {
             profile,
             SessionId::new("gone"),
             &utc_now(),
+            &no_prices(),
         );
         let unknown = read_session_stats(
             &[],
             stranger(),
             SessionId::new("s1"),
             &utc_now(),
+            &no_prices(),
         );
 
         let gone = gone.stats.expect("a session with no answers");
@@ -292,6 +311,7 @@ mod tests {
             &agents_with_plugins(home.path()),
             PathBuf::from("/work/otty"),
             &[claude.clone(), codex.clone()],
+            &no_prices(),
         );
 
         assert_eq!(read.folder, PathBuf::from("/work/otty"));
@@ -318,6 +338,7 @@ mod tests {
             &agents_with_plugins(home.path()),
             PathBuf::from("/work/otty"),
             &[claude, stranger()],
+            &no_prices(),
         );
 
         assert!(
@@ -339,11 +360,13 @@ mod tests {
             &agents,
             profile.clone(),
             SessionId::new("c1"),
+            &no_prices(),
         ));
         let project = run(load_project_stats(
             &agents,
             PathBuf::from("/work/otty"),
             vec![profile],
+            &no_prices(),
         ));
 
         assert!(matches!(
@@ -392,7 +415,7 @@ mod tests {
 
         for read in ["first", "unchanged"] {
             let started = std::time::Instant::now();
-            let spend = counter.spend(&profile, &utc_now());
+            let spend = counter.spend(&profile, &utc_now(), &no_prices());
             let took = started.elapsed();
 
             let today = spend.map(|spend| spend.last_30_days().total());
@@ -427,6 +450,7 @@ mod tests {
             &profile,
             first.id(),
             &utc_now(),
+            &no_prices(),
         )
         .expect("the session");
         println!(
@@ -439,9 +463,13 @@ mod tests {
         let agents = agents_with_plugins(&home);
         let _ = newest_sessions(&agents, &profile);
         let started = std::time::Instant::now();
-        let project =
-            otty_agents::read_project_stats(&agents, &profile, first.folder())
-                .expect("the project");
+        let project = otty_agents::read_project_stats(
+            &agents,
+            &profile,
+            first.folder(),
+            &no_prices(),
+        )
+        .expect("the project");
         println!(
             "{name}: (b) first project panel: {} tokens in {:?}",
             project.tokens().total(),
@@ -454,6 +482,7 @@ mod tests {
             &profile,
             second.id(),
             &utc_now(),
+            &no_prices(),
         )
         .expect("the second session");
         println!(

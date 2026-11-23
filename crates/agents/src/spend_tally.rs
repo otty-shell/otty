@@ -163,7 +163,7 @@ fn count_answer<'a>(
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
         })
-        .count_request(answer.tokens(), prompt_of(answer), answer.cost());
+        .count_request(answer.tokens(), answer.money());
 }
 
 /// Counts `answer` of `file` among `parts`, under its project, provider
@@ -184,16 +184,7 @@ fn count_part<'a>(
             ModelTokens::new(answer.model(), TokenCount::default(), 0)
                 .with_provider(provider.cloned())
         })
-        .count_request(answer.tokens(), prompt_of(answer), answer.cost());
-}
-
-/// The size of the prompt of `answer`, which tells whether the request
-/// had a long prompt: the input sent, the input written to the cache and
-/// the input read from it. The providers' price pages count it so.
-fn prompt_of(answer: &CountedAnswer) -> u64 {
-    let tokens = answer.tokens();
-
-    tokens.input().saturating_add(tokens.cached())
+        .count_request(answer.tokens(), answer.money());
 }
 
 /// The spend of the day `date` from the tokens of its models.
@@ -254,6 +245,8 @@ mod tests {
     use jiff::tz::TimeZone;
 
     use super::*;
+    use crate::dollars::Dollars;
+    use crate::money_estimate::{AnswerCost, MoneyTotal};
     use crate::testing::{NOW, at, berlin, hours_east, utc_now};
 
     /// 2026-11-16T10:00:00Z, a Monday.
@@ -263,8 +256,12 @@ mod tests {
         TokenCount::new(count, 0, 0)
     }
 
+    /// An answer of `model` at `seconds` that cost nothing, as its agent
+    /// wrote it: these tests count tokens, so its money adds nothing; the
+    /// money is tested apart.
     fn answer(seconds: u64, model: &str, tokens: TokenCount) -> CountedAnswer {
         CountedAnswer::new(at(seconds), Some(model), tokens)
+            .with_cost(Some(AnswerCost::Written(Dollars::default())))
     }
 
     fn file(project: &str, answers: Vec<CountedAnswer>) -> FileSpend {
@@ -516,56 +513,49 @@ mod tests {
         assert_eq!(spend.last_30_days_by_day()[29].models()[0].requests(), 4);
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: the money
+    /// each answer's part gave is added up by day, hour and project, the
+    /// cost the agent wrote and the money at API prices alike.
     #[test]
-    fn the_cost_the_agent_wrote_is_added_up_by_day_hour_and_project() {
-        let micro = crate::dollars::Dollars::from_micro_dollars;
+    fn the_money_of_the_answers_is_added_up_by_day_hour_and_project() {
+        let micro = Dollars::from_micro_dollars;
         let costly = |seconds, cost| {
-            answer(seconds, "gpt-5", input(10)).with_cost(Some(micro(cost)))
+            answer(seconds, "gpt-5", input(10))
+                .with_cost(Some(AnswerCost::Written(micro(cost))))
         };
+        let listed = answer(NOW - 60, "gpt-5", input(10))
+            .with_cost(Some(AnswerCost::AtApiPrices(micro(200))));
         let files = [file(
             "/a",
-            vec![
-                costly(NOW, 300),
-                costly(NOW - 60, 200),
-                costly(NOW - DAY, 7),
-            ],
+            vec![costly(NOW, 300), listed, costly(NOW - DAY, 7)],
         )];
 
         let spend = tally(files.iter(), &utc_now(), None);
 
         let today = &spend.last_30_days_by_day()[29];
-        assert_eq!(today.models()[0].cost(), Some(micro(500)));
-        assert_eq!(today.parts()[0].tokens().cost(), Some(micro(500)));
+        let money = today.models()[0].money();
+        assert_eq!(money.cost(), micro(500));
+        assert!(money.is_estimate(), "one answer at API prices");
+        assert_eq!(today.parts()[0].tokens().money(), money);
         let hours = spend.today_by_hour();
-        assert_eq!(hours[9].parts()[0].tokens().cost(), Some(micro(200)));
-        assert_eq!(hours[10].parts()[0].tokens().cost(), Some(micro(300)));
+        assert_eq!(hours[9].parts()[0].tokens().money().cost(), micro(200));
+        assert_eq!(
+            hours[10].parts()[0].tokens().money(),
+            MoneyTotal::written(micro(300))
+        );
     }
 
+    /// An answer with tokens and no price is counted as a request with no
+    /// price.
     #[test]
-    fn a_request_over_a_prompt_limit_is_counted_as_a_long_prompt_of_it() {
-        // The prompt is the input and the cached input of one request.
-        let under = TokenCount::new(60_000, 40_000, 7);
-        let over = TokenCount::new(60_000, 40_001, 9).with_cache_written(5);
-        let longer = TokenCount::new(200_000, 72_001, 2);
-        let files = [file(
-            "/a",
-            vec![
-                answer(NOW, "m", under),
-                answer(NOW, "m", over),
-                answer(NOW, "m", longer),
-            ],
-        )];
+    fn an_answer_with_no_price_is_counted_apart() {
+        let unpriced = answer(NOW, "mystery", input(4)).with_cost(None);
+        let files = [file("/a", vec![unpriced])];
 
         let spend = tally(files.iter(), &utc_now(), None);
 
         let model = &spend.last_30_days_by_day()[29].models()[0];
-        assert_eq!(model.long_prompts_over(100_000), Some(over + longer));
-        assert_eq!(model.long_prompts_over(272_000), Some(longer));
-        assert_eq!(
-            model.long_prompts_over(512_000),
-            Some(TokenCount::default())
-        );
-        assert_eq!(model.tokens(), under + over + longer);
+        assert_eq!(model.money(), MoneyTotal::unpriced(1));
     }
 
     #[test]

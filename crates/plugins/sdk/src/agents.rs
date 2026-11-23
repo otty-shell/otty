@@ -11,31 +11,40 @@
 //! plugin exports them with
 //! `export!(Example with agents::agent, agents::provider)`.
 //!
+//! An agent part prices the tokens of its answers itself (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 3): the cost the
+//! agent wrote as it is, else the tokens at the API price of the model
+//! that OTTY's price list gives, [`price_of`]; [`answer_cost`] does both.
+//!
 //! The host operations and the values every domain shares, such as a
 //! [`Need`](crate::Need) and a [`Key`](crate::Key), are at the crate
 //! root.
 
 mod agent;
+mod prices;
 mod provider;
 mod record_counts;
 
 pub use crate::agents::agent::Agent;
 #[doc(hidden)]
 pub use crate::agents::agent::AgentExport;
+pub use crate::agents::prices::{answer_cost, cost_at, price_of};
 #[doc(hidden)]
 pub use crate::agents::provider::ProviderExport;
 pub use crate::agents::provider::Provider;
 /// The types of the agent contract.
 pub use crate::bindings::agents_agent::exports::otty::agents_agent::agent::{
-    Answer, Answers, Billing, Connection, Login, LoginRef, Place, PlaceItem,
-    PlaceKind, Profile, ProfilePlace, ProfileStatus, ProviderRef,
-    RecordCounts, Session, TokenCount,
+    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, Profile,
+    ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
 };
-/// The values the agent and provider contracts share: whom a login is
-/// for and why a part could not read.
-pub use crate::bindings::agents_agent::otty::agents_agent::types::{
-    Identity, LoginKind, ReadError,
+/// OTTY's price list as an agent part asks it: who served an answer and
+/// the API price of a model.
+pub use crate::bindings::agents_agent::otty::agents_agent::prices::{
+    LongPromptPrice, ModelPrice, ProviderRef, TokenPrices,
 };
+/// The values the agent and provider contracts share: why a part could
+/// not read.
+pub use crate::bindings::agents_agent::otty::agents_agent::types::ReadError;
 /// The types of the provider contract.
 pub use crate::bindings::agents_provider::exports::otty::agents_provider::provider::{
     Account, AccountKind, AccountNumbers, Bill, Credits, DayCost, DayRange,

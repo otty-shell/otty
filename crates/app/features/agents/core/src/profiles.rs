@@ -28,8 +28,9 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountKind, AgentId, FoundAccounts, GivenKey, PartNeed,
-    PartNeedAction, Profile, ProfileStatus, Project, Registry, SavedProfiles,
+    Account, AccountKind, AgentId, ApiPrices, FoundAccounts, GivenKey,
+    PartNeed, PartNeedAction, Profile, ProfileStatus, Project, Registry,
+    SavedProfiles,
 };
 
 use super::freshness::{ReadState, Which};
@@ -49,6 +50,7 @@ pub(crate) struct Profiles {
     found: FoundAccounts,
     projects: Vec<Project>,
     prices: ListPrices,
+    api_prices: Arc<ApiPrices>,
     saved: Option<SavedProfiles>,
     time_zone: Option<TimeZone>,
     reads: ReadState,
@@ -80,6 +82,14 @@ impl Profiles {
     /// latest read left them.
     pub(crate) fn prices(&self) -> &ListPrices {
         &self.prices
+    }
+
+    /// The list prices the agent parts price the tokens at, with the
+    /// registry that names a provider to them (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 3). The same
+    /// value until the prices or the registry change.
+    pub(crate) fn api_prices(&self) -> &Arc<ApiPrices> {
+        &self.api_prices
     }
 
     /// What `agents.json` held at the last read; `None` when it could not
@@ -348,6 +358,10 @@ impl Profiles {
             found: FoundAccounts::default(),
             projects: Vec::new(),
             prices: ListPrices::default(),
+            api_prices: Arc::new(ApiPrices::new(
+                Default::default(),
+                Arc::clone(&registry),
+            )),
             saved: None,
             time_zone: None,
             reads: ReadState::default(),
@@ -364,6 +378,7 @@ impl Profiles {
     /// change. What was read stays until it is read again.
     pub(crate) fn set_readers(&mut self, registry: Arc<Registry>) {
         self.registry = registry;
+        self.renew_api_prices();
     }
 
     /// Start a read of the profiles; `false` when one is on its way.
@@ -705,6 +720,39 @@ impl Profiles {
     /// counted at them when it is shown.
     pub(crate) fn apply_prices(&mut self, loaded: LoadedPrices) {
         self.prices.apply(loaded.prices, loaded.read_at);
+        self.renew_api_prices();
+    }
+
+    /// Start a count of the tokens of each shown profile whose money is
+    /// priced at list prices that changed since, unless a count is on its
+    /// way: that one starts once it ends. Returns those profiles.
+    pub(crate) fn start_counts_at_new_prices(&mut self) -> Vec<Profile> {
+        self.shown
+            .iter_mut()
+            .filter(|shown| {
+                shown.has_config_dir()
+                    && shown.spend().is_priced_at_old_prices()
+            })
+            .filter_map(|shown| {
+                shown.start_spend_count().then(|| shown.profile().clone())
+            })
+            .collect()
+    }
+
+    /// The prices the agent parts price at, from the latest prices read
+    /// and the registry. When they changed, every shown profile wants a
+    /// new count of its tokens, whose money follows the new prices.
+    fn renew_api_prices(&mut self) {
+        let table = self.prices.table().cloned().unwrap_or_default();
+        let renewed = ApiPrices::new(table, Arc::clone(&self.registry));
+        if *self.api_prices == renewed {
+            return;
+        }
+
+        self.api_prices = Arc::new(renewed);
+        for shown in &mut self.shown {
+            shown.spend_prices_changed();
+        }
     }
 
     /// Start a read of the bill of each shown API key profile that pays

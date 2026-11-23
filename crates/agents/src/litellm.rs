@@ -10,11 +10,8 @@
 //! plain model name for the maker's own price, `<provider>/<model>` for
 //! the price of a cloud or a reseller.
 //!
-//! The token counter knows the `<N>` the file uses: it keeps the tokens of
-//! long prompts only over the limits of `PROMPT_LIMITS` in `spend.rs`. A
-//! model priced over another limit is priced at its standard prices for
-//! every request, so a new limit in the file must be added there too; the
-//! reader logs a warning for each such model.
+//! The agent part prices each answer itself, so it sees the prompt of each
+//! request and any `<N>` the file uses works.
 
 use std::collections::BTreeMap;
 
@@ -23,7 +20,6 @@ use serde_json::Value;
 use crate::dollars::Dollars;
 use crate::error::{SourceError, Unexpected};
 use crate::price_table::{ModelPrice, PriceTable, TokenPrices};
-use crate::spend::PROMPT_LIMITS;
 
 /// The key of the example row at the top of the file, not a model.
 const SAMPLE_ROW: &str = "sample_spec";
@@ -101,12 +97,6 @@ fn model_price(model: &str, entry: &Value) -> Option<ModelPrice> {
     let Some(limit) = long_prompt_limit(entry) else {
         return Some(price);
     };
-    if !PROMPT_LIMITS.contains(&limit) {
-        log::warn!(
-            "LiteLLM prices {model} over {limit} tokens, a limit the token \
-             counter does not count; its long prompts get the standard prices"
-        );
-    }
 
     let above = format!("_above_{}k_tokens", limit / 1000);
     let Some(long_input) =
@@ -135,9 +125,6 @@ fn model_price(model: &str, entry: &Value) -> Option<ModelPrice> {
 /// The lowest prompt limit, in tokens, above which `entry` has another
 /// input price: 272,000 for `input_cost_per_token_above_272k_tokens`.
 /// The prices of the batch, flex or priority tiers are not looked at.
-///
-/// The limit must be one of `PROMPT_LIMITS` in `spend.rs`, the limits the
-/// token counter counts long prompts over; see the module doc.
 fn long_prompt_limit(entry: &Value) -> Option<u64> {
     entry
         .as_object()?

@@ -3,23 +3,20 @@
 The official OpenCode plugin of OTTY. OTTY has no code for any agent by
 name: this plugin teaches it OpenCode. Its one agent part, `opencode`,
 finds OpenCode's data folder (`~/.local/share/opencode`, or the one
-`XDG_DATA_HOME` names), reads its logins from `auth.json` and from the
-`credential` table of its database (of a provider the user logged in to
-more than once, only the login OpenCode marks as the one it uses), and
-reads the sessions and the tokens
-and the cost of every answer, with its session and project, from the database
-(`opencode.db`, or the one `OPENCODE_DB` names). It has no provider part:
-the accounts of its logins are read by the plugins of their providers.
+`XDG_DATA_HOME` names) and reads the sessions and the tokens and the
+cost of every answer, with its session and project, from the database
+(`opencode.db`, or the one `OPENCODE_DB` names). The cost OpenCode wrote
+is given as it is, so the money is exact; an answer with no cost is
+priced at the API price OTTY gives for its model.
 
-OTTY opens the database read-only, so the plugin never writes to it, and
-the plugin never sees a key or a token: OTTY hands it handles in their
-place.
+It is an agent only: it has no provider part and no login code.
+OpenCode works with no login, with its free models, so the part never
+says a login is missing and asks the user for nothing. The logins
+OpenCode keeps, in `auth.json` and in the `credential` table, are never
+read; the manifest still declares them as keys, so OTTY never gives
+them to the part as text.
 
-What only the user can do, the part asks for itself, in OTTY's language,
-which it follows when the user picks another: `opencode auth login` for
-a profile nobody is logged in with, and again when the provider part of
-another plugin refused a login OpenCode keeps, such as a ChatGPT login
-the `openai` part read.
+OTTY opens the database read-only, so the plugin never writes to it.
 
 OpenCode's installer puts the program at `~/.opencode/bin/opencode`, a
 folder the login shell may not have on its `PATH`: the manifest lists it

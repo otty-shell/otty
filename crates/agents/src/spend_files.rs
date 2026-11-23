@@ -18,13 +18,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::{
     FileMemory, ReadFile, ReadFiles, try_read_if_changed,
 };
 use crate::file_stamp::FileStamp;
 use crate::local_time::LocalNow;
+use crate::money_estimate::{AnswerCost, MoneyTotal};
 use crate::provider::ProviderRef;
 use crate::record_format::{RecordCounts, RecordFormat, format_change};
 use crate::spend::Spend;
@@ -41,7 +41,7 @@ pub(crate) struct CountedAnswer {
     at: SystemTime,
     model: Option<String>,
     tokens: TokenCount,
-    cost: Option<Dollars>,
+    cost: Option<AnswerCost>,
     project: Option<PathBuf>,
     provider: Option<ProviderRef>,
 }
@@ -74,9 +74,10 @@ impl CountedAnswer {
         self.tokens
     }
 
-    /// What the answer cost, when the agent wrote it.
-    pub(crate) fn cost(&self) -> Option<Dollars> {
-        self.cost
+    /// What the answer cost, as its agent part priced it: the cost the
+    /// agent wrote, else its tokens at API prices, else no price.
+    pub(crate) fn money(&self) -> MoneyTotal {
+        MoneyTotal::of_answer(self.cost, self.tokens)
     }
 
     /// The project folder of this answer, when named for it alone.
@@ -107,8 +108,9 @@ impl CountedAnswer {
         }
     }
 
-    /// The same answer, which cost `cost` as the agent wrote it.
-    pub(crate) fn with_cost(self, cost: Option<Dollars>) -> Self {
+    /// The same answer, which cost `cost` as its agent part priced it, or
+    /// had no price.
+    pub(crate) fn with_cost(self, cost: Option<AnswerCost>) -> Self {
         Self { cost, ..self }
     }
 

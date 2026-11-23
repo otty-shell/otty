@@ -1,6 +1,6 @@
 # 06 The agent part does agent things only
 
-Status: ready
+Status: done
 Blocked by: 05
 
 ## Why
@@ -84,3 +84,89 @@ removes them from the contract, the SDK, the host and the plugins.
   part returns carries money per model next to the tokens, and whether
   it is exact or at API prices. OTTY no longer multiplies tokens by prices
   itself. See spec Decision 3.
+
+- 2026-11-23, done. The agent part does agent things only, and prices
+  its own answers.
+
+  Contract (changed in place): `agent.wit` has no `logins`,
+  `login-refused`, `login`, `login-ref`, `connection`, `billing`, and
+  the `login` of `answer` is gone. `profile-status` is `found`,
+  `not-logged-in(need)` or `config-folder-not-found`. `types.wit` keeps
+  only `read-error`. A new imported interface `prices.wit`
+  (`otty:agents-agent/prices`) holds `provider-ref` (moved from `agent`),
+  `token-prices`, `long-prompt-price`, `model-price` and the host call
+  `price-of(model, provider) -> option<model-price>`. An `answer` now
+  carries `cost: option<answer-cost>`, where `answer-cost` is
+  `written(u64)` (the cost the agent wrote, exact) or
+  `at-api-prices(u64)` (millionths of a dollar); none when the model has
+  no price. The money is per answer, so the long prompt price is picked
+  by the part for each request (OTTY's `PROMPT_LIMITS` and the long
+  prompt buckets of the token count are gone).
+
+  SDK: the `Agent` trait lost `logins` and `login_refused`.
+  `agents::price_of`, `agents::cost_at` and `agents::answer_cost` (written
+  cost as it is, else the tokens at the price OTTY gives) do the pricing,
+  and `TestHost::with_price` gives a plugin test its price list.
+
+  Host: `AgentCalls` lost `logins` and `login_refused`;
+  `read_answers(profile, item, prices)` takes the app's
+  `agents::prices::PriceList` (a trait, since the host does not know
+  where OTTY keeps prices) and answers `prices.price-of` for that call
+  only. Tests over the template: no `logins` or `login-refused` export, a
+  profile with a login is `found`, one with none is `not-logged-in` with
+  the part's need, and the answers are priced at the price list given.
+
+  `otty-agents`: `ProfileStatus::Connected` carries nothing.
+  `ApiPrices` (the `PriceTable` and the `Registry` that names a provider
+  to it) answers the parts. `SpendCounter::spend`,
+  `StatsSource::session_stats`/`project_stats`, `read_session_stats` and
+  `read_project_stats` take `&Arc<ApiPrices>`; the part spend forgets
+  what it kept when the prices change, so every file is read again and
+  the money follows. `ModelTokens` carries `money()` (a `MoneyTotal`:
+  cost, requests with no price, requests at API prices) in place of
+  `cost()` and the long prompt buckets; `MoneyTotal::of_models(models)`
+  only adds up. `ModelPrice::cost`, `TokenPrices::cost` and the
+  `PROMPT_LIMITS` filter of the LiteLLM reader are gone; the "served by"
+  pricing tests moved to `api_prices.rs`.
+
+  Screen: the money of the usage block, the statistics dialog and the
+  project summary is the money the parts gave; the mark "at API prices"
+  shows when any of it is at API prices or unpriced, and the Money choice
+  stays off until the prices are read. `Agents::api_prices()` gives the
+  binary the prices for `load_spend`, `load_session_stats` and
+  `load_project_stats`. When the prices or the registry change, every
+  shown profile is counted again, and a count on its way then is made
+  again once it ends. With the connection gone, a profile counts as
+  paying with an API key when the accounts its provider part found there
+  are only keys or organizations (no limits read, bills read as before).
+  The profile page already showed no account, plan or billing, so no
+  text changed.
+
+  Plugins: `openai` 0.2.8 -> 0.2.9 (Codex `detect` is found or "Needs
+  login", no billing; the spend file no longer fills the answer's login,
+  `creator_account_id` is no longer read; answers priced at the price
+  OTTY gives), `anthropic` 0.2.8 -> 0.2.9 (Claude Code `detect` found or
+  "Needs login", answers priced), `opencode` 0.1.7 -> 0.1.8 (agent only:
+  `logins.rs`, `needs.rs`, `plan.rs`, `provider_ids.rs`, the credential
+  reads, the language receiver and the `serde` and `base64` dependencies
+  go; `detect` is found whenever the data folder holds a file; the cost
+  OpenCode writes is given as `written`), template `example` 0.1.4 ->
+  0.1.5 (found or not logged in with its need, `login_refused` and its
+  texts go, answers priced, a made-up `cost_microdollars` shows the
+  written cost), `deepseek` and `openrouter` 0.1.3 -> 0.1.4 (rebuilt for
+  the changed types). `template.wasm` and the four test plugins of the
+  host were rebuilt.
+
+  Kept on purpose: OpenCode's manifest still declares its logins as keys
+  (`auth.json` and the `credential` column). Its `read` and `sqlite`
+  permissions cover that file and that table, and a declared key file is
+  refused as bytes and a declared key column reads as `NULL`; without
+  the declarations the part could read the keys as text. The `keys`
+  permissions of Codex and Claude Code stay for `detect`. A count made
+  before the prices are read is made again once they are, so the start
+  reads the session files twice; the start could read the prices before
+  the tokens to avoid it.
+
+  Left for later issues: "Login expired" on the profile and on the
+  account and fixing it from either (07), OTTY's own logins (08, 09),
+  the public docs (10).

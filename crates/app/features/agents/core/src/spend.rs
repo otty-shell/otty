@@ -1,6 +1,8 @@
 //! What was counted of the tokens one profile spent, by the rules of spec
 //! Decision 5: the last good count stays with its time when a later count
-//! fails.
+//! fails. The agent part prices the tokens of each count at the list
+//! prices of its time (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 3), so new prices want a new count.
 
 use std::time::SystemTime;
 
@@ -18,6 +20,7 @@ pub(crate) struct ProfileSpend {
     failure: Option<SourceError>,
     has_counter: bool,
     reads: ReadState,
+    is_priced_at_old_prices: bool,
 }
 
 impl ProfileSpend {
@@ -54,9 +57,27 @@ impl ProfileSpend {
         &self.reads
     }
 
-    /// Start a count; `false` when one is on its way.
+    /// Whether the list prices changed since the latest count started: its
+    /// money is priced at the old ones, so a new count is wanted.
+    pub(crate) fn is_priced_at_old_prices(&self) -> bool {
+        self.is_priced_at_old_prices
+    }
+
+    /// Start a count, at the list prices of now; `false` when one is on
+    /// its way.
     pub(crate) fn start_reading(&mut self) -> bool {
-        self.reads.start()
+        let started = self.reads.start();
+        if started {
+            self.is_priced_at_old_prices = false;
+        }
+
+        started
+    }
+
+    /// The list prices changed: the money counted so far, and that of a
+    /// count on its way, is priced at the old ones.
+    pub(crate) fn prices_changed(&mut self) {
+        self.is_priced_at_old_prices = true;
     }
 
     /// Take the result of a count that ended at `counted_at`. A count
@@ -90,6 +111,7 @@ impl Default for ProfileSpend {
             failure: None,
             has_counter: true,
             reads: ReadState::default(),
+            is_priced_at_old_prices: false,
         }
     }
 }

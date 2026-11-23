@@ -196,8 +196,9 @@ fn money_this_month(
 mod tests {
     use otty_agents::fixtures::format_change;
     use otty_agents::{
-        Credits, DaySpend, Dollars, Limits, ModelTokens, ProfileStatus,
-        ProviderRef, SavedProfiles, SourceError, Spend, TokenCount,
+        Credits, DaySpend, Dollars, Limits, ModelTokens, MoneyTotal,
+        ProfileStatus, ProviderRef, SavedProfiles, SourceError, Spend,
+        TokenCount,
     };
 
     use super::*;
@@ -367,10 +368,14 @@ mod tests {
             TokenCount::new(2_000_000, 0, 0),
             1,
         )
-        .with_provider(Some(ProviderRef::of_id("anthropic")));
-        let written = priced
-            .clone()
-            .with_cost(Some(Dollars::from_micro_dollars(1_500_000)));
+        .with_provider(Some(ProviderRef::of_id("anthropic")))
+        .with_money(MoneyTotal::at_api_prices(
+            Dollars::from_micro_dollars(6_000_000),
+            1,
+        ));
+        let written = priced.clone().with_money(MoneyTotal::written(
+            Dollars::from_micro_dollars(1_500_000),
+        ));
         let day = DaySpend::new(
             jiff::civil::date(2026, 11, 16),
             vec![priced, written],

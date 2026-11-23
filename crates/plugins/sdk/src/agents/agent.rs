@@ -2,20 +2,23 @@
 
 use std::marker::PhantomData;
 
+use crate::Command;
 use crate::agents::{
-    Answers, Login, LoginRef, Place, PlaceItem, Profile, ProfilePlace,
-    ProfileStatus, ReadError, Session,
+    Answers, Place, PlaceItem, Profile, ProfilePlace, ProfileStatus, ReadError,
+    Session,
 };
 use crate::bindings::agents_agent::exports::otty::agents_agent::agent::Guest;
-use crate::{Command, Need};
 
-/// One coding agent program: its profiles, sessions, tokens and logins.
-/// A plugin implements it once and serves each agent part its manifest
-/// lists; `agent` or `profile.agent` says which part is asked.
+/// One coding agent program: its profiles, sessions, tokens and their
+/// money. A plugin implements it once and serves each agent part its
+/// manifest lists; `agent` or `profile.agent` says which part is asked.
 ///
-/// The functions with a body are optional: their default says "not
-/// supported". The rule of the spec: what breaks when the agent updates
-/// (field names, file names, JSON shapes, SQL) lives here, never in OTTY.
+/// An agent part knows nothing of accounts (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 2): whose login a
+/// profile holds is the business of the plugin's provider part.
+///
+/// The rule of the spec: what breaks when the agent updates (field
+/// names, file names, JSON shapes, SQL) lives here, never in OTTY.
 pub trait Agent {
     /// The default config folder of the agent part `agent` only, marked
     /// `is_default`: the folder the agent uses with no variable set, or
@@ -23,19 +26,17 @@ pub trait Agent {
     /// adds other folders, such as `~/.codex-work`, as profiles.
     fn profiles(agent: &str) -> Vec<ProfilePlace>;
 
-    /// Whether the profile is logged in. A profile nobody is logged in
-    /// with is [`ProfileStatus::NotLoggedIn`] with the need that says how
-    /// to log in, such as a [`NeedAction::Run`](crate::NeedAction) of the
-    /// agent's login command.
+    /// Whether the profile can be used: [`ProfileStatus::Found`], or
+    /// [`ProfileStatus::NotLoggedIn`] with the need that says how to log
+    /// in, such as a [`NeedAction::Run`](crate::NeedAction) of the agent's
+    /// login command, when the agent can not log in with it. Whether a
+    /// login is missing or expired is the part's own call; an agent that
+    /// works with no login is always found.
     fn detect(profile: &Profile) -> ProfileStatus;
 
     /// The agent's version written in the profile's newest files. `None`:
     /// OTTY runs `<program> --version` itself.
     fn version(profile: &Profile) -> Option<String>;
-
-    /// The logins and keys the profile holds, each with where it sits and
-    /// whom it is for. Never the key itself.
-    fn logins(profile: &Profile) -> Vec<Login>;
 
     /// What holds the profile's sessions. The host walks the files, keeps
     /// what each gave and asks again only for the ones that are new or
@@ -58,7 +59,10 @@ pub trait Agent {
     fn spend_places(profile: &Profile) -> Vec<Place>;
 
     /// Every answer of the model in one file or database of a spend place,
-    /// with the counts of records seen and understood.
+    /// with the counts of records seen and understood. Each answer carries
+    /// its money: the cost the agent wrote, else its tokens at the API
+    /// price OTTY gives, as [`answer_cost`](crate::agents::answer_cost)
+    /// makes it.
     fn read_answers(
         profile: &Profile,
         item: &PlaceItem,
@@ -66,16 +70,6 @@ pub trait Agent {
 
     /// The command that starts a new session, or continues `session`.
     fn launch(profile: &Profile, session: Option<&str>) -> Command;
-
-    /// What the user must do now that a provider refused `login` of the
-    /// profile, or it expired. OTTY no longer asks: a provider part says
-    /// it with a need of the account it found the login in (spec
-    /// 2026-11-23-accounts-apart-from-profiles, Decision 9), and the
-    /// function leaves the contract with the other login functions.
-    /// Default: `None`.
-    fn login_refused(_profile: &Profile, _login: &LoginRef) -> Option<Need> {
-        None
-    }
 }
 
 /// What [`export!`](crate::export) exports for a plugin type `T` with
@@ -94,10 +88,6 @@ impl<T: Agent> Guest for AgentExport<T> {
 
     fn version(profile: Profile) -> Option<String> {
         T::version(&profile)
-    }
-
-    fn logins(profile: Profile) -> Vec<Login> {
-        T::logins(&profile)
     }
 
     fn session_places(profile: Profile) -> Vec<Place> {
@@ -124,9 +114,5 @@ impl<T: Agent> Guest for AgentExport<T> {
 
     fn launch(profile: Profile, session: Option<String>) -> Command {
         T::launch(&profile, session.as_deref())
-    }
-
-    fn login_refused(profile: Profile, login: LoginRef) -> Option<Need> {
-        T::login_refused(&profile, &login)
     }
 }

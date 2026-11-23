@@ -28,12 +28,12 @@
 
 use otty_plugin_sdk::agents::{
     Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
+    answer_cost,
 };
-use otty_plugin_sdk::{JsonField, KeyPlace, files};
+use otty_plugin_sdk::files;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::auth_file::{ACCESS_TOKEN_FIELD, AuthFile};
 use crate::timestamp::millis_of;
 
 /// What marks the lines the tokens are read from: the answers, the turns
@@ -134,10 +134,6 @@ pub(crate) struct SessionTokens {
     session: Option<String>,
     /// The id of the provider of the session, such as `openai`.
     model_provider: Option<String>,
-    /// The ChatGPT account that started the session.
-    creator_account_id: Option<String>,
-    /// The login of the profile that paid for the answers.
-    login: Option<KeyPlace>,
     model: Option<String>,
     previous_total: Option<Usage>,
     answers: Vec<Answer>,
@@ -174,8 +170,6 @@ impl SessionTokens {
             self.has_meta = true;
             self.session = filled_text(payload, "id");
             self.model_provider = filled_text(payload, "model_provider");
-            self.creator_account_id =
-                filled_text(payload, "creator_account_id");
             if let Some(version) = filled_text(payload, "cli_version") {
                 self.records.saw_version(&version);
             }
@@ -199,30 +193,32 @@ impl SessionTokens {
         }
     }
 
-    /// The ChatGPT account the session names as the one that started it.
-    pub(crate) fn creator_account_id(&self) -> Option<&str> {
-        self.creator_account_id.as_deref()
-    }
-
-    /// The same session, its answers paid by the login at `login`.
-    pub(crate) fn paid_by(self, login: Option<KeyPlace>) -> Self {
-        Self { login, ..self }
-    }
-
-    /// What the lines told: each answer with the session, the project, the
-    /// provider and the login of the session, and the records seen.
+    /// What the lines told: each answer with the session, the project and
+    /// the provider of the session, and the records seen. Codex writes no
+    /// cost, so each answer is priced at the API price OTTY gives for its
+    /// model and provider (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 3).
     pub(crate) fn into_answers(self) -> Answers {
         let provider = provider_of(self.model_provider.as_deref());
 
         let answers = self
             .answers
             .into_iter()
-            .map(|answer| Answer {
-                session: self.session.clone(),
-                project: self.project.clone(),
-                provider: provider.clone(),
-                login: self.login.clone(),
-                ..answer
+            .map(|answer| {
+                let cost = answer_cost(
+                    None,
+                    answer.model.as_deref(),
+                    provider.as_ref(),
+                    &answer.tokens,
+                );
+
+                Answer {
+                    session: self.session.clone(),
+                    project: self.project.clone(),
+                    provider: provider.clone(),
+                    cost,
+                    ..answer
+                }
             })
             .collect();
 
@@ -304,10 +300,9 @@ impl SessionTokens {
             at_ms,
             model: self.model.clone(),
             provider: None,
-            login: None,
             project: None,
             tokens,
-            cost_microdollars: None,
+            cost: None,
         });
     }
 
@@ -322,20 +317,11 @@ impl SessionTokens {
     }
 }
 
-/// The answers of the session file at `path` of the profile in `folder`,
-/// with the records seen. An answer of a session that names the account
-/// that started it is paid by the profile's login of that account.
-pub(crate) fn read_profile_answers(
-    folder: &str,
-    path: &str,
-) -> Result<Answers, ReadError> {
-    let session = read_session(path)?;
-
-    let login = session
-        .creator_account_id()
-        .and_then(|account_id| login_of_account(folder, account_id));
-
-    Ok(session.paid_by(login).into_answers())
+/// The answers of the session file at `path`, each priced, with the
+/// records seen. Nothing ties an answer to the login that paid for it
+/// (spec 2026-11-23-accounts-apart-from-profiles, Decision 1).
+pub(crate) fn read_profile_answers(path: &str) -> Result<Answers, ReadError> {
+    Ok(read_session(path)?.into_answers())
 }
 
 /// What the lines of the session file at `path` tell.
@@ -357,23 +343,6 @@ fn read_session(path: &str) -> Result<SessionTokens, ReadError> {
     }
 
     Ok(session)
-}
-
-/// The place of the ChatGPT login of the profile in `folder` when it is of
-/// the account `account_id`, the account a session file names as its
-/// creator.
-fn login_of_account(folder: &str, account_id: &str) -> Option<KeyPlace> {
-    let auth = AuthFile::read(folder)?;
-    let is_chatgpt_login = !auth.is_api_key() && auth.has_access_token();
-    let is_of_account =
-        auth.chatgpt_account_id().as_deref() == Some(account_id);
-
-    (is_chatgpt_login && is_of_account).then(|| {
-        KeyPlace::JsonField(JsonField {
-            file: auth.path().to_string(),
-            pointer: ACCESS_TOKEN_FIELD.to_string(),
-        })
-    })
 }
 
 /// Whether `line` holds `marker`.
@@ -463,6 +432,7 @@ pub(crate) mod testing {
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::HostError;
+    use otty_plugin_sdk::agents::{AnswerCost, ModelPrice, TokenPrices};
 
     use super::testing::tokens;
     use super::*;
@@ -533,16 +503,54 @@ mod tests {
         )
     }
 
-    /// The answers of the session file at `path`, paid by no login.
-    fn read_answers(path: &str) -> Result<Answers, ReadError> {
-        Ok(read_session(path)?.into_answers())
-    }
-
     fn fixture_answers(relative: &str) -> Result<Answers, ReadError> {
         let host = host();
         let file = path(&host, relative);
 
-        as_part(&host, || read_answers(&file))
+        as_part(&host, || read_profile_answers(&file))
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: Codex
+    /// writes no cost, so each answer is priced at the API price OTTY
+    /// gives for its model and provider, and marked so.
+    #[test]
+    fn each_answer_is_priced_at_the_price_otty_gives() {
+        let price = ModelPrice {
+            standard: TokenPrices {
+                input: 1_000_000,
+                cached: 100_000,
+                cache_written: 0,
+                output: 10_000_000,
+            },
+            long_prompt: None,
+        };
+        let host = host().with_price("gpt-5-codex", openai(), price);
+        let meta = meta_of(Some("openai"), None);
+        let turn = turn("gpt-5-codex");
+        let count =
+            count("2026-11-16T10:00:00.000Z", (1000, 800, 50), (1000, 800, 50));
+
+        let spend = as_part(&host, || spend_of(&[&meta, &turn, &count]));
+
+        // 200 input at $1, 800 cached at $0.10 and 50 output at $10 a
+        // million tokens.
+        assert_eq!(
+            spend.answers[0].cost,
+            Some(AnswerCost::AtApiPrices(200 + 80 + 500))
+        );
+    }
+
+    #[test]
+    fn a_model_with_no_price_has_no_cost() {
+        let host = host();
+        let meta = meta_of(Some("openai"), None);
+        let turn = turn("gpt-5-codex");
+        let count =
+            count("2026-11-16T10:00:00.000Z", (1000, 800, 50), (1000, 800, 50));
+
+        let spend = as_part(&host, || spend_of(&[&meta, &turn, &count]));
+
+        assert_eq!(spend.answers[0].cost, None);
     }
 
     #[test]
@@ -645,8 +653,8 @@ mod tests {
             ".codex/sessions/2026/11/16/rollout-2026-11-16T10-00-00-019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b.jsonl",
         );
 
-        let spend =
-            as_part(&host, || read_answers(&file)).expect("the answers");
+        let spend = as_part(&host, || read_profile_answers(&file))
+            .expect("the answers");
 
         let reasoning: Vec<u64> = spend
             .answers
@@ -759,7 +767,6 @@ mod tests {
         let spend = spend_of(&[&meta, &line]);
 
         assert_eq!(spend.answers[0].provider, openai());
-        assert_eq!(spend.answers[0].login, None);
     }
 
     /// Codex uses OpenAI unless its config picks another provider, and
@@ -810,50 +817,6 @@ mod tests {
             spend,
             Err(ReadError::Host(HostError::NotFound(_)))
         ));
-    }
-
-    /// The session the Pro login of `.codex-plus` started is paid by it;
-    /// the one another account started is paid by no login of the
-    /// profile.
-    #[test]
-    fn a_session_is_paid_by_the_login_of_the_account_that_started_it() {
-        let host = host();
-        let folder = path(&host, ".codex-plus");
-        let read = |name: &str| {
-            let file = format!("{folder}/sessions/2026/11/18/{name}");
-            as_part(&host, || read_profile_answers(&folder, &file))
-                .expect("the answers")
-        };
-
-        let own = read(
-            "rollout-2026-11-18T08-00-00-019ab000-1111-7222-8333-444455556666.jsonl",
-        );
-        let other = read(
-            "rollout-2026-11-18T09-00-00-019ab001-1111-7222-8333-444455556666.jsonl",
-        );
-
-        let login = KeyPlace::JsonField(otty_plugin_sdk::JsonField {
-            file: format!("{folder}/auth.json"),
-            pointer: "/tokens/access_token".to_string(),
-        });
-        assert_eq!(own.answers.len(), 1);
-        assert_eq!(own.answers[0].login, Some(login));
-        assert_eq!(other.answers.len(), 1);
-        assert_eq!(other.answers[0].login, None);
-    }
-
-    /// A forked session copies the session meta of its parent after its
-    /// own: the first one names the account that started it.
-    #[test]
-    fn the_creator_is_named_by_the_first_session_meta() {
-        let own = meta_of(Some("openai"), Some("made-up-own"));
-        let parent = meta_of(Some("openai"), Some("made-up-parent"));
-        let mut session = SessionTokens::default();
-
-        session.add_line(own.as_bytes());
-        session.add_line(parent.as_bytes());
-
-        assert_eq!(session.creator_account_id(), Some("made-up-own"));
     }
 
     #[test]

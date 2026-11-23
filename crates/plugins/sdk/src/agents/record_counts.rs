@@ -2,7 +2,7 @@
 //! records of the kind it reads, the ones it understood, and the names
 //! (never the values) of the fields it missed and found.
 
-use crate::agents::{Identity, RecordCounts, TokenCount};
+use crate::agents::{RecordCounts, TokenCount};
 
 /// The most field names the counts keep.
 const MOST_FIELDS: usize = 20;
@@ -99,17 +99,6 @@ impl Default for TokenCount {
             cache_written: 0,
             output: 0,
             reasoning: 0,
-        }
-    }
-}
-
-impl Default for Identity {
-    /// Nothing known.
-    fn default() -> Self {
-        Self {
-            account_id: None,
-            organization_id: None,
-            email: None,
         }
     }
 }

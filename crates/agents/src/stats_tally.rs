@@ -76,6 +76,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::money_estimate::MoneyTotal;
     use crate::provider::ProviderRef;
     use crate::spend::ModelTokens;
     use crate::testing::{NOW, at, utc_now};
@@ -101,12 +102,15 @@ mod tests {
         FileSpend::new(Some(PathBuf::from(project)), answers)
     }
 
+    /// The tokens of `requests` answers of `name` with no price, as the
+    /// answers of [`answer`] are.
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(
             Some(name),
             TokenCount::new(input, 0, requests),
             requests,
         )
+        .with_money(MoneyTotal::unpriced(requests))
     }
 
     #[test]

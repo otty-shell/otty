@@ -1,42 +1,31 @@
-//! Whether a Codex profile can be used: its config folder and its login.
+//! Whether a Codex profile can be used: its config folder and whether a
+//! login is there. Whose login it is, the agent part does not say: the
+//! provider part `openai` finds the account (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 2).
 
-use otty_plugin_sdk::agents::{Billing, Connection, ProfileStatus};
+use otty_plugin_sdk::agents::ProfileStatus;
 use otty_plugin_sdk::{Command, files};
 
 use crate::auth_file::AuthFile;
 use crate::glob::escaped;
 use crate::needs;
 
-/// Whether the profile in `folder` is logged in, as [`connection`] tells.
-/// A profile nobody is logged in with needs the user to run `login`,
-/// Codex's login command.
+/// Whether the profile in `folder` can be used: found when its
+/// `auth.json` holds an API key or the token of a ChatGPT login, else not
+/// logged in with the need to run `login`, Codex's login command. A blank
+/// key or token counts as none.
 pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
     if !folder_exists(folder) {
         return ProfileStatus::ConfigFolderNotFound;
     }
 
-    match connection(folder) {
-        Some(connection) => ProfileStatus::Connected(connection),
-        None => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    let has_login =
+        AuthFile::read(folder).is_some_and(|auth| auth.is_logged_in());
+
+    match has_login {
+        true => ProfileStatus::Found,
+        false => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
     }
-}
-
-/// The login of the profile in `folder`; `None` when nobody is logged in.
-///
-/// A profile is logged in when its `auth.json` holds an API key or the
-/// token of a ChatGPT login; a blank one counts as none. An API key login
-/// is billed by its key; for a ChatGPT login the limits tell the billing.
-/// The account and the plan are not read here.
-pub(crate) fn connection(folder: &str) -> Option<Connection> {
-    let auth = AuthFile::read(folder).filter(AuthFile::is_logged_in)?;
-
-    let billing = auth.is_api_key().then_some(Billing::ApiKey);
-
-    Some(Connection {
-        account: None,
-        plan: None,
-        billing,
-    })
 }
 
 /// Whether the config folder `folder` holds any file. A folder is never
@@ -56,24 +45,6 @@ mod tests {
     use super::*;
     use crate::testing::{as_part, host, path};
 
-    /// A connected profile whose billing comes from its limits.
-    fn connected() -> ProfileStatus {
-        ProfileStatus::Connected(Connection {
-            account: None,
-            plan: None,
-            billing: None,
-        })
-    }
-
-    /// A connected profile paid for by an API key.
-    fn api_key() -> ProfileStatus {
-        ProfileStatus::Connected(Connection {
-            account: None,
-            plan: None,
-            billing: Some(Billing::ApiKey),
-        })
-    }
-
     fn status_of(folder: &str) -> ProfileStatus {
         let host = host();
         let folder = path(&host, folder);
@@ -91,29 +62,17 @@ mod tests {
         matches!(status_of(folder), ProfileStatus::NotLoggedIn(_))
     }
 
+    /// Decision 2: a ChatGPT login and an API key are both found, with no
+    /// word on whose login it is or how it is paid for.
     #[test]
-    fn a_chatgpt_login_is_connected() {
-        assert_eq!(status_of(".codex"), connected());
+    fn a_chatgpt_login_or_a_key_is_found() {
+        for folder in [".codex", ".codex-work", ".codex-nomode", ".codex-both"]
+        {
+            assert_eq!(status_of(folder), ProfileStatus::Found, "{folder}");
+        }
     }
 
-    #[test]
-    fn an_api_key_login_is_an_api_key_profile() {
-        assert_eq!(status_of(".codex-work"), api_key());
-    }
-
-    #[test]
-    fn a_key_with_no_auth_mode_is_an_api_key_profile() {
-        assert_eq!(status_of(".codex-nomode"), api_key());
-    }
-
-    /// Older Codex versions kept a key next to the ChatGPT login; the
-    /// `auth_mode` then says how the account is paid for, as Codex itself
-    /// reads it.
-    #[test]
-    fn the_auth_mode_wins_over_a_key_kept_next_to_a_chatgpt_login() {
-        assert_eq!(status_of(".codex-both"), connected());
-    }
-
+    /// "No login": an `auth.json` with no key and no token.
     #[test]
     fn an_auth_file_with_no_key_and_no_token_is_not_logged_in() {
         for folder in

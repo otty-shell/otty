@@ -444,7 +444,7 @@ mod tests {
                 name: String::from("Example Agent"),
                 kind: "Agent",
                 description: Some(String::from(
-                    "Finds Example Agent sessions, tokens and logins.",
+                    "Finds Example Agent sessions, tokens and their money.",
                 )),
                 is_on: true,
                 health: "Paused",
@@ -573,7 +573,7 @@ mod tests {
         let kind = ui.find("Agent").expect("the kind").bounds();
         let health = ui.find("Paused").expect("the health").bounds();
         let description = ui
-            .find("Finds Example Agent sessions, tokens and logins.")
+            .find("Finds Example Agent sessions, tokens and their money.")
             .expect("the description")
             .bounds();
         let access = ui.find(button.as_str()).expect("Can access").bounds();

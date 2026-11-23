@@ -1,15 +1,16 @@
 //! The numbers of the usage block (spec 2026-11-19, Decision 6): the
 //! tokens of a period of one profile or of several, one point per hour of
 //! today or per day, in one project or in all, added up by project, by
-//! profile or by model, in tokens or in money at API prices. The money of
-//! every profile counts, on a subscription too (spec
-//! 2026-11-23-accounts-apart-from-profiles, Decision 3).
+//! profile or by model, in tokens or in money. The money of every profile
+//! counts, on a subscription too, as its agent part priced each answer:
+//! the cost the agent wrote, else the tokens at API prices (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 3). The block only
+//! adds it up.
 
 use std::path::Path;
 
 use otty_agents::{
-    DaySpend, HourSpend, ModelTokens, MoneyTotal, PriceTable,
-    ProjectModelTokens, Registry, Spend,
+    DaySpend, HourSpend, ModelTokens, ProjectModelTokens, Spend,
 };
 use otty_app_domain::folder_path::folder_name;
 
@@ -55,13 +56,8 @@ pub(crate) struct UsageInput<'a> {
     pub(crate) sources: &'a [UsageSource<'a>],
     /// The project the tokens are counted in; every project with none.
     pub(crate) project: Option<&'a Path>,
-    /// The list prices the money is counted at; with none, the money is
-    /// zero.
-    pub(crate) prices: Option<&'a PriceTable>,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
-    /// The registry, which names who served the tokens to the price table.
-    pub(crate) registry: &'a Registry,
 }
 
 /// The tokens of each point of `period` in `spend`, oldest first: each
@@ -124,12 +120,7 @@ pub(crate) fn group_usage(
                 if !is_in_project(part, input.project) {
                     continue;
                 }
-                let value = value_of(
-                    part.tokens(),
-                    measure,
-                    input.prices,
-                    input.registry,
-                );
+                let value = value_of(part.tokens(), measure);
                 if value == 0 {
                     continue;
                 }
@@ -147,8 +138,9 @@ pub(crate) fn group_usage(
 }
 
 /// Whether the money of `period` over `input` is at API prices: a source
-/// has tokens there, in its project, whose cost its agent did not write.
-/// An agent that writes it, such as OpenCode, has exact money.
+/// has tokens there, in its project, that its agent part priced at API
+/// prices or could not price. An agent that writes the cost, such as
+/// OpenCode, has exact money.
 pub(crate) fn money_is_at_api_prices(
     input: &UsageInput<'_>,
     period: UsagePeriod,
@@ -159,10 +151,7 @@ pub(crate) fn money_is_at_api_prices(
         .flat_map(|source| period_points(source.spend, period))
         .flatten()
         .filter(|part| is_in_project(part, input.project))
-        .any(|part| {
-            let tokens = part.tokens();
-            !tokens.tokens().is_zero() && tokens.cost().is_none()
-        })
+        .any(|part| part.tokens().money().is_estimate())
 }
 
 /// Adds `value` at the point `index` to the row `name` of `groups`, a new
@@ -216,23 +205,11 @@ fn row_name(
 }
 
 /// The value of `tokens` in `measure`: all its tokens, or what they cost
-/// at `prices` for who served them, as `registry` names it, in
-/// micro-dollars; nothing with no prices.
-fn value_of(
-    tokens: &ModelTokens,
-    measure: UsageMeasure,
-    prices: Option<&PriceTable>,
-    registry: &Registry,
-) -> u64 {
+/// as their agent part priced them, in micro-dollars.
+fn value_of(tokens: &ModelTokens, measure: UsageMeasure) -> u64 {
     match measure {
         UsageMeasure::Tokens => tokens.tokens().total(),
-        UsageMeasure::Money => prices.map_or(0, |prices| {
-            let tokens = std::slice::from_ref(tokens);
-
-            MoneyTotal::of_models(tokens, prices, registry)
-                .cost()
-                .micro_dollars()
-        }),
+        UsageMeasure::Money => tokens.money().cost().micro_dollars(),
     }
 }
 
@@ -240,10 +217,9 @@ fn value_of(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{ProviderRef, TokenCount};
+    use otty_agents::{Dollars, MoneyTotal, ProviderRef, TokenCount};
 
     use super::*;
-    use crate::testing::price_table;
 
     /// `input` tokens of `model` in `project`, through Anthropic.
     fn part(
@@ -294,29 +270,33 @@ mod tests {
         UsageSource { name, spend }
     }
 
-    /// Every project of `sources`, with no prices.
+    /// Every project of `sources`.
     fn input<'a>(sources: &'a [UsageSource<'a>]) -> UsageInput<'a> {
         UsageInput {
             sources,
             project: None,
-            prices: None,
             home: Path::new("/home/user"),
-            registry: &crate::testing::TEST_REGISTRY,
         }
     }
 
     /// The days 2026-11-10 to 2026-11-16 of Codex, each with 1 000 tokens
-    /// of gpt-5 in otty and 50 in docs, through OpenAI.
+    /// of gpt-5 in otty and 50 in docs, through OpenAI, priced by the
+    /// Codex part at $1.25 a million input tokens.
     fn codex_spend() -> Spend {
         let days = (10..=16)
             .map(|day| {
                 let gpt = |project: &str, input: u64| {
+                    let money = MoneyTotal::at_api_prices(
+                        Dollars::from_micro_dollars(input * 5 / 4),
+                        1,
+                    );
                     let tokens = ModelTokens::new(
                         Some("gpt-5"),
                         TokenCount::new(input, 0, 0),
                         1,
                     )
-                    .with_provider(Some(ProviderRef::of_id("openai")));
+                    .with_provider(Some(ProviderRef::of_id("openai")))
+                    .with_money(money);
                     ProjectModelTokens::new(
                         Some(PathBuf::from(project)),
                         tokens,
@@ -489,12 +469,8 @@ mod tests {
     fn money_counts_every_profile() {
         let claude = spend();
         let codex = codex_spend();
-        let prices = price_table();
         let sources = [source("Claude Code", &claude), source("Codex", &codex)];
-        let priced = UsageInput {
-            prices: Some(&prices),
-            ..input(&sources)
-        };
+        let priced = input(&sources);
 
         let week = group_usage(
             &priced,
@@ -505,23 +481,30 @@ mod tests {
 
         let names: Vec<&str> =
             week.iter().map(|group| group.name.as_str()).collect();
-        assert_eq!(names, ["Codex"], "the made-up prices price gpt-5 only");
+        assert_eq!(names, ["Codex"], "the Codex part priced gpt-5 only");
         assert!(money_is_at_api_prices(&priced, UsagePeriod::SevenDays));
     }
 
+    /// Decision 3: the money is what the agent part gave the tokens, in
+    /// micro-dollars; the block multiplies nothing.
     #[test]
-    fn money_is_the_tokens_at_the_list_prices_in_micro_dollars() {
+    fn money_is_what_the_part_gave_in_micro_dollars() {
         let gpt = ProjectModelTokens::new(
             None,
             ModelTokens::new(
                 Some("gpt-5"),
                 TokenCount::new(1_000_000, 0, 0),
                 1,
-            ),
+            )
+            .with_money(MoneyTotal::at_api_prices(
+                Dollars::from_micro_dollars(1_250_000),
+                1,
+            )),
         );
         let unpriced = ProjectModelTokens::new(
             None,
-            ModelTokens::new(Some("mystery"), TokenCount::new(9, 0, 0), 1),
+            ModelTokens::new(Some("mystery"), TokenCount::new(9, 0, 0), 1)
+                .with_money(MoneyTotal::unpriced(1)),
         );
         let spend = Spend::new(
             vec![
@@ -531,19 +514,8 @@ mod tests {
             Vec::new(),
         );
         let sources = [source("Codex", &spend)];
-        let prices = price_table();
-        let priced = UsageInput {
-            prices: Some(&prices),
-            ..input(&sources)
-        };
 
         let groups = group_usage(
-            &priced,
-            UsagePeriod::SevenDays,
-            UsageTab::ByModel,
-            UsageMeasure::Money,
-        );
-        let no_prices = group_usage(
             &input(&sources),
             UsagePeriod::SevenDays,
             UsageTab::ByModel,
@@ -551,6 +523,35 @@ mod tests {
         );
 
         assert_eq!(groups, [group("gpt-5", &[1_250_000])]);
-        assert_eq!(no_prices, [], "nothing costs anything with no prices");
+        assert!(money_is_at_api_prices(
+            &input(&sources),
+            UsagePeriod::SevenDays
+        ));
+    }
+
+    /// Money the agent wrote for every answer, such as OpenCode's, is
+    /// exact: no mark.
+    #[test]
+    fn money_the_agent_wrote_is_not_at_api_prices() {
+        let written = ProjectModelTokens::new(
+            None,
+            ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
+                .with_money(MoneyTotal::written(Dollars::from_micro_dollars(
+                    40,
+                ))),
+        );
+        let spend = Spend::new(
+            vec![
+                DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
+                    .with_parts(vec![written]),
+            ],
+            Vec::new(),
+        );
+        let sources = [source("OpenCode", &spend)];
+
+        assert!(!money_is_at_api_prices(
+            &input(&sources),
+            UsagePeriod::SevenDays
+        ));
     }
 }

@@ -2,7 +2,7 @@
 //! sessions, and Agents mode with them read.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use jiff::ToSpan;
@@ -43,11 +43,6 @@ pub(crate) fn claude_id() -> AgentId {
 pub(crate) fn codex_id() -> AgentId {
     AgentId::new("codex")
 }
-
-/// The registry of the tests, for the view models that borrow it for the
-/// whole test.
-pub(crate) static TEST_REGISTRY: LazyLock<Registry> =
-    LazyLock::new(test_registry);
 
 /// The registry of the tests: the stand-ins of the agents of the official
 /// plugins, and the provider parts of the official plugins.
@@ -214,20 +209,14 @@ pub(crate) fn codex_work() -> Profile {
 
 /// The status of a profile that can be used.
 pub(crate) fn connected() -> ProfileStatus {
-    ProfileStatus::Connected {
-        account: None,
-        plan: None,
-        billing: None,
-    }
+    ProfileStatus::Connected
 }
 
-/// The status of a profile that pays per token with an API key.
+/// The status of a profile that pays per token with an API key: it can be
+/// used, and the accounts found in it, a key or an organization, tell how
+/// it pays (spec 2026-11-23-accounts-apart-from-profiles, Decision 2).
 pub(crate) fn api_key() -> ProfileStatus {
-    ProfileStatus::Connected {
-        account: None,
-        plan: None,
-        billing: Some(otty_agents::BillingKind::ApiKey),
-    }
+    ProfileStatus::Connected
 }
 
 /// A key of OpenAI the OpenAI plugin found in the default Codex profile,
@@ -519,11 +508,13 @@ pub(crate) fn spend_of(today: u64, earlier: u64) -> Spend {
 /// The tokens of a month as a count of the session files gives them:
 /// 100 000 input tokens of gpt-5 through OpenAI in `/work/otty` on each
 /// of the 30 days from 2026-10-18 to today, 2026-11-16, and today's at
-/// 09:00 in the hours of today.
+/// 09:00 in the hours of today. The Codex part priced the tokens of each
+/// day at the made-up list prices of [`price_table`]: $0.125.
 pub(crate) fn month_spend() -> Spend {
     let tokens =
         ModelTokens::new(Some("gpt-5"), TokenCount::new(100_000, 0, 0), 1)
-            .with_provider(Some(ProviderRef::of_id("openai")));
+            .with_provider(Some(ProviderRef::of_id("openai")))
+            .with_money(at_list_prices(100_000));
     let parts = || {
         vec![ProjectModelTokens::new(
             Some(PathBuf::from("/work/otty")),
@@ -571,6 +562,19 @@ pub(crate) fn organization() -> Account {
         "org:made-up-org",
         "dev@example.com",
         AccountKind::Organization,
+        vec![found_in(claude_id(), "/home/user/.claude")],
+    )
+}
+
+/// A made-up Claude subscription the Anthropic plugin found in the
+/// default Claude Code folder.
+pub(crate) fn claude_login() -> Account {
+    Account::new(
+        "anthropic",
+        ProviderId::new("anthropic"),
+        "claude:made-up-account",
+        "dev@example.com",
+        AccountKind::Subscription,
         vec![found_in(claude_id(), "/home/user/.claude")],
     )
 }
@@ -910,6 +914,13 @@ pub(crate) fn price_table() -> PriceTable {
     ])
 }
 
+/// The money of one request of `input` input tokens of gpt-5, as an
+/// agent part prices it at the made-up list prices of [`price_table`]:
+/// $1.25 a million, at API prices.
+pub(crate) fn at_list_prices(input: u64) -> MoneyTotal {
+    MoneyTotal::at_api_prices(Dollars::from_micro_dollars(input * 5 / 4), 1)
+}
+
 /// The made-up prices of [`price_table`], fetched at `fetched_at`.
 pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
     FetchedPrices::new(price_table(), fetched_at)
@@ -918,11 +929,13 @@ pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
 /// $1.25 at API prices: one million input tokens of `gpt-5` at the
 /// made-up list prices, fetched at `at(10)`.
 pub(crate) fn estimated_money() -> ShownMoney {
+    let listed =
+        MoneyTotal::at_api_prices(Dollars::from_micro_dollars(1_250_000), 1);
     let tokens =
-        ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1);
+        ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1)
+            .with_money(listed);
     let prices = fetched_prices(at(10));
-    let total =
-        MoneyTotal::of_models(&[tokens], prices.table(), &Registry::default());
+    let total = MoneyTotal::of_models(&[tokens]);
 
     ShownMoney::of_total(&total, &prices, None)
 }

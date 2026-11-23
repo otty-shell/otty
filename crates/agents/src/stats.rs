@@ -3,9 +3,11 @@
 //! issue 22: a plugin gives the answers, OTTY sums them).
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::agent::{Agent, agent_of};
+use crate::api_prices::ApiPrices;
 use crate::error::{SourceError, Unavailable};
 use crate::limits::WindowId;
 use crate::local_time::LocalNow;
@@ -273,34 +275,38 @@ impl ProjectStats {
 #[cfg_attr(test, mockall::automock)]
 pub trait StatsSource: Send {
     /// The statistics of the session `session` of `profile`, its days
-    /// counted up to `now` in the user's time zone.
+    /// counted up to `now` in the user's time zone, each answer priced by
+    /// the agent part at `prices` when the agent did not write its cost.
     fn session_stats(
         &self,
         profile: &Profile,
         session: &SessionId,
         now: &LocalNow,
+        prices: &Arc<ApiPrices>,
     ) -> Result<SessionStats, SourceError>;
 
     /// The statistics of every session of `profile` in the project
-    /// `folder`, over the whole history.
+    /// `folder`, over the whole history, priced the same way.
     fn project_stats(
         &self,
         profile: &Profile,
         folder: &Path,
+        prices: &Arc<ApiPrices>,
     ) -> Result<ProjectStats, SourceError>;
 }
 
 /// The statistics of the session `session` of `profile`, read by the
 /// statistics source of its agent among `agents`, its days counted up to
-/// `now`. An agent OTTY does not know, or one that reads no statistics, is
-/// "not available".
+/// `now` and its answers priced at `prices`. An agent OTTY does not know,
+/// or one that reads no statistics, is "not available".
 pub fn read_session_stats(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
     session: &SessionId,
     now: &LocalNow,
+    prices: &Arc<ApiPrices>,
 ) -> Result<SessionStats, SourceError> {
-    stats_source(agents, profile)?.session_stats(profile, session, now)
+    stats_source(agents, profile)?.session_stats(profile, session, now, prices)
 }
 
 /// The statistics of every session of `profile` in the project `folder`,
@@ -310,8 +316,9 @@ pub fn read_project_stats(
     agents: &[Box<dyn Agent>],
     profile: &Profile,
     folder: &Path,
+    prices: &Arc<ApiPrices>,
 ) -> Result<ProjectStats, SourceError> {
-    stats_source(agents, profile)?.project_stats(profile, folder)
+    stats_source(agents, profile)?.project_stats(profile, folder, prices)
 }
 
 /// The statistics source of the agent of `profile` among `agents`; "not
@@ -336,7 +343,9 @@ mod tests {
 
     use super::*;
     use crate::agent::AgentId;
-    use crate::testing::{MockAgent, at, mock_entry, test_agents, utc_now};
+    use crate::testing::{
+        MockAgent, at, mock_entry, no_prices, test_agents, utc_now,
+    };
 
     fn model(name: &str, input: u64, requests: u64) -> ModelTokens {
         ModelTokens::new(Some(name), TokenCount::new(input, 0, 1), requests)
@@ -419,8 +428,10 @@ mod tests {
             &silent,
             &SessionId::new("a1"),
             &utc_now(),
+            &no_prices(),
         );
-        let project = read_project_stats(&agents, &silent, Path::new("/w"));
+        let project =
+            read_project_stats(&agents, &silent, Path::new("/w"), &no_prices());
 
         let not_available =
             SourceError::NotAvailable(Unavailable::NoStatistics(silent_id));
@@ -435,6 +446,7 @@ mod tests {
             &stranger(),
             &SessionId::new("a1"),
             &utc_now(),
+            &no_prices(),
         );
 
         assert_eq!(
@@ -455,14 +467,18 @@ mod tests {
             let mut source = MockStatsSource::new();
             source
                 .expect_project_stats()
-                .withf(|_, folder| folder == Path::new("/work/otty"))
-                .return_once(|_, _| Ok(ProjectStats::default()));
+                .withf(|_, folder, _| folder == Path::new("/work/otty"))
+                .return_once(|_, _, _| Ok(ProjectStats::default()));
             Some(Box::new(source))
         });
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
 
-        let project =
-            read_project_stats(&agents, &stranger(), Path::new("/work/otty"));
+        let project = read_project_stats(
+            &agents,
+            &stranger(),
+            Path::new("/work/otty"),
+            &no_prices(),
+        );
 
         assert_eq!(project, Ok(ProjectStats::default()));
     }

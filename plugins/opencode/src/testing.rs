@@ -6,8 +6,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use otty_plugin_sdk::agents::{PlaceItem, PlaceKind, Profile};
 use otty_plugin_sdk::files::FileInfo;
 use otty_plugin_sdk::test_host::TestHost;
@@ -144,11 +142,6 @@ impl DataFolder {
         Self { root, host }
     }
 
-    /// Writes `text` to the file `name` of the data folder.
-    pub(crate) fn write(&self, name: &str, text: &str) {
-        std::fs::write(self.path().join(name), text).expect("write the file");
-    }
-
     /// A database of the first shape, `opencode.db`, in the data folder.
     pub(crate) fn first_shape(&self) -> MadeUpDatabase {
         MadeUpDatabase::create(&self.path().join("opencode.db"), FIRST_SHAPE)
@@ -276,33 +269,6 @@ impl MadeUpDatabase {
         self.connection.last_insert_rowid()
     }
 
-    /// Gives the `credential` table the columns newer OpenCode keeps,
-    /// among them `active`, which marks the login OpenCode uses; every
-    /// login is then not active until [`Self::activate`].
-    pub(crate) fn with_active_column(self) -> Self {
-        self.connection
-            .execute_batch(
-                "ALTER TABLE credential ADD COLUMN connector_id TEXT;
-                 ALTER TABLE credential ADD COLUMN method_id TEXT;
-                 ALTER TABLE credential ADD COLUMN active INTEGER NOT NULL DEFAULT 0;
-                 ALTER TABLE credential ADD COLUMN time_created INTEGER NOT NULL DEFAULT 0;
-                 ALTER TABLE credential ADD COLUMN time_updated INTEGER NOT NULL DEFAULT 0;",
-            )
-            .expect("add the columns of newer OpenCode");
-
-        self
-    }
-
-    /// Marks the login at `row_id` as the one OpenCode uses.
-    pub(crate) fn activate(&self, row_id: i64) {
-        self.connection
-            .execute(
-                "UPDATE credential SET active = 1 WHERE rowid = ?1",
-                params![row_id],
-            )
-            .expect("mark the login active");
-    }
-
     fn create(path: &Path, tables: &str) -> Self {
         let connection = Connection::open(path).expect("create the database");
         connection
@@ -378,14 +344,6 @@ pub(crate) fn first_shape_question() -> String {
         r#"{"role":"user","time":{"created":1},"agent":"code",
         "model":{"providerID":"openai","modelID":"gpt-5.5"}}"#,
     )
-}
-
-/// A made-up JWT with the claims `claims`, unsigned.
-pub(crate) fn made_up_jwt(claims: &str) -> String {
-    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
-    let payload = URL_SAFE_NO_PAD.encode(claims.as_bytes());
-
-    format!("{header}.{payload}.made-up-signature")
 }
 
 /// `seconds` after the epoch in milliseconds, as OpenCode writes times.

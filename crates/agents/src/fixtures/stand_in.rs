@@ -5,10 +5,12 @@
 //! OTTY knows these names; they are test data only.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use otty_plugin_host::PluginPart;
 
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
+use crate::api_prices::ApiPrices;
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::error::{SourceError, Unavailable};
@@ -134,6 +136,7 @@ impl StatsSource for NotThere {
         _profile: &Profile,
         _session: &SessionId,
         _now: &LocalNow,
+        _prices: &Arc<ApiPrices>,
     ) -> Result<SessionStats, SourceError> {
         Err(SourceError::NotAvailable(Unavailable::NoSessionFiles))
     }
@@ -142,6 +145,7 @@ impl StatsSource for NotThere {
         &self,
         _profile: &Profile,
         _folder: &Path,
+        _prices: &Arc<ApiPrices>,
     ) -> Result<ProjectStats, SourceError> {
         Err(SourceError::NotAvailable(Unavailable::NoSessionFiles))
     }

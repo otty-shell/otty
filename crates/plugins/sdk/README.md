@@ -23,6 +23,16 @@ It also holds a test host, so a plugin's tests run natively with plain
 against the permissions of the part being tested. The test host is never
 built for `wasm32-wasip2`.
 
+An agent part does agent things only: profiles, sessions, tokens and
+their money, and the commands that start the agent. It knows nothing of
+accounts: `Agent::detect` says a profile is found, not logged in (with
+the need that fixes it, the part's own call) or gone, never whose login
+it is. Each answer carries its money: the cost the agent wrote, as it
+is, else its tokens at the API price of the model that OTTY's price list
+gives (`agents::price_of`, the host call `prices.price-of`), marked "at
+API prices". `agents::answer_cost` does both; OTTY only adds the money
+up. In tests, `TestHost::with_price` gives the price list.
+
 A provider part owns its accounts. OTTY calls `Provider::accounts` with
 the profile folders of the agent parts its manifest names in `logins`
 (`LoginFolder::Profile`), and the part reads the logins there with its
@@ -41,7 +51,8 @@ as a `Need`: a stable id, a title, a text and one button, a `NeedAction`
 (run a command in a terminal tab, ask for a key under the part's own
 slot, open an `https` page, or copy a report). A part gives it in
 `ReadError::NeedsUser` when it can not read until the user acts, and in
-`ProfileStatus::NotLoggedIn` for a profile nobody is logged in with.
+`ProfileStatus::NotLoggedIn` for a profile the agent can not log in
+with.
 OTTY shows it as it is, with the plugin's name. A key the user gave for
 an `ask-key` comes back to `Provider::numbers` and `Provider::read_bill`
 as a `GivenKey` handle with its slot; `given_key(given, slot)` finds it.

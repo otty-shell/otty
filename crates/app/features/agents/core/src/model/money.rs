@@ -45,9 +45,9 @@ pub(crate) struct ShownMoney {
 }
 
 impl ShownMoney {
-    /// The money of `total`, counted at `prices`: at API prices when some
-    /// of its requests were priced at the list prices or had no price,
-    /// exact when it is all the cost the agent wrote.
+    /// The money of `total`, as the agent parts priced it at `prices`: at
+    /// API prices when some of its requests were priced at them or had no
+    /// price, exact when it is all the cost the agent wrote.
     pub(crate) fn of_total(
         total: &MoneyTotal,
         prices: &FetchedPrices,
@@ -159,10 +159,10 @@ impl ApiPricesMarkViewModel {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{Dollars, ModelTokens, Registry, TokenCount};
+    use otty_agents::{Dollars, ModelTokens, TokenCount};
 
     use super::*;
-    use crate::testing::{at, fetched_prices, price_table};
+    use crate::testing::{at, fetched_prices};
 
     /// The tooltip of the mark for prices fetched at `at(10)`.
     fn tip() -> String {
@@ -180,24 +180,24 @@ mod tests {
         )
     }
 
-    /// One million input tokens of gpt-5 ($1.25 at the made-up prices),
-    /// with the cost the agent wrote when `written` is given.
-    fn gpt_5(written: Option<u64>) -> ModelTokens {
+    /// One million input tokens of gpt-5 that cost `money` as their agent
+    /// part priced them.
+    fn gpt_5(money: MoneyTotal) -> ModelTokens {
         ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1)
-            .with_cost(written.map(Dollars::from_micro_dollars))
+            .with_money(money)
     }
 
-    /// Spec 2026-11-23, Decision 3: tokens priced at the list prices carry
-    /// the mark "at API prices", under the sum or after it in one line,
+    /// Spec 2026-11-23, Decision 3: tokens the agent part priced at API
+    /// prices carry the mark "at API prices", under the sum or after it in one line,
     /// and its tooltip tells when the prices were fetched.
     #[test]
     fn money_at_api_prices_shows_its_mark() {
         let prices = fetched_prices(at(10));
-        let total = MoneyTotal::of_models(
-            &[gpt_5(None)],
-            prices.table(),
-            &Registry::default(),
+        let listed = MoneyTotal::at_api_prices(
+            Dollars::from_micro_dollars(1_250_000),
+            1,
         );
+        let total = MoneyTotal::of_models(&[gpt_5(listed)]);
 
         let money = ShownMoney::of_total(&total, &prices, None);
 
@@ -213,11 +213,8 @@ mod tests {
     #[test]
     fn the_cost_the_agent_wrote_is_exact() {
         let prices = fetched_prices(at(10));
-        let total = MoneyTotal::of_models(
-            &[gpt_5(Some(500_000))],
-            &price_table(),
-            &Registry::default(),
-        );
+        let written = MoneyTotal::written(Dollars::from_micro_dollars(500_000));
+        let total = MoneyTotal::of_models(&[gpt_5(written)]);
 
         let money = ShownMoney::of_total(&total, &prices, None);
 

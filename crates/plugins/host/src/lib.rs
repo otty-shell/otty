@@ -21,8 +21,10 @@
 //! functions of the `agents.agent` and `agents.provider` contracts with
 //! the types of their newest versions, [`agents::agent`] and
 //! [`agents::provider`]; each version the host keeps has its own
-//! bindings, such as [`agents::agent::v0_1`]. The host operations a
-//! plugin imports are [`operations`]. A plugin may also export the
+//! bindings, such as [`agents::agent::v0_1`]. An agent part prices the
+//! tokens of its answers itself with the price of a model it asks the
+//! [`agents::prices::PriceList`] the app gives each read of answers. The
+//! host operations a plugin imports are [`operations`]. A plugin may also export the
 //! [`language`] receiver, which belongs to no part and no domain:
 //! [`PluginEngine::set_language`] gives the
 //! plugins the language of OTTY's interface at each call, and

@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::agent::AgentId;
-use crate::limits::BillingKind;
 use crate::part_need::PartNeed;
 
 /// One agent together with one config folder and a name.
@@ -138,19 +137,15 @@ enum Origin {
 /// Whether a profile can be used, and if not, why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileStatus {
-    /// Installed and logged in.
-    Connected {
-        /// The account the profile is logged in with, when known.
-        account: Option<String>,
-        /// The name of the account's plan, when known.
-        plan: Option<String>,
-        /// How the account is paid for, when the profile's files tell;
-        /// `None` when only the limits answer tells.
-        billing: Option<BillingKind>,
-    },
-    /// Installed, but nobody is logged in with this config folder. The
-    /// agent part's need says how to log in; `None` when the part could not
-    /// tell (spec 2026-11-19-agent-plugins, issue 20).
+    /// Installed, and the agent can be used with this config folder: it is
+    /// logged in, or needs no login. Whose login it is, the profile does
+    /// not tell: the provider part finds the account (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 2).
+    Connected,
+    /// Installed, but the agent can not log in with this config folder,
+    /// such as nobody is logged in or the login expired, as the agent part
+    /// judges it. Its need says how to log in; `None` when the part could
+    /// not tell (spec 2026-11-19-agent-plugins, issue 20).
     NotLoggedIn(Option<Box<PartNeed>>),
     /// The agent's program was not found.
     ProgramNotFound,

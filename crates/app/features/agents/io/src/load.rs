@@ -218,7 +218,7 @@ fn missing_folders(sessions: &[AgentSession]) -> Vec<PathBuf> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use otty_agents::{AgentId, BillingKind, ProfileStatus, SourceFailure};
+    use otty_agents::{AgentId, ProfileStatus, SourceFailure};
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
@@ -295,14 +295,7 @@ mod tests {
             .iter()
             .find(|entry| entry.profile.agent().as_str() == "opencode")
             .expect("the OpenCode profile");
-        assert_eq!(
-            opencode.status,
-            ProfileStatus::Connected {
-                account: None,
-                plan: None,
-                billing: Some(BillingKind::ApiKey),
-            }
-        );
+        assert_eq!(opencode.status, ProfileStatus::Connected);
         assert_eq!(opencode.version.as_deref(), Some("2.3.2"));
         assert!(
             loaded.accounts.accounts().is_empty(),
@@ -345,11 +338,7 @@ mod tests {
             &finds_nothing,
         );
 
-        let connected = ProfileStatus::Connected {
-            account: None,
-            plan: None,
-            billing: Some(BillingKind::UsageWindows),
-        };
+        let connected = ProfileStatus::Connected;
         assert_eq!(
             statuses(&found),
             [

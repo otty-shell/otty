@@ -13,6 +13,7 @@ use otty_plugin_host::{
 
 use crate::account::{Account, AccountKind, FoundIn};
 use crate::agent::{Agent, AgentEntry, AgentId, ConfigFolder};
+use crate::api_prices::ApiPrices;
 use crate::command::AgentCommand;
 use crate::dollars::Dollars;
 use crate::env::AgentEnv;
@@ -215,11 +216,7 @@ impl Agent for Coder {
             return ProfileStatus::NotLoggedIn(None);
         }
 
-        ProfileStatus::Connected {
-            account: None,
-            plan: None,
-            billing: None,
-        }
+        ProfileStatus::Connected
     }
 
     fn version(&self, _profile: &Profile) -> Option<String> {
@@ -315,6 +312,12 @@ pub(crate) fn token_prices(
         cache_written: Dollars::from_micro_dollars(cache_written),
         output: Dollars::from_micro_dollars(output),
     }
+}
+
+/// An empty price list: no answer whose cost the agent did not write gets
+/// a price.
+pub(crate) fn no_prices() -> Arc<ApiPrices> {
+    Arc::new(ApiPrices::default())
 }
 
 /// The entry of a made-up agent with the id `id`, whose program is

@@ -5,20 +5,29 @@
 //! files that changed since they were last read. OTTY adds the answers
 //! up, counts an answer with one identity once, and judges "format
 //! changed" from what the part says it saw.
+//!
+//! The part prices each answer itself (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 3): the cost the
+//! agent wrote, else the tokens at the API price it asks OTTY's price list
+//! for. What a file told is kept with the money it was priced at, so when
+//! the prices change every file is read again.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use otty_plugin_host::agents::agent::{
-    AgentCalls, Answers, HostError, ReadError,
+    AgentCalls, AnswerCost as PartCost, Answers, HostError, ReadError,
 };
+use otty_plugin_host::agents::prices::PriceList;
 use otty_plugin_host::{CallError, CalledPart, PluginFailureKind};
 
+use crate::api_prices::ApiPrices;
 use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
+use crate::money_estimate::AnswerCost;
 use crate::plugin_places::place_items;
 use crate::plugin_sources::PluginSessions;
 use crate::plugin_values::{part_profile, provider_of, time_of, tokens_of};
@@ -38,12 +47,14 @@ use crate::stats_tally::{project_stats, session_stats};
 const READ_ANSWERS: &str = "read-answers";
 
 /// The spend counter and the statistics source of one agent part, with
-/// what each file told kept between refreshes and shared by both.
+/// what each file told kept between refreshes and shared by both, and the
+/// prices the kept answers were priced at.
 pub(crate) struct PluginSpend {
     part: Arc<CalledPart>,
     sessions: Arc<PluginSessions>,
     tested_version: Option<String>,
     memory: FileMemory<FileSpend>,
+    priced_at: Mutex<Option<Arc<ApiPrices>>>,
     writes_cost: Arc<AtomicBool>,
 }
 
@@ -63,26 +74,48 @@ impl PluginSpend {
             sessions,
             tested_version,
             memory: FileMemory::default(),
+            priced_at: Mutex::new(None),
             writes_cost,
         }
     }
 
+    /// Forgets what every file told when it was priced at other prices
+    /// than `prices`, so the next read asks the part again and the money
+    /// follows the new prices; then keeps `prices` as the prices of what
+    /// is read from now on.
+    fn price_at(&self, prices: &Arc<ApiPrices>) {
+        let mut priced_at = self
+            .priced_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let is_same = priced_at.as_ref().is_some_and(|kept| {
+            Arc::ptr_eq(kept, prices) || kept.as_ref() == prices.as_ref()
+        });
+        if is_same {
+            return;
+        }
+
+        self.memory.forget();
+        *priced_at = Some(Arc::clone(prices));
+    }
+
     /// The count of `profile` at `now` in one read of the part: its spend
-    /// places, then the answers of each file that changed. A call that
-    /// failed fails the read; what the part could not read fails the
-    /// count only.
+    /// places, then the answers of each file that changed, priced at
+    /// `prices`. A call that failed fails the read; what the part could
+    /// not read fails the count only.
     fn count(
         &self,
         calls: &mut AgentCalls<'_, '_>,
         profile: &Profile,
         now: &LocalNow,
+        prices: &Arc<dyn PriceList>,
     ) -> Result<Result<Spend, SourceError>, CallError> {
         let format = RecordFormat::of_plugin(
             self.part.named().clone(),
             self.tested_version.as_deref(),
         );
 
-        self.walk(calls, profile, |paths, read_file| {
+        self.walk(calls, profile, prices, |paths, read_file| {
             count_spend(
                 &self.memory,
                 profile.config_dir(),
@@ -97,15 +130,17 @@ impl PluginSpend {
 
     /// What `made` makes of the answers of the files of the spend places
     /// of `profile` that a panel reads, `files`, over the whole history,
-    /// in one read of the part, such as the statistics of a session.
+    /// in one read of the part, such as the statistics of a session, its
+    /// answers priced at `prices`.
     fn read_history<T>(
         &self,
         calls: &mut AgentCalls<'_, '_>,
         profile: &Profile,
         files: &PanelFiles,
+        prices: &Arc<dyn PriceList>,
         made: impl FnOnce(Vec<&FileSpend>) -> T,
     ) -> Result<Result<T, SourceError>, CallError> {
-        self.walk(calls, profile, |paths, read_file| {
+        self.walk(calls, profile, prices, |paths, read_file| {
             read_every_file(
                 &self.memory,
                 profile.config_dir(),
@@ -117,13 +152,14 @@ impl PluginSpend {
     }
 
     /// One walk of the spend places of `profile`: `walk` gets the paths of
-    /// their files and reads with the part each file it needs. A call
-    /// that failed fails the walk; what the part could not read fails
-    /// what `walk` makes only.
+    /// their files and reads with the part each file it needs, priced at
+    /// `prices`. A call that failed fails the walk; what the part could
+    /// not read fails what `walk` makes only.
     fn walk<T>(
         &self,
         calls: &mut AgentCalls<'_, '_>,
         profile: &Profile,
+        prices: &Arc<dyn PriceList>,
         walk: impl FnOnce(
             Vec<PathBuf>,
             &mut dyn FnMut(&Path) -> Result<FileSpend, SourceError>,
@@ -141,7 +177,7 @@ impl PluginSpend {
                 return Ok(FileSpend::default());
             };
 
-            match calls.read_answers(&asked, item) {
+            match calls.read_answers(&asked, item, prices) {
                 Ok(Ok(answers)) => Ok(self.file_spend(answers)),
                 Ok(Err(ReadError::Host(HostError::NotFound(_)))) => {
                     Ok(FileSpend::default())
@@ -162,9 +198,7 @@ impl PluginSpend {
     }
 
     /// What one file told, from the part's `answers`: each answer with
-    /// its own project and provider, and what the part saw. The login an
-    /// answer names is not read: nothing ties tokens to an account (spec
-    /// 2026-11-23-accounts-apart-from-profiles, Decision 1).
+    /// its own project, provider and money, and what the part saw.
     fn file_spend(&self, answers: Answers) -> FileSpend {
         let records = &answers.records;
         let records = RecordCounts::of_plugin(
@@ -179,7 +213,7 @@ impl PluginSpend {
             .answers
             .into_iter()
             .map(|answer| {
-                if answer.cost_microdollars.is_some() {
+                if matches!(answer.cost, Some(PartCost::Written(_))) {
                     self.writes_cost.store(true, Ordering::Relaxed);
                 }
                 let counted = CountedAnswer::new(
@@ -187,9 +221,7 @@ impl PluginSpend {
                     answer.model.as_deref(),
                     tokens_of(&answer.tokens),
                 )
-                .with_cost(
-                    answer.cost_microdollars.map(Dollars::from_micro_dollars),
-                )
+                .with_cost(answer.cost.map(cost_of))
                 .with_session(answer.session)
                 .with_project(answer.project.map(PathBuf::from))
                 .with_provider(answer.provider.as_ref().map(provider_of));
@@ -217,11 +249,15 @@ impl SpendCounter for Arc<PluginSpend> {
         &self,
         profile: &Profile,
         now: &LocalNow,
+        prices: &Arc<ApiPrices>,
     ) -> Result<Spend, SourceError> {
+        self.price_at(prices);
+        let list: Arc<dyn PriceList> = Arc::clone(prices) as _;
+
         self.part.read(READ_ANSWERS, |batch| {
             let mut calls = batch.agent()?;
 
-            self.count(&mut calls, profile, now)
+            self.count(&mut calls, profile, now, &list)
         })?
     }
 }
@@ -232,15 +268,19 @@ impl StatsSource for Arc<PluginSpend> {
         profile: &Profile,
         session: &SessionId,
         now: &LocalNow,
+        prices: &Arc<ApiPrices>,
     ) -> Result<SessionStats, SourceError> {
         let files = self
             .sessions
             .panel_files(profile, |listed| listed.id() == session)?;
 
+        self.price_at(prices);
+        let list: Arc<dyn PriceList> = Arc::clone(prices) as _;
+
         self.part.read(READ_ANSWERS, |batch| {
             let mut calls = batch.agent()?;
 
-            self.read_history(&mut calls, profile, &files, |files| {
+            self.read_history(&mut calls, profile, &files, &list, |files| {
                 session_stats(&files, session, now)
             })
         })?
@@ -250,18 +290,34 @@ impl StatsSource for Arc<PluginSpend> {
         &self,
         profile: &Profile,
         folder: &Path,
+        prices: &Arc<ApiPrices>,
     ) -> Result<ProjectStats, SourceError> {
         let files = self
             .sessions
             .panel_files(profile, |listed| listed.folder() == folder)?;
 
+        self.price_at(prices);
+        let list: Arc<dyn PriceList> = Arc::clone(prices) as _;
+
         self.part.read(READ_ANSWERS, |batch| {
             let mut calls = batch.agent()?;
 
-            self.read_history(&mut calls, profile, &files, |files| {
+            self.read_history(&mut calls, profile, &files, &list, |files| {
                 project_stats(&files, folder)
             })
         })?
+    }
+}
+
+/// The money of an answer as its part priced it.
+fn cost_of(cost: PartCost) -> AnswerCost {
+    match cost {
+        PartCost::Written(micro_dollars) => {
+            AnswerCost::Written(Dollars::from_micro_dollars(micro_dollars))
+        },
+        PartCost::AtApiPrices(micro_dollars) => {
+            AnswerCost::AtApiPrices(Dollars::from_micro_dollars(micro_dollars))
+        },
     }
 }
 
@@ -271,11 +327,17 @@ mod tests {
     use super::*;
     use crate::account::{Account, AccountKind, FoundIn};
     use crate::agent::Agent;
+    use crate::money_estimate::MoneyTotal;
     use crate::plugin_agent::PluginAgent;
     use crate::plugin_provider::PluginProvider;
+    use crate::price_table::{ModelPrice, PriceTable};
     use crate::provider::{ProviderId, ProviderRef};
+    use crate::registry::Registry;
     use crate::spend::ModelTokens;
-    use crate::testing::{NOW, TemplateHome, answer_line, meta_line, utc_now};
+    use crate::testing::{
+        NOW, TemplateHome, answer_line, meta_line, no_prices, token_prices,
+        utc_now,
+    };
     use crate::token_count::TokenCount;
 
     const AGENT: &str = "example-agent";
@@ -289,9 +351,28 @@ mod tests {
         agent: &PluginAgent,
         home: &TemplateHome,
     ) -> Result<Spend, SourceError> {
+        spend_at(agent, home, &no_prices())
+    }
+
+    fn spend_at(
+        agent: &PluginAgent,
+        home: &TemplateHome,
+        prices: &Arc<ApiPrices>,
+    ) -> Result<Spend, SourceError> {
         let counter = agent.spend_counter().expect("a spend counter");
 
-        counter.spend(&home.profile(), &utc_now())
+        counter.spend(&home.profile(), &utc_now(), prices)
+    }
+
+    /// `example-large` at `input` micro-dollars per million input tokens
+    /// and nothing for the rest.
+    fn large_at(input: u64) -> Arc<ApiPrices> {
+        let table = PriceTable::new(vec![ModelPrice::new(
+            "example-large",
+            token_prices(input, 0, 0, 0),
+        )]);
+
+        Arc::new(ApiPrices::new(table, Arc::new(Registry::default())))
     }
 
     fn tokens(input: u64, output: u64) -> TokenCount {
@@ -340,8 +421,64 @@ mod tests {
             [
                 ModelTokens::new(Some("example-large"), tokens(300, 1550), 3)
                     .with_provider(Some(ProviderRef::of_id("example-cloud")))
+                    .with_money(MoneyTotal::unpriced(3))
             ]
         );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: the part
+    /// prices its answers at the price OTTY's price list gives, and OTTY
+    /// adds the money up, marked at API prices.
+    #[test]
+    fn the_part_prices_its_answers_at_the_prices_otty_gives() {
+        let home = TemplateHome::new();
+        home.write_session(
+            ".example-agent",
+            "s1.jsonl",
+            &[
+                meta_line("/home/dev/shop"),
+                answer_line("a1", NOW - HOUR, 450),
+                answer_line("a2", NOW, 200),
+            ],
+            NOW,
+        );
+
+        let spend = spend_at(&agent(&home), &home, &large_at(1_000_000))
+            .expect("the spend");
+
+        // 200 input tokens at $1 a million.
+        let money = spend.this_month_by_model()[0].money();
+        assert_eq!(
+            money,
+            MoneyTotal::at_api_prices(Dollars::from_micro_dollars(200), 2)
+        );
+        assert!(money.is_estimate());
+    }
+
+    /// Decision 3: when the prices change, every file is read again, so
+    /// the money follows the new prices even for a file that did not
+    /// change.
+    #[test]
+    fn new_prices_read_every_file_again() {
+        let home = TemplateHome::new();
+        home.write_session(
+            ".example-agent",
+            "s1.jsonl",
+            &[meta_line("/p"), answer_line("a1", NOW, 100)],
+            NOW,
+        );
+        let agent = agent(&home);
+
+        let unpriced = spend_at(&agent, &home, &no_prices()).expect("a spend");
+        let priced =
+            spend_at(&agent, &home, &large_at(1_000_000)).expect("a spend");
+        let dearer =
+            spend_at(&agent, &home, &large_at(3_000_000)).expect("a spend");
+
+        let money = |spend: &Spend| spend.this_month_by_model()[0].money();
+        assert_eq!(money(&unpriced), MoneyTotal::unpriced(1));
+        assert_eq!(money(&priced).cost(), Dollars::from_micro_dollars(100));
+        assert_eq!(money(&dearer).cost(), Dollars::from_micro_dollars(300));
     }
 
     /// Spec "Host operations": a file whose size and change time did not
@@ -424,14 +561,29 @@ mod tests {
         let agent = agent(&home);
         let source = agent.stats_source().expect("a statistics source");
 
+        let prices = no_prices();
+
         let session = source
-            .session_stats(&home.profile(), &SessionId::new("s1"), &utc_now())
+            .session_stats(
+                &home.profile(),
+                &SessionId::new("s1"),
+                &utc_now(),
+                &prices,
+            )
             .expect("the session");
         let shop = source
-            .project_stats(&home.profile(), Path::new("/home/dev/shop"))
+            .project_stats(
+                &home.profile(),
+                Path::new("/home/dev/shop"),
+                &prices,
+            )
             .expect("the project");
         let blog = source
-            .project_stats(&home.profile(), Path::new("/home/dev/blog"))
+            .project_stats(
+                &home.profile(),
+                Path::new("/home/dev/blog"),
+                &prices,
+            )
             .expect("the old project");
         let totals = spend(&agent, &home).expect("the spend");
 

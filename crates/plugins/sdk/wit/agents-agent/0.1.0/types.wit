@@ -1,8 +1,8 @@
 package otty:agents-agent@0.1.0;
 
 /// The values of the `agents` domain that its agent and provider
-/// contracts share: whom a login is for and why a part could not read.
-/// The provider contract `otty:agents-provider` imports them from here.
+/// contracts share: why a part could not read. The provider contract
+/// `otty:agents-provider` imports them from here.
 interface types {
   use otty:host/types@0.1.0.{host-error, need};
 
@@ -21,23 +21,5 @@ interface types {
     needs-user(need),
     /// Anything else, in plain words.
     failed(string),
-  }
-
-  /// What a login is known by, as the `logins` of the agent contract
-  /// tell it. Any of the fields may be missing.
-  record identity {
-    account-id: option<string>,
-    organization-id: option<string>,
-    email: option<string>,
-  }
-
-  /// What kind of login a key is.
-  enum login-kind {
-    /// A login to a subscription, such as a ChatGPT or Claude plan.
-    subscription,
-    /// An API key of an account.
-    api-key,
-    /// A token of a gateway that resells models.
-    gateway-token,
   }
 }

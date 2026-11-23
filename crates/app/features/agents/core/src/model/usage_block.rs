@@ -12,9 +12,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{
-    Dollars, FetchedPrices, LocalNow, Registry, SourceError, Spend,
-};
+use otty_agents::{Dollars, FetchedPrices, LocalNow, SourceError, Spend};
 use otty_app_i18n::{self as i18n, Key};
 
 use super::super::usage::{
@@ -89,9 +87,7 @@ impl UsageBlockViewModel {
         let input = UsageInput {
             sources: subject.sources,
             project: subject.project,
-            prices: subject.prices.map(FetchedPrices::table),
             home: subject.home,
-            registry: subject.registry,
         };
         let amount = match measure {
             UsageMeasure::Money => Amount::Money,
@@ -250,15 +246,13 @@ pub(crate) struct UsageSubject<'a> {
     pub(crate) project: Option<&'a Path>,
     /// The tabs of the block.
     pub(crate) tabs: &'a [UsageTab],
-    /// The list prices the money is counted at, with when they were
-    /// fetched, which the mark "at API prices" tells.
+    /// The list prices the agent parts priced the tokens at, with when
+    /// they were fetched, which the mark "at API prices" tells.
     pub(crate) prices: Option<&'a FetchedPrices>,
     /// Whether the money can be shown: the prices are known.
     pub(crate) can_show_money: bool,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
-    /// The registry, which names who served the tokens to the price table.
-    pub(crate) registry: &'a Registry,
     /// The user's time zone; UTC when it is not known.
     pub(crate) time_zone: Option<&'a TimeZone>,
 }
@@ -429,17 +423,29 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        DaySpend, Dollars, HourSpend, ModelTokens, ProjectModelTokens,
-        SourceError, Spend, TokenCount,
+        DaySpend, Dollars, HourSpend, ModelTokens, MoneyTotal,
+        ProjectModelTokens, SourceError, Spend, TokenCount,
     };
 
     use super::*;
     use crate::testing::{fetched_prices, now};
 
+    /// `input` tokens of `model` in `project`, priced as an agent part
+    /// prices them at the made-up list prices: gpt-5 at $1.25 a million
+    /// input tokens, any other model with no price.
     fn part(project: &str, model: &str, input: u64) -> ProjectModelTokens {
+        let money = match model {
+            "gpt-5" => MoneyTotal::at_api_prices(
+                Dollars::from_micro_dollars(input * 5 / 4),
+                1,
+            ),
+            _ => MoneyTotal::unpriced(1),
+        };
+
         ProjectModelTokens::new(
             Some(PathBuf::from(project)),
-            ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1),
+            ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1)
+                .with_money(money),
         )
     }
 
@@ -492,7 +498,6 @@ mod tests {
             prices,
             can_show_money: true,
             home: Path::new("/home/user"),
-            registry: &crate::testing::TEST_REGISTRY,
             time_zone: None,
         }
     }
@@ -669,7 +674,9 @@ mod tests {
     fn money_the_agent_wrote_is_exact() {
         let tokens =
             ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
-                .with_cost(Some(Dollars::from_micro_dollars(500_000)));
+                .with_money(MoneyTotal::written(Dollars::from_micro_dollars(
+                    500_000,
+                )));
         let today = DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
             .with_parts(vec![ProjectModelTokens::new(
                 Some(PathBuf::from("/home/user/otty")),

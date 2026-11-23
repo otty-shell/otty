@@ -2,7 +2,7 @@
 name = "otty-plugin-opencode"
 description = "The official OpenCode plugin of OTTY: the OpenCode agent part"
 readme = "README.md"
-version = "0.1.7"
+version = "0.1.8"
 license = "Apache-2.0"
 publish = false
 edition = "2024"
@@ -17,16 +17,12 @@ crate-type = ["cdylib"]
 [dependencies]
 # Inside the OTTY repository the official plugins use the SDK by path.
 otty-plugin-sdk = { path = "../../crates/plugins/sdk" }
-serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 [dev-dependencies]
 # Writes the made-up OpenCode databases of the tests, as OpenCode writes
 # its own; the version and features the SDK's test host reads them with.
 rusqlite = { version = "0.43.0", default-features = false, features = ["bundled"] }
-# Makes the middle part of the made-up login tokens of the tests; the
-# version the SDK's test host decodes them with.
-base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 
 # Plugins are built for speed, not size (spec Decision 2).
 [profile.release]

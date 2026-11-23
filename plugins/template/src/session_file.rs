@@ -1,8 +1,11 @@
 //! One session file of the made-up agent: JSON lines with one `meta`
-//! record, the user's messages, and the model's `answer`s.
+//! record, the user's messages, and the model's `answer`s. Each answer
+//! carries its money: the cost the agent wrote in `cost_microdollars`, as
+//! it is, else its tokens at the API price OTTY's price list gives.
 
 use otty_plugin_sdk::agents::{
     Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
+    answer_cost,
 };
 use otty_plugin_sdk::files;
 use serde_json::Value;
@@ -12,7 +15,8 @@ const MARKERS: [&[u8]; 2] = [b"\"type\":\"meta\"", b"\"type\":\"answer\""];
 
 /// Who served every answer of the made-up agent. Name the provider as
 /// your agent writes it, even one no plugin serves: OTTY joins the name to
-/// the provider part with that id and prices the answer by it.
+/// the provider part with that id and gives the price of the model that
+/// provider serves.
 const PROVIDER: &str = "example-cloud";
 
 /// What a session file said: its title and project from the `meta`
@@ -116,6 +120,12 @@ impl SessionFile {
 
         self.records.add_understood();
         self.last_at_ms = self.last_at_ms.max(Some(at_ms));
+
+        let model = record.get("model").and_then(Value::as_str);
+        let provider = ProviderRef::Id(PROVIDER.to_string());
+        let written = record.get("cost_microdollars").and_then(Value::as_u64);
+        let cost = answer_cost(written, model, Some(&provider), &tokens);
+
         self.answers.push(Answer {
             identity: record
                 .get("id")
@@ -123,15 +133,11 @@ impl SessionFile {
                 .map(str::to_string),
             session: None,
             at_ms,
-            model: record
-                .get("model")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            provider: Some(ProviderRef::Id(PROVIDER.to_string())),
-            login: None,
+            model: model.map(str::to_string),
+            provider: Some(provider),
             project: self.project.clone(),
             tokens,
-            cost_microdollars: None,
+            cost,
         });
     }
 }
@@ -146,4 +152,26 @@ fn token_count(tokens: &Value) -> Option<TokenCount> {
         output: count("output")?,
         ..TokenCount::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use otty_plugin_sdk::agents::AnswerCost;
+
+    use super::*;
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: a cost
+    /// the agent wrote is given as it is, with no price asked.
+    #[test]
+    fn a_cost_the_agent_wrote_is_given_as_it_is() {
+        let mut file = SessionFile::default();
+
+        file.add_line(
+            br#"{"type":"answer","id":"c1","at_ms":1,"model":"example-large","tokens":{"input":10,"cached":0,"output":5},"cost_microdollars":420}"#,
+        );
+
+        let answers = file.into_answers("s1").answers;
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].cost, Some(AnswerCost::Written(420)));
+    }
 }

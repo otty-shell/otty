@@ -11,7 +11,9 @@ use serde_json::Value;
 /// The name of the login file in the config folder.
 const AUTH_FILE: &str = "auth.json";
 
-/// Where the access token of a ChatGPT login sits in the file.
+/// Where the access token of a ChatGPT login sits in the file, as the
+/// tests of the readers that use the token name it.
+#[cfg(test)]
 pub(crate) const ACCESS_TOKEN_FIELD: &str = "/tokens/access_token";
 
 /// Where the host put a key: `{"$key": n}`, the index of its handle.
@@ -86,17 +88,11 @@ struct ChatgptClaims {
 /// The login file of a profile, read through the host.
 #[derive(Debug)]
 pub(crate) struct AuthFile {
-    path: String,
     fields: AuthFields,
     document: JsonWithKeys,
 }
 
 impl AuthFile {
-    /// The path of the file, as its key places name it.
-    pub(crate) fn path(&self) -> &str {
-        &self.path
-    }
-
     /// The login file of the profile in `folder`; `None` when it is
     /// missing, broken, of another shape or not allowed.
     pub(crate) fn read(folder: &str) -> Option<Self> {
@@ -104,11 +100,7 @@ impl AuthFile {
         let document = files::json_with_keys(&path).ok()?;
         let fields = serde_json::from_str(document.json()).ok()?;
 
-        Some(Self {
-            path,
-            fields,
-            document,
-        })
+        Some(Self { fields, document })
     }
 
     /// Whether the file holds an API key or the token of a ChatGPT login.

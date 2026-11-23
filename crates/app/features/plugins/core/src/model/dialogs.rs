@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(
             dialog.parts[0].description.as_deref(),
-            Some("Finds Example Agent sessions, tokens and logins.")
+            Some("Finds Example Agent sessions, tokens and their money.")
         );
         assert_eq!(
             dialog.parts[0].groups,

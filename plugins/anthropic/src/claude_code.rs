@@ -3,7 +3,7 @@
 
 use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
+    Agent, Answers, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
     ProfileStatus, ReadError, Session,
 };
 
@@ -30,13 +30,6 @@ impl Agent for Anthropic {
     /// The version the records of the newest session file name.
     fn version(profile: &Profile) -> Option<String> {
         version::version(&profile.folder)
-    }
-
-    /// None: OTTY no longer asks an agent part for logins. The provider
-    /// part `anthropic` finds the accounts in the profile folders itself
-    /// (`logins.rs`), and the function leaves the contract later.
-    fn logins(_profile: &Profile) -> Vec<Login> {
-        Vec::new()
     }
 
     /// Every `*.jsonl` file in the project folders: the files of helper
@@ -180,6 +173,33 @@ mod tests {
             Anthropic::launch(&profile, Some(SESSION)),
             command(&["--resume", SESSION], &env)
         );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: a profile
+    /// with a login is found, and the agent part says nothing of whose it
+    /// is: the provider part finds the account.
+    #[test]
+    fn a_profile_with_a_login_is_found() {
+        let host = host();
+        let work = profile(&host, ".claude-work", false);
+
+        let status = as_part(&host, || Anthropic::detect(&work));
+
+        assert_eq!(status, ProfileStatus::Found);
+    }
+
+    /// "No login" for a folder with no login of Claude Code, in English.
+    #[test]
+    fn a_folder_with_no_login_needs_a_login() {
+        let host = host();
+        let nothing = profile(&host, ".claude-nothing", false);
+
+        let status = as_part(&host, || Anthropic::detect(&nothing));
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.title, "Needs login");
     }
 
     /// The need of a profile nobody is logged in with starts `claude`,

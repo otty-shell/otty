@@ -4,7 +4,7 @@
 [plugin]
 id = "example"
 name = "Example"
-version = "0.1.4"
+version = "0.1.5"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/otty-shell/otty-plugin-example"
 license = "Apache-2.0"
@@ -24,7 +24,7 @@ language = "0.1"
 id = "example-agent"
 name = "Example Agent"
 # One sentence on what the part does, shown on its card in Plugins mode.
-description = "Finds Example Agent sessions, tokens and logins."
+description = "Finds Example Agent sessions, tokens and their money."
 icon = "example-agent.svg"
 program = "example-agent"
 # Where the agent's official installer puts its program. OTTY looks

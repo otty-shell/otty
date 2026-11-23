@@ -2035,11 +2035,7 @@ mod tests {
     fn agents_app_with_a_session() -> App {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
-        let connected = otty_agents::ProfileStatus::Connected {
-            account: None,
-            plan: None,
-            billing: None,
-        };
+        let connected = otty_agents::ProfileStatus::Connected;
         for intent in [
             profiles_loaded(vec![
                 (codex_profile(), connected),
@@ -2306,22 +2302,22 @@ mod tests {
         }
     }
 
-    /// Codex paying with an API key, its 400 000 tokens of gpt-5 counted
-    /// today at 09:00, gpt-5 at the made-up list price of $1.25 per
-    /// million input tokens, and its page shown.
+    /// Codex, its 400 000 tokens of gpt-5 counted today at 09:00 and
+    /// priced by the Codex part at the made-up list price of $1.25 per
+    /// million input tokens, the prices read, and its page shown.
     fn agents_app_with_a_counted_profile() -> App {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
-        let api_key = otty_agents::ProfileStatus::Connected {
-            account: None,
-            plan: None,
-            billing: Some(otty_agents::BillingKind::ApiKey),
-        };
+        let api_key = otty_agents::ProfileStatus::Connected;
         let tokens = otty_agents::ModelTokens::new(
             Some("gpt-5"),
             otty_agents::TokenCount::new(400_000, 0, 0),
             1,
-        );
+        )
+        .with_money(otty_agents::MoneyTotal::at_api_prices(
+            otty_agents::Dollars::from_micro_dollars(500_000),
+            1,
+        ));
         let parts = vec![otty_agents::ProjectModelTokens::new(
             Some(std::path::PathBuf::from(PROJECT)),
             tokens.clone(),

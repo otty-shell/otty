@@ -221,6 +221,22 @@ fn load_spend(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
         .collect()
 }
 
+/// The list prices changed, or a count ended after they did: ask for the
+/// tokens of each shown profile whose money was priced at the old prices,
+/// unless a count is on its way. The agent parts price the tokens (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 3), so only a new
+/// count follows new prices.
+pub(crate) fn count_at_new_prices(
+    state: &mut AgentsState,
+) -> Vec<AgentsOutcome> {
+    state
+        .profiles_mut()
+        .start_counts_at_new_prices()
+        .into_iter()
+        .map(AgentsOutcome::LoadSpend)
+        .collect()
+}
+
 /// Ask for the list prices when a profile is shown and `which` wants them
 /// at `now`, unless a read is on its way: once a day, and again after a
 /// failed fetch (spec Decision 16).
@@ -254,7 +270,9 @@ fn load_bills(state: &mut AgentsState, which: Which) -> Vec<AgentsOutcome> {
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::{SourceError, SourceId, Unavailable};
+    use std::sync::Arc;
+
+    use otty_agents::{ApiPrices, SourceError, SourceId, Unavailable};
 
     use super::*;
     use crate::event::AgentsIntent;
@@ -263,9 +281,10 @@ mod tests {
         agents, api_key, at, bill_loaded, bill_of, billed_claude_loaded,
         chatgpt_login, claude, claude_work, codex, codex_work, connected, env,
         fetched_prices, five_hour_limits, fresh_profiles_loaded, limits_answer,
-        limits_loaded, load_bill, organization, prices_answer, prices_loaded,
-        profiles_loaded, profiles_with_accounts_loaded, saved_with_given_key,
-        sessions_loaded, spend_loaded, spend_of,
+        limits_loaded, load_bill, organization, price_table, prices_answer,
+        prices_loaded, profiles_loaded, profiles_with_accounts_loaded,
+        registry, saved_with_given_key, sessions_loaded, spend_loaded,
+        spend_of, with_profiles,
     };
 
     /// The limits of `profile` answered at `read_at`.
@@ -654,6 +673,53 @@ mod tests {
         };
 
         prices_loaded(answer, read_at)
+    }
+
+    fn counts(outcomes: &[AgentsOutcome]) -> Vec<&AgentsOutcome> {
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, AgentsOutcome::LoadSpend(_)))
+            .collect()
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: the agent
+    /// parts price the tokens, so new list prices count the tokens of each
+    /// profile again, and the same prices read again count nothing.
+    #[test]
+    fn new_prices_count_the_tokens_again() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let _ = reduce(&mut state, counted(&claude(), at(10)));
+        let before = Arc::clone(state.profiles().api_prices());
+
+        let new = reduce(&mut state, good_prices(at(20)));
+        let _ = reduce(&mut state, counted(&claude(), at(30)));
+        let same = reduce(&mut state, good_prices(at(20)));
+
+        assert_eq!(counts(&new), [&AgentsOutcome::LoadSpend(claude())]);
+        assert!(counts(&same).is_empty(), "{same:?}");
+        assert_ne!(state.profiles().api_prices(), &before);
+        assert_eq!(
+            state.profiles().api_prices().as_ref(),
+            &ApiPrices::new(price_table(), registry())
+        );
+    }
+
+    /// A count on its way when the prices change was asked at the old
+    /// prices: the tokens are counted again once it ends.
+    #[test]
+    fn a_count_on_its_way_when_the_prices_change_is_made_again() {
+        let mut state = with_profiles(&[(claude(), connected())]);
+        let was_counting =
+            state.profiles().shown()[0].spend().reads().is_reading();
+
+        let during = reduce(&mut state, good_prices(at(20)));
+        let after = reduce(&mut state, counted(&claude(), at(30)));
+        let settled = reduce(&mut state, counted(&claude(), at(40)));
+
+        assert!(was_counting, "the read of the profiles asked for a count");
+        assert!(counts(&during).is_empty(), "{during:?}");
+        assert_eq!(after, [AgentsOutcome::LoadSpend(claude())]);
+        assert!(settled.is_empty());
     }
 
     /// The prices read when the API key profile was read on screen.

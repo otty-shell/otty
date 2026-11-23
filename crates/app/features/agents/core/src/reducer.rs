@@ -121,7 +121,7 @@ pub(super) fn reduce(
             }
 
             state.profiles_mut().apply_spend(loaded);
-            Vec::new()
+            reads::count_at_new_prices(state)
         },
         AgentsIntent::BillLoaded(loaded) => {
             let profiles = state.profiles();
@@ -142,7 +142,9 @@ pub(super) fn reduce(
             let check = real_failures::prices(&loaded);
             state.profiles_mut().apply_prices(loaded);
 
-            state.told_mut().tell(vec![check])
+            let mut outcomes = state.told_mut().tell(vec![check]);
+            outcomes.extend(reads::count_at_new_prices(state));
+            outcomes
         },
         AgentsIntent::AccountNumbersLoaded(loaded) => {
             state.profiles_mut().apply_own_numbers(loaded);
@@ -451,13 +453,13 @@ mod tests {
     use super::*;
     use crate::project_filter::ProjectFilterChange;
     use crate::testing::{
-        agents, api_key, at, bill_loaded, bill_of, claude, claude_work, codex,
-        codex_work, connected, env, five_hour_limits, folders, limits_answer,
-        limits_loaded, load_bill, no_files, now, open_menu, open_tab,
-        organization, profiles_loaded, profiles_with_accounts_loaded, read,
-        select_project, session, sessions_loaded, spend_loaded, spend_of,
-        two_agents_with_sessions, with_accounts, with_billed_claude,
-        with_profiles,
+        agents, api_key, at, bill_loaded, bill_of, claude, claude_login,
+        claude_work, codex, codex_work, connected, env, five_hour_limits,
+        folders, key_account, limits_answer, limits_loaded, load_bill,
+        no_files, now, open_menu, open_tab, organization, profiles_loaded,
+        profiles_with_accounts_loaded, read, select_project, session,
+        sessions_loaded, spend_loaded, spend_of, two_agents_with_sessions,
+        with_accounts, with_billed_claude, with_profiles,
     };
     use crate::types::{LoadedProfile, LoadedProfiles, LoadedSessions};
 
@@ -1110,7 +1112,11 @@ mod tests {
         let outcomes = reduce(
             &mut state,
             profiles_with_accounts_loaded(
-                &[(claude(), connected(), vec![organization()])],
+                &[(
+                    claude(),
+                    connected(),
+                    vec![claude_login(), organization()],
+                )],
                 crate::testing::saved_with_given_key(),
             ),
         );
@@ -1220,25 +1226,33 @@ mod tests {
         MenuPlace::new(Point::new(120.0, 300.0), Size::new(1200.0, 800.0))
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: the
+    /// accounts found in the profile, a key, tell it pays with an API key.
     #[test]
     fn an_api_key_profile_has_its_tokens_counted_and_no_limits_read() {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
 
-        let loaded =
-            reduce(&mut state, profiles_loaded(&[(claude(), api_key())]));
+        let loaded = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[(codex(), api_key(), vec![key_account()])],
+                SavedProfiles::default(),
+            ),
+        );
         let ticked = reduce(&mut state, AgentsIntent::LimitsTick);
 
-        assert_eq!(
-            loaded,
-            vec![
-                AgentsOutcome::LoadSessions(claude()),
-                AgentsOutcome::LoadSpend(claude()),
-                AgentsOutcome::LoadPrices { fetch_again: false },
-            ]
-        );
-        assert!(ticked.is_empty());
+        let is_limits = |outcome: &AgentsOutcome| {
+            matches!(
+                outcome,
+                AgentsOutcome::LoadLimits(_)
+                    | AgentsOutcome::LoadLimitsInBackground(_)
+            )
+        };
+        assert!(loaded.contains(&AgentsOutcome::LoadSpend(codex())));
+        assert!(!loaded.iter().any(is_limits), "{loaded:?}");
+        assert!(!ticked.iter().any(is_limits), "{ticked:?}");
     }
 
     #[test]

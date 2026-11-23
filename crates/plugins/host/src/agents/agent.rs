@@ -7,29 +7,27 @@
 
 pub mod v0_1;
 
+use std::sync::Arc;
+
 use wasmtime::Store;
 use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
-    Answer, Answers, Billing, Connection, Login, LoginRef, Place, PlaceItem,
-    PlaceKind, Profile, ProfilePlace, ProfileStatus, ProviderRef, RecordCounts,
-    Session, TokenCount,
+    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, Profile,
+    ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
 };
 use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Guest, GuestIndices,
 };
 /// The values of the `agents` domain both its contracts use, in the
 /// newest version.
-pub use crate::agents::agent::v0_1::otty::agents_agent::types::{
-    Identity, LoginKind, ReadError,
-};
+pub use crate::agents::agent::v0_1::otty::agents_agent::types::ReadError;
+use crate::agents::prices::PriceList;
+/// Who served an answer, which prices it.
+pub use crate::agents::prices::ProviderRef;
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::AgentVersion;
-/// The host's types the agent contract uses.
-pub use crate::operations::v0_1::otty::host::keys::{
-    JsonField, KeyPlace, KeyringEntry, SqliteField,
-};
 /// The host's types the agent contract uses.
 pub use crate::operations::v0_1::otty::host::types::{
     Command, HostError, KeyAsk, Need, NeedAction,
@@ -83,7 +81,8 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// Whether `profile` is logged in.
+    /// Whether `profile` can be used: found, not logged in, or its folder
+    /// is gone.
     pub fn detect(
         &mut self,
         profile: &Profile,
@@ -100,16 +99,6 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
     ) -> Result<Option<String>, CallError> {
         self.call(CallKind::Quick, |guest, store| {
             guest.call_version(store, profile)
-        })
-    }
-
-    /// The logins and keys the profile holds.
-    pub fn logins(
-        &mut self,
-        profile: &Profile,
-    ) -> Result<Vec<Login>, CallError> {
-        self.call(CallKind::Quick, |guest, store| {
-            guest.call_logins(store, profile)
         })
     }
 
@@ -145,14 +134,22 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         })
     }
 
-    /// Every answer in one file or database of a spend place.
+    /// Every answer in one file or database of a spend place, each priced
+    /// by the part: the cost the agent wrote, else its tokens at the price
+    /// `prices` gives when the part asks `prices.price-of` (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 3).
     pub fn read_answers(
         &mut self,
         profile: &Profile,
         item: &PlaceItem,
+        prices: &Arc<dyn PriceList>,
     ) -> Result<Result<Answers, ReadError>, CallError> {
         self.call(CallKind::Reading, |guest, store| {
-            guest.call_read_answers(store, profile, item)
+            store.data_mut().set_prices(Some(Arc::clone(prices)));
+            let answers = guest.call_read_answers(&mut *store, profile, item);
+            store.data_mut().set_prices(None);
+
+            answers
         })
     }
 
@@ -164,19 +161,6 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
     ) -> Result<Command, CallError> {
         self.call(CallKind::Quick, |guest, store| {
             guest.call_launch(store, profile, session)
-        })
-    }
-
-    /// What the user must do now that a provider refused `login` of
-    /// `profile`, or it expired, as the part that found the login says;
-    /// `None` when it says nothing.
-    pub fn login_refused(
-        &mut self,
-        profile: &Profile,
-        login: &LoginRef,
-    ) -> Result<Option<Need>, CallError> {
-        self.call(CallKind::Quick, |guest, store| {
-            guest.call_login_refused(store, profile, login)
         })
     }
 
@@ -203,16 +187,19 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
 /// function to serve.
 impl crate::agents::agent::v0_1::otty::agents_agent::types::Host for CallState {}
 
-/// Adds the domain's shared values, `otty:agents-agent/types`, to
-/// `linker`: a component imports them with either contract of the
-/// domain.
+/// Adds the domain's shared values, `otty:agents-agent/types`, and OTTY's
+/// price list, `otty:agents-agent/prices`, to `linker`: a component
+/// imports the values with either contract of the domain, and the price
+/// list with its agent parts.
 pub(crate) fn add_types_to_linker(
     linker: &mut Linker<CallState>,
 ) -> wasmtime::Result<()> {
     crate::agents::agent::v0_1::otty::agents_agent::types::add_to_linker::<
         CallState,
         HasSelf<CallState>,
-    >(linker, |state| state)
+    >(linker, |state| state)?;
+
+    crate::agents::prices::add_to_linker(linker)
 }
 
 #[cfg(test)]
@@ -220,10 +207,26 @@ mod tests {
     use otty_plugin_manifest::PartRef;
 
     use super::*;
+    use crate::agents::prices::{MockPriceList, ModelPrice, TokenPrices};
     use crate::engine::PluginEngine;
-    use crate::testing::{TempDir, load_fixture, load_template, template_env};
+    use crate::testing::{
+        TempDir, fixture, load_fixture, load_template, template_env,
+    };
 
     const AGENT: &str = "example-agent";
+
+    /// A dollar a million input tokens, and nothing for the rest.
+    fn dollar_per_million_input() -> ModelPrice {
+        ModelPrice {
+            standard: TokenPrices {
+                input: 1_000_000,
+                cached: 0,
+                cache_written: 0,
+                output: 0,
+            },
+            long_prompt: None,
+        }
+    }
 
     fn default_profile() -> Profile {
         let folder = template_env().home().join(".example-agent");
@@ -416,10 +419,79 @@ mod tests {
         assert_eq!(after, "Нужен вход");
     }
 
-    /// Issue 20: the agent part that found a login says what the user
-    /// must do once a provider refused it.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: the agent
+    /// part knows nothing of accounts, so its contract has no login
+    /// function.
     #[test]
-    fn the_agent_part_tells_what_to_do_with_a_refused_login() {
+    fn the_agent_part_has_no_login_calls() {
+        let engine = wasmtime::Engine::default();
+        let component = wasmtime::component::Component::from_file(
+            &engine,
+            fixture("template"),
+        )
+        .expect("the template compiles");
+
+        let exports = component.component_type();
+        let agent = exports
+            .exports(&engine)
+            .find(|(name, _)| name.starts_with("otty:agents-agent/agent@"))
+            .map(|(_, item)| item.ty);
+        let Some(wasmtime::component::types::ComponentItem::ComponentInstance(
+            agent,
+        )) = agent
+        else {
+            panic!("the template exports the agent contract");
+        };
+        let calls: Vec<&str> =
+            agent.exports(&engine).map(|(name, _)| name).collect();
+
+        assert!(calls.contains(&"detect"), "{calls:?}");
+        assert!(!calls.contains(&"logins"), "{calls:?}");
+        assert!(!calls.contains(&"login-refused"), "{calls:?}");
+    }
+
+    /// Decision 9: a profile with a login is found, with no word on whose
+    /// login it is; one with no login is not logged in, with the part's
+    /// need.
+    #[test]
+    fn a_profile_with_a_login_is_found_and_one_with_none_needs_a_login() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let env = template_env();
+        let plugin = load_template(&engine, &env);
+        let mut batch = plugin
+            .start_calls(&PartRef::agent(AGENT))
+            .expect("a listed part");
+        let nobody = Profile {
+            folder: env
+                .home()
+                .join(".example-agent-nobody")
+                .display()
+                .to_string(),
+            is_default: false,
+            ..default_profile()
+        };
+
+        let mut calls = batch.agent().expect("an agent part");
+        let logged_in = calls.detect(&default_profile());
+        let no_login = calls.detect(&nobody);
+
+        assert!(
+            matches!(logged_in, Ok(ProfileStatus::Found)),
+            "{logged_in:?}"
+        );
+        let Ok(ProfileStatus::NotLoggedIn(need)) = no_login else {
+            panic!("not logged in: {no_login:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert!(matches!(need.action, NeedAction::Run(_)), "{need:?}");
+    }
+
+    /// Decision 3: the part asks OTTY's price list for the price of each
+    /// answer's model, through the host, and prices the tokens itself.
+    #[test]
+    fn the_template_prices_its_answers_at_the_price_otty_gives() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
@@ -427,18 +499,77 @@ mod tests {
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
-        let login = LoginRef::EnvVar("EXAMPLE_CLOUD_KEY".to_string());
+        let profile = default_profile();
+        let item = PlaceItem {
+            file: crate::FileInfo {
+                path: format!("{}/sessions/s1.jsonl", profile.folder),
+                size: 0,
+                changed_ms: 0,
+            },
+            kind: PlaceKind::Files,
+        };
+        let mut prices = MockPriceList::new();
+        prices
+            .expect_price_of()
+            .withf(|model, provider| {
+                model == "example-large"
+                    && matches!(
+                        provider,
+                        Some(ProviderRef::Id(id)) if id == "example-cloud"
+                    )
+            })
+            .returning(|_, _| Some(dollar_per_million_input()));
+        let prices: Arc<dyn PriceList> = Arc::new(prices);
 
-        let need = batch
+        let answers = batch
             .agent()
             .expect("an agent part")
-            .login_refused(&default_profile(), &login);
+            .read_answers(&profile, &item, &prices)
+            .expect("the call ran")
+            .expect("the answers");
 
-        let Ok(Some(need)) = need else {
-            panic!("a need: {need:?}");
+        let costs: Vec<Option<u64>> = answers
+            .answers
+            .iter()
+            .map(|answer| match answer.cost {
+                Some(AnswerCost::AtApiPrices(cost)) => Some(cost),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(costs, [Some(1_200), Some(800)]);
+    }
+
+    /// Decision 3: a model the price list has no price for has no cost.
+    #[test]
+    fn an_answer_with_no_price_has_no_cost() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::agent(AGENT))
+            .expect("a listed part");
+        let profile = default_profile();
+        let item = PlaceItem {
+            file: crate::FileInfo {
+                path: format!("{}/sessions/s1.jsonl", profile.folder),
+                size: 0,
+                changed_ms: 0,
+            },
+            kind: PlaceKind::Files,
         };
-        assert_eq!(need.id, "login-refused");
-        assert!(matches!(need.action, NeedAction::Run(_)), "{need:?}");
+        let mut prices = MockPriceList::new();
+        prices.expect_price_of().returning(|_, _| None);
+        let prices: Arc<dyn PriceList> = Arc::new(prices);
+
+        let answers = batch
+            .agent()
+            .expect("an agent part")
+            .read_answers(&profile, &item, &prices)
+            .expect("the call ran")
+            .expect("the answers");
+
+        assert!(answers.answers.iter().all(|answer| answer.cost.is_none()));
     }
 
     #[test]

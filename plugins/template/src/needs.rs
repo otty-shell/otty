@@ -72,77 +72,6 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     ),
 ];
 
-/// The title of [`login_refused`].
-const LOGIN_REFUSED_TITLE: &[(&str, &str)] = &[
-    ("en", "Log in again"),
-    ("zh-CN", "请重新登录"),
-    ("zh-TW", "請重新登入"),
-    ("ja", "もう一度ログインしてください"),
-    ("ko", "다시 로그인하세요"),
-    ("fr", "Reconnectez-vous"),
-    ("de", "Erneut anmelden"),
-    ("es", "Vuelve a iniciar sesión"),
-    ("pt-BR", "Entre novamente"),
-    ("ru", "Войдите снова"),
-];
-
-/// The text of [`login_refused`].
-const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
-    (
-        "en",
-        "The provider refused the login of this config folder, or it \
-         expired. The agent logs in again in a terminal tab. Refresh once \
-         it is done.",
-    ),
-    (
-        "zh-CN",
-        "提供方拒绝了此配置文件夹的登录，或登录已过期。智能体会在终端标签页中重新登录。完成后请刷新。",
-    ),
-    (
-        "zh-TW",
-        "提供者拒絕了此設定資料夾的登入，或登入已過期。代理會在終端機分頁中重新登入。完成後請重新整理。",
-    ),
-    (
-        "ja",
-        "プロバイダーがこの設定フォルダーのログインを拒否したか、ログインの期限が\
-         切れました。エージェントがターミナルタブでもう一度ログインします。終わったら更新してください。",
-    ),
-    (
-        "ko",
-        "제공자가 이 설정 폴더의 로그인을 거부했거나 로그인이 만료되었습니다. \
-         에이전트가 터미널 탭에서 다시 로그인합니다. 완료 후 새로 고치세요.",
-    ),
-    (
-        "fr",
-        "Le fournisseur a refusé la connexion de ce dossier de configuration, \
-         ou elle a expiré. L’agent se reconnecte dans un onglet de terminal. \
-         Actualisez ensuite.",
-    ),
-    (
-        "de",
-        "Der Anbieter hat die Anmeldung dieses Konfigurationsordners \
-         abgelehnt, oder sie ist abgelaufen. Der Agent meldet sich in einem \
-         Terminal-Tab erneut an. Danach aktualisieren.",
-    ),
-    (
-        "es",
-        "El proveedor rechazó el inicio de sesión de esta carpeta de \
-         configuración, o caducó. El agente vuelve a iniciar sesión en una \
-         pestaña de terminal. Después, actualiza.",
-    ),
-    (
-        "pt-BR",
-        "O provedor recusou o login desta pasta de configuração, ou ele \
-         expirou. O agente entra novamente em uma aba de terminal. Depois, \
-         atualize.",
-    ),
-    (
-        "ru",
-        "Провайдер отклонил вход этой папки настроек, или срок входа истёк. \
-         Агент войдёт снова во вкладке терминала. После этого обновите.",
-    ),
-];
-
 /// The title of [`new_key`].
 const NEW_KEY_TITLE: &[(&str, &str)] = &[
     ("en", "The key was refused"),
@@ -363,17 +292,6 @@ pub(crate) fn not_logged_in(login: Command) -> Need {
     }
 }
 
-/// A provider refused the login of the profile, or it expired: the button
-/// runs `login`, the agent's login command, in a terminal tab.
-pub(crate) fn login_refused(login: Command) -> Need {
-    Need {
-        id: "login-refused".to_string(),
-        title: in_language(LOGIN_REFUSED_TITLE).to_string(),
-        text: in_language(LOGIN_REFUSED_TEXT).to_string(),
-        action: NeedAction::Run(login),
-    }
-}
-
 /// The bill needs an admin key of the organization, which the user gives
 /// once: OTTY keeps where they keep it and gives it back under `slot`.
 /// The key starts with `prefix` and is made on `page`.
@@ -420,8 +338,6 @@ mod tests {
         for texts in [
             NOT_LOGGED_IN_TITLE,
             NOT_LOGGED_IN_TEXT,
-            LOGIN_REFUSED_TITLE,
-            LOGIN_REFUSED_TEXT,
             NEW_KEY_TITLE,
             NEW_KEY_TEXT,
             BILL_KEY_TITLE,
@@ -442,8 +358,6 @@ mod tests {
         for texts in [
             NOT_LOGGED_IN_TITLE,
             NOT_LOGGED_IN_TEXT,
-            LOGIN_REFUSED_TITLE,
-            LOGIN_REFUSED_TEXT,
             NEW_KEY_TITLE,
             NEW_KEY_TEXT,
             BILL_KEY_TITLE,

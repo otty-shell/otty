@@ -18,6 +18,7 @@
 
 use otty_plugin_sdk::agents::{
     Answer, Answers, ProviderRef, ReadError, RecordCounts, TokenCount,
+    answer_cost,
 };
 use otty_plugin_sdk::files::{self, BATCH_BYTES};
 use serde::Deserialize;
@@ -161,7 +162,9 @@ impl SpendFile {
 
     /// The answers for OTTY, each in the session `session`, under the
     /// file's working folder, else `fallback_project`, and the provider
-    /// `provider`.
+    /// `provider`. Claude Code writes no cost, so each answer is priced at
+    /// the API price OTTY gives for its model and that provider (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 3).
     pub(crate) fn into_answers(
         self,
         fallback_project: &str,
@@ -174,11 +177,21 @@ impl SpendFile {
         let answers = self
             .answers
             .into_iter()
-            .map(|answer| Answer {
-                session: session.map(str::to_string),
-                project: Some(project.clone()),
-                provider: provider.cloned(),
-                ..answer
+            .map(|answer| {
+                let cost = answer_cost(
+                    None,
+                    answer.model.as_deref(),
+                    provider,
+                    &answer.tokens,
+                );
+
+                Answer {
+                    session: session.map(str::to_string),
+                    project: Some(project.clone()),
+                    provider: provider.cloned(),
+                    cost,
+                    ..answer
+                }
             })
             .collect();
 
@@ -336,15 +349,16 @@ fn answer_of(record: Record) -> Option<Answer> {
         at_ms,
         model: message.model,
         provider: None,
-        login: None,
         project: None,
         tokens,
-        cost_microdollars: None,
+        cost: None,
     })
 }
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::{AnswerCost, ModelPrice, TokenPrices};
+
     use super::*;
     use crate::provider::ANTHROPIC;
     use crate::testing::{as_part, host, path};
@@ -385,6 +399,51 @@ mod tests {
         }
 
         file.into_answers("/fallback", None, None)
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: Claude
+    /// Code writes no cost, so each answer is priced at the API price OTTY
+    /// gives for its model and provider, and marked so.
+    #[test]
+    fn each_answer_is_priced_at_the_price_otty_gives() {
+        let anthropic = ProviderRef::Id(ANTHROPIC.to_string());
+        let price = ModelPrice {
+            standard: TokenPrices {
+                input: 3_000_000,
+                cached: 300_000,
+                cache_written: 3_750_000,
+                output: 15_000_000,
+            },
+            long_prompt: None,
+        };
+        let host = host().with_price("claude-opus-4-5", None, price);
+        let usage = r#"{"input_tokens":1000,"output_tokens":100}"#;
+        let mut file = SpendFile::default();
+        file.add_line(
+            assistant("msg_1", "req_1", "2026-11-16T10:00:00.000Z", usage)
+                .as_bytes(),
+        );
+
+        let priced = as_part(&host, || {
+            file.into_answers("/fallback", Some(&anthropic), None)
+        });
+
+        // 1,000 input at $3 and 100 output at $15 a million tokens.
+        assert_eq!(
+            priced.answers[0].cost,
+            Some(AnswerCost::AtApiPrices(3_000 + 1_500))
+        );
+    }
+
+    #[test]
+    fn a_model_with_no_price_has_no_cost() {
+        let usage = r#"{"input_tokens":1000,"output_tokens":100}"#;
+        let line =
+            assistant("msg_1", "req_1", "2026-11-16T10:00:00.000Z", usage);
+
+        let spend = as_part(&host(), || spend_of(&[&line]));
+
+        assert_eq!(spend.answers[0].cost, None);
     }
 
     #[test]

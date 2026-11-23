@@ -34,6 +34,11 @@ the folder into a new repository and replace what the parts read.
   must name the same contracts. A plugin with only agent parts and texts
   in English only writes `export!(Example with agents::agent)` and only
   `agents.agent` in `[api]`.
+- An agent part knows nothing of accounts: `detect` says only found,
+  not logged in with its need, or folder not found. Each answer carries
+  its money: the cost the agent wrote (`cost_microdollars` of a made-up
+  answer), else its tokens at the API price OTTY gives for the model,
+  both made by `agents::answer_cost`. OTTY only adds the money up.
 - A provider part owns its accounts. It names the profiles of the agent
   parts of its own plugin it reads with `[[agents.provider.logins]]`: the
   agent part, the files it reads inside each profile folder (`read`),

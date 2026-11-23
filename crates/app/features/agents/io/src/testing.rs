@@ -32,6 +32,12 @@ const OPENCODE_COPY: &str = "../../../../../assets/plugins/opencode";
 /// so the plugin is compiled once for all the tests, not in each.
 const COMPILED_FOLDER: &str = "otty-agents-io-compiled-plugins";
 
+/// An empty price list: the agent parts price no answer whose cost the
+/// agent did not write.
+pub(crate) fn no_prices() -> std::sync::Arc<otty_agents::ApiPrices> {
+    std::sync::Arc::new(otty_agents::ApiPrices::default())
+}
+
 /// The agents of Agents mode with the built Anthropic and OpenAI plugins
 /// installed, loaded as the app loads them: their parts Claude Code and
 /// Codex. The plugins see `home` as the home folder and no variable;

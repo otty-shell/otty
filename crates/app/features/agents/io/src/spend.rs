@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use iced::Task;
 use jiff::tz::TimeZone;
-use otty_agents::{Agent, LocalNow, Profile};
+use otty_agents::{Agent, ApiPrices, LocalNow, Profile};
 use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend, SpendCount};
 
 use crate::background::{on_own_thread, read_stopped};
@@ -14,7 +14,8 @@ use crate::time_zone::user_time_zone;
 
 /// Count the tokens `profile` spent in the background, with the counter of
 /// the agent of `agents` it belongs to, by the days of the user's time
-/// zone. The answer comes back as [`AgentsIntent::SpendLoaded`].
+/// zone, its part pricing the answers at `prices`. The answer comes back
+/// as [`AgentsIntent::SpendLoaded`].
 ///
 /// # Example
 ///
@@ -22,7 +23,7 @@ use crate::time_zone::user_time_zone;
 /// use std::path::PathBuf;
 /// use std::sync::Arc;
 ///
-/// use otty_agents::{AgentId, Profile};
+/// use otty_agents::{AgentId, ApiPrices, Profile};
 /// use otty_app_agents::AgentList;
 ///
 /// let profile = Profile::default_for(
@@ -31,14 +32,20 @@ use crate::time_zone::user_time_zone;
 ///     PathBuf::from("/home/user/.coder"),
 /// );
 /// let agents: AgentList = Arc::from(Vec::new());
-/// let count = otty_app_agents_io::load_spend(&agents, profile);
+/// let prices = Arc::new(ApiPrices::default());
+/// let count = otty_app_agents_io::load_spend(&agents, profile, &prices);
 ///
 /// assert_eq!(count.units(), 1);
 /// ```
-pub fn load_spend(agents: &AgentList, profile: Profile) -> Task<AgentsIntent> {
+pub fn load_spend(
+    agents: &AgentList,
+    profile: Profile,
+    prices: &Arc<ApiPrices>,
+) -> Task<AgentsIntent> {
     let counts = has_counter(agents, &profile);
     let task = format!("counting the tokens of {}", profile.name());
     let agents = Arc::clone(agents);
+    let prices = Arc::clone(prices);
     let fallback = profile.clone();
 
     on_own_thread(
@@ -46,28 +53,31 @@ pub fn load_spend(agents: &AgentList, profile: Profile) -> Task<AgentsIntent> {
         move || {
             let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
             let now = LocalNow::new(SystemTime::now(), time_zone);
-            count_spend(&agents, profile, &now)
+            count_spend(&agents, profile, &now, &prices)
         },
         move || stopped_count(fallback, counts),
         AgentsIntent::SpendLoaded,
     )
 }
 
-/// The tokens `profile` spent up to `now`, with the time the count ended.
-/// An agent OTTY does not know, or one with no counter, counts nothing.
+/// The tokens `profile` spent up to `now`, priced at `prices`, with the
+/// time the count ended. An agent OTTY does not know, or one with no
+/// counter, counts nothing.
 fn count_spend(
     agents: &[Box<dyn Agent>],
     profile: Profile,
     now: &LocalNow,
+    prices: &Arc<ApiPrices>,
 ) -> LoadedSpend {
     let counter = otty_agents::agent_of(agents, profile.agent())
         .and_then(|agent| agent.spend_counter());
 
-    let spend = match counter.map(|counter| counter.spend(&profile, now)) {
-        Some(Ok(spend)) => SpendCount::Counted(spend),
-        Some(Err(error)) => SpendCount::Failed(error),
-        None => SpendCount::NoCounter,
-    };
+    let spend =
+        match counter.map(|counter| counter.spend(&profile, now, prices)) {
+            Some(Ok(spend)) => SpendCount::Counted(spend),
+            Some(Err(error)) => SpendCount::Failed(error),
+            None => SpendCount::NoCounter,
+        };
 
     LoadedSpend {
         profile,
@@ -111,7 +121,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{agents_with_plugins, run};
+    use crate::testing::{agents_with_plugins, no_prices, run};
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -157,6 +167,7 @@ mod tests {
             &agents_with_plugins(home.path()),
             profile.clone(),
             &now(),
+            &no_prices(),
         );
 
         assert_eq!(counted.profile, profile);
@@ -175,7 +186,7 @@ mod tests {
             PathBuf::from("/home/user/.stranger"),
         );
 
-        let counted = count_spend(&[], profile, &now());
+        let counted = count_spend(&[], profile, &now(), &no_prices());
 
         assert_eq!(counted.spend, SpendCount::NoCounter);
     }
@@ -186,7 +197,7 @@ mod tests {
         let profile = claude_with_one_answer(&home);
         let agents = agents_with_plugins(home.path());
 
-        let answers = run(load_spend(&agents, profile.clone()));
+        let answers = run(load_spend(&agents, profile.clone(), &no_prices()));
 
         assert!(matches!(
             answers.as_slice(),

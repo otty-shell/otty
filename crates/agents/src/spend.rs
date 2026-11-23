@@ -1,28 +1,21 @@
-//! Spend: how many tokens a profile used, by day, by project and by model.
-//! Tokens only, no money.
+//! Spend: how many tokens a profile used, by day, by project and by model,
+//! each model with the money its agent part gave its answers.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use jiff::civil::Date;
 
-use crate::dollars::Dollars;
+use crate::api_prices::ApiPrices;
 use crate::error::SourceError;
 use crate::local_time::{LocalNow, is_in_last_days, is_in_month_of};
+use crate::money_estimate::MoneyTotal;
 use crate::profile::Profile;
 use crate::provider::ProviderRef;
 use crate::token_count::TokenCount;
 
 /// How many days back the tokens are counted, today included.
 pub(crate) const COUNTED_DAYS: i32 = 30;
-
-/// The prompt limits the tokens of long prompts are counted over: the
-/// limits of the long prompt prices the LiteLLM price table has
-/// (`input_cost_per_token_above_200k_tokens` and the like), in tokens. A
-/// price with another limit is not used (see [`ModelTokens`]): its model
-/// is priced at its standard prices for every request. `litellm.rs` reads
-/// those limits from the file, so a new limit there must be added here.
-pub(crate) const PROMPT_LIMITS: [u64; 7] =
-    [32_000, 100_000, 128_000, 200_000, 256_000, 272_000, 512_000];
 
 /// The tokens a profile spent: for each day of the last 30 days (and of the
 /// current month, which starts 30 days ago on its 31st day), each split by
@@ -266,23 +259,18 @@ impl ProjectModelTokens {
     }
 }
 
-/// The tokens one model spent, and in how many requests, through one
-/// provider. Nothing ties them to an account (spec
-/// 2026-11-23-accounts-apart-from-profiles, Decision 1).
-///
-/// Some models cost more for a request with a long prompt, one over a
-/// limit their prices name. The counter does not know the prices, so it
-/// keeps, for each of the [`PROMPT_LIMITS`], the part of the tokens spent
-/// in requests whose prompt was over it; the prices pick their limit from
-/// these with [`long_prompts_over`](Self::long_prompts_over).
+/// The tokens one model spent, in how many requests, through one
+/// provider, and their money as the agent part priced each answer: the
+/// cost the agent wrote, else the tokens at API prices (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 3). Nothing ties
+/// them to an account (Decision 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelTokens {
     model: Option<String>,
     provider: Option<ProviderRef>,
     tokens: TokenCount,
     requests: u64,
-    cost: Option<Dollars>,
-    long_prompts: [TokenCount; PROMPT_LIMITS.len()],
+    money: MoneyTotal,
 }
 
 impl ModelTokens {
@@ -293,8 +281,8 @@ impl ModelTokens {
     }
 
     /// The provider that served the model: the one the agent wrote, else
-    /// the one of the profile's login or server. `None` when it is not
-    /// known, such as a local model or a server OTTY does not know.
+    /// the one of the profile's server. `None` when it is not known, such
+    /// as a local model or a server OTTY does not know.
     pub fn provider(&self) -> Option<&ProviderRef> {
         self.provider.as_ref()
     }
@@ -309,37 +297,14 @@ impl ModelTokens {
         self.requests
     }
 
-    /// What the tokens cost as the agent itself wrote it for each request:
-    /// exact, not an estimate. `None` when the
-    /// agent does not write it, or did not write it for one of the
-    /// requests; the tokens are then priced at the list prices.
-    pub fn cost(&self) -> Option<Dollars> {
-        self.cost
+    /// What the tokens cost, as the agent part priced each answer: exact
+    /// when the agent wrote every cost, else at API prices, with the
+    /// requests that had no price counted apart.
+    pub fn money(&self) -> MoneyTotal {
+        self.money
     }
 
-    /// The part of [`tokens`](Self::tokens) spent in requests whose prompt
-    /// was over `limit` tokens; `None` when `limit` is not one of the
-    /// [`PROMPT_LIMITS`] the tokens are counted over.
-    ///
-    /// ```
-    /// use otty_agents::{ModelTokens, TokenCount};
-    ///
-    /// let tokens = ModelTokens::new(Some("m"), TokenCount::new(9, 0, 0), 1);
-    ///
-    /// assert_eq!(
-    ///     tokens.long_prompts_over(272_000),
-    ///     Some(TokenCount::default())
-    /// );
-    /// assert_eq!(tokens.long_prompts_over(1_000), None);
-    /// ```
-    pub fn long_prompts_over(&self, limit: u64) -> Option<TokenCount> {
-        let index =
-            PROMPT_LIMITS.iter().position(|counted| *counted == limit)?;
-
-        self.long_prompts.get(index).copied()
-    }
-
-    /// The tokens `model` spent in `requests` requests.
+    /// The tokens `model` spent in `requests` requests, with no money yet.
     ///
     /// ```
     /// use otty_agents::{ModelTokens, TokenCount};
@@ -354,8 +319,7 @@ impl ModelTokens {
             provider: None,
             tokens,
             requests,
-            cost: None,
-            long_prompts: [TokenCount::default(); PROMPT_LIMITS.len()],
+            money: MoneyTotal::default(),
         }
     }
 
@@ -378,89 +342,41 @@ impl ModelTokens {
         self
     }
 
-    /// The same tokens, which cost `cost` as the agent wrote it, or whose
-    /// cost the agent did not write.
+    /// The same tokens, which cost `money` as their agent part priced
+    /// them.
     ///
     /// ```
-    /// use otty_agents::{Dollars, ModelTokens, TokenCount};
+    /// use otty_agents::{Dollars, ModelTokens, MoneyTotal, TokenCount};
     ///
+    /// let written = MoneyTotal::written(Dollars::from_micro_dollars(40));
     /// let tokens = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 2), 1)
-    ///     .with_cost(Some(Dollars::from_micro_dollars(40)));
+    ///     .with_money(written);
     ///
-    /// assert_eq!(tokens.cost(), Some(Dollars::from_micro_dollars(40)));
+    /// assert_eq!(tokens.money(), written);
     /// ```
-    pub fn with_cost(mut self, cost: Option<Dollars>) -> Self {
-        self.cost = cost;
+    pub fn with_money(mut self, money: MoneyTotal) -> Self {
+        self.money = money;
         self
     }
 
-    /// The same tokens, with `long_prompts` of them spent in requests whose
-    /// prompt was over `limit` tokens. A `limit` that is not one of the
-    /// [`PROMPT_LIMITS`] changes nothing.
-    ///
-    /// ```
-    /// use otty_agents::{ModelTokens, TokenCount};
-    ///
-    /// let tokens = ModelTokens::new(
-    ///     Some("gpt-6.1-sol"),
-    ///     TokenCount::new(500_000, 0, 9),
-    ///     2,
-    /// )
-    /// .with_long_prompts(272_000, TokenCount::new(300_000, 0, 5));
-    ///
-    /// assert_eq!(
-    ///     tokens.long_prompts_over(272_000).map(|long| long.input()),
-    ///     Some(300_000)
-    /// );
-    /// ```
-    pub fn with_long_prompts(
-        mut self,
-        limit: u64,
-        long_prompts: TokenCount,
-    ) -> Self {
-        let index = PROMPT_LIMITS.iter().position(|counted| *counted == limit);
-        if let Some(kept) =
-            index.and_then(|index| self.long_prompts.get_mut(index))
-        {
-            *kept = long_prompts;
-        }
-
-        self
-    }
-
-    /// Counts one more request of this model that spent `tokens` with a
-    /// prompt of `prompt` tokens, and cost `cost` as the agent wrote it.
+    /// Counts one more request of this model that spent `tokens` and cost
+    /// `money` as its part priced it.
     pub(crate) fn count_request(
         &mut self,
         tokens: TokenCount,
-        prompt: u64,
-        cost: Option<Dollars>,
+        money: MoneyTotal,
     ) {
-        self.cost = added_cost((self.cost, self.requests), (cost, 1));
+        self.money = self.money + money;
         self.tokens += tokens;
         self.requests = self.requests.saturating_add(1);
-
-        for (limit, kept) in PROMPT_LIMITS.iter().zip(&mut self.long_prompts) {
-            if prompt > *limit {
-                *kept += tokens;
-            }
-        }
     }
 
-    /// Adds the tokens and requests of `other`, which must be of the same
-    /// model, provider and account.
+    /// Adds the tokens, requests and money of `other`, which must be of
+    /// the same model and provider.
     fn add(&mut self, other: &ModelTokens) {
-        self.cost = added_cost(
-            (self.cost, self.requests),
-            (other.cost, other.requests),
-        );
+        self.money = self.money + other.money;
         self.tokens += other.tokens;
         self.requests = self.requests.saturating_add(other.requests);
-        for (kept, added) in
-            self.long_prompts.iter_mut().zip(other.long_prompts)
-        {
-            *kept += added;
-        }
     }
 }
 
@@ -495,11 +411,13 @@ impl ProjectTokens {
 #[cfg_attr(test, mockall::automock)]
 pub trait SpendCounter: Send {
     /// The tokens the profile spent up to `now`, by the days of the user's
-    /// time zone.
+    /// time zone, each answer priced by the agent part at `prices` when
+    /// the agent did not write its cost.
     fn spend(
         &self,
         profile: &Profile,
         now: &LocalNow,
+        prices: &Arc<ApiPrices>,
     ) -> Result<Spend, SourceError>;
 }
 
@@ -542,23 +460,6 @@ pub(crate) fn merge_models<'a>(
 
     sort_models(&mut by_model);
     by_model
-}
-
-/// The cost of the requests of `kept` and of `added` together, each the
-/// cost the agent wrote and the number of its requests: known only while
-/// every request had one. Nothing counted adds nothing.
-fn added_cost(
-    (kept, kept_requests): (Option<Dollars>, u64),
-    (added, added_requests): (Option<Dollars>, u64),
-) -> Option<Dollars> {
-    if added_requests == 0 {
-        return kept;
-    }
-    if kept_requests == 0 {
-        return added;
-    }
-
-    Some(kept? + added?)
 }
 
 /// The tokens of each model over `days`, added up, the most first.
@@ -648,60 +549,30 @@ mod tests {
         );
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: the money
+    /// of a model is the money its part gave each answer, added up.
     #[test]
-    fn the_month_adds_up_the_long_prompts_of_a_model() {
-        let long = |count| {
-            ModelTokens::new(Some("m"), tokens(count), 1)
-                .with_long_prompts(272_000, tokens(count))
-        };
-        let days = vec![
-            DaySpend::new(jiff::civil::date(2026, 11, 1), vec![long(5)]),
-            DaySpend::new(jiff::civil::date(2026, 11, 2), vec![long(7)]),
-        ];
-
-        let by_model = Spend::new(days, Vec::new()).this_month_by_model();
-
-        assert_eq!(by_model[0].long_prompts_over(272_000), Some(tokens(12)));
-        assert_eq!(by_model[0].requests(), 2);
-    }
-
-    #[test]
-    fn a_request_counts_its_tokens_over_each_prompt_limit_it_passes() {
+    fn a_request_adds_its_money_to_the_model() {
+        let micro = Dollars::from_micro_dollars;
         let mut model = ModelTokens::new(Some("m"), TokenCount::default(), 0);
 
-        model.count_request(tokens(10), 150_000, None);
-        model.count_request(tokens(20), 300_000, None);
-        model.count_request(tokens(40), 100_000, None);
+        model.count_request(tokens(10), MoneyTotal::written(micro(2)));
+        model.count_request(tokens(5), MoneyTotal::at_api_prices(micro(3), 1));
+        model.count_request(tokens(1), MoneyTotal::unpriced(1));
 
-        assert_eq!(model.tokens(), tokens(70));
-        assert_eq!(model.long_prompts_over(32_000), Some(tokens(70)));
-        assert_eq!(model.long_prompts_over(100_000), Some(tokens(30)));
-        assert_eq!(model.long_prompts_over(200_000), Some(tokens(20)));
-        assert_eq!(model.long_prompts_over(272_000), Some(tokens(20)));
-        assert_eq!(model.long_prompts_over(512_000), Some(tokens(0)));
+        assert_eq!(model.tokens(), tokens(16));
+        assert_eq!(model.requests(), 3);
+        assert_eq!(model.money().cost(), micro(5));
+        assert_eq!(model.money().unpriced_requests(), 1);
+        assert!(model.money().is_estimate());
     }
 
     #[test]
-    fn the_cost_the_agent_wrote_adds_up_while_every_request_has_one() {
-        let micro = Dollars::from_micro_dollars;
-        let mut written = ModelTokens::new(Some("m"), TokenCount::default(), 0);
-
-        written.count_request(tokens(10), 10, Some(micro(2)));
-        written.count_request(tokens(5), 5, Some(micro(3)));
-        let mut mixed = written.clone();
-        mixed.count_request(tokens(1), 1, None);
-
-        assert_eq!(written.cost(), Some(micro(5)));
-        assert_eq!(mixed.cost(), None, "one request had no cost");
-        assert_eq!(ModelTokens::new(Some("m"), tokens(1), 1).cost(), None);
-    }
-
-    #[test]
-    fn the_month_adds_up_the_cost_the_agent_wrote() {
+    fn the_month_adds_up_the_money_of_a_model() {
         let micro = Dollars::from_micro_dollars;
         let costly = |cost| {
             ModelTokens::new(Some("m"), tokens(1), 1)
-                .with_cost(Some(micro(cost)))
+                .with_money(MoneyTotal::written(micro(cost)))
         };
         let days = vec![
             DaySpend::new(jiff::civil::date(2026, 11, 1), vec![costly(2)]),
@@ -710,16 +581,8 @@ mod tests {
 
         let by_model = Spend::new(days, Vec::new()).this_month_by_model();
 
-        assert_eq!(by_model[0].cost(), Some(micro(7)));
-    }
-
-    #[test]
-    fn a_prompt_limit_that_is_not_counted_has_no_long_prompts() {
-        let model = ModelTokens::new(Some("m"), tokens(5), 1)
-            .with_long_prompts(150_000, tokens(5));
-
-        assert_eq!(model.long_prompts_over(150_000), None);
-        assert_eq!(model.long_prompts_over(128_000), Some(tokens(0)));
+        assert_eq!(by_model[0].money(), MoneyTotal::written(micro(7)));
+        assert_eq!(by_model[0].requests(), 2);
     }
 
     #[test]

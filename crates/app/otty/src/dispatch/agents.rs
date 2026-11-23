@@ -88,10 +88,13 @@ impl Delivery for AgentsIntent {
                 )
                 .map(AppEvent::Agents)
             },
-            AgentsOutcome::LoadSpend(profile) => {
-                agents_io::load_spend(app.agents.known_agents(), profile)
-                    .map(AppEvent::Agents)
-            },
+            // The list prices the agent part prices the tokens at.
+            AgentsOutcome::LoadSpend(profile) => agents_io::load_spend(
+                app.agents.known_agents(),
+                profile,
+                app.agents.api_prices(),
+            )
+            .map(AppEvent::Agents),
             AgentsOutcome::LoadBill {
                 profile,
                 organization,
@@ -125,6 +128,7 @@ impl Delivery for AgentsIntent {
                     app.agents.known_agents(),
                     profile,
                     session,
+                    app.agents.api_prices(),
                 )
                 .map(AppEvent::Agents)
             },
@@ -133,6 +137,7 @@ impl Delivery for AgentsIntent {
                     app.agents.known_agents(),
                     folder,
                     profiles,
+                    app.agents.api_prices(),
                 )
                 .map(AppEvent::Agents)
             },

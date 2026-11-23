@@ -45,7 +45,8 @@ impl ProjectSummary {
     }
 
     /// The summary of `parts`, what each profile's files told about the
-    /// selected project, at the prices of `state`.
+    /// selected project, with the money their agent parts gave once the
+    /// prices of `state` are read.
     pub(crate) fn new(
         state: &AgentsState,
         parts: &[(Profile, ProjectStats)],
@@ -54,16 +55,10 @@ impl ProjectSummary {
         let project = state.selected_project();
 
         let cost = match profiles.prices().table() {
-            Some(prices) => StatsCost::Priced(
+            Some(_) => StatsCost::Priced(
                 parts
                     .iter()
-                    .map(|(_, part)| {
-                        MoneyTotal::of_models(
-                            part.models(),
-                            prices,
-                            state.registry(),
-                        )
-                    })
+                    .map(|(_, part)| MoneyTotal::of_models(part.models()))
                     .fold(MoneyTotal::default(), |sum, part| sum + part),
             ),
             None => StatsCost::NoPrices,

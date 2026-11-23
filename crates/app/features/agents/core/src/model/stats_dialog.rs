@@ -162,7 +162,6 @@ impl SessionStatsViewModel {
             prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
             home: state.env().home(),
-            registry: state.registry(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)
@@ -242,7 +241,6 @@ impl ProjectStatsViewModel {
             prices: profiles.prices().last_good(),
             can_show_money: money_reason.is_none(),
             home: state.env().home(),
-            registry: state.registry(),
             time_zone,
         };
         let usage = UsageBlockViewModel::of(&subject, choice, now)
@@ -320,9 +318,9 @@ mod tests {
     use std::path::PathBuf;
 
     use otty_agents::{
-        DaySpend, Dollars, LimitChange, ModelPrice, ModelTokens, PriceTable,
-        ProjectModelTokens, ProviderRef, SavedProfiles, SessionId, SourceError,
-        Spend, TokenCount, TokenPrices, Unavailable, WindowId,
+        DaySpend, Dollars, LimitChange, ModelPrice, ModelTokens, MoneyTotal,
+        PriceTable, ProjectModelTokens, ProviderRef, SavedProfiles, SessionId,
+        SourceError, Spend, TokenCount, TokenPrices, Unavailable, WindowId,
     };
     use otty_app_i18n::Locale;
     use otty_app_testing::alone::is_alone;
@@ -362,12 +360,27 @@ mod tests {
         ])
     }
 
+    /// The money an agent part gives `input` input tokens of `model` in
+    /// `requests` requests at the made-up prices of [`prices`]: at API
+    /// prices, or with no price for a model the prices do not name.
+    fn money_of(model: &str, input: u64, requests: u64) -> MoneyTotal {
+        let per_million = match model {
+            "opus" => DOLLAR,
+            "gpt-5" => 2 * DOLLAR,
+            _ => return MoneyTotal::unpriced(requests),
+        };
+        let cost = Dollars::from_micro_dollars(input * per_million / DOLLAR);
+
+        MoneyTotal::at_api_prices(cost, requests)
+    }
+
     fn million_in(model: &str, requests: u64) -> ModelTokens {
         ModelTokens::new(
             Some(model),
             TokenCount::new(1_000_000, 500, 2_000),
             requests,
         )
+        .with_money(money_of(model, 1_000_000, requests))
     }
 
     /// Claude Code with the `status` and the session c1 in /work/otty,
@@ -399,7 +412,8 @@ mod tests {
     fn spend_in_otty(model: &str, provider: ProviderRef, input: u64) -> Spend {
         let tokens =
             ModelTokens::new(Some(model), TokenCount::new(input, 0, 0), 1)
-                .with_provider(Some(provider));
+                .with_provider(Some(provider))
+                .with_money(money_of(model, input, 1));
         let part = |folder: &str| {
             ProjectModelTokens::new(Some(PathBuf::from(folder)), tokens.clone())
         };
@@ -949,8 +963,8 @@ mod tests {
         assert_eq!(month.bars.len(), 30);
         assert_eq!(month.line, in_days("3M", "30"));
         assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.line, in_days("$6.00", "30"));
-        assert_eq!(money.rows[0].value, "$6.00");
+        assert_eq!(money.line, in_days("$3.75", "30"));
+        assert_eq!(money.rows[0].value, "$3.75");
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 
@@ -984,7 +998,7 @@ mod tests {
         assert_eq!(today.bars.len(), 24);
         assert_eq!(today.line, of_today("100K"));
         assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.line, of_today("$0.20"));
+        assert_eq!(money.line, of_today("$0.13"));
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 

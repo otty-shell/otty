@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use otty_plugin_host::agents::agent::{
-    Billing as PartBilling, ProfilePlace, ProfileStatus as PartStatus,
+    ProfilePlace, ProfileStatus as PartStatus,
 };
 use otty_plugin_host::{
     AgentPart, CalledPart, LoadedPlugin, PartHealth, PartRef, ProgramInstall,
@@ -20,7 +20,6 @@ use otty_plugin_host::{
 use crate::agent::{Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder};
 use crate::command::AgentCommand;
 use crate::env::AgentEnv;
-use crate::limits::BillingKind;
 use crate::part_need::{PartNeed, started_command};
 use crate::plugin_sources::PluginSessions;
 use crate::plugin_spend::PluginSpend;
@@ -165,11 +164,7 @@ impl Agent for PluginAgent {
             .read("detect", |batch| batch.agent()?.detect(&asked));
 
         match status {
-            Ok(PartStatus::Connected(connection)) => ProfileStatus::Connected {
-                account: connection.account,
-                plan: connection.plan,
-                billing: connection.billing.map(billing_kind),
-            },
+            Ok(PartStatus::Found) => ProfileStatus::Connected,
             Ok(PartStatus::ConfigFolderNotFound) => {
                 ProfileStatus::ConfigDirNotFound
             },
@@ -280,15 +275,6 @@ fn agent_install(install: &ProgramInstall) -> AgentInstall {
     AgentInstall::new(command, install.page().map(String::from))
 }
 
-/// How a part says a login is paid for.
-fn billing_kind(billing: PartBilling) -> BillingKind {
-    match billing {
-        PartBilling::UsageWindows => BillingKind::UsageWindows,
-        PartBilling::Credits => BillingKind::Credits,
-        PartBilling::ApiKey => BillingKind::ApiKey,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +361,8 @@ mod tests {
         assert!(none.is_none());
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: a
+    /// profile with a key is connected, with no word on whose key it is.
     #[test]
     fn a_profile_with_a_key_is_connected_and_tells_its_version() {
         let home = TemplateHome::new();
@@ -383,14 +371,7 @@ mod tests {
         let status = agent.detect(&home.profile());
         let version = agent.version(&home.profile());
 
-        assert_eq!(
-            status,
-            ProfileStatus::Connected {
-                account: Some("dev@example.com".to_string()),
-                plan: None,
-                billing: Some(BillingKind::ApiKey),
-            }
-        );
+        assert_eq!(status, ProfileStatus::Connected);
         assert_eq!(version.as_deref(), Some("1.4.2"));
     }
 
@@ -439,7 +420,7 @@ mod tests {
         let launch = agent.launch(&home.profile(), None);
         let need = agent.detect(&work);
 
-        assert!(matches!(status, ProfileStatus::Connected { .. }));
+        assert!(matches!(status, ProfileStatus::Connected));
         assert_eq!(launch.program(), full_path);
         assert_eq!(agent.program_to_start(), full_path);
         let ProfileStatus::NotLoggedIn(Some(need)) = need else {
@@ -466,7 +447,7 @@ mod tests {
             program == "example-agent"
         });
 
-        assert!(matches!(status, ProfileStatus::Connected { .. }));
+        assert!(matches!(status, ProfileStatus::Connected));
         assert_eq!(agent.launch(&home.profile(), None).program(), AGENT);
         assert_eq!(agent.program_to_start(), AGENT);
     }

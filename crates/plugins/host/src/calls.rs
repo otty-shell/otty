@@ -13,6 +13,7 @@ use wasmtime::{Store, StoreContextMut, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::agents::agent::AgentCalls;
+use crate::agents::prices::PriceList;
 use crate::agents::provider::ProviderCalls;
 use crate::call_programs::CallPrograms;
 use crate::call_terminals::CallTerminals;
@@ -26,7 +27,7 @@ use crate::plugin_log::PluginLog;
 /// What a call does, which sets its deadline (spec "Engine limits").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallKind {
-    /// `detect`, `version`, `logins`, `launch`, `profiles`: 2 s.
+    /// `detect`, `version`, `launch`, `profiles`: 2 s.
     Quick,
     /// `read-answers` and `read-sessions`: 120 s.
     Reading,
@@ -62,6 +63,7 @@ pub struct CallState {
     programs: CallPrograms,
     terminals: CallTerminals,
     zstd_cursor: ZstdCursor,
+    prices: Option<Arc<dyn PriceList>>,
 }
 
 impl CallState {
@@ -116,6 +118,17 @@ impl CallState {
     /// batch.
     pub(crate) fn zstd_cursor(&mut self) -> &mut ZstdCursor {
         &mut self.zstd_cursor
+    }
+
+    /// OTTY's price list the running call was given: only a read of
+    /// answers gets one.
+    pub(crate) fn prices(&self) -> Option<&dyn PriceList> {
+        self.prices.as_deref()
+    }
+
+    /// Gives the running call OTTY's price list, or takes it away.
+    pub(crate) fn set_prices(&mut self, prices: Option<Arc<dyn PriceList>>) {
+        self.prices = prices;
     }
 
     /// Sets the permissions of the next call, for its file operations, its
@@ -313,6 +326,7 @@ impl<'plugin> CallBatch<'plugin> {
                 Arc::clone(self.plugin.program_paths()),
             ),
             zstd_cursor: ZstdCursor::default(),
+            prices: None,
         };
 
         let mut store = Store::new(self.plugin.engine(), state);

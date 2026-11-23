@@ -162,31 +162,25 @@ impl ProfileState {
         self
     }
 
-    /// How the account of the profile is paid for: an API key when its
-    /// files tell so, else what its last good limits answer says, else
-    /// what its files tell; `None` while nothing tells.
+    /// How the account of the profile is paid for: an API key when the
+    /// accounts found in it say so, else what its last good limits answer
+    /// says; `None` while nothing tells. The agent part says nothing of
+    /// it (spec 2026-11-23-accounts-apart-from-profiles, Decision 2).
     fn billing_kind(&self) -> Option<BillingKind> {
-        if self.files_say_api_key() {
+        if self.accounts_say_api_key() {
             return Some(BillingKind::ApiKey);
         }
 
-        let from_limits = self
-            .limits
+        self.limits
             .last_good()
-            .map(|(answer, _)| answer.value().billing().kind());
-        let from_files = match &self.status {
-            ProfileStatus::Connected { billing, .. } => *billing,
-            _ => None,
-        };
-
-        from_limits.or(from_files)
+            .map(|(answer, _)| answer.value().billing().kind())
     }
 
     /// Whether the limit sources of the agent are asked for the profile:
-    /// it is connected and its files do not say it pays with an API key.
+    /// it is connected and the accounts found in it do not say it pays
+    /// with an API key.
     pub(crate) fn reads_limits(&self) -> bool {
-        matches!(self.status, ProfileStatus::Connected { .. })
-            && !self.files_say_api_key()
+        self.status == ProfileStatus::Connected && !self.accounts_say_api_key()
     }
 
     /// Whether the limits of the profile are those of `account`.
@@ -208,16 +202,15 @@ impl ProfileState {
         self.billing_kind() == Some(BillingKind::ApiKey)
     }
 
-    /// Whether the files of the profile tell it pays with an API key: it
-    /// then has no limits to read.
-    pub(crate) fn files_say_api_key(&self) -> bool {
-        matches!(
-            self.status,
-            ProfileStatus::Connected {
-                billing: Some(BillingKind::ApiKey),
-                ..
-            }
-        )
+    /// Whether the accounts the provider part found in the profile tell
+    /// it pays with an API key: some were found, and none of them is a
+    /// subscription. It then has no limits to read.
+    pub(crate) fn accounts_say_api_key(&self) -> bool {
+        !self.accounts.is_empty()
+            && self
+                .accounts
+                .iter()
+                .all(|account| account.kind() != AccountKind::Subscription)
     }
 
     /// Whether a session of the profile can be started: its program was
@@ -288,6 +281,11 @@ impl ProfileState {
     /// Start a count of the tokens; `false` when one is on its way.
     pub(crate) fn start_spend_count(&mut self) -> bool {
         self.spend.start_reading()
+    }
+
+    /// The list prices changed: the money of its tokens wants a new count.
+    pub(crate) fn spend_prices_changed(&mut self) {
+        self.spend.prices_changed();
     }
 
     /// Take the tokens a count gave at `counted_at`.

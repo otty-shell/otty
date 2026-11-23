@@ -25,12 +25,16 @@
 //! A [`SpendCounter`] counts the tokens a profile spent from its session
 //! files into [`Spend`]: by day, project and model, by the days of the
 //! user's time zone that the app gives as a [`LocalNow`]. The money of a
-//! profile is its tokens at API prices, on a subscription too:
-//! [`MoneyTotal::of_models`] prices them at the list prices of a
-//! [`PriceTable`] that a [`PriceSource`] reads from the LiteLLM price
-//! table, fetched at most once a day, or from its kept copy: each model at
-//! the price of who served it, else at its maker's
-//! ([`PriceTable::price_of`]). Each reader counts the records it saw and
+//! profile comes from its agent part (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 3): the cost the
+//! agent wrote, as it is, else the tokens priced by the part at the API
+//! price of the model it asks OTTY's [`ApiPrices`] for, on a subscription
+//! too. The prices are the [`PriceTable`] that a [`PriceSource`] reads from
+//! the LiteLLM price table, fetched at most once a day, or from its kept
+//! copy: each model at the price of who served it, else at its maker's
+//! ([`PriceTable::price_of`]). OTTY never multiplies tokens by prices: it
+//! adds up the money of the answers, [`ModelTokens::money`] and
+//! [`MoneyTotal::of_models`]. Each reader counts the records it saw and
 //! understood; when the newest session files are not understood, the count
 //! fails with [`SourceError::FormatChanged`], whose [`FormatChange`] names
 //! the agent's version and gives a report with no value of a record.
@@ -38,8 +42,8 @@
 //! An agent's [`StatsSource`] makes the [`SessionStats`] of one session and
 //! the [`ProjectStats`] of one project folder over the whole history: a
 //! plugin part gives the answers as rows, each naming its session and
-//! project, and OTTY sums them with the same dedupe as the totals;
-//! [`MoneyTotal::of_models`] prices their tokens.
+//! project with its money, and OTTY sums them with the same dedupe as the
+//! totals.
 //!
 //! Limits, credits and bills belong to an [`Account`]: a subscription, a
 //! key or an organization at a provider (spec
@@ -96,6 +100,7 @@
 mod account;
 mod account_numbers;
 mod agent;
+mod api_prices;
 mod balance;
 mod bill;
 mod command;
@@ -157,6 +162,7 @@ pub use crate::account_numbers::{
 pub use crate::agent::{
     Agent, AgentEntry, AgentId, AgentInstall, ConfigFolder, agent_of,
 };
+pub use crate::api_prices::ApiPrices;
 pub use crate::balance::{Amount, Balance, KeyLimit};
 pub use crate::bill::{Bill, DayCost, read_bill};
 pub use crate::command::AgentCommand;

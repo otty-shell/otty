@@ -13,8 +13,8 @@
 #![allow(clippy::result_large_err)]
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, Place, PlaceItem, Profile, ProfilePlace,
-    ProfileStatus, ReadError, Session,
+    Agent, Answers, Place, PlaceItem, Profile, ProfilePlace, ProfileStatus,
+    ReadError, Session,
 };
 use otty_plugin_sdk::{Command, Need, NeedAction};
 
@@ -44,10 +44,6 @@ impl Agent for Plugin {
 
     fn version(_profile: &Profile) -> Option<String> {
         version()
-    }
-
-    fn logins(_profile: &Profile) -> Vec<Login> {
-        Vec::new()
     }
 
     fn session_places(_profile: &Profile) -> Vec<Place> {

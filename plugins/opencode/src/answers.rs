@@ -140,7 +140,7 @@ fn newest_counts(mut seen: Vec<Seen>) -> RecordCounts {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::ProviderRef;
+    use otty_plugin_sdk::agents::{AnswerCost, ProviderRef};
 
     use super::*;
     use crate::testing::{
@@ -205,9 +205,8 @@ mod tests {
         assert_eq!(first.at_ms, millis(NOW));
         assert_eq!(first.model.as_deref(), Some("gpt-5.5"));
         assert_eq!(first.provider, Some(ProviderRef::Id("openai".to_string())));
-        assert_eq!(first.login, None, "OpenCode does not write the login");
         assert_eq!(first.project.as_deref(), Some("/home/user/otty"));
-        assert_eq!(first.cost_microdollars, Some(250_000));
+        assert_eq!(first.cost, Some(AnswerCost::Written(250_000)));
         assert_eq!(read.answers[1].project.as_deref(), Some("/home/user/otty"));
         assert_eq!(first.session.as_deref(), Some("ses_1"));
         assert_eq!(

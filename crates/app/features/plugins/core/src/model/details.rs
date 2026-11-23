@@ -464,7 +464,7 @@ mod tests {
         );
         assert_eq!(
             page.parts[0].description.as_deref(),
-            Some("Finds Example Agent sessions, tokens and logins.")
+            Some("Finds Example Agent sessions, tokens and their money.")
         );
         assert_eq!(
             page.parts[1].description.as_deref(),
@@ -481,7 +481,7 @@ mod tests {
     #[test]
     fn a_part_without_a_description_shows_none() {
         let text = example_manifest("0.1.0").replace(
-            "description = \"Finds Example Agent sessions, tokens and logins.\"\n",
+            "description = \"Finds Example Agent sessions, tokens and their money.\"\n",
             "",
         );
         let mut plugin = official_example();

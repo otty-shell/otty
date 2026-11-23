@@ -3,7 +3,7 @@
 
 use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Login, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
+    Agent, Answers, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
     ProfileStatus, ReadError, Session,
 };
 
@@ -30,13 +30,6 @@ impl Agent for OpenAi {
     /// The version the newest session file names in its first line.
     fn version(profile: &Profile) -> Option<String> {
         version::version(&profile.folder)
-    }
-
-    /// None: the provider part `openai` finds the accounts of a profile
-    /// itself (spec 2026-11-23-accounts-apart-from-profiles, Decision 5),
-    /// and OTTY no longer asks.
-    fn logins(_profile: &Profile) -> Vec<Login> {
-        Vec::new()
     }
 
     /// Every session file, plain or compressed, in both session folders,
@@ -66,10 +59,10 @@ impl Agent for OpenAi {
     }
 
     fn read_answers(
-        profile: &Profile,
+        _profile: &Profile,
         item: &PlaceItem,
     ) -> Result<Answers, ReadError> {
-        spend_file::read_profile_answers(&profile.folder, &item.file.path)
+        spend_file::read_profile_answers(&item.file.path)
     }
 
     /// `codex` for a new session, `codex resume <id>` to continue one.
@@ -138,16 +131,32 @@ mod tests {
         }
     }
 
-    /// The provider part finds the accounts: the agent part gives no
-    /// login.
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: a profile
+    /// with a login is found, and the agent part says nothing of whose it
+    /// is: the provider part finds the account.
     #[test]
-    fn the_agent_part_gives_no_login() {
+    fn a_profile_with_a_login_is_found() {
         let host = host();
         let profile = profile(&host, ".codex-plus", false);
 
-        let logins = as_part(&host, || OpenAi::logins(&profile));
+        let status = as_part(&host, || OpenAi::detect(&profile));
 
-        assert!(logins.is_empty());
+        assert_eq!(status, ProfileStatus::Found);
+    }
+
+    /// "No login" for a folder whose `auth.json` holds no login, in
+    /// English.
+    #[test]
+    fn a_folder_with_no_login_needs_a_login() {
+        let host = host();
+        let profile = profile(&host, ".codex-emptyauth", false);
+
+        let status = as_part(&host, || OpenAi::detect(&profile));
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.title, "Needs login");
     }
 
     #[test]

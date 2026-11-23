@@ -75,6 +75,16 @@ impl<T> FileMemory<T> {
 
         folders.insert(config_dir.to_path_buf(), files);
     }
+
+    /// Forgets what was read in every config folder, so the next refresh
+    /// reads every file again, such as when what a file tells depends on
+    /// prices that changed.
+    pub(crate) fn forget(&self) {
+        let mut folders =
+            self.folders.lock().unwrap_or_else(PoisonError::into_inner);
+
+        folders.clear();
+    }
 }
 
 impl<T> Default for FileMemory<T> {
@@ -165,5 +175,31 @@ mod tests {
         assert!(other_folder.is_empty());
         assert_eq!(taken.len(), 1);
         assert!(again.is_empty());
+    }
+
+    #[test]
+    fn forgetting_drops_what_was_kept_in_every_folder() {
+        let temp = TempDir::new();
+        let path = temp.path().join("a.jsonl");
+        write_file(&path, "first");
+        let memory = FileMemory::default();
+        let kept = || {
+            let mut files = ReadFiles::new();
+            files.insert(
+                path.clone(),
+                ReadFile {
+                    stamp: stamp_of(&path),
+                    content: "kept",
+                },
+            );
+            files
+        };
+        memory.keep(temp.path(), kept());
+        memory.keep(&path, kept());
+
+        memory.forget();
+
+        assert!(memory.take(temp.path()).is_empty());
+        assert!(memory.take(&path).is_empty());
     }
 }

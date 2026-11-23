@@ -1,17 +1,17 @@
 //! The agent part `example-agent`: a made-up coding agent that keeps its
 //! login in `auth.json`, its version in `state.json` and its sessions in
 //! `sessions/*.jsonl` of its config folder, `~/.example-agent` by default.
+//! The part does agent things only: whether the agent can log in with a
+//! profile, never whose login it is, which is the provider part's
+//! business.
 
 use std::path::Path;
 
 use otty_plugin_sdk::agents::{
-    Agent, Answers, Billing, Connection, Identity, Login, LoginKind, LoginRef,
-    Place, PlaceItem, PlaceKind, Profile, ProfilePlace, ProfileStatus,
-    ProviderRef, ReadError, Session,
+    Agent, Answers, Place, PlaceItem, PlaceKind, Profile, ProfilePlace,
+    ProfileStatus, ReadError, Session,
 };
-use otty_plugin_sdk::{
-    Command, HostError, JsonField, KeyPlace, Need, env, files, log,
-};
+use otty_plugin_sdk::{Command, HostError, env, files, log};
 use serde::Deserialize;
 
 use crate::session_file::SessionFile;
@@ -26,20 +26,14 @@ const DEFAULT_FOLDER: &str = ".example-agent";
 /// The agent's program.
 const PROGRAM: &str = "example-agent";
 
-/// The provider whose keys the agent uses.
-const PROVIDER: &str = "example-cloud";
-
-/// The JSON field of `auth.json` that holds the key.
-const KEY_FIELD: &str = "/api_key";
-
 /// The most bytes of a small file the part reads at once.
 const SMALL_FILE: u32 = 64 * 1024;
 
-/// `auth.json`, its key replaced by a handle.
+/// `auth.json`, its key replaced by a handle: the part only tells whether
+/// a key is there.
 #[derive(Debug, Deserialize)]
 struct AuthFile {
     api_key: Option<KeyMarker>,
-    email: Option<String>,
 }
 
 /// `{"$key": n}`: where the host put a key.
@@ -68,16 +62,12 @@ impl Agent for Example {
         }]
     }
 
+    /// Found with a key in `auth.json`, else not logged in with the need
+    /// that runs the agent's login in the profile's folder: whether the
+    /// agent can log in is this part's call.
     fn detect(profile: &Profile) -> ProfileStatus {
         match read_auth(profile) {
-            Ok(AuthFile {
-                api_key: Some(_),
-                email,
-            }) => ProfileStatus::Connected(Connection {
-                account: email,
-                plan: None,
-                billing: Some(Billing::ApiKey),
-            }),
+            Ok(AuthFile { api_key: Some(_) }) => ProfileStatus::Found,
             Err(HostError::NotFound(_)) if !folder_exists(profile) => {
                 ProfileStatus::ConfigFolderNotFound
             },
@@ -96,30 +86,6 @@ impl Agent for Example {
         };
 
         state.last_version
-    }
-
-    fn logins(profile: &Profile) -> Vec<Login> {
-        let Ok(AuthFile {
-            api_key: Some(_),
-            email,
-        }) = read_auth(profile)
-        else {
-            return Vec::new();
-        };
-
-        vec![Login {
-            kind: LoginKind::ApiKey,
-            for_whom: ProviderRef::Id(PROVIDER.to_string()),
-            place: KeyPlace::JsonField(JsonField {
-                file: auth_path(profile),
-                pointer: KEY_FIELD.to_string(),
-            }),
-            identity: Identity {
-                email,
-                ..Identity::default()
-            },
-            plan: None,
-        }]
     }
 
     /// Each session file is one session; OTTY reads again only the files
@@ -153,7 +119,9 @@ impl Agent for Example {
     }
 
     /// Each answer names its session, the file's: OTTY sums the panel of
-    /// one session from the answers that name it.
+    /// one session from the answers that name it. Each answer carries its
+    /// money: the cost the agent wrote, else its tokens at the price
+    /// OTTY's price list gives.
     fn read_answers(
         _profile: &Profile,
         item: &PlaceItem,
@@ -175,13 +143,6 @@ impl Agent for Example {
             args,
             env: folder_env(profile),
         }
-    }
-
-    /// The provider refused the key of the profile, or it expired: the
-    /// provider part does not know where the agent keeps it, so it asks
-    /// this part, which logs the profile in again.
-    fn login_refused(profile: &Profile, _login: &LoginRef) -> Option<Need> {
-        Some(needs::login_refused(login_run(profile)))
     }
 }
 
@@ -239,6 +200,9 @@ fn folder_env(profile: &Profile) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::NeedAction;
+    use otty_plugin_sdk::agents::{
+        AnswerCost, ModelPrice, ProviderRef, TokenPrices,
+    };
     use otty_plugin_sdk::test_host::TestHost;
 
     use super::*;
@@ -287,21 +251,16 @@ mod tests {
         assert!(places[0].is_default);
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 2: a
+    /// profile with a key is found, with no word on whose key it is.
     #[test]
-    fn a_profile_with_a_key_is_connected_as_its_email() {
+    fn a_profile_with_a_key_is_found() {
         let host = host();
         let profile = profile(&host, ".example-agent", true);
 
         let status = host.as_agent(AGENT, || Example::detect(&profile));
 
-        assert_eq!(
-            status,
-            ProfileStatus::Connected(Connection {
-                account: Some("dev@example.com".to_string()),
-                plan: None,
-                billing: Some(Billing::ApiKey),
-            })
-        );
+        assert_eq!(status, ProfileStatus::Found);
     }
 
     /// A need of a part is in the language OTTY names, and its button
@@ -319,32 +278,6 @@ mod tests {
         };
         assert_eq!(need.id, "not-logged-in");
         assert_eq!(need.title, "Нужен вход");
-        assert_eq!(
-            need.action,
-            NeedAction::Run(Command {
-                program: PROGRAM.to_string(),
-                args: vec!["login".to_string()],
-                env: vec![(HOME_VARIABLE.to_string(), folder)],
-            })
-        );
-    }
-
-    /// Issue 20: a login the provider refused is logged in again in the
-    /// profile's own folder, in the language OTTY shows now.
-    #[test]
-    fn a_refused_login_logs_the_profile_in_again() {
-        let host = host();
-        let profile = profile(&host, ".example-agent-work", false);
-        let folder = profile.folder.clone();
-        let login = LoginRef::EnvVar("EXAMPLE_CLOUD_KEY".to_string());
-
-        host.set_language("de");
-        let need =
-            host.as_agent(AGENT, || Example::login_refused(&profile, &login));
-
-        let need = need.expect("a need");
-        assert_eq!(need.id, "login-refused");
-        assert_eq!(need.title, "Erneut anmelden");
         assert_eq!(
             need.action,
             NeedAction::Run(Command {
@@ -389,47 +322,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_login_names_where_its_key_is_never_the_key() {
-        let host = host();
-        let profile = profile(&host, ".example-agent", true);
-
-        let logins = host.as_agent(AGENT, || Example::logins(&profile));
-
-        assert_eq!(logins.len(), 1);
-        assert_eq!(logins[0].kind, LoginKind::ApiKey);
-        assert_eq!(logins[0].for_whom, ProviderRef::Id(PROVIDER.to_string()));
-        assert_eq!(
-            logins[0].place,
-            KeyPlace::JsonField(JsonField {
-                file: format!("{}/auth.json", profile.folder),
-                pointer: KEY_FIELD.to_string(),
-            })
-        );
-        assert_eq!(
-            logins[0].identity.email.as_deref(),
-            Some("dev@example.com")
-        );
-        assert!(!format!("{logins:?}").contains("ex-made-up-key"));
-    }
-
-    #[test]
-    fn the_key_of_a_login_opens_as_a_handle() {
-        let host = host();
-        let profile = profile(&host, ".example-agent", true);
-        let login = &host.as_agent(AGENT, || Example::logins(&profile))[0];
-
-        let fingerprint = host.as_agent(AGENT, || {
-            otty_plugin_sdk::keys::open(&login.place)?.fingerprint()
-        });
-
-        assert_eq!(
-            fingerprint.map(|fingerprint| fingerprint.len()),
-            Ok(64),
-            "SHA-256 in hex"
-        );
-    }
-
     /// Issue 25: each session file tells its one session, as OTTY reads
     /// the files of the session places.
     #[test]
@@ -468,6 +360,53 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// The answers of s2 as the part reads them through `host`.
+    fn answers_of_s2(host: &TestHost) -> Answers {
+        let profile = profile(host, ".example-agent", true);
+        let places = Example::spend_places(&profile);
+        let items = host.place_items(AGENT, &places);
+        let item = items
+            .iter()
+            .find(|item| item.file.path.ends_with("/s2.jsonl"))
+            .expect("the file of s2");
+
+        host.as_agent(AGENT, || Example::read_answers(&profile, item))
+            .expect("the answers")
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: an answer
+    /// whose cost the agent did not write is priced at the price OTTY's
+    /// price list gives for its model and provider, marked so.
+    #[test]
+    fn answers_are_priced_at_the_price_otty_gives() {
+        let price = ModelPrice {
+            standard: TokenPrices {
+                input: 1_000_000,
+                cached: 0,
+                cache_written: 0,
+                output: 2_000_000,
+            },
+            long_prompt: None,
+        };
+        let provider = ProviderRef::Id("example-cloud".to_string());
+        let host = host().with_price("example-small", Some(provider), price);
+
+        let answers = answers_of_s2(&host);
+
+        // 500 input at $1 and 900 output at $2 a million tokens.
+        assert_eq!(
+            answers.answers[0].cost,
+            Some(AnswerCost::AtApiPrices(2_300))
+        );
+    }
+
+    #[test]
+    fn a_model_with_no_price_has_no_cost() {
+        let answers = answers_of_s2(&host());
+
+        assert_eq!(answers.answers[0].cost, None);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 //! `reasoning` and `cache.read` and `cache.write`, none of them part of
 //! another; the cost is in dollars.
 
-use otty_plugin_sdk::agents::{Answer, ProviderRef, TokenCount};
+use otty_plugin_sdk::agents::{Answer, ProviderRef, TokenCount, answer_cost};
 use serde_json::Value;
 
 use crate::database::MessageRow;
@@ -71,28 +71,29 @@ pub(crate) fn read_record(row: &MessageRow) -> Record {
         text_at(&data, "modelID").or_else(|| text_at(&data, "/model/id"));
     let provider = text_at(&data, "providerID")
         .or_else(|| text_at(&data, "/model/providerID"));
-    let cost = data
+    let written = data
         .get("cost")
         .and_then(Value::as_f64)
         .and_then(microdollars_of);
+    let provider = provider.and_then(provider_as_written);
+    let cost = answer_cost(written, model, provider.as_ref(), &tokens);
 
     Record::Answer(Box::new(Answer {
         identity: Some(row.id.clone()),
         session: None,
         at_ms: row.at_ms,
         model: model.map(String::from),
-        provider: provider.and_then(provider_as_written),
-        login: None,
+        provider,
         project: None,
         tokens,
-        cost_microdollars: cost,
+        cost,
     }))
 }
 
 /// The provider OpenCode names `id`, as it wrote it (issue 23): OTTY joins
-/// the name to the provider part that serves it, and prices the answer by
-/// it even when no part does, such as `google` or a local model. `None`
-/// for a name of only spaces.
+/// the name to the provider part that serves it, and gives the price of a
+/// model by it even when no part does, such as `google` or a local model.
+/// `None` for a name of only spaces.
 fn provider_as_written(id: &str) -> Option<ProviderRef> {
     let id = id.trim();
 
@@ -185,6 +186,8 @@ fn not_understood(
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::AnswerCost;
+
     use super::*;
     use crate::testing::{
         NOW, first_shape_answer, first_shape_question, millis,
@@ -212,7 +215,6 @@ mod tests {
             at_ms: millis(NOW),
             model: Some(model.to_string()),
             provider: Some(ProviderRef::Id(provider.to_string())),
-            login: None,
             project: None,
             tokens: TokenCount {
                 input: 15,
@@ -221,7 +223,7 @@ mod tests {
                 output: 3,
                 reasoning: 1,
             },
-            cost_microdollars: Some(250_000),
+            cost: Some(AnswerCost::Written(250_000)),
         }
     }
 
@@ -275,7 +277,7 @@ mod tests {
                 answer.provider,
                 Some(ProviderRef::Id(provider.to_string()))
             );
-            assert_eq!(answer.cost_microdollars, Some(0));
+            assert_eq!(answer.cost, Some(AnswerCost::Written(0)));
         }
     }
 
