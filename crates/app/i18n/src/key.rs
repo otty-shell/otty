@@ -1429,18 +1429,10 @@ pub enum Key {
     AgentsColumnVersion,
     /// Column of the config folder of a profile.
     AgentsColumnFolder,
-    /// Column of the number of accounts found in a profile.
-    AgentsColumnAccounts,
     /// Column of the places an account was found in.
     AgentsColumnFoundIn,
-    /// Column of what OTTY reads of an account: limits, credits or money.
-    AgentsColumnReads,
     /// Column of the number of an account now, such as "42 %".
     AgentsColumnNow,
-    /// An account with windows of limits.
-    AgentsReadsLimits,
-    /// An account paid per token: money left and spent.
-    AgentsReadsMoney,
     /// Title of the needs of the accounts.
     AgentsAccountsNeedYou,
     /// Title of the needs of the profiles.
@@ -1985,7 +1977,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 927] = [
+    pub(super) const ALL: [Self; 923] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2641,12 +2633,8 @@ impl Key {
         Self::AgentsFoundDone,
         Self::AgentsColumnVersion,
         Self::AgentsColumnFolder,
-        Self::AgentsColumnAccounts,
         Self::AgentsColumnFoundIn,
-        Self::AgentsColumnReads,
         Self::AgentsColumnNow,
-        Self::AgentsReadsLimits,
-        Self::AgentsReadsMoney,
         Self::AgentsAccountsNeedYou,
         Self::AgentsProfilesNeedYou,
         Self::AgentsSectionAccounts,

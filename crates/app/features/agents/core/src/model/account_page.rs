@@ -78,6 +78,16 @@ impl AccountPageViewModel {
     }
 }
 
+/// The kind of an account in words, such as "Subscription", as Account
+/// info and the Found by OTTY report write it.
+pub(crate) fn kind_text(kind: AccountKind) -> &'static str {
+    match kind {
+        AccountKind::Subscription => i18n::t(Key::AgentsKindSubscription),
+        AccountKind::Key => i18n::t(Key::AgentsKindKey),
+        AccountKind::Organization => i18n::t(Key::AgentsKindOrganization),
+    }
+}
+
 /// Account info (spec 2026-11-23-accounts-apart-from-profiles, "Account
 /// page"): the provider, the name its part gives, its kind, the plan when
 /// known, its Source, one line per folder it was found in, and the plugin
@@ -112,15 +122,6 @@ fn info(state: &AgentsState, account: &Account) -> Vec<FactViewModel> {
     list.push(account_read_by(state, account));
 
     list
-}
-
-/// The kind of an account in words, such as "Subscription".
-fn kind_text(kind: AccountKind) -> &'static str {
-    match kind {
-        AccountKind::Subscription => i18n::t(Key::AgentsKindSubscription),
-        AccountKind::Key => i18n::t(Key::AgentsKindKey),
-        AccountKind::Organization => i18n::t(Key::AgentsKindOrganization),
-    }
 }
 
 /// The plan of `account`: as its files name it, else as its last good

@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(
             actions,
             vec![NeedAction::AskKey {
-                account: organization(),
+                account: Box::new(organization()),
                 plugin: String::from("Anthropic"),
                 ask: crate::testing::key_ask(),
             }]
@@ -407,5 +407,85 @@ mod tests {
         let places: Vec<&str> =
             vm.needs.iter().map(|need| need.place.as_str()).collect();
         assert_eq!(places, ["Codex · Work"]);
+    }
+
+    /// The command of the button of `need`.
+    fn command_of(need: &NeedViewModel) -> Option<&otty_agents::AgentCommand> {
+        match need.fix.as_ref()?.action.as_ref()? {
+            NeedAction::Run { command, .. } => Some(command),
+            _ => None,
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: a profile
+    /// with no login shows "No login" on its page, as a mark on its row and
+    /// in All profiles → Needs you. There is no account yet, so nothing
+    /// shows in Accounts.
+    #[test]
+    fn a_profile_with_no_login_needs_it_only_where_profiles_are() {
+        let state = crate::testing::with_accounts(
+            &[(codex(), crate::testing::not_logged_in(&codex()), Vec::new())],
+            SavedProfiles::default(),
+        );
+        let shown = state.profiles().get(&codex()).expect("Codex is shown");
+
+        let page = crate::model::ProfilePageViewModel::of(
+            &state,
+            shown,
+            crate::testing::now(),
+        );
+        let all_profiles = AllProfilesViewModel::from_state(&state);
+        let all_accounts = AllAccountsViewModel::from_state(&state);
+
+        let titles: Vec<&str> =
+            page.needs.iter().map(|need| need.title.as_str()).collect();
+        assert_eq!(titles, ["Needs login"]);
+        assert_eq!(all_profiles.needs, page.needs);
+        assert_eq!(
+            (
+                all_profiles.rows[0].today.as_str(),
+                all_profiles.rows[0].tone
+            ),
+            (i18n::t(Key::AgentsStateNeedsLogin), SessionTone::Failed)
+        );
+        assert_eq!(all_accounts.rows, []);
+        assert_eq!(all_accounts.needs, []);
+    }
+
+    /// Decision 9: a login of `~/.codex` that expired shows on the
+    /// profile, as its agent part says, and on the account found there, as
+    /// its provider part says: All profiles → Needs you holds the one, All
+    /// accounts → Needs you the other, and both buttons run the same
+    /// command in the same folder.
+    #[test]
+    fn an_expired_login_shows_on_the_profile_and_on_its_account() {
+        let state = crate::testing::with_accounts(
+            &[crate::testing::codex_with_expired_login()],
+            SavedProfiles::default(),
+        );
+
+        let all_profiles = AllProfilesViewModel::from_state(&state);
+        let all_accounts = AllAccountsViewModel::from_state(&state);
+
+        let on_profile: Vec<(&str, &str)> = all_profiles
+            .needs
+            .iter()
+            .map(|need| (need.place.as_str(), need.title.as_str()))
+            .collect();
+        let on_account: Vec<(&str, &str)> = all_accounts
+            .needs
+            .iter()
+            .map(|need| (need.place.as_str(), need.title.as_str()))
+            .collect();
+        assert_eq!(on_profile, [("Codex", "The login expired")]);
+        assert_eq!(
+            on_account,
+            [("OpenAI · you@example.com", "The login expired")]
+        );
+        assert_eq!(
+            command_of(&all_profiles.needs[0]),
+            command_of(&all_accounts.needs[0])
+        );
+        assert!(command_of(&all_profiles.needs[0]).is_some());
     }
 }

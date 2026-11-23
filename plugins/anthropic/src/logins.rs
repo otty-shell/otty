@@ -161,7 +161,11 @@ fn claude_login(
 
 /// Whether the Claude login `login` of `credentials` expired for good:
 /// its token is past its time and no refresh token is there to renew it.
-fn has_lapsed(credentials: &KeyFile<Credentials>, login: &OauthLogin) -> bool {
+/// The agent part checks the same for the profile (`detect.rs`).
+pub(crate) fn has_lapsed(
+    credentials: &KeyFile<Credentials>,
+    login: &OauthLogin,
+) -> bool {
     let is_past = login
         .expires_at_ms()
         .is_some_and(|expires_at| expires_at <= clock::now_ms());

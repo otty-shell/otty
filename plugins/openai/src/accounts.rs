@@ -20,13 +20,11 @@
 use otty_plugin_sdk::agents::{
     Account, AccountKind, Found, LoginFolder, ProviderRef,
 };
-use otty_plugin_sdk::{Command, Key, Need};
+use otty_plugin_sdk::{Key, Need};
 
 use crate::auth_file::AuthFile;
 use crate::base_url::{CodexConfig, OPENAI};
-use crate::codex::PROGRAM;
 use crate::needs::{self, ADMIN_PREFIX};
-use crate::profiles::CONFIG_VARIABLE;
 use crate::rate_limits::plan_name;
 use crate::token_expiry::has_expired;
 
@@ -161,7 +159,7 @@ impl FolderLogin {
     fn needs(&self, path: &str) -> Vec<Need> {
         match self {
             Self::Chatgpt(login) if login.has_expired() => {
-                vec![login_need(path)]
+                vec![needs::login_expired(path)]
             },
             _ => Vec::new(),
         }
@@ -208,19 +206,6 @@ pub(crate) fn codex_folders(account: &Account) -> Vec<&str> {
 /// OpenAI or of a gateway.
 pub(crate) fn has_no_login(folder: &str) -> bool {
     AuthFile::read(folder).is_none_or(|auth| !auth.is_logged_in())
-}
-
-/// The need of an expired or refused ChatGPT login of the Codex profile
-/// folder `folder`: its button runs `codex login` there. OTTY never renews
-/// a login itself.
-pub(crate) fn login_need(folder: &str) -> Need {
-    let login = Command {
-        program: PROGRAM.to_string(),
-        args: vec!["login".to_string()],
-        env: vec![(CONFIG_VARIABLE.to_string(), folder.to_string())],
-    };
-
-    needs::login_expired(login)
 }
 
 /// The path of `folder` when it is a profile folder of Codex.
@@ -281,8 +266,8 @@ fn last_four(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::test_host::TestHost;
+    use otty_plugin_sdk::{Command, NeedAction};
 
     use super::*;
     use crate::testing::{ACCOUNT, PROVIDER, TEN, codex_folder, host};

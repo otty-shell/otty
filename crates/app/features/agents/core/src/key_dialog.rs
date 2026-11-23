@@ -236,7 +236,7 @@ mod tests {
         let _ = reduce_all(
             &mut state,
             AgentsIntent::FixNeed(NeedAction::AskKey {
-                account: organization(),
+                account: Box::new(organization()),
                 plugin: String::from("Anthropic"),
                 ask: key_ask(),
             }),
@@ -299,7 +299,7 @@ mod tests {
         let _ = reduce_all(
             &mut state,
             AgentsIntent::FixNeed(NeedAction::AskKey {
-                account: organization(),
+                account: Box::new(organization()),
                 plugin: String::from("Anthropic"),
                 ask: key_ask(),
             }),

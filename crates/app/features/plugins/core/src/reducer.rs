@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use otty_app_domain::plugins::{OffPart, PartSide, PluginsPlace};
+use otty_app_domain::plugins::PluginsPlace;
 use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallError, UpdateOutcome, UpdateReport};
@@ -106,7 +106,6 @@ pub(crate) fn reduce(
         PluginsIntent::SetPartOn { plugin, part, on } => {
             set_part_on(state, plugin, part, on)
         },
-        PluginsIntent::TurnOn(off) => turn_on(state, &off),
         PluginsIntent::TryAgain { plugin, part } => {
             try_again(state, &plugin, &part)
         },
@@ -272,15 +271,6 @@ fn set_part_on(
 }
 
 /// Turn on of the need "<Part> of the <Plugin> plugin is off".
-fn turn_on(state: &mut PluginsState, off: &OffPart) -> Vec<PluginsOutcome> {
-    let part = match off.side {
-        PartSide::Agent => PartRef::agent(&off.part),
-        PartSide::Provider => PartRef::provider(&off.part),
-    };
-
-    set_part_on(state, off.plugin.clone(), part, true)
-}
-
 /// Try again of a paused part: its count of failures starts from zero and
 /// Agents mode reads again.
 fn try_again(

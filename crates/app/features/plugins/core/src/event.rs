@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use iced::widget::Id;
-use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
+use otty_app_domain::plugins::{PluginNotes, PluginsPlace};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{
     InstallError, InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
@@ -55,8 +55,6 @@ pub enum PluginsIntent {
         /// Whether the part is to be on.
         on: bool,
     },
-    /// Turn on of the need "<Part> of the <Plugin> plugin is off".
-    TurnOn(OffPart),
     /// Try again of a paused part.
     TryAgain {
         /// The plugin id.

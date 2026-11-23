@@ -7,6 +7,9 @@
 use otty_plugin_sdk::env::in_language;
 use otty_plugin_sdk::{Command, KeyAsk, Need, NeedAction};
 
+use crate::codex::PROGRAM;
+use crate::profiles::CONFIG_VARIABLE;
+
 /// The slot the admin key is given under: the part's own name for it.
 pub(crate) const ADMIN_SLOT: &str = "admin";
 
@@ -384,10 +387,20 @@ pub(crate) fn not_logged_in(login: Command) -> Need {
     }
 }
 
-/// The ChatGPT login expired or OpenAI refused it, and the plugin never
-/// renews it: the button runs `login`, `codex login` in the config folder
-/// of the login, in a terminal tab.
-pub(crate) fn login_expired(login: Command) -> Need {
+/// The ChatGPT login of the Codex profile folder `folder` expired or
+/// OpenAI refused it, and the plugin never renews it: the button runs
+/// `codex login` there, with `CODEX_HOME` set to it, in a terminal tab.
+/// Both parts give this one need for a folder, the agent part on the
+/// profile and the provider part on the account found in it, so the two
+/// read as one need (spec 2026-11-23-accounts-apart-from-profiles,
+/// Decision 9).
+pub(crate) fn login_expired(folder: &str) -> Need {
+    let login = Command {
+        program: PROGRAM.to_string(),
+        args: vec!["login".to_string()],
+        env: vec![(CONFIG_VARIABLE.to_string(), folder.to_string())],
+    };
+
     Need {
         id: "login-expired".to_string(),
         title: in_language(LOGIN_EXPIRED_TITLE).to_string(),
@@ -459,7 +472,7 @@ mod tests {
         as_part(&host, || {
             vec![
                 not_logged_in(codex()),
-                login_expired(codex()),
+                login_expired("/home/user/.codex"),
                 bill_key(),
                 new_bill_key(),
             ]

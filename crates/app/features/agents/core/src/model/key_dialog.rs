@@ -122,7 +122,7 @@ mod tests {
         let _ = reduce(
             &mut state,
             AgentsIntent::FixNeed(crate::need::NeedAction::AskKey {
-                account: organization,
+                account: Box::new(organization),
                 plugin: String::from("Anthropic"),
                 ask: crate::testing::key_ask(),
             }),

@@ -189,7 +189,7 @@ fn part_need_view(
                 &[("label", ask.label())],
             ),
             action: account.map(|account| NeedAction::AskKey {
-                account: account.clone(),
+                account: Box::new(account.clone()),
                 plugin: plugin.to_string(),
                 ask: ask.clone(),
             }),
@@ -755,7 +755,7 @@ mod tests {
                         &[("label", "Admin key")]
                     ),
                     action: Some(NeedAction::AskKey {
-                        account: organization(),
+                        account: Box::new(organization()),
                         plugin: String::from("Anthropic"),
                         ask: crate::testing::key_ask(),
                     }),
@@ -1162,7 +1162,7 @@ mod tests {
         );
         assert!(matches!(
             key.fix.and_then(|fix| fix.action),
-            Some(NeedAction::AskKey { account, .. }) if account == found_key
+            Some(NeedAction::AskKey { account, .. }) if *account == found_key
         ));
     }
 

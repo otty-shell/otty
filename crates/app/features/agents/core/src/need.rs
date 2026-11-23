@@ -5,7 +5,7 @@
 //! thing its part asked (spec 2026-11-19-agent-plugins, issue 20).
 
 use otty_agents::{Account, AgentCommand, KeyAsk};
-use otty_app_domain::plugins::{OffPart, PluginsPlace};
+use otty_app_domain::plugins::PluginsPlace;
 
 use super::event::AgentsOutcome;
 use super::state::AgentsState;
@@ -28,8 +28,9 @@ pub enum NeedAction {
     /// Open the field of the key a plugin part asks for, given for
     /// `account`, in the key dialog.
     AskKey {
-        /// The account the key is given for.
-        account: Account,
+        /// The account the key is given for, boxed, as it is much larger
+        /// than the other actions.
+        account: Box<Account>,
         /// The name of the plugin that asks.
         plugin: String,
         /// The key the part asks for: its slot, label, hint and page.
@@ -41,11 +42,6 @@ pub enum NeedAction {
     /// Ask the user to allow OTTY to read the system keyring, in the
     /// keyring dialog (spec 2026-11-19, Decision 8).
     AllowKeyring,
-    /// Open Plugins mode with the URL field of Add plugin… empty: a
-    /// key was found for a host no provider plugin serves.
-    AddPlugin,
-    /// Turn on this part of a plugin, which is off.
-    TurnOnPart(OffPart),
     /// Open the update dialog of the plugin with this id, whose update
     /// waits for the user's OK.
     ReviewPluginUpdate(String),
@@ -69,17 +65,11 @@ pub(crate) fn act(
             account,
             plugin,
             ask,
-        } => key_dialog::open(state, account, plugin, ask),
+        } => key_dialog::open(state, *account, plugin, ask),
         NeedAction::CopyReport(report) => vec![AgentsOutcome::CopyText(report)],
         NeedAction::AllowKeyring => {
             keyring::open_dialog(state);
             Vec::new()
-        },
-        NeedAction::AddPlugin => {
-            vec![AgentsOutcome::OpenPlugins(PluginsPlace::AddPlugin)]
-        },
-        NeedAction::TurnOnPart(part) => {
-            vec![AgentsOutcome::TurnOnPluginPart(part)]
         },
         NeedAction::ReviewPluginUpdate(plugin) => {
             vec![AgentsOutcome::OpenPlugins(PluginsPlace::Review(plugin))]
@@ -94,10 +84,12 @@ mod tests {
 
     use super::*;
     use crate::event::AgentsIntent;
+    use crate::model::{account_needs, profile_needs};
     use crate::reducer::reduce;
     use crate::testing::{
-        api_key, claude, codex, connected, key_ask, open_fix_tab, organization,
-        with_accounts, with_saved_profiles,
+        api_key, at, chatgpt_login, claude, codex, connected, five_hour_limits,
+        key_ask, limits_answer, limits_loaded, open_fix_tab, organization,
+        profiles_with_accounts_loaded, with_accounts, with_saved_profiles,
     };
 
     fn report_shown() -> SavedProfiles {
@@ -159,6 +151,92 @@ mod tests {
         assert_eq!(again, []);
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the
+    /// expired login of `~/.codex` shows on the profile and on its account.
+    /// Whichever page the user runs the login from, once its tab closes
+    /// OTTY reads the profiles and the accounts again, and the limits of
+    /// the account, so the need goes from both pages.
+    #[test]
+    fn an_expired_login_fixed_from_either_page_goes_from_both() {
+        for from_account in [false, true] {
+            let mut state = with_accounts(
+                &[crate::testing::codex_with_expired_login()],
+                report_shown(),
+            );
+            let mut needs = match from_account {
+                true => account_needs(&state),
+                false => profile_needs(&state),
+            };
+            let action = needs
+                .remove(0)
+                .fix
+                .and_then(|fix| fix.action)
+                .expect("the need has a button");
+
+            let opened = reduce(&mut state, AgentsIntent::FixNeed(action));
+            let _ = reduce(&mut state, AgentsIntent::FixTabOpened(7));
+            let closed = reduce(&mut state, AgentsIntent::TabClosed(7));
+            let read = reduce(
+                &mut state,
+                profiles_with_accounts_loaded(
+                    &[(codex(), connected(), vec![chatgpt_login()])],
+                    report_shown(),
+                ),
+            );
+
+            assert!(
+                matches!(opened[..], [AgentsOutcome::OpenFixTab { .. }]),
+                "{opened:?}"
+            );
+            assert_eq!(closed, [AgentsOutcome::LoadProfiles]);
+            assert!(read.contains(&AgentsOutcome::LoadLimits(codex())));
+            assert_eq!(profile_needs(&state), []);
+            assert_eq!(account_needs(&state), []);
+        }
+    }
+
+    /// Decision 9: a login the provider refused, which the files of the
+    /// profile do not tell, shows on the account only. Once the tab of
+    /// its login closes, the limits are read again, and a good answer
+    /// takes the need away.
+    #[test]
+    fn a_refused_login_goes_from_its_account_at_the_next_read() {
+        let mut state = with_accounts(
+            &[(codex(), connected(), vec![chatgpt_login()])],
+            report_shown(),
+        );
+        let refused = limits_answer(vec![(
+            otty_agents::SourceId::ProviderPart,
+            Err(crate::testing::login_expired()),
+        )]);
+        let _ = reduce(&mut state, limits_loaded(&codex(), refused, at(10)));
+        let action = account_needs(&state)
+            .remove(0)
+            .fix
+            .and_then(|fix| fix.action)
+            .expect("the need has a button");
+
+        let _ = reduce(&mut state, AgentsIntent::FixNeed(action));
+        let _ = reduce(&mut state, AgentsIntent::FixTabOpened(7));
+        let _ = reduce(&mut state, AgentsIntent::TabClosed(7));
+        let read = reduce(
+            &mut state,
+            profiles_with_accounts_loaded(
+                &[(codex(), connected(), vec![chatgpt_login()])],
+                report_shown(),
+            ),
+        );
+        let good = limits_answer(vec![(
+            otty_agents::SourceId::ProviderPart,
+            Ok(five_hour_limits(10.0)),
+        )]);
+        let _ = reduce(&mut state, limits_loaded(&codex(), good, at(20)));
+
+        assert!(read.contains(&AgentsOutcome::LoadLimits(codex())));
+        assert_eq!(account_needs(&state), []);
+        assert_eq!(profile_needs(&state), []);
+    }
+
     /// Issue 20: the key a part asks for opens its dialog, for the
     /// account.
     #[test]
@@ -168,7 +246,7 @@ mod tests {
             report_shown(),
         );
         let ask = |account| NeedAction::AskKey {
-            account,
+            account: Box::new(account),
             plugin: String::from("Anthropic"),
             ask: key_ask(),
         };
@@ -199,44 +277,26 @@ mod tests {
         assert_eq!(outcomes, vec![AgentsOutcome::CopyText(report)]);
     }
 
-    /// Spec 2026-11-19-agent-plugins, "What the UI shows": Add plugin…
-    /// opens Plugins mode with the URL field empty, Review opens the
-    /// update dialog, and Turn on turns the part on.
+    /// Spec 2026-11-19-agent-plugins, "What the UI shows": Review of a
+    /// plugin update that waits opens its update dialog.
     #[test]
-    fn the_buttons_of_the_plugin_needs_go_to_the_plugins_page() {
+    fn review_of_a_plugin_need_opens_the_update_dialog() {
         let mut state =
             with_saved_profiles(&[(claude(), connected())], report_shown());
-        let off = otty_app_domain::plugins::OffPart {
-            plugin: String::from("deepseek"),
-            plugin_name: String::from("DeepSeek"),
-            version: String::from("0.2.0"),
-            side: otty_app_domain::plugins::PartSide::Provider,
-            part: String::from("deepseek"),
-            part_name: String::from("DeepSeek"),
-            hosts: vec![String::from("api.deepseek.com")],
-        };
 
-        let add =
-            reduce(&mut state, AgentsIntent::FixNeed(NeedAction::AddPlugin));
         let review = reduce(
             &mut state,
             AgentsIntent::FixNeed(NeedAction::ReviewPluginUpdate(
                 String::from("openai"),
             )),
         );
-        let turn_on = reduce(
-            &mut state,
-            AgentsIntent::FixNeed(NeedAction::TurnOnPart(off.clone())),
-        );
 
-        assert_eq!(add, [AgentsOutcome::OpenPlugins(PluginsPlace::AddPlugin)]);
         assert_eq!(
             review,
             [AgentsOutcome::OpenPlugins(PluginsPlace::Review(
                 String::from("openai")
             ))]
         );
-        assert_eq!(turn_on, [AgentsOutcome::TurnOnPluginPart(off)]);
     }
 
     /// The report never opens or closes from a page: closing it saves

@@ -14,8 +14,8 @@
 use otty_plugin_sdk::Key;
 use otty_plugin_sdk::agents::ReadError;
 
-use crate::accounts::login_need;
 use crate::limits::Limits;
+use crate::needs::login_expired;
 use crate::profiles::CONFIG_VARIABLE;
 use crate::token_expiry::has_expired;
 use crate::{app_server, session_limits};
@@ -29,7 +29,7 @@ pub(crate) fn read_codex_limits(
     let now = match token {
         None => Err(ReadError::Failed("no login in the folder".to_string())),
         Some(token) if has_expired(token) => {
-            Err(ReadError::NeedsUser(login_need(folder)))
+            Err(ReadError::NeedsUser(login_expired(folder)))
         },
         Some(_) => {
             let env = [(CONFIG_VARIABLE.to_string(), folder.to_string())];
@@ -137,7 +137,7 @@ mod tests {
         let Err(ReadError::NeedsUser(need)) = limits else {
             panic!("a need: {limits:?}");
         };
-        assert_eq!(need, host.as_provider(PROVIDER, || login_need(&folder)));
+        assert_eq!(need, host.as_provider(PROVIDER, || login_expired(&folder)));
         let NeedAction::Run(command) = need.action else {
             panic!("a command: {need:?}");
         };

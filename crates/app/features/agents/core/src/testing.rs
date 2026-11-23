@@ -313,6 +313,39 @@ pub(crate) fn not_logged_in(profile: &Profile) -> ProfileStatus {
     otty_agents::fixtures::not_logged_in(profile)
 }
 
+/// The need the part `part` of the OpenAI plugin gives when the login of
+/// `~/.codex` expired: the agent part `codex` on the profile, the provider
+/// part `openai` on the account found there. Both give the same title,
+/// text and command, `codex login` in that folder (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 9).
+pub(crate) fn codex_login_expired(part: &str) -> otty_agents::PartNeed {
+    let login = AgentCommand::new("codex")
+        .with_arg("login")
+        .with_env("CODEX_HOME", "/home/user/.codex");
+
+    otty_agents::PartNeed::new(
+        otty_agents::fixtures::plugin_part("openai", part),
+        "login-expired",
+        "The login expired",
+        "Codex logs in again in a terminal tab.",
+        otty_agents::PartNeedAction::Run(login),
+    )
+}
+
+/// The Codex profile of `~/.codex` whose login expired, as its agent part
+/// tells it, and the [`chatgpt_login`] found there with the need its
+/// provider part gives.
+pub(crate) fn codex_with_expired_login()
+-> (Profile, ProfileStatus, Vec<Account>) {
+    let status = ProfileStatus::NotLoggedIn(Some(Box::new(
+        codex_login_expired("codex"),
+    )));
+    let account =
+        chatgpt_login().with_needs(vec![codex_login_expired("openai")]);
+
+    (codex(), status, vec![account])
+}
+
 /// A session `id` titled after it, in `folder`, changed at `seconds`.
 pub(crate) fn session(id: &str, folder: &str, seconds: u64) -> AgentSession {
     AgentSession::new(

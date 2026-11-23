@@ -422,32 +422,6 @@ fn a_failed_switch_says_why_on_the_page() {
     );
 }
 
-/// Turn on of the need "<Part> of the <Plugin> plugin is off".
-#[test]
-fn turn_on_of_a_need_turns_its_part_on() {
-    let mut state = PluginsState::new(vec![released_example()]);
-    let off = otty_app_domain::plugins::OffPart {
-        plugin: String::from("example"),
-        plugin_name: String::from("Example"),
-        version: String::from("0.1.0"),
-        side: PartSide::Provider,
-        part: String::from("example-cloud"),
-        part_name: String::from("Example Cloud"),
-        hosts: vec![String::from("example.com")],
-    };
-
-    let outcomes = reduce(&mut state, PluginsIntent::TurnOn(off));
-
-    assert_eq!(
-        outcomes,
-        [PluginsOutcome::SetPartOn {
-            plugin: String::from("example"),
-            part: provider(),
-            on: true,
-        }]
-    );
-}
-
 /// Try again on a paused part starts it again and Agents mode reads
 /// again (issue 07: `PartHealth::try_again`).
 #[test]

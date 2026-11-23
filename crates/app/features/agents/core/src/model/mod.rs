@@ -57,7 +57,7 @@ pub(crate) use money::ShownMoney;
 pub(crate) use money::{MoneyKind, MoneyViewModel};
 pub(crate) use needs::NeedViewModel;
 #[cfg(test)]
-pub(crate) use needs::{NeedFixViewModel, account_needs};
+pub(crate) use needs::{NeedFixViewModel, account_needs, profile_needs};
 pub(crate) use overview::{
     AccountTableRowViewModel, AllAccountsViewModel, AllProfilesViewModel,
     ProfileTableRowViewModel,

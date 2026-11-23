@@ -2,6 +2,13 @@
 //! login is there. Whose login it is, the agent part does not say: the
 //! provider part `openai` finds the account (spec
 //! 2026-11-23-accounts-apart-from-profiles, Decision 2).
+//!
+//! Whether the login expired is the plugin's call (Decision 9). The part
+//! checks what the provider part checks for the account found in the
+//! folder: a ChatGPT login whose access token says, by its `exp` claim,
+//! that it expired. Then the profile gets the same need as the account,
+//! `codex login` in the folder, so acting on either fixes both. An API
+//! key tells no expiry, so a profile that logs in with one is found.
 
 use otty_plugin_sdk::agents::ProfileStatus;
 use otty_plugin_sdk::{Command, files};
@@ -9,23 +16,33 @@ use otty_plugin_sdk::{Command, files};
 use crate::auth_file::AuthFile;
 use crate::glob::escaped;
 use crate::needs;
+use crate::token_expiry::has_expired;
 
 /// Whether the profile in `folder` can be used: found when its
 /// `auth.json` holds an API key or the token of a ChatGPT login, else not
 /// logged in with the need to run `login`, Codex's login command. A blank
-/// key or token counts as none.
+/// key or token counts as none. A ChatGPT login that expired is not
+/// logged in either, with the need to log in again in `folder`.
 pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
     if !folder_exists(folder) {
         return ProfileStatus::ConfigFolderNotFound;
     }
 
-    let has_login =
-        AuthFile::read(folder).is_some_and(|auth| auth.is_logged_in());
+    let auth = AuthFile::read(folder).filter(AuthFile::is_logged_in);
 
-    match has_login {
-        true => ProfileStatus::Found,
-        false => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    match auth {
+        None => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+        Some(auth) if has_expired_login(&auth) => {
+            ProfileStatus::NotLoggedIn(needs::login_expired(folder))
+        },
+        Some(_) => ProfileStatus::Found,
     }
+}
+
+/// Whether `auth` logs in with a ChatGPT login whose access token says it
+/// expired.
+fn has_expired_login(auth: &AuthFile) -> bool {
+    !auth.is_api_key() && auth.access_token().is_some_and(has_expired)
 }
 
 /// Whether the config folder `folder` holds any file. A folder is never
@@ -43,10 +60,12 @@ mod tests {
     use otty_plugin_sdk::Command;
 
     use super::*;
-    use crate::testing::{as_part, host, path};
+    use crate::testing::{TEN, as_part, host, path};
 
+    /// The status of the config folder `folder` at a time the made-up
+    /// tokens of the fixtures are good, but the one of `.codex-expired`.
     fn status_of(folder: &str) -> ProfileStatus {
-        let host = host();
+        let host = host().with_now_ms(TEN);
         let folder = path(&host, folder);
         let login = Command {
             program: "codex".to_string(),

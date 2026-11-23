@@ -119,9 +119,17 @@ fn command_in(folder: &str, is_default: bool, args: Vec<String>) -> Command {
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::NeedAction;
+    use otty_plugin_sdk::agents::Provider;
 
     use super::*;
-    use crate::testing::{AGENT, PROVIDER, as_part, host, path, profile};
+    use crate::testing::{
+        AGENT, PROVIDER, as_part, as_provider_in, host, login_folder, path,
+        profile,
+    };
+
+    /// A time after the made-up tokens of the fixtures expired, and after
+    /// the one of `.claude-expired`.
+    const AFTER_EXPIRY_MS: i64 = 1_800_000_000_000;
 
     const SESSION: &str = "0b6c4e8a-1f2d-4c3b-9a7e-5d1f2e3c4b5a";
 
@@ -231,6 +239,42 @@ mod tests {
             panic!("not logged in: {default_status:?}");
         };
         assert_eq!(need.action, NeedAction::Run(command(&[], &[])));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the files
+    /// tell that the Claude login expired for good, a token past its time
+    /// with no refresh token, so the profile needs the login again, with
+    /// the very need the provider part gives on the account found in that
+    /// folder: one title, text and command, so the two read as one need.
+    #[test]
+    fn an_expired_login_needs_the_same_login_as_its_account() {
+        let host = host().with_now_ms(AFTER_EXPIRY_MS).with_language("ru");
+        let expired = profile(&host, ".claude-expired", false);
+        let folders = [login_folder(&host, ".claude-expired")];
+
+        let status = as_part(&host, || Anthropic::detect(&expired));
+        let found = as_provider_in(&host, &folders, || {
+            <Anthropic as Provider>::accounts(PROVIDER, &folders)
+        });
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "login-expired");
+        assert_eq!(need.title, "Вход истёк");
+        assert_eq!(found.accounts[0].needs, [need]);
+    }
+
+    /// Claude Code renews a token past its time with its refresh token, so
+    /// such a login is found.
+    #[test]
+    fn a_login_with_a_refresh_token_is_found_past_its_time() {
+        let host = host().with_now_ms(AFTER_EXPIRY_MS);
+        let work = profile(&host, ".claude-work", false);
+
+        let status = as_part(&host, || Anthropic::detect(&work));
+
+        assert_eq!(status, ProfileStatus::Found);
     }
 
     /// The provider part knows the default folder by where it is: there

@@ -2,27 +2,44 @@
 //! whether a login is there. Whose login it is and how it pays, the agent
 //! part does not say: the provider part `anthropic` finds the account
 //! (spec 2026-11-23-accounts-apart-from-profiles, Decision 2).
+//!
+//! Whether the login expired is the plugin's call (Decision 9). The part
+//! checks what the provider part checks for the account found in the
+//! folder: the token of the Claude login in `.credentials.json` is past
+//! its time and no refresh token is beside it, so Claude Code can not
+//! renew it. Then the profile gets the same need as the account, `claude`
+//! in the folder, so acting on either fixes both. A token past its time
+//! with a refresh token is renewed by Claude Code on its next run, and a
+//! key tells no expiry, so such a profile is found.
 
 use otty_plugin_sdk::agents::ProfileStatus;
 use otty_plugin_sdk::{Command, files};
 
+use crate::claude_code::claude_in_folder;
 use crate::config_files::{
     OauthLogin, read_credentials, read_global_configs, read_settings,
 };
 use crate::glob::escaped;
+use crate::logins::has_lapsed;
 use crate::needs;
 
 /// Whether the profile in `folder` can be used: found when it holds a
 /// login ([`has_login`]), else not logged in with the need to run
-/// `login`, Claude Code's login.
+/// `login`, Claude Code's login. A Claude login that expired for good is
+/// not logged in either, with the need to run `claude` in `folder`.
 pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
     if !folder_exists(folder) {
         return ProfileStatus::ConfigFolderNotFound;
     }
+    if !has_login(folder) {
+        return ProfileStatus::NotLoggedIn(needs::not_logged_in(login));
+    }
 
-    match has_login(folder) {
-        true => ProfileStatus::Found,
-        false => ProfileStatus::NotLoggedIn(needs::not_logged_in(login)),
+    match has_expired_login(folder) {
+        true => ProfileStatus::NotLoggedIn(needs::login_expired(
+            claude_in_folder(folder),
+        )),
+        false => ProfileStatus::Found,
     }
 }
 
@@ -54,6 +71,19 @@ fn has_login(folder: &str) -> bool {
     });
 
     has_settings_key || has_console_key || has_account || has_token
+}
+
+/// Whether the Claude login of the login file in `folder` expired for
+/// good: its token is past its time and no refresh token is beside it.
+fn has_expired_login(folder: &str) -> bool {
+    let Some(credentials) = read_credentials(folder) else {
+        return false;
+    };
+
+    credentials
+        .fields()
+        .login()
+        .is_some_and(|login| has_lapsed(&credentials, login))
 }
 
 /// Whether the config folder `folder` holds any file. A folder is never

@@ -1,19 +1,17 @@
 //! The Found by OTTY report (spec Decision 2): a wide dialog with what OTTY
-//! found, the profiles over the accounts, then what the accounts and the
-//! profiles need from the user, each need with its one button. Done closes
-//! it; the frame closes it on Esc.
+//! found, the group of the profiles over the group of the accounts, with no
+//! link between them, then what the accounts and the profiles need from
+//! the user, each need with its one button. Done closes it; the frame
+//! closes it on Esc.
 
 use iced::widget::Column;
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
-use otty_ui_kit::components::data_table::{
-    ColumnAlign, DataTable, TableCell, TableColumn,
-};
+use otty_ui_kit::components::data_table::{DataTable, TableCell, TableColumn};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::small_text::small_text;
-use otty_ui_kit::components::status_badge::StatusTone;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
@@ -39,8 +37,16 @@ pub(crate) fn view(props: FoundReportProps<'_>) -> Element<'_, AgentsIntent> {
 
     let mut body = Column::new()
         .push(small_text(vm.intro, palette.text_muted()))
-        .push(profiles_table(vm.profiles, palette))
-        .push(accounts_table(vm.accounts, palette))
+        .push(blocks::titled(
+            i18n::t(Key::AgentsSectionProfiles),
+            profiles_table(vm.profiles, palette),
+            palette,
+        ))
+        .push(blocks::titled(
+            i18n::t(Key::AgentsSectionAccounts),
+            accounts_table(vm.accounts, palette),
+            palette,
+        ))
         .spacing(spacing::SPACE_4)
         .width(Length::Fill);
     if !vm.account_needs.is_empty() {
@@ -77,8 +83,7 @@ pub(crate) fn view(props: FoundReportProps<'_>) -> Element<'_, AgentsIntent> {
         .into()
 }
 
-/// The profiles: Agent, Profile, Version, Folder and Accounts, as tall as
-/// its rows.
+/// The profiles: Agent, Profile, Version and Folder, as tall as its rows.
 fn profiles_table<'a>(
     rows: Vec<FoundProfileRowViewModel>,
     palette: &UiPalette,
@@ -88,7 +93,6 @@ fn profiles_table<'a>(
         report_column(Key::AgentsProfile, 2, 110),
         report_column(Key::AgentsColumnVersion, 1, 70),
         report_column(Key::AgentsColumnFolder, 3, 160),
-        report_column(Key::AgentsColumnAccounts, 1, 70).align(ColumnAlign::End),
     ];
     let count = rows.len();
 
@@ -99,34 +103,32 @@ fn profiles_table<'a>(
             TableCell::plain(row.profile),
             TableCell::muted_mono(row.version),
             TableCell::muted_mono(row.folder),
-            TableCell::number(row.accounts),
         ]);
     }
 
     blocks::rows_tall(table, count)
 }
 
-/// The accounts: Account, Found in, Reads and Now, as tall as its rows.
+/// The accounts: Provider, Name, Kind and Source, as tall as its rows.
 fn accounts_table<'a>(
     rows: Vec<FoundAccountRowViewModel>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let columns = vec![
-        report_column(Key::AgentsFieldAccount, 3, 170),
-        report_column(Key::AgentsColumnFoundIn, 2, 140),
-        report_column(Key::AgentsColumnReads, 1, 80),
-        report_column(Key::AgentsColumnNow, 2, 120).align(ColumnAlign::End),
+        report_column(Key::AgentsColumnProvider, 2, 110),
+        report_column(Key::AgentsFieldName, 3, 170),
+        report_column(Key::AgentsFieldKind, 1, 90),
+        report_column(Key::AgentsFieldSource, 3, 160),
     ];
     let count = rows.len();
 
     let mut table = DataTable::new(columns, palette);
     for row in rows {
-        let now = TableCell::number(row.now.text());
         table = table.row_without_menu(vec![
-            TableCell::plain(row.account),
-            TableCell::muted_mono(row.found_in),
-            TableCell::badge(row.reads, StatusTone::Ok),
-            now,
+            TableCell::plain(row.provider),
+            TableCell::plain(row.name),
+            TableCell::plain(row.kind),
+            TableCell::muted_mono(row.source),
         ]);
     }
 
@@ -160,16 +162,12 @@ mod tests {
                 profile: String::from("Work"),
                 version: String::from("2.1.328"),
                 folder: String::from("~/.claude-work"),
-                accounts: String::from("1"),
             }],
             accounts: vec![FoundAccountRowViewModel {
-                account: String::from("Anthropic · dev@example.com"),
-                found_in: String::from("~/.claude-work"),
-                reads: "Limits",
-                now: crate::model::AccountNumber::word(
-                    String::from("42 %"),
-                    otty_ui_kit::components::session_row::SessionTone::Muted,
-                ),
+                provider: String::from("Anthropic"),
+                name: String::from("dev@example.com"),
+                kind: "Subscription",
+                source: String::from("Found in ~/.claude-work"),
             }],
             account_needs: Vec::new(),
             profile_needs: vec![NeedViewModel {
@@ -197,10 +195,16 @@ mod tests {
         }));
 
         ui.find("Found by OTTY").expect("the title should show");
+        ui.find(i18n::t(Key::AgentsSectionProfiles))
+            .expect("the group of the profiles should show");
         ui.find("~/.claude-work").expect("the folder should show");
         ui.find("2.1.328").expect("the version should show");
-        ui.find("Anthropic · dev@example.com")
-            .expect("the account should show");
+        ui.find(i18n::t(Key::AgentsSectionAccounts))
+            .expect("the group of the accounts should show");
+        ui.find("dev@example.com").expect("the account should show");
+        ui.find("Subscription").expect("its kind should show");
+        ui.find("Found in ~/.claude-work")
+            .expect("its source should show");
         ui.find(i18n::t(Key::AgentsProfilesNeedYou))
             .expect("the profile needs should show");
         ui.find("Codex · needs login")

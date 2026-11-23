@@ -4,7 +4,7 @@ use otty_agents::{
     Account, AgentCommand, AgentId, GivenKey, Profile, SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
-use otty_app_domain::plugins::{OffPart, PluginNotes, PluginsPlace};
+use otty_app_domain::plugins::{PluginNotes, PluginsPlace};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
 use super::key_dialog::KeyDialogIntent;
@@ -432,12 +432,8 @@ pub enum AgentsOutcome {
     /// A menu opened. It takes the keyboard, so typed keys do not reach the
     /// search field under it and Esc reaches the frame, which closes it.
     MenuOpened,
-    /// Open Plugins mode at this place: "Read by", Add plugin… or
-    /// Review of a need.
+    /// Open Plugins mode at this place: "Read by", or Review of a need.
     OpenPlugins(PluginsPlace),
-    /// Turn on this part of a plugin: Turn on of the need "<Part> of the
-    /// <Plugin> plugin is off".
-    TurnOnPluginPart(OffPart),
 }
 
 /// An item of the menu of a session in the sessions table.

@@ -9,15 +9,10 @@ use otty_agents::FoundIn;
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
-/// The folder of `place`, written from `~` when it is in the `home`
-/// folder.
-pub(crate) fn source_folder(place: &FoundIn, home: &Path) -> String {
-    tilde_path(place.folder(), home)
-}
-
-/// The Source line of `place`, such as "Found in ~/.codex".
+/// The Source line of `place`, such as "Found in ~/.codex", with the
+/// folder written from `~` when it is in the `home` folder.
 pub(crate) fn source_text(place: &FoundIn, home: &Path) -> String {
-    let folder = source_folder(place, home);
+    let folder = tilde_path(place.folder(), home);
 
     i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", &folder)])
 }
@@ -34,15 +29,11 @@ mod tests {
         let codex = || AgentId::new("codex");
         let folder = FoundIn::profile(codex(), "/home/user/.codex");
         let elsewhere = FoundIn::profile(codex(), "/opt/codex");
+        let found_in = |folder: &str| {
+            i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", folder)])
+        };
 
-        assert_eq!(source_folder(&folder, home), "~/.codex");
-        assert_eq!(source_folder(&elsewhere, home), "/opt/codex");
-        assert_eq!(
-            source_text(&folder, home),
-            i18n::filled(
-                Key::TplAgentsSourceFoundIn,
-                &[("folder", "~/.codex")]
-            )
-        );
+        assert_eq!(source_text(&folder, home), found_in("~/.codex"));
+        assert_eq!(source_text(&elsewhere, home), found_in("/opt/codex"));
     }
 }

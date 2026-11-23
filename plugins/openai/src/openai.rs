@@ -19,7 +19,6 @@ use otty_plugin_sdk::{GivenKey, given_key};
 
 use crate::accounts::{
     ChatgptLogin, FolderLogin, KeyLogin, codex_folders, has_no_login,
-    login_need,
 };
 use crate::codex_limits::read_codex_limits;
 use crate::limits::Limits;
@@ -58,7 +57,7 @@ impl Provider for OpenAi {
             Some(chatgpt_usage::chatgpt_limits(
                 token,
                 login.account_id(),
-                &login_need(folder),
+                &needs::login_expired(folder),
             ))
         });
 

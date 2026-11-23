@@ -11,7 +11,6 @@ use otty_app_domain::tab::TabMachine;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
-use otty_app_plugins::PluginsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 use otty_ui_term::settings::Settings;
@@ -228,9 +227,6 @@ impl Delivery for AgentsIntent {
             AgentsOutcome::MenuOpened => super::take_keyboard(),
             AgentsOutcome::OpenPlugins(place) => {
                 super::open_plugins_mode(app, place)
-            },
-            AgentsOutcome::TurnOnPluginPart(part) => {
-                deliver(app, PluginsIntent::TurnOn(part))
             },
         }
     }

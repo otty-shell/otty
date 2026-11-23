@@ -1,21 +1,21 @@
 //! The Found by OTTY report (spec Decision 2): the profiles OTTY found,
-//! each with its agent's version, its folder and how many accounts were
-//! found in it; the accounts, one row each, with where they were found,
-//! what OTTY reads of them and their number now; and what they need from
-//! the user, the accounts apart from the profiles.
+//! each with its agent's version and its folder; the accounts, each with
+//! its provider, name, kind and Source; and what they need from the user.
+//! The profiles and the accounts are two groups that do not know about
+//! each other: no count of the accounts of a profile, no "found in" link
+//! from one group to the other (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 1 and "Needs").
 
-use otty_agents::{Account, AccountKind};
+use otty_agents::Account;
 use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::session_row::SessionTone;
 
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::UNKNOWN;
-use super::account_name::account_name;
+use super::account_page::kind_text;
 use super::needs::{NeedViewModel, account_needs, profile_needs};
-use super::short_number::{AccountNumber, account_number};
-use super::source::source_folder;
+use super::source::source_text;
 
 /// The Found by OTTY report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,8 +83,6 @@ pub(crate) struct FoundProfileRowViewModel {
     pub(crate) version: String,
     /// The config folder, from `~` when it is in the home folder.
     pub(crate) folder: String,
-    /// How many accounts were found in it.
-    pub(crate) accounts: String,
 }
 
 impl FoundProfileRowViewModel {
@@ -100,71 +98,53 @@ impl FoundProfileRowViewModel {
                 .unwrap_or(UNKNOWN)
                 .to_string(),
             folder: tilde_path(profile.config_dir(), state.env().home()),
-            accounts: shown.accounts().len().to_string(),
         }
     }
 }
 
-/// One account of the report.
+/// One account of the report, as Account info of its page writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FoundAccountRowViewModel {
-    /// The provider and the name, such as "Example Cloud · you@example.com".
-    pub(crate) account: String,
-    /// Every place it was found, such as "~/.coder, ~/.coder-work".
-    pub(crate) found_in: String,
-    /// What OTTY reads of it: limits, credits or money.
-    pub(crate) reads: &'static str,
-    /// Its number now with its word, as its row in the left panel shows
-    /// it, or "—", which draws itself in the tight form.
-    pub(crate) now: AccountNumber,
+    /// The name of its provider, such as "Example Cloud".
+    pub(crate) provider: String,
+    /// The name its provider part gives, such as "you@example.com".
+    pub(crate) name: String,
+    /// Its kind in words, such as "Subscription".
+    pub(crate) kind: &'static str,
+    /// Where its provider part found it, such as "Found in ~/.coder",
+    /// one place after another.
+    pub(crate) source: String,
 }
 
 impl FoundAccountRowViewModel {
     fn of(state: &AgentsState, account: &Account) -> Self {
         let home = state.env().home();
-        let found_in: Vec<String> = account
+        let source: Vec<String> = account
             .found_in()
             .iter()
-            .map(|place| source_folder(place, home))
+            .map(|place| source_text(place, home))
             .collect();
-        let now = account_number(state, account).unwrap_or_else(|| {
-            AccountNumber::word(UNKNOWN.to_string(), SessionTone::Muted)
-        });
 
         Self {
-            account: account_name(
-                state.registry(),
-                state.profiles().saved(),
-                account,
-            ),
-            found_in: found_in.join(", "),
-            reads: reads_of(account.kind()),
-            now,
+            provider: state.account_provider_name(account).to_string(),
+            name: account.name().to_string(),
+            kind: kind_text(account.kind()),
+            source: source.join(", "),
         }
-    }
-}
-
-/// What OTTY reads of an account of `kind`: the limits of a
-/// subscription, the money of a key or an organization.
-fn reads_of(kind: AccountKind) -> &'static str {
-    match kind {
-        AccountKind::Subscription => i18n::t(Key::AgentsReadsLimits),
-        _ => i18n::t(Key::AgentsReadsMoney),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use otty_agents::SavedProfiles;
+    use otty_agents::{AccountKind, SavedProfiles};
 
     use super::*;
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        agents, api_key, at, chatgpt_login_in, claude, codex, codex_work,
-        connected, env, five_hour_limits, limits_answer, limits_loaded,
-        organization, profiles_with_accounts_loaded, with_accounts,
-        with_versions,
+        agents, api_key, chatgpt_login_in, claude, codex, codex_work,
+        connected, env, organization, profiles_with_accounts_loaded,
+        with_accounts, with_versions,
     };
 
     fn report(state: &AgentsState) -> FoundReportViewModel {
@@ -186,8 +166,11 @@ mod tests {
         )
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, "Needs": the
+    /// profiles are a group of their own, each with its agent, version and
+    /// folder, and with nothing of the accounts found in it.
     #[test]
-    fn each_profile_shows_its_agent_version_folder_and_accounts() {
+    fn each_profile_shows_its_agent_version_and_folder() {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
@@ -215,14 +198,12 @@ mod tests {
                     profile: String::from("Claude Code"),
                     version: String::from("2.1.328"),
                     folder: String::from("~/.claude"),
-                    accounts: String::from("0"),
                 },
                 FoundProfileRowViewModel {
                     agent: String::from("Codex"),
                     profile: String::from("Codex · Work"),
                     version: String::from(UNKNOWN),
                     folder: String::from("~/.codex-work"),
-                    accounts: String::from("1"),
                 },
             ]
         );
@@ -236,11 +217,12 @@ mod tests {
         );
     }
 
-    /// Spec Decision 2: one account, one row, however many profiles it
-    /// was found in; its number is the one of its first profile.
+    /// The accounts are a group of their own, each with its provider,
+    /// name, kind and Source, as its page writes them. One account found
+    /// in two profiles is one row, and no row links to a profile.
     #[test]
-    fn an_account_found_in_two_profiles_is_one_row_with_both_folders() {
-        let mut state = with_accounts(
+    fn an_account_shows_its_provider_name_kind_and_source() {
+        let state = with_accounts(
             &[
                 (
                     codex(),
@@ -255,36 +237,29 @@ mod tests {
             ],
             SavedProfiles::default(),
         );
-        let _ = reduce(
-            &mut state,
-            limits_loaded(
-                &codex(),
-                limits_answer(vec![(
-                    otty_agents::SourceId::ProviderPart,
-                    Ok(five_hour_limits(42.0)),
-                )]),
-                at(10),
-            ),
-        );
 
         let vm = report(&state);
 
+        let source = |folder: &str| {
+            i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", folder)])
+        };
         assert_eq!(
             vm.accounts,
             vec![FoundAccountRowViewModel {
-                account: String::from("OpenAI · you@example.com"),
-                found_in: String::from("~/.codex, ~/.codex-work"),
-                reads: i18n::t(Key::AgentsReadsLimits),
-                now: AccountNumber::word(
-                    i18n::with_count(Key::TplAgentsPercentUsed, 42),
-                    SessionTone::Muted
+                provider: String::from("OpenAI"),
+                name: String::from("you@example.com"),
+                kind: i18n::t(Key::AgentsKindSubscription),
+                source: format!(
+                    "{}, {}",
+                    source("~/.codex"),
+                    source("~/.codex-work")
                 ),
             }]
         );
     }
 
     #[test]
-    fn a_key_is_shown_by_its_parts_name_and_nothing_known_is_a_dash() {
+    fn a_key_is_shown_by_the_name_its_part_gives() {
         let state = with_accounts(
             &[(codex(), api_key(), vec![key_account()])],
             SavedProfiles::default(),
@@ -295,12 +270,12 @@ mod tests {
         assert_eq!(
             vm.accounts,
             vec![FoundAccountRowViewModel {
-                account: String::from("OpenAI · key ••••a1f3"),
-                found_in: String::from("~/.codex"),
-                reads: i18n::t(Key::AgentsReadsMoney),
-                now: AccountNumber::word(
-                    String::from(UNKNOWN),
-                    SessionTone::Muted
+                provider: String::from("OpenAI"),
+                name: String::from("key ••••a1f3"),
+                kind: i18n::t(Key::AgentsKindKey),
+                source: i18n::filled(
+                    Key::TplAgentsSourceFoundIn,
+                    &[("folder", "~/.codex")]
                 ),
             }]
         );

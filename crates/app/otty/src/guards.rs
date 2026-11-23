@@ -1270,7 +1270,7 @@ mod tests {
 
         let _ = app.agents.reduce(
             AgentsIntent::FixNeed(otty_app_agents::NeedAction::AskKey {
-                account: organization,
+                account: Box::new(organization),
                 plugin: String::from("Example"),
                 ask,
             }),

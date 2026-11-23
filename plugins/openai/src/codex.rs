@@ -100,7 +100,10 @@ mod tests {
     use otty_plugin_sdk::NeedAction;
 
     use super::*;
-    use crate::testing::{AGENT, BLOG_SESSION, as_part, host, path, profile};
+    use crate::testing::{
+        AGENT, BLOG_SESSION, TEN, as_part, as_provider_in, codex_folder, host,
+        path, profile,
+    };
 
     const ID: &str = "019a8f3e-7c2d-7b41-9e5a-3c4d5e6f7a8b";
 
@@ -136,7 +139,7 @@ mod tests {
     /// is: the provider part finds the account.
     #[test]
     fn a_profile_with_a_login_is_found() {
-        let host = host();
+        let host = host().with_now_ms(TEN);
         let profile = profile(&host, ".codex-plus", false);
 
         let status = as_part(&host, || OpenAi::detect(&profile));
@@ -210,6 +213,40 @@ mod tests {
             panic!("not logged in: {default_status:?}");
         };
         assert_eq!(need.action, NeedAction::Run(command(&["login"], &[])));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the files
+    /// tell that the ChatGPT login expired, so the profile needs the login
+    /// again, with the very need the provider part gives on the account
+    /// found in that folder: one title, text and command, so the two read
+    /// as one need, and acting on either fixes both.
+    #[test]
+    fn an_expired_login_needs_the_same_login_as_its_account() {
+        let host = host().with_now_ms(TEN).with_language("ru");
+        let profile = profile(&host, ".codex-expired", true);
+
+        let status = as_part(&host, || OpenAi::detect(&profile));
+        let account = as_provider_in(&host, ".codex-expired", || {
+            crate::accounts::accounts(&[codex_folder(&host, ".codex-expired")])
+        });
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "login-expired");
+        assert_eq!(need.title, "Вход истёк");
+        assert_eq!(account.accounts[0].needs, [need]);
+    }
+
+    /// A login whose token is still good is found.
+    #[test]
+    fn a_login_before_its_expiry_is_found() {
+        let host = host().with_now_ms(TEN);
+        let profile = profile(&host, ".codex-plus", false);
+
+        let status = as_part(&host, || OpenAi::detect(&profile));
+
+        assert_eq!(status, ProfileStatus::Found);
     }
 
     /// The host walks the spend places: every session file, plain or
