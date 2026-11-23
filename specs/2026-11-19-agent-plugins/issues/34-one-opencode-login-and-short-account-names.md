@@ -83,3 +83,8 @@ the logo already says it, and the account's page names it.
   (logins), "OpenAI · unknown" (account name), login only, user's name
   and shared plugin (left panel); the tests of other left panel rows
   were changed to the short names.
+
+- 2026-11-23, the login parts are superseded by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  (Decisions 2 and 11): OpenCode is an agent only, with no login code, so
+  it gives no login it uses and no account is named by an OpenCode login.
+  The left panel still names an account by its name without the provider.

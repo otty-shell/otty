@@ -102,3 +102,10 @@ Left open for the owner:
   for the id only).
 - The given keys (slots such as `admin`) of an added account are per
   copy too, as for a found account.
+
+- 2026-11-23, superseded by `specs/2026-11-23-accounts-apart-from-profiles/spec.md` (Decisions 1,
+  5, 8 and 10). No host is read by every plugin that serves it: a provider
+  part reads only the logins of its own plugin's profiles and its own
+  logins, OTTY joins no accounts, and an account is kept by plugin +
+  account id. Accounts added by hand, whose copies hid alone, are gone. An
+  account two plugins find is still two accounts, each hidden alone.

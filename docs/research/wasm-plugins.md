@@ -292,6 +292,11 @@ kept), `spend_tally.rs`, `money_estimate.rs`, `price_source.rs`, `limits.rs`,
 | HTTP, SQLite, keyring, programs, hidden terminal | What to ask and how to read the answer |
 | Scheduling, timeouts, refresh rate, "once per account" | — |
 
+> Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: the host
+> merges no accounts any more (`merge_accounts` is gone), and the agent part names no accounts of a
+> profile. The provider part of the same plugin finds the accounts in the profile folders the host
+> gives it, and decides which logins are one account.
+
 ### 4.2 Big JSONL files
 
 - **Batches, not whole files.** A `line-reader` resource: the plugin opens a file it may read and
@@ -418,6 +423,10 @@ world agent {
 The `otty:provider` world is smaller: `balance(account)`, `limits(account)` and
 `bill(account, days)`, with `http` and `secrets` imports only.
 
+> Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: the agent
+> world has no `accounts`, and the provider world has `accounts(provider, folders)`, `numbers`,
+> `read-bill` and `log-in`, reading the logins itself inside the folders of a call.
+
 ## 5. Distribution
 
 - **Catalog repo** (`otty-shell/otty-plugins`, name open): one entry per plugin with the source
@@ -469,7 +478,9 @@ The `otty:provider` world is smaller: `balance(account)`, `limits(account)` and
   CPython … were designed to optimize for small, self-contained binaries" ([cpy-98]). They would
   work with the same WIT, but OTTY should document and test Rust only at first.
 - **Declarative parts in the same package.** The manifest names the agent (program, default
-  folder, folder variable, database variable, extra folders like `~/.claude*`), its launch,
+  folder, folder variable, database variable, extra folders like `~/.claude*` (superseded on
+  2026-11-23: OTTY shows only the default folder, and the user adds others, see
+  `specs/2026-11-23-accounts-apart-from-profiles/spec.md`, Decision 4), its launch,
   resume and login commands with `{session}` and `{config}` placeholders, and the newest tested
   version. All of today's `AgentDescriptor` and `Agent::launch/login` fit here. A `records.toml`
   can describe a simple JSONL agent: which files, which marker, and JSON pointers for time,

@@ -42,10 +42,15 @@ the folder into a new repository and replace what the parts read.
 - A provider part owns its accounts. It names the profiles of the agent
   parts of its own plugin it reads with `[[agents.provider.logins]]`: the
   agent part, the files it reads inside each profile folder (`read`),
-  the key files there with their key fields (`keys`, keys as handles),
-  and the variable that points the agent at a folder (`folder_env`).
-  OTTY calls `accounts` with the folders of those profiles, wherever
-  they are, and the rules apply only inside them and only for that call.
+  the files it may write and delete there, such as what a program it ran
+  left behind (`write`, never a key file), the key files there with their
+  key fields (`keys`, keys as handles), and the variable that points the
+  agent at a folder (`folder_env`). The paths are written from inside the
+  folder. OTTY calls `accounts` with the folders of those profiles,
+  wherever they are, and the rules apply only inside them and only for
+  that call. A key file outside every profile folder, such as one next
+  to the default folder, is listed under
+  `[[agents.provider.permissions.keys]]`, JSON fields of files only.
   The part gives each account it finds a stable id (OTTY keeps the
   user's name and Hide by it), a name, a kind, the folders it was found
   in and its needs; the same login in two folders is one account with
@@ -56,7 +61,10 @@ the folder into a new repository and replace what the parts read.
   the agent's login command pointed at it (`example-agent login` with
   `EXAMPLE_AGENT_HOME`), runs it in a terminal tab, and then calls
   `accounts` with that folder as `LoginFolder::OwnLogin`, read with the
-  rules of that entry. It is never a profile.
+  rules of that entry. It is never a profile. The agent keeps that login
+  fresh when the part runs it there to read the numbers, and the part
+  never renews a token itself. A login refused there is the need "Log in
+  again" on the account.
 - A provider part reads an account's numbers any way it can, only in the
   folders the account was found in (`account.found_in`): from the
   provider's server with the login there, or by asking the agent there,

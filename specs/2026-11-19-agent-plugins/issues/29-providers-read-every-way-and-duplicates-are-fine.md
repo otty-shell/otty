@@ -138,3 +138,11 @@ Left open for the owner:
   hides every copy (one entry).
 - A host two plugins serve under different provider ids becomes the id
   of the first; the second does not read it.
+
+- 2026-11-23, superseded by `specs/2026-11-23-accounts-apart-from-profiles/spec.md` (Decisions 5
+  and 8). A provider part no longer gets `login-facts` with the profiles of
+  every plugin: it finds its own accounts in the profiles of its own
+  plugin and in OTTY's own logins, and gives each a stable id. "Every way
+  it can" stays, but only inside those folders. Copies of one login made
+  by plugins reading each other's profiles no longer happen, and tokens
+  are no longer split by account.

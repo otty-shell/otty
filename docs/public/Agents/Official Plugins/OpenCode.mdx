@@ -1,22 +1,24 @@
 ---
 title: OpenCode
-description: What the official OpenCode plugin reads in OpenCode's data folder and database, and which provider plugins get the logins it finds.
+description: What the official OpenCode plugin reads in OpenCode's data folder and database, and why it shows no accounts.
 sidebar:
   order: 15
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Official · version 0.1.6 · install it from `assets/plugins/opencode/` of the OTTY repository with
-**Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)); its own
-repository will be `github.com/otty-shell/otty-plugin-opencode`
+Official · version 0.1.8 · install it from `assets/plugins/opencode/` of the OTTY repository with
+**Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
+repository will be `github.com/otty-shell/otty-plugin-opencode`.
 
 | Part                        | Kind  | Gives                                                                  |
 | --------------------------- | ----- | ---------------------------------------------------------------------- |
-| [OpenCode](#opencode-agent) | agent | The profile, sessions, tokens, the cost OpenCode wrote, logins. |
+| [OpenCode](#opencode-agent) | agent | The profile, sessions, tokens and the cost OpenCode wrote.              |
 
-It has no provider part: the accounts of OpenCode's logins are read by the plugins of their
-providers.
+It is an agent only, with no provider part, so OpenCode shows as a profile and never as an account.
+OpenCode keeps logins for many providers, but they tell little about the account: its ChatGPT
+login, for one, keeps its account and email hidden, so no limits, email or plan can be read with it.
+What OpenCode shows well are its sessions, its tokens and their money.
 
 ## OpenCode (agent)
 
@@ -24,36 +26,25 @@ providers.
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | Profile        | The data folder `~/.local/share/opencode`, or `opencode` in `XDG_DATA_HOME`.                          |
 | Reads          | The database `opencode.db` in it, or the one `OPENCODE_DB` names, read-only, with its write-ahead log: sessions, every answer of the history (provider, model, tokens, cost, session, folder), the agent's version. Never the tables with the text of a conversation. |
-| Logins, as handles | `auth.json`: the `key`, `access` and `refresh` field of each login. The `credential` table of the database: the same fields of its `value` column. When you logged in to a provider more than once, OpenCode keeps every login and marks the one it uses; only that one is read. |
+| Logins         | Never read. `auth.json` and the `credential` table of the database are still declared as keys, so OTTY never gives them to the part as text. |
 | Variables      | `XDG_DATA_HOME`, `OPENCODE_DB`.                                                                        |
 | Runs           | Nothing. OTTY runs `opencode --version` itself only when the database names no version.                 |
 | Writes         | Nothing. The database is opened read-only, so the plugin never locks it or changes it.                |
 | Sends          | Nothing.                                                                                              |
-| Program        | `opencode`, found on the `PATH` of your login shell or where OpenCode's installer puts it, `~/.opencode/bin/opencode`; OTTY then starts it by that path. Found nowhere, the profile shows "program not found" with **Install OpenCode**, which runs OpenCode's install script, `curl -fsSL https://opencode.ai/v2/install \| bash`, in a terminal tab you see, and **Open opencode.ai**, OpenCode's install page. |
-| Commands       | New session `opencode`, continue `opencode -s <id>`, Log in `opencode auth login`.                     |
+| Program        | `opencode`, found on the `PATH` of your login shell or where OpenCode's installer puts it, `~/.opencode/bin/opencode`. OTTY then starts it by that path. Found nowhere, the profile shows "program not found" with **Install OpenCode**, which runs OpenCode's install script, `curl -fsSL https://opencode.ai/v2/install \| bash`, in a terminal tab you see, and **Open opencode.ai**, OpenCode's install page. |
+| Commands       | New session `opencode`, continue `opencode -s <id>`.                                                    |
 
-## Logins found here
-
-| Login in OpenCode                        | Read by                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| ChatGPT login                            | [OpenAI](../openai/#openai-provider): its limits, with OpenCode's token. The same login in Codex is the same account. A login whose token names no account (OpenCode's "chatgpt-token-sharing") is still a login, shown as "unknown". Two such logins of the same person are one account. |
-| Anthropic, OpenAI, DeepSeek or OpenRouter key | The plugin of that provider, known by the key's fingerprint.   |
-| Claude login                             | Left out: OpenCode keeps nothing that tells which account it is.    |
-| A key for a provider no plugin serves    | Listed with the need **No provider plugin**.                        |
+A profile is found whenever its data folder holds a file.
 
 ## What it asks you for
 
-Each need carries the label "OpenCode plugin". Its texts come in all ten languages of OTTY.
-
-| Need         | When                                                                                     | Button |
-| ------------ | ---------------------------------------------------------------------------------------- | ------ |
-| Needs login  | Nobody is logged in with OpenCode.                                                       | **Run opencode auth login** |
-| Log in again | A provider refused a login OpenCode keeps, or it expired, such as a ChatGPT login read by the OpenAI plugin. | **Run opencode auth login** |
+Nothing. OpenCode works with no login, with its free models, so the plugin never says a login is
+missing.
 
 ## The money
 
-OpenCode writes what each answer cost. OTTY shows that cost ("Cost written by the agent"), not an
-estimate from the list prices.
+OpenCode writes what each answer cost. OTTY shows that cost as it is, with no mark. An answer with no
+cost written is priced at the API price of its model, marked "at API prices".
 
 <Aside type="tip">
 OTTY only reads OpenCode's files and database.

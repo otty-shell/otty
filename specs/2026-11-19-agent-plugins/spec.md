@@ -173,6 +173,9 @@ OTTY release.
   where their key sits and what else the files tell. A profile nobody is
   logged in with is `not-logged-in(need)`: the need's `run` is the
   login command (issue 20).
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  > (Decision 2): the agent part reports no logins and no accounts, only
+  > profiles, sessions, tokens with their money, and `not-logged-in(need)`.
 - **Provider part**: given a key handle, says whose account it is (account
   id or organization id, email, plan) and reads the account's numbers:
   limits (with the extra usage a subscription may buy), credits, Left, Key
@@ -211,6 +214,13 @@ OTTY release.
   agent contract) and shows its need, such as `run(codex)` or
   `run(opencode auth login)` (owner, 2026-11-21, issue 20). OTTY never
   renews a login.
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  > (Decisions 5, 8 and 9): `login-facts`, `found-in` of other plugins'
+  > profiles and `login-refused` are gone. The provider part finds its own
+  > accounts with `accounts(provider, folders)` in the profiles of its own
+  > plugin and in OTTY's own logins, reads only there, and gives a refused
+  > or expired login as a need of the account. "Every way it can" stays,
+  > inside those folders.
 - **A part gives its own needs** (owner, 2026-11-21, issue 20). A need is
   a stable id (so the same need from two reads shows once), a title, a
   text and one action: `run(command)` in a terminal tab, `ask-key` (a
@@ -258,6 +268,11 @@ OTTY release.
   same key and that plugin, so each copy hides alone (issue 31). Two
   agent parts with one agent id: the first installed reads it, and the
   user turns the other off in Plugins mode.
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  > (Decisions 1, 5, 8 and 10): a provider part reads only its own plugin's
+  > profiles and its own logins, so no host is read by every plugin, accounts
+  > added by hand are gone, and an account is kept by plugin + account id.
+  > Two agent parts with one agent id stay as above.
 - **Accounts and profiles are not plugins.** OTTY joins one account found
   in several agents by account id, organization id, email, or SHA-256 key
   fingerprint, as today (`merge_accounts`), within one provider id;
@@ -266,11 +281,18 @@ OTTY release.
   fine (issues 29 and 31). An account no installed plugin reads is shown, with
   the line that no installed plugin reads it; its sessions and their
   estimated money still count.
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  > (Decisions 1 and 8): OTTY joins no accounts (`merge_accounts` is gone).
+  > Whether two logins are one account is the plugin's call, and an account
+  > exists only when a provider part finds it.
 - **Hidden accounts are left out of every total** (issue 29): no read
   starts for them, and their tokens go, in the totals by account, to
   another copy of the same login the user did not hide, else to no
   account. A copy is hidden alone: the other copies of the login stay
   shown, read and counted (issue 31).
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+  > (Decision 1): there are no totals by account. A hidden account is still
+  > not read.
 
 ### 5. Plugins never see a raw key
 
@@ -1413,6 +1435,12 @@ table above.
 
 ### Identity and links do not depend on a provider plugin
 
+> Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`
+> (Decisions 1, 5 and 8): an account's identity is the plugin and the
+> stable id its provider part gives, there are no Pays through and Used by
+> links, and with no provider part there is no account. Tokens and their
+> money still work with no provider part.
+
 - An account's identity is (provider reference, account id or
   organization id or email or key fingerprint). The provider reference is
   the provider id when the agent part named one, else the host the key is
@@ -1430,6 +1458,13 @@ table above.
   prices in the host. Both work with no provider part.
 
 ### What the UI shows
+
+> The account rows of this table are superseded on 2026-11-23 by
+> `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: with no provider part, or with it
+> off, there are no accounts of it and no "no provider plugin" or "part is
+> off" need. Accounts found only in an agent part's profiles leave with it,
+> and a provider part reads only its own plugin's logins, so no host is read
+> by every plugin.
 
 | Situation | Accounts | Profiles | Needs and messages |
 | --- | --- | --- | --- |

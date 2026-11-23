@@ -12,11 +12,15 @@ import { Aside } from '@astrojs/starlight/components';
 - **OTTY only reads the agents' files.** It opens their databases read-only and never writes, renews
   or copies another agent's login. The one exception, deleting the session files Claude Code leaves
   after OTTY reads its `/usage`, is on the [Anthropic page](../official-plugins/anthropic/).
-- **OTTY never stores a key or a token.** It saves only where a key is: a file path or the name of an
-  environment variable.
+- **OTTY never renews a token, in any folder.** In [OTTY's own login](../overview/#add-account) the
+  agent's own login command writes the login, and the agent renews it there itself when a plugin
+  starts it to read the numbers.
+- **OTTY never stores a key or a token.** It saves only where a key you gave is: a file path or the
+  name of an environment variable.
 - **Plugins never see a key.** OTTY reads the key and hands the plugin a handle in its place.
 - **Each plugin part may touch only what its permissions list**, checked on every call. A part may
-  send requests only to the hosts it lists, and gets only the keys of its own provider.
+  send requests only to the hosts it lists. A provider part reads logins only in the folders OTTY
+  gives it for that call: the profiles of the agents of its own plugin and its own logins.
 
 ## How a plugin reads
 
@@ -69,11 +73,14 @@ against the permissions of the part that is running.
 
 A read of a ChatGPT login, for example:
 
-1. The Codex part of the OpenAI plugin says: a ChatGPT login sits in `~/.codex/auth.json`, field
-   `/tokens/access_token`, for the provider `openai`.
-2. OTTY joins it with the same login found in OpenCode: one account.
-3. The OpenAI provider part gets a handle and builds a request to `chatgpt.com` with the handle in
-   its `Authorization` header. It may not read `~/.codex` itself.
+1. OTTY asks the OpenAI provider part for its accounts and gives it the folder of each Codex
+   profile, such as `~/.codex`, and the folders of its own logins.
+2. For that call only, the part may read there what its manifest lists: `auth.json` with every
+   token replaced by a handle, `config.toml` and the session files. Through the handle it reads the
+   claims of the login's id token (account, email, plan), never the token, and answers: one ChatGPT
+   account, found in `~/.codex`.
+3. To read the limits, the part builds a request to `chatgpt.com` with the handle in its
+   `Authorization` header.
 4. OTTY reads the token from the file, puts it into the header, sends the request, returns the answer
    and drops the token.
 
@@ -85,15 +92,14 @@ A read of a ChatGPT login, for example:
 | A key in a database      | The same for the declared column; the plugin's SQL reads that column as `NULL`.                              |
 | What a handle allows     | Put the key into a request header, get its fingerprint, check how it starts, read the claims of a login token (never its signature). |
 | When the key is read     | Right before each use, and dropped right after.                                                             |
-| Keys you add             | Only the file path or the variable name is saved, in `~/.config/otty/agents.json`. To read a variable, OTTY runs `printenv` in your login shell, so your shell's start files run then. |
-| Fingerprints             | Kept in memory only, to tell when two places hold the same key.                                             |
+| Keys you give for a need | Only the file path or the variable name is saved, in `~/.config/otty/agents.json`. To read a variable, OTTY runs `printenv` in your login shell, so your shell's start files run then. |
+| Fingerprints             | A hash of a key, which a plugin may get through the handle, such as to know one key in two folders as one account. The id of such an account holds it, and `agents.json` keeps that id when you rename or hide the account. The key can not be read back from it. |
 
-A provider part gets the handles of its own accounts only: logins and keys an agent part found for
-its provider id or its hosts, and keys you added for it. A host two plugins serve is read by both,
-each under its own provider id. With each read it is told every profile the
-account was found in, with the command its agent starts there, so it may read the numbers by asking
-the agent itself, such as Claude Code's `/usage` panel, with the programs and files its own
-permissions list. A key that is not at its place reads nothing, not a failure.
+A provider part gets keys only from the files its manifest lists inside the folders of a call, and
+the keys you gave for its needs. It never sees the profiles of another plugin. With each read of an
+account it gets the folders the account was found in, so it may read the numbers by asking the
+agent there, such as Claude Code's `/usage` panel, with the programs its own permissions list. A
+key that is not at its place reads nothing, not a failure.
 
 ## Who OTTY talks to
 
@@ -103,7 +109,7 @@ permissions list. A key that is not at its place reads nothing, not a failure.
 | `chatgpt.com`, `api.openai.com`   | OpenAI plugin: limits of a ChatGPT login, bill of an organization.   | [OpenAI](../official-plugins/openai/#openai-provider)   |
 | `api.deepseek.com`                | DeepSeek plugin: money left.                                         | [DeepSeek](../official-plugins/deepseek/)               |
 | `openrouter.ai`                   | OpenRouter plugin: key limit.                                        | [OpenRouter](../official-plugins/openrouter/)           |
-| `raw.githubusercontent.com`       | At most once a day, while a profile pays with an API key.            | The LiteLLM price file, a plain `GET` with no login.    |
+| `raw.githubusercontent.com`       | At most once a day, while a profile is shown.                        | The LiteLLM price file, a plain `GET` with no login.    |
 | `api.github.com` and GitHub's download servers | When you add a plugin from GitHub, once a day, and on **Check for updates**. | The list of the repository's releases and the files of the one installed. No login. |
 
 A plugin added from a folder needs no network to install. OTTY sends nothing to the OTTY team.
@@ -120,8 +126,9 @@ Every request a plugin makes:
 | Program                                     | When                                                                                  |
 | ------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `<agent> --version`                         | For a profile whose files name no version, once per agent in a run, while Agents mode is on screen. |
-| Programs a plugin part lists, such as `codex app-server` | While Agents mode is on screen, at most once in about 5 minutes per profile. Each runs at most 10 seconds once, or 60 seconds when talked to line by line. |
-| Hidden terminals a part lists, such as `claude` for `/usage` | The same; in OTTY's own folder `~/.cache/otty/agent-probe`, which nobody sees, for at most 60 seconds. |
+| Programs a plugin part lists, such as `codex app-server` | While Agents mode is on screen, at most once in about 5 minutes per account. Each runs at most 10 seconds once, or 60 seconds when talked to line by line. |
+| Hidden terminals a part lists, such as `claude` for `/usage` | The same, in OTTY's own folder `~/.cache/otty/agent-probe`, which nobody sees, for at most 60 seconds. |
+| The login command a provider part gives, such as `codex login` | When you pick **Log in with *agent*** or **Log in again**, in a terminal tab you see, pointed at the folder of OTTY's own login. |
 
 OTTY starts them through your login shell, so they find your agents as your terminal does. Only the
 environment variables the part lists are passed to them.
@@ -130,9 +137,10 @@ environment variables the part lists are passed to them.
 
 | File or folder                              | Holds                                                                     |
 | ------------------------------------------- | ------------------------------------------------------------------------- |
-| `~/.config/otty/agents.json`                | Your names, hidden items, added accounts and the keys you gave for a need (path or variable name), whether the keyring may be read. |
+| `~/.config/otty/agents.json`                | Your names, hidden items, the profiles you added, OTTY's own logins (an id and the plugin, provider part and agent of each, never the login), the keys you gave for a need (path or variable name), whether the keyring may be read. |
 | `~/.config/otty/plugins.json`               | The installed plugins, their sources, file hashes, granted permissions, parts on or off, your choices. |
 | `~/.local/share/otty/plugins/`              | The files of the installed plugins.                                       |
+| `~/.local/share/otty/accounts/<id>/`        | OTTY's own logins, one folder each. OTTY makes it empty, the agent's login command writes the login, and OTTY deletes it on **Remove** or when the login did not finish. |
 | `~/.cache/otty/plugins/`                    | The compiled plugins.                                                     |
 | `~/.cache/otty/prices/litellm.json`         | The last good copy of the LiteLLM prices.                                 |
 | `~/.cache/otty/agent-probe/`                | The working folder of hidden terminals.                                   |

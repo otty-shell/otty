@@ -1,6 +1,7 @@
 # Agents mode: accounts apart from profiles
 
-Status: decisions agreed with the owner on 2026-11-23
+Status: built on 2026-11-23 in issues 01 to 11, after the decisions were
+agreed with the owner on 2026-11-23
 
 This spec changes Agents mode of spec `2026-11-19-agents-accounts` and the
 plugin contracts of spec `2026-11-19-agent-plugins`. Where they differ,
@@ -54,6 +55,8 @@ A plugin fills either side or both, and OTTY draws no line between them.
   `~/.local/share/otty/accounts/<id>/`. Only the provider part of the
   plugin that made it reads it. It never shows as a profile, and its
   projects and sessions never show anywhere.
+  Built as: the screen calls it **OTTY's own login**, the code `OwnLogin`,
+  and the WIT case `own-login`.
 - **Login**: what an agent keeps after the user logs in: tokens or a key
   in its folder (or in the system keychain on macOS).
 - **Account**: where the user pays at a provider: a subscription (a
@@ -81,6 +84,11 @@ a profile's tokens, and for some logins (OpenCode's ChatGPT login) it can
 not even know whose login it is. A link that is often missing or wrong is
 worse than no link. The user wants to see what they work with and where
 they pay, and both stand on their own.
+
+Built as (issue 11): no link inside either. A profile does not read the
+limits or the bill of an account found in its folder, and does not decide
+anything by the accounts found there. Each account reads its own numbers,
+and each organization its own bill.
 
 ### 2. The agent part does agent things only
 
@@ -114,6 +122,13 @@ Why (owner): on a subscription the number still answers a real question,
 "what would this work cost me on the API", and it needs no account. The
 mark keeps it honest.
 
+Built as (issue 06): each `answer` carries `cost: option<answer-cost>`,
+`written(u64)` or `at-api-prices(u64)` in millionths of a dollar. The host
+call is `price-of(model, provider) -> option<model-price>` of the imported
+interface `otty:agents-agent/prices`, and the part picks the long prompt
+price for each request. Money stays off in the usage block only until the
+list prices are read, since there is nothing to price with.
+
 ### 4. OTTY finds only the default profiles
 
 When an agent part is on, OTTY shows its default profile (the folder the
@@ -125,6 +140,9 @@ as today. OTTY no longer scans the home folder for `~/.codex*` or
 Why: a found folder was often an old copy or another tool's, and the scan
 existed mostly to find more logins. With accounts apart, the user adds a
 second profile when they work with it.
+
+Built as (issue 02): OTTY takes the place the part marks `is-default` and
+ignores any other, and uses `~/.<id>` when none is marked.
 
 ### 5. The provider part owns accounts, from logins of its own plugin
 
@@ -142,6 +160,12 @@ A provider part never sees the profiles of another plugin.
 Why (owner): the plugin that knows an agent's files also knows how its
 login works and whose it is. Reading another plugin's logins is what made
 copies (issues 29 and 31) and nameless accounts (OpenCode).
+
+Built as (issues 04 and 05): the manifest names the profiles a part reads
+with `[[agents.provider.logins]]` entries (see "Built as" under the WIT
+sketch). A login file outside every profile folder, such as `~/.claude.json`
+of the default `~/.claude`, is declared under
+`[[agents.provider.permissions.keys]]`, JSON fields of files only.
 
 ### 6. Add account: "Log in with <agent>" makes a hidden profile
 
@@ -167,6 +191,14 @@ Claude Code profile they work in. CodexBar does the same for Codex with
 its `managed-codex-homes/<uuid>/` folders. Using the agent's own login
 command means OTTY never handles a password or an OAuth flow itself.
 
+Owner, 2026-11-23: the Claude login is `claude auth login --claudeai`.
+
+Built as (issue 08): Add account first picks a provider part, then **How**:
+"Log in with <agent>" with the command it runs, and "Paste a key" drawn
+off with "Coming later". The id is 16 hex digits. The folder is made only
+on Continue, the tab is titled "Log in with <agent>", and `log-in` gives
+`option<command>`, none for a part that offers no "Log in with".
+
 ### 7. The agent program keeps OTTY's own login fresh
 
 OTTY never refreshes a token itself, in any folder. In a hidden profile
@@ -178,6 +210,16 @@ with `CLAUDE_CONFIG_DIR=<folder>`.
 Why: renewing a token by hand can rotate it away from the agent and log
 the agent out (Decision 3 of spec `2026-11-19-agents-accounts`). Letting
 the agent do it in a folder only OTTY uses keeps that rule.
+
+Owner, 2026-11-23: OTTY reads its own logins on the usual schedule while
+it runs, and runs nothing in the background when it is closed.
+
+Built as (issue 09): the OpenAI part reads an own login first with `codex
+app-server` there, even with the token past its time, and never reads the
+session files of that folder. The Anthropic part sends no token past its
+time and runs the `/usage` probe there. The probe's `write` permission
+moved into its `logins` entry, so it cleans up inside the folders of a
+call only, an own login folder too.
 
 ### 8. What the plugin tells about an account
 
@@ -239,6 +281,13 @@ logged in, both get this need from you, and I can act in either place";
 profile". Showing a profile's missing login in Accounts would not be
 understood: there is no account yet. The profile also keeps its own needs
 (format changed, folder not found, agent missing).
+
+Built as (issue 07): for one folder both parts give the very same need
+(same id, texts and command). Codex: "The login expired" when the access
+token's `exp` passed, running `codex login` with `CODEX_HOME`. Claude Code:
+when the token of `.credentials.json` is past its time with no refresh
+token beside it, running `claude` in the folder. The "Log in again" need of
+an own login runs the part's `log-in` command in that folder.
 
 ### 10. Accounts added by hand are removed, "paste a key" comes later
 
@@ -337,6 +386,11 @@ Two more that follow from the decisions:
   again** and **Remove**. Remove deletes the hidden profile folder after a
   question. The account leaves only when no other place holds its login.
   No Used by.
+- Built as (issue 09): the menu is Rename…, Log in again, Open usage page,
+  a line, Hide or Show again, and Remove, the last two items of an own
+  login only. The header of such an account has the mark "OTTY's own
+  login" and a small Log in again button, and its row in the left panel
+  the tag "OTTY".
 
 ### All accounts
 
@@ -368,6 +422,9 @@ Two more that follow from the decisions:
   that offers it, each with the provider's logo. Picking one runs the
   login in a terminal tab (Decision 6). With no such part installed, the
   dialog says so and offers Plugins mode. "Paste a key" is not offered yet.
+- Built as (issue 08): a Provider select of every provider part that is on,
+  then How with "Log in with <agent>" and "Paste a key" drawn off (see
+  Decision 6). A provider with no agent login says so, and Continue is off.
 
 ### Needs
 
@@ -463,6 +520,12 @@ interface provider {
 }
 ```
 
+Built as (issues 05, 06 and 08): the case `own` is `own-login`, since
+`own` is a WIT keyword. `log-in` returns `option<command>`. `profile-status`
+is `found`, `not-logged-in(need)` or `config-folder-not-found`. The prices
+an agent part asks for are the imported interface `otty:agents-agent/prices`
+with `price-of`, and an `answer` carries its `cost` (Decision 3).
+
 The manifest of a provider part names the agent parts whose profiles it
 reads, and whether it offers "Log in with":
 
@@ -481,6 +544,26 @@ Permissions are applied by context as today. The part may read its
 `login_files` and run its programs only inside the login folders OTTY
 passes to the current call, so a profile the user added in any folder
 works without a wider glob.
+
+Built as (issues 04, 08 and 09): one `[[agents.provider.logins]]` entry per
+agent part, with paths written from inside the folder. `read` and `write`
+are globs there, `keys` the key files with their JSON fields, `folder_env`
+the only variable a program of the part may get set to a folder of the
+call, and `log_in = true` offers "Log in with" (at most one entry of a
+part). The part's `run` and `terminal` stay in `[agents.provider.permissions]`:
+
+```toml
+[[agents.provider.logins]]
+agent = "codex"
+folder_env = "CODEX_HOME"
+log_in = true
+read = ["config.toml", "sessions/**", "archived_sessions/**"]
+
+[[agents.provider.logins.keys]]
+files = ["auth.json"]
+fields = ["/OPENAI_API_KEY", "/tokens/access_token", "/tokens/id_token",
+          "/tokens/refresh_token"]
+```
 
 ## What OTTY stores
 
@@ -574,15 +657,12 @@ Code that goes or is rewritten (not a full list):
   `CLAUDE_CONFIG_DIR` give a separate Keychain entry, so a hidden profile
   does not log the user's own Claude Code out? CodexBar chose not to keep
   its own Claude login, maybe for this reason. Until checked on a Mac,
-  "Log in with Claude Code" may be Linux only.
+  "Log in with Claude Code" may be Linux only. Built as: both official
+  parts offer "Log in with" on every system for now, and the public
+  Anthropic page says it is not checked on macOS.
 - **Money of a profile on a subscription.** Besides the "at API prices"
   mark, should the profile say it is on a subscription (it no longer knows
   its account), or show nothing more?
-- Answered 2026-11-23: a cost the agent writes is shown as it is
-  (Decision 3), the Claude login is `claude auth login --claudeai`, OTTY
-  reads its own logins on the usual schedule while it runs and runs
-  nothing in the background when it is closed, and whether a login
-  expired is the plugin's call on both sides (Decision 9).
 
 ## Later
 

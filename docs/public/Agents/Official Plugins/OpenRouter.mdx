@@ -1,13 +1,13 @@
 ---
 title: OpenRouter
-description: What the official OpenRouter plugin sends to read the limit of an OpenRouter key and how much of it was used, and where its keys come from.
+description: What the official OpenRouter plugin sends to read the limit of an OpenRouter key and how much of it was used, and why it has no accounts yet.
 sidebar:
   order: 17
 ---
 
-Official · version 0.1.1 · install it from `assets/plugins/openrouter/` of the OTTY repository with
-**Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)); its own
-repository will be `github.com/otty-shell/otty-plugin-openrouter`
+Official · version 0.1.5 · install it from `assets/plugins/openrouter/` of the OTTY repository with
+**Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
+repository will be `github.com/otty-shell/otty-plugin-openrouter`.
 
 | Part       | Kind     | Gives                                                  |
 | ---------- | -------- | ------------------------------------------------------ |
@@ -17,25 +17,19 @@ repository will be `github.com/otty-shell/otty-plugin-openrouter`
 | ---------------------------------------- | ---------------------------- | ------------------------------------ |
 | `GET https://openrouter.ai/api/v1/key`   | The key in `Authorization`. | Every read of the account's numbers. |
 
-The keys it gets, only as handles:
-
-- a key you add: **Add account** → OpenRouter, with a file that holds it or an environment variable;
-- a key an agent part found for `openrouter.ai`, such as the key of a Claude Code profile whose
-  `ANTHROPIC_BASE_URL` is `https://openrouter.ai/api`, or an OpenRouter key of OpenCode.
-
-OpenRouter does not tell whose account a key is, so OTTY knows the account by the key's fingerprint.
-It reads no files and runs nothing. With no OpenRouter key found, it does nothing.
+It has no accounts yet. No agent of this plugin keeps a login, and a provider part never reads the
+profiles of another plugin, so an OpenRouter key in the settings of Claude Code (with
+`ANTHROPIC_BASE_URL` set to `https://openrouter.ai/api`) or in OpenCode is no account. The answers such a
+profile sends to `openrouter.ai` are still priced as OpenRouter's, at API prices, on the profile.
+Accounts will come with **Paste a key** in Add account, which is shown but not offered yet: OTTY
+will keep the key in the system keyring and give the part only a handle, under the slot `key`. It
+reads no files and runs nothing.
 
 **Open usage page** opens `openrouter.ai/activity`. Its icon is a letter icon until a logo that may
 be shipped is found.
 
 ## What it asks you for
 
-The need carries the label "OpenRouter plugin". Its texts come in all ten languages of OTTY.
-
-| Need                | When                                    | Button |
-| ------------------- | --------------------------------------- | ------ |
-| The key was refused | OpenRouter refused the key of an account you added with **Add account**. | **OpenRouter key…**: the field of the key, with the file or variable of the old one. Make a new key on `https://openrouter.ai/settings/keys` (the field's button opens it) and give its file or variable; it takes the old one's place, and the account is read again with it. |
-| The key was refused | OpenRouter refused a key an agent keeps, such as one in OpenCode's settings. | **Open openrouter.ai**: `https://openrouter.ai/settings/keys`, where you make a new key. Put it where the agent keeps the old one. |
-
-It asks for no key of its own: a key no agent uses is added with **Add account**.
+Nothing while it has no accounts. For a key OpenRouter refuses, the part has the need **The
+key was refused**, labelled "OpenRouter plugin", in all ten languages of OTTY, with **Open openrouter.ai**,
+`https://openrouter.ai/settings/keys`, where you make a new key.

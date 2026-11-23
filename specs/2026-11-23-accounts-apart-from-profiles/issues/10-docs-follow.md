@@ -1,6 +1,6 @@
 # 10 Docs follow: profiles and accounts apart
 
-Status: ready
+Status: done
 Blocked by: 09
 
 ## Why
@@ -69,3 +69,52 @@ supersedes").
 - The checks of `AGENTS.md` are not needed unless a Rust file changes.
 
 ## Comments
+
+- 2026-11-23, done. The docs describe what issues 01 to 09 and 11 built.
+
+  Public pages: Overview tells profiles and accounts as two lists with no
+  link, the default and added profiles only, accounts found by the
+  provider part of the same plugin, Found by OTTY in two groups, the
+  account page with Source, the usage block with By project and By model,
+  money "at API prices", login needs wherever met, and Add account with
+  "Log in with <agent>", Log in again and Remove of OTTY's own login. What
+  OTTY Reads and Sends: a provider part reads logins only in the folders of
+  a call, OTTY never renews a token, the login command OTTY runs, and
+  `agents.json` and `<data dir>/accounts/<id>/` in what OTTY writes. Plugins:
+  the group "Logins in <Agent> profiles" in place of "Found logins", and
+  what happens when a part is off or missing now. Write a Plugin: the
+  agent and provider contracts as built (`accounts`, `numbers`,
+  `read_bill`, `log_in`, `LoginFolder`, the stable account id, needs on
+  the account), `[[agents.provider.logins]]` with `read`, `write`, `keys`,
+  `folder_env` and `log_in`, `[[agents.provider.permissions.keys]]`, the
+  money of an answer (`answer_cost`, `price_of`), login needs, OTTY's own
+  login, a template-based test, and no `add_by_hand`. The plugin pages give
+  the current versions (OpenAI and Anthropic 0.2.12, OpenCode 0.1.8,
+  DeepSeek and OpenRouter 0.1.5) and what each part does now, and the
+  Anthropic page notes that "Log in with Claude Code" is not checked on
+  macOS.
+
+  READMEs: the template README also tells `write` and
+  `[[agents.provider.permissions.keys]]` and how its own login stays
+  fresh. The other plugin READMEs, `crates/agents`, `crates/plugins/*`
+  were already true. `otty-app-agents` now names the accounts and Add
+  account, `otty-app-agents-io` no longer reads limits by profile and says
+  it deletes only the folders of OTTY's own logins. The lib docs (`.rs`)
+  were left as they are, since this issue changed no Rust: the first line
+  of `crates/agents/src/lib.rs` ("the providers they pay through") and of
+  `crates/app/features/agents/core/src/lib.rs` ("the accounts the coding
+  agents pay through") still need a word change in a later Rust change.
+
+  Earlier specs: notes at Decisions 2, 4, 6 and the Add account of
+  Decision 7 of `2026-11-19-agents-accounts`, at the bullets Agent part,
+  Provider part, No fight over names, Accounts and profiles are not
+  plugins and Hidden accounts of Decision 4, the section Identity and
+  links and the account rows of What the UI shows of
+  `2026-11-19-agent-plugins`, comments on its issues 29, 31 and 34, and
+  notes in `docs/research/wasm-plugins.md`. The spec has "Built as" notes
+  where the code differs (own login words, issue 11's inner links, the
+  answer `cost` and `prices` interface, `is-default`, the `logins` entries,
+  the Add account dialog, the own login reads, the shared login need, the
+  account menu, the WIT case `own-login` and `option<command>`), its
+  answered open questions moved into Decisions 6 and 7, and its status
+  says it is built. The grep of "Done when" finds nothing.

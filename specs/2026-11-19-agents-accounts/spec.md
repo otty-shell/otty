@@ -74,6 +74,13 @@ The left panel has **Accounts**, **Profiles** and **Projects**.
 
 ### 2. OTTY finds everything it can
 
+> Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: OTTY shows only the
+> default profile of each agent and the ones the user added (its Decision 4),
+> and finds no extra folders. Accounts are found by the provider part of the
+> same plugin in that plugin's profiles and in OTTY's own logins, and OTTY
+> joins no accounts (its Decisions 1, 5 and 8). Found by OTTY lists profiles
+> and accounts in two groups with no links.
+
 - Profiles: the default folders of each known agent, plus extra folders of
   the same agent found in the home folder when they hold its login or
   sessions (`~/.claude*`, `~/.codex*` today). Profiles the user added stay
@@ -102,6 +109,10 @@ terminal tab). After the user logs in there, OTTY picks the new login up.
 
 ### 4. Tokens belong to profiles, attributed per provider and model
 
+> Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: tokens belong to
+> profiles only and are never tied to an account. Their money is the cost
+> the agent wrote, else the tokens at API prices (its Decisions 1 and 3).
+
 - Each token record carries (provider, model). When the agent writes the
   provider (Kilo, OpenCode, Codex per session), it is used; when it does
   not (Claude Code), the provider of the profile's login or base URL is
@@ -127,6 +138,12 @@ terminal tab). After the user logs in there, OTTY picks the new login up.
   one ChatGPT account cause one request.
 
 ### 6. Pages
+
+> Partly superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: **Used by**,
+> **Pays through**, the Accounts chips of a project, the **By account** tab
+> and the **Account** line of Session statistics are gone, and Money is never
+> off for a subscription (its Decisions 1 and 3). Account info shows
+> **Source** in place of Found in.
 
 - **All accounts**: table Account, Provider, Now; **Needs you** with the
   account needs only (to-do list: title, line, one button; rows split by
@@ -179,6 +196,10 @@ terminal tab). After the user logs in there, OTTY picks the new login up.
   Moonshot money; Anthropic or OpenAI organization bill with an admin key),
   and a key file or an environment variable. OTTY saves only the path or
   the variable name.
+  > Superseded on 2026-11-23 by `specs/2026-11-23-accounts-apart-from-profiles/spec.md`: Add account by the
+  > place of a key, Edit key… and Remove of such an account are gone (its
+  > Decision 10). Add account now makes OTTY's own login with "Log in with
+  > <agent>" (its Decision 6), and its menu has Log in again and Remove.
 - Names, hidden items, added accounts and admin key paths are saved in
   `~/.config/otty/agents.json`.
 

@@ -1,6 +1,7 @@
-//! What OTTY knows about coding agents and the providers they pay
-//! through, with no agent or provider named in its code: the parts of
-//! plugins read them (spec 2026-11-19-agent-plugins, Decision 1).
+//! What OTTY knows about coding agents and, apart from them, the accounts
+//! of providers, with no agent or provider named in its code: the parts
+//! of plugins read them (spec 2026-11-19-agent-plugins, Decision 1, and
+//! spec 2026-11-23-accounts-apart-from-profiles).
 //!
 //! Each agent implements [`Agent`]: it says how to find its default
 //! [`Profile`], whether a profile is connected, and how to start or continue

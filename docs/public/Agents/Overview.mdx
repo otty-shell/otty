@@ -1,6 +1,6 @@
 ---
 title: Agents Mode
-description: What Agents mode shows about your coding agents and the accounts they pay through, where each number comes from, and what needs you.
+description: What Agents mode shows about your coding agents and the accounts where you pay, where each number comes from, and what needs you.
 sidebar:
   label: Overview
   order: 10
@@ -8,43 +8,33 @@ sidebar:
 
 import { Aside } from '@astrojs/starlight/components';
 
-Agents mode shows two things side by side:
+Agents mode shows two things side by side, and they do not know about each other:
 
-- **Accounts**: where you pay. Subscriptions with their limits and credits, keys with the money left
-  or spent on them.
-- **Profiles**: what you work with. Each agent and its folder, with its sessions, projects and the
-  tokens and money they used.
+- **Profiles**: what you work with. Each agent and its folder, with its sessions, projects, the
+  tokens they used and what those tokens would cost at API prices.
+- **Accounts**: where you pay. Subscriptions with their limits and credits, keys and organizations
+  with their money and bills, as the provider tells them.
+
+OTTY draws no line between the two. A profile does not say which account paid for its tokens, and
+an account does not say which profiles use it: OTTY can not know that for sure, and for some logins
+it can not even tell whose login it is. A link that is often missing or wrong is worse than none, so
+each side stands on its own.
 
 OTTY finds both by itself in the agents' folders on your computer. You act only where nothing else
-works: allow the system keyring, give a key a plugin asks for, add a key no agent uses, or log in
-again in an agent.
+works: log in with an agent, give a key a plugin asks for, or allow the system keyring.
 
 OTTY has no code for any agent or provider by name. What it knows comes from
 [plugins](../plugins/), and OTTY comes with none: on the first start Agents mode says that no agent
-plugin is on, with **Manage plugins…**, which opens Plugins mode. Install the plugins of the agents and providers you use; the
+plugin is on, with **Manage plugins…**, which opens Plugins mode. Install the plugins of the agents and providers you use. The
 five [official plugins](../official-plugins/anthropic/) cover Claude Code, Codex, OpenCode,
 Anthropic, OpenAI, DeepSeek and OpenRouter. See
 [Install the official plugins](../plugins/#install-the-official-plugins).
 
-## Accounts and profiles
-
-One account can be used by several agents, and one agent can pay through several accounts. A
-profile's page lists its accounts under **Pays through**; an account's page lists its profiles
-under **Used by**. An account chip looks the same everywhere: the logo of the provider, the login
-or the name you gave the account, and its number. In a narrow window the chips move to the next
-line, and a chip too wide for the line ends its name with "…"; the whole name is in its tooltip.
-
-Every page of the main area, a project's page too, keeps a minimum width. In a narrower window the
-page scrolls sideways, and a project's sessions table still scrolls up and down on its own.
+## Profiles and accounts
 
 <figure class="not-content">
 <svg viewBox="0 0 680 230" width="100%" role="img" aria-labelledby="accounts-profiles-title" style="max-width: 680px; font-family: var(--sl-font); font-size: 13px;">
-  <title id="accounts-profiles-title">Three profiles on the left, three accounts on the right. Codex and OpenCode pay through the same ChatGPT login; OpenCode also pays through a DeepSeek key.</title>
-  <defs>
-    <marker id="accounts-profiles-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
-    </marker>
-  </defs>
+  <title id="accounts-profiles-title">Three profiles on the left and three accounts on the right, with no lines between them. Each side is read on its own.</title>
   <text x="105" y="18" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-weight: 600;">Profiles</text>
   <text x="575" y="18" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-weight: 600;">Accounts</text>
   <g>
@@ -60,62 +50,72 @@ page scrolls sideways, and a project's sessions table still scrolls up and down 
   </g>
   <g>
     <rect x="480" y="32" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-    <text x="575" y="53" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Claude Max login</text>
+    <text x="575" y="53" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Claude login</text>
     <text x="575" y="71" text-anchor="middle" style="fill: var(--sl-color-gray-3);">62 % used</text>
     <rect x="480" y="100" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
     <text x="575" y="121" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">ChatGPT login</text>
-    <text x="575" y="139" text-anchor="middle" style="fill: var(--sl-color-gray-3);">one account, read once</text>
+    <text x="575" y="139" text-anchor="middle" style="fill: var(--sl-color-gray-3);">18 % used</text>
     <rect x="480" y="168" width="190" height="50" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
-    <text x="575" y="189" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">DeepSeek key</text>
-    <text x="575" y="207" text-anchor="middle" style="fill: var(--sl-color-gray-3);">¥110 left</text>
+    <text x="575" y="189" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">OpenAI organization</text>
+    <text x="575" y="207" text-anchor="middle" style="fill: var(--sl-color-gray-3);">$44.87 this month</text>
   </g>
-  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
-    <line x1="200" y1="57" x2="478" y2="57" marker-end="url(#accounts-profiles-arrow)" />
-    <line x1="200" y1="125" x2="478" y2="125" marker-end="url(#accounts-profiles-arrow)" />
-    <line x1="200" y1="186" x2="478" y2="132" marker-end="url(#accounts-profiles-arrow)" />
-    <line x1="200" y1="200" x2="478" y2="193" marker-end="url(#accounts-profiles-arrow)" />
-  </g>
-  <text x="340" y="48" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">pays through →</text>
+  <line x1="340" y1="32" x2="340" y2="218" style="stroke: var(--sl-color-hairline); stroke-dasharray: 5 4;" />
+  <text x="340" y="125" text-anchor="middle" style="fill: var(--sl-color-gray-3); font-size: 12px;">no link</text>
 </svg>
 </figure>
 
-| Word        | Means                                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------------ |
-| **Profile** | One agent with one config folder. `~/.claude` and `~/.claude-work` are two profiles of Claude Code.   |
-| **Account** | One login or key at a provider: a Claude login, a ChatGPT login, an organization, a DeepSeek key.     |
-| **Need**    | A task only you can do, with one button. Needs are listed on the pages and under **Needs you**.      |
+| Word                 | Means                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| **Profile**          | One agent with one config folder. `~/.claude` and `~/.claude-work` are two profiles of Claude Code. |
+| **Account**          | Where you pay at a provider: a subscription (a ChatGPT or Claude plan), a key, or an organization. |
+| **OTTY's own login** | A login OTTY keeps in a folder of its own, made with [Add account](#add-account). It is never a profile. |
+| **Need**             | A task only you can do, with one button. Needs are listed on the pages and under **Needs you**. |
 
-OTTY finds the default folder of each agent and the other folders of the same agent in your home
-folder that hold a login or sessions, such as `~/.codex-work`. Logins with the same account id,
-organization or email are one account; keys are one account when their fingerprint (a hash, kept in
-memory only) is the same. So a ChatGPT login used by Codex and OpenCode is one row, read once.
+**Profiles.** OTTY shows the default profile of each agent whose plugin part is on: the folder the
+agent uses with no variable set, or the one its variable names, such as `~/.codex` or the folder of
+`CODEX_HOME`. Other folders you add with **Add profile**. OTTY does not look through your home
+folder for more, such as `~/.codex-work`.
 
-After the first read with an agent plugin on, **Found by OTTY** lists the profiles and accounts it
-found and what needs you. All accounts → "⋯" → **Show Found by OTTY** opens it again.
+**Accounts.** Each provider part of a plugin finds its own accounts, in two places: the profiles of
+the agents of its own plugin, and its own logins. The OpenAI plugin finds a ChatGPT login in your
+Codex profiles, the Anthropic plugin a Claude login in your Claude Code profiles. One login in two
+places is one account with both places under **Source**: whether two logins are one account is the
+plugin's call, since only it knows what makes them the same at its provider. A provider part never
+reads the profiles of another plugin, and OTTY joins no accounts of different plugins. So OpenCode
+is a profile only, and a DeepSeek key in the settings of Claude Code is no account. Keys pasted into
+OTTY will bring such accounts later.
+
+After the first read with an agent plugin on, **Found by OTTY** lists what it found in two groups:
+**Profiles** (agent, profile, version, folder) and **Accounts** (provider, name, kind, source), and
+what needs you. All accounts → "⋯" → **Show Found by OTTY** opens it again.
+
+Every page of the main area, a project's page too, keeps a minimum width. In a narrower window the
+page scrolls sideways, and a project's sessions table still scrolls up and down on its own.
 
 ## The left panel
 
 | Section      | Lists                                                                                     | "+" opens         |
 | ------------ | ----------------------------------------------------------------------------------------- | ----------------- |
-| **Accounts** | **All accounts**, then each account by the logo of its provider and its login, such as "you@example.com", "key ••••a1f3" or "unknown" for a login that names nothing, or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month", or only "$42.10" for an [estimate](#the-money), which its tooltip names. The account chips (**Pays through** and the accounts of a project) and the title of an account's page name it the same way, beside the same logo, and the chip's tooltip gives the whole name, such as "OpenAI · you@example.com". Everywhere else an account is named with its provider. | Add account |
+| **Accounts** | **All accounts**, then each account by the logo of its provider and its name, such as "you@example.com" or "key ••••a1f3", or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month". An account with OTTY's own login has the tag **OTTY**. The title of an account's page names it the same way, beside the same logo. Everywhere else an account is named with its provider, such as "OpenAI · you@example.com". | [Add account](#add-account) |
 | **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
 | **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
-**All accounts** and **All profiles** are tables with their **Needs you** list.
+**All accounts** and **All profiles** are tables with their **Needs you** list. The **Now** of an
+account is only what its provider part read: the percent used, the money left or spent this month,
+else "—".
 
 ## The pages
 
 | Page        | Shows                                                                                                                       |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit); **Used by**; **Account info**: provider, email or key, plan, where it was found, **Read by** (the plugin and its version). |
-| **Profile** | Needs from you; the usage block; **Pays through**; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
-| **Project** | The folder name as the title, then **Project info** with the path, profiles and accounts, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab; the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
+| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit) and the bill of an organization, as the provider tells them; **Account info**: Provider, Name, Kind (Subscription, Key or Organization), Plan, **Source** ("Found in ~/.codex", one line per folder, and "OTTY's own login"), **Read by** (the plugin and its version). An account with OTTY's own login has the mark "OTTY's own login" after its name and a **Log in again** button in its header. |
+| **Profile** | Needs from you; the usage block; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
+| **Project** | The folder name as the title, then **Project info** with the path and the profiles, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab, and the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
-The **usage block** has a period (Today, 7 days, 30 days), a measure (Tokens or Money) and the tabs
-**By project**, **By model** and **By account**. A choice that makes no sense is off and says why
-when the pointer is over it, such as Money for a subscription ("Paid by a subscription: there is no
-price per request"). **By account** names each account as its chips do: the logo of its provider and
-its login, with the whole name in the tooltip.
+The **usage block** of a profile has a period (Today, 7 days, 30 days), a measure (Tokens or Money)
+and the tabs **By project** and **By model**. Project statistics has **By profile** and **By
+model**, Session statistics **By model**. Money is on as soon as the list prices are read. Until
+then it is off and says "The list prices are not read yet" when the pointer is over it.
 
 ## Needs
 
@@ -133,12 +133,9 @@ the account or profile, and in the **Needs you** list. Two kinds of needs come f
 | Need                                   | When                                                                  | Button                  |
 | -------------------------------------- | --------------------------------------------------------------------- | ----------------------- |
 | Plugin update needs your OK            | A newer version of a plugin asks for new permissions.                 | Review                  |
-| Plugin part is off                     | The part that reads this account is turned off.                       | Turn on                 |
-| No provider plugin                     | A key was found for a host no plugin serves.                          | Add plugin…             |
-| *Plugin* could not read                | A plugin part failed, ran out of time or was paused; the last good numbers stay. | Copy report  |
+| *Plugin* could not read                | A plugin part failed, ran out of time or was paused. The last good numbers stay. | Copy report  |
 | *Agent version* changed its session files | The plugin no longer understands most records ([below](#format-changed)). | Copy report, Open plugin repository |
 | [System keyring](#the-system-keyring)  | A plugin part reads keys from the system keyring.                     | Allow keyring           |
-| The login was refused                  | A provider refused a login, and the plugin of the agent that keeps it says nothing about it ([below](#a-refused-login)). | None |
 
 ### What a plugin asks
 
@@ -146,7 +143,7 @@ The title and the text are the plugin's. The button does one of four things:
 
 | Button             | Does                                                                                         |
 | ------------------ | -------------------------------------------------------------------------------------------- |
-| Run *command*      | Runs the command in a new terminal tab, such as `codex login`, or the agent itself so it renews its login. |
+| Run *command*      | Runs the command in a new terminal tab, such as `codex login` in the profile's folder, or the agent itself so it renews its login. When the tab closes, OTTY reads the profiles, the accounts and their numbers again. |
 | *Name of the key*… | Opens a field for a key the plugin needs, such as **Admin key…**, with the plugin's hint and a link to the page where the key is made. You type the path of a file that holds the key, or the name of an environment variable. OTTY saves only that path or name, never the key, and the plugin gets the key only as a handle. |
 | Open *site*        | Opens an `https` page in your browser, such as the page where you make a new key.           |
 | Copy report        | Copies a text the plugin wrote, such as a report for its author.                             |
@@ -155,24 +152,33 @@ What each official plugin asks for is on its page: [Anthropic](../official-plugi
 [OpenAI](../official-plugins/openai/#what-it-asks-you-for), [OpenCode](../official-plugins/opencode/#what-it-asks-you-for),
 [DeepSeek](../official-plugins/deepseek/#what-it-asks-you-for), [OpenRouter](../official-plugins/openrouter/#what-it-asks-you-for).
 
-### A refused login
+### Login needs
 
-A provider part may read a login that an agent keeps, such as a ChatGPT login of Codex. It does not
-know which agent keeps it, so when the provider refuses the login or it expired, OTTY asks the
-plugin of the agent whose profile holds it, and shows that plugin's need on the profile. A ChatGPT
-login kept only by OpenCode shows OpenCode's **Run opencode auth login**, not Codex's. The same need
-from several reads of one profile shows once.
+A login need, such as "Needs login" or "The login expired", shows on every page it concerns, and
+you may act from any of them. Once it is fixed, it goes from all of them.
 
-When the agent's plugin gives no need, fails or runs out of time, OTTY shows its own need **The
-login was refused**, which names the provider and the profile and has no button: log in again with
-that agent yourself, then refresh. OTTY never renews a login it found in an agent.
+- **A profile nobody is logged in with.** The agent part says so on the profile page, as the mark
+  "needs login" on its row and in All profiles → Needs you, such as **Run codex login** in that
+  profile's folder. There is no account yet, so nothing shows in Accounts. Once you log in, the need
+  goes and the provider part finds the account. An agent that works with no login, such as OpenCode,
+  never asks.
+- **A login that expired or that the provider refused.** Whether a login expired is the plugin's
+  call, by whatever it can see: the time written in the login's files, or the provider's answer.
+  OTTY does not work it out, and does not copy a need from one page to another: the agent part says
+  it on the profile, the provider part on the account found in that profile's folder. Both run the
+  same command in the same folder, so acting in either place fixes both, and both go at the next
+  read.
+- **OTTY's own login.** It has no profile, so its need shows only on the account, as **Log in
+  again**.
+
+OTTY never renews a login itself, in any folder.
 
 ### The language of a need
 
 A plugin writes its needs in the language of OTTY's interface when it has translations, else in
-English. The five official plugins have all ten languages of OTTY. When you change the language,
-OTTY tells each plugin that has translations and reads Agents mode again at once, so their needs
-change without a restart.
+English. The official plugins that ask for something have all ten languages of OTTY. When you
+change the language, OTTY tells each plugin that has translations and reads Agents mode again at
+once, so their needs change without a restart.
 
 ## Your choices
 
@@ -180,22 +186,56 @@ change without a restart.
 greyed and says why when the pointer is over it. While a menu is open, one press on the "⋯" or the
 drop-down of another menu opens that one, and a press on the one that opened it closes it.
 
-- **Rename…** gives an account or a profile a name of your own. **Hide** stops OTTY from reading it
-  and takes it out of the lists and of every total; "⋯" on All accounts or All profiles → **Show
-  hidden** brings it back. When two plugins read one login or key, also one you added, it is two
-  accounts, each named with its plugin: hide the one you do not want, and the other stays.
-  An account that is only a key found in an agent can not be renamed or hidden yet: the two items
-  are greyed and say why on hover.
+- **Rename…** gives an account or a profile a name of your own.
+- **Hide** stops OTTY from reading it and takes it out of the lists and of every total. "⋯" on All
+  accounts or All profiles → **Show hidden** brings it back. When two plugins find one login, it is
+  two accounts, one per plugin: hide the one you do not want, and the other stays.
 - **Open usage page** opens the provider's own usage page of the account.
-- **Add account** is the last resort: a key no agent uses, for the money left (DeepSeek, OpenRouter),
-  or an admin key for the bill of an Anthropic or OpenAI organization. OTTY saves only the path of
-  the file that holds the key, or the name of the environment variable, never the key. **Edit
-  key…** and **Remove** on an added account change or drop it.
-- A key a plugin asks for in a need, such as the admin key of an organization that an agent found,
-  is given with the need's button and kept the same way.
+- **Log in again** and **Remove** are in the menu of an account with OTTY's own login
+  ([below](#add-account)).
+- A key a plugin asks for in a need, such as the admin key of an organization, is given with the
+  need's button. OTTY saves only the path of the file that holds the key, or the name of the
+  environment variable, never the key.
 
-Names, hidden items, added accounts, the places of the keys you gave and whether the keyring may be
-read are kept in `~/.config/otty/agents.json`.
+Names, hidden items, the profiles you added, OTTY's own logins, the places of the keys you gave and
+whether the keyring may be read are kept in `~/.config/otty/agents.json`. A login itself is never
+kept there.
+
+### Add account
+
+**Add account** ("+" of the Accounts section) makes OTTY's own login: you log in with the agent's
+own login command in a folder that belongs to OTTY, so you can see an account without a profile you
+work in, such as the limits of a Claude plan with no Claude Code profile.
+
+1. Pick the provider. The list holds every provider part that is on, with its logo and its plugin.
+   With none on, the dialog says so and offers **Manage plugins…**.
+2. Under **How**, **Log in with *agent***, such as "Log in with Codex" or "Log in with Claude Code",
+   names the command it runs. **Paste a key** is shown but off ("Coming later"). A provider with no
+   agent login, such as DeepSeek, says so, and **Continue** stays off.
+3. **Continue** makes an empty folder of OTTY's own, `~/.local/share/otty/accounts/<id>/` (with a
+   new random id, under `XDG_DATA_HOME` when it is set), and runs the agent's own login command
+   there in a terminal tab titled "Log in with *agent*", such as `codex login` with `CODEX_HOME` set
+   to that folder, or `claude auth login --claudeai` with `CLAUDE_CONFIG_DIR`. You log in as you
+   would in the agent. OTTY never sees a password and runs no login flow itself.
+4. When the tab closes, OTTY asks the provider part for the account in that folder. The account
+   found there shows with Source "OTTY's own login", and also "Found in ~/.codex" when the same
+   account is logged in to a profile. When none is found, OTTY removes the folder and says "The
+   login did not finish".
+
+The folder is never a profile: its sessions and projects never show. OTTY reads its account on the
+usual schedule while it runs, and runs nothing when it is closed. To read the numbers, the plugin
+starts the agent in that folder, such as `codex app-server` or Claude Code's `/usage`, and the agent
+renews its own login there as it always does.
+
+- **Log in again** (in the menu, or the button in the account's header) runs the login command
+  again in the same folder, in a tab OTTY watches like the first one.
+- **Remove** asks "Remove this account?" first, then deletes only OTTY's own folder of it. Your
+  agents and their own logins stay as they are. An account that is also found in a profile stays,
+  with "Found in ~/.codex" only, else it leaves the list. Its name and hidden flag stay in
+  `agents.json`.
+
+When a plugin is removed, the folders of its own logins stay until you remove the account, so adding
+the plugin again brings the account back.
 
 ### The system keyring
 
@@ -209,9 +249,9 @@ Agents change their files without notice. Each plugin part counts the records it
 understood. When the newest files hold at least 5 records of the kind it reads and fewer than half
 are understood, the profile shows **format changed** instead of quietly showing fewer tokens:
 
-- its last good numbers stay, greyed, with their time; other profiles and accounts work as usual;
+- its last good numbers stay, greyed, with their time, and other profiles and accounts work as usual,
 - the need names the agent's version and the plugin: "Codex 0.170.0 changed its session files. The
-  OpenAI plugin 0.2.0 reads them up to Codex 0.169.0.";
+  OpenAI plugin 0.2.0 reads them up to Codex 0.169.0.",
 - **Copy report** copies a report for the plugin's author: agent, version, tested version, plugin,
   folder, file kind, the counts and the names of the fields. Never a value, key or session text.
 
@@ -220,19 +260,16 @@ The fix is a new release of the plugin, not of OTTY.
 ## How old a number is
 
 A number on a page is the latest one OTTY read, with its time ("Updated 2 min ago"). Where a plugin
-reads it from is the plugin's business: an agent's own program, its files or a server. OTTY keeps
-one order of its own, because the parts can come from different plugins: for each account it asks
-the provider's plugin part first, then the agent's part.
+reads it from is the plugin's business: an agent's own program, its files or a server. The numbers
+of an account come only from the provider part that found it.
 
 - When a read fails, the last good numbers stay, greyed, with their time, and a line under them
   says why. When you can do something, it is in **Needs from you**: log in again, update the
   plugin, give a key.
-- Money that is an estimate at the [list prices](#the-money), not the provider's bill, has the mark
-  **estimate, list prices** under it, on the account page and under the usage block in Money; its
-  tooltip says when the prices are from. The Cost of a project has the mark after the sum:
-  "$42.10 · estimate, list prices". Where the room is tight (the left panel, the All accounts
-  table, Found by OTTY, the account chips) an estimate shows only the sum, "$42.10", and its
-  tooltip says it is an estimate. Money with no mark and no tooltip is the bill or the cost the agent wrote.
+- Money of a profile's tokens priced at [API prices](#the-money) has the mark **at API prices**
+  under it, under the usage block in Money and in the statistics. Its tooltip says when the prices
+  are from. The Cost of a project has the mark after the sum: "$42.10 · at API prices". Money with
+  no mark is the cost the agent wrote, or, on an account page, what the provider told.
 - **Read by** in Account info and Profile info names the plugin and its version. What a plugin
   failed to read last is on its card on the [Plugins](../plugins/) page.
 
@@ -240,41 +277,49 @@ the provider's plugin part first, then the agent's part.
 
 | When                     | What OTTY reads                                                                                            |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| OTTY starts              | Profiles first, then sessions, limits, tokens and account numbers together; prices and bills after limits. |
-| Agents mode is on screen | Limits and bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes.         |
-| You press **Refresh**    | Profiles, then everything else.                                                                            |
+| OTTY starts              | Profiles and the accounts found in them first, then sessions, prices, the numbers of the accounts and the bills together. The tokens are counted once the first read of the prices answers. |
+| Agents mode is on screen | The numbers of the accounts and the bills again every 5 minutes. Opening the mode reads again what is older than 5 minutes. |
+| You press **Refresh**    | Profiles and accounts, then everything else.                                                               |
+| A tab of a need or of a login closes | The profiles, the accounts and their numbers again.                                            |
 
 What a read gave stays on screen until the next read answers: a Refresh or a later read never
 empties a page or brings back the spinner, which shows only before the first read of the profiles.
 
 <Aside>
 While Agents mode is away, OTTY never starts an agent's program. A plugin that starts one, such as
-`codex app-server` or Claude Code's `/usage`, runs it at most once in about 5 minutes per profile;
-a Refresh in between shows its last answer.
+`codex app-server` or Claude Code's `/usage`, runs it at most once in about 5 minutes per account,
+and a Refresh in between shows its last answer.
 </Aside>
 
 ## The money
 
-Money comes, best first, from the provider's bill (for an Anthropic or OpenAI organization, with an
-admin key), from the cost the agent wrote itself (OpenCode does), or from an **estimate**:
+The money of a profile comes from its plugin, for each answer of the agent:
 
-> money = tokens of each model × the list price of that model where it was served
+- **The cost the agent wrote**, as it is, with no mark. OpenCode writes what each answer cost.
+- Else **the tokens at API prices**, marked so. The plugin asks OTTY for the API price of the model
+  and prices the tokens of each answer itself:
+
+> money = tokens of each kind × the API price of that model where it was served
+
+This holds on a subscription too: there the money answers "what would this work cost me on the
+API". The money of an account is only what its provider tells: the bill of an organization (with an
+admin key), the money left, the key limit or what was spent this month. OTTY never counts an
+account's money from the tokens of a profile.
 
 The price of a model depends on who served it: the maker itself, a cloud or a reseller such as
-OpenRouter. Each plugin says who served each answer, as the agent wrote it, and OTTY picks the
-price: the list price of who served the answer, else the maker's own list price of the model, else
-no price. OTTY never takes the price of a similar model instead.
+OpenRouter. Each plugin knows who served each answer, as the agent wrote it, and OTTY gives the
+price: the API price of who served the answer, else the maker's own price of the model, else no
+price. OTTY never takes the price of a similar model instead.
 
 The prices cover input, cached input, writing to the cache and output, with the higher prices of a
-long prompt where a model has them. Discounts are not known to OTTY. A model with no price adds
-nothing, and a line under the money says how many requests of this month have no price. There is
-no budget: OTTY only shows the money.
+long prompt where a model has them, picked for each request. Discounts are not known to OTTY. A
+model with no price adds nothing, and a line under the money says how many requests of this month
+have no price. There is no budget: OTTY only shows the money.
 
 The prices come from the open source [LiteLLM](https://github.com/BerriAI/litellm) price table, read
-by OTTY once for all plugins, at most once a day and only while a profile pays with an API key.
-Plugins report tokens; OTTY prices them. The last good copy is kept in
-`~/.cache/otty/prices/litellm.json` for when a read fails. Days follow your time zone; a bill keeps
-the UTC days of the provider's report.
+by OTTY once for all plugins, at most once a day while a profile is shown. The last good copy is
+kept in `~/.cache/otty/prices/litellm.json` for when a read fails. Days follow your time zone, and a
+bill keeps the UTC days of the provider's report.
 
 What OTTY and each plugin read and send is on
 [What OTTY reads and sends](../what-otty-reads-and-sends/).

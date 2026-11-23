@@ -1,6 +1,6 @@
-//! Agents mode of the OTTY app: the accounts the coding agents pay
-//! through, the profiles of the agents and the projects their sessions ran
-//! in, in the left panel; the sessions table of the selected project with
+//! Agents mode of the OTTY app: the profiles of the coding agents, the
+//! projects their sessions ran in and, apart from them, the accounts of
+//! providers, in the left panel; the sessions table of the selected project with
 //! Continue, its row menu and New session, the page of a profile and
 //! the All accounts and All profiles pages, in the main area; and the counts in the left side of the status bar (spec
 //! Decisions 2, 3 and 6). Each account shows its limits or its money, and
