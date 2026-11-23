@@ -167,3 +167,22 @@ Takeaways for OTTY:
 - CodexBar's answer to a login with no email is to show no email. The plan comes from the limits response.
 - It never refreshes another app's tokens. When the token is stale, it tells the user to sign in again in the app that owns the login. This matches the rule in "Takeaways for OTTY" above.
 - Like OTTY, it treats one active row per integration as required and reports two as an error instead of guessing.
+
+## Probe with a real token-sharing access token (2026-11-23)
+
+With the owner's go-ahead, one GET each with the active OpenCode
+`chatgpt-token-sharing` access token (freshly refreshed by OpenCode
+itself, not by us), `Authorization: Bearer`, no account header. Only the
+status and the field names were looked at, never the values.
+
+| Endpoint | Status | Answer |
+|---|---|---|
+| `https://chatgpt.com/backend-api/wham/usage` | 401 | `rejected_by_access_enforcement`, code `no_matching_rule` |
+| `https://auth.openai.com/api/accounts/v1/user-auth-credential/whoami` | 401 | `rejected_by_access_enforcement`, code `auth_token_type_not_allowed` |
+| `https://auth.openai.com/api/accounts/oauth/userinfo` | 200 | only `sub` (no `email`, no `name`, despite the `email profile` scopes) |
+
+So a token-sharing login gives no ChatGPT limits, no account id, no plan
+and no email through these endpoints: only the opaque per-client `sub`.
+An OTTY "Sign in with ChatGPT" of the same kind would get the email once
+from the id_token at sign-in, but no limits. ChatGPT limits stay
+reachable only through a Codex-style login (the Codex CLI client).
