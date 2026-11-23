@@ -276,6 +276,7 @@ mod tests {
             is_words: false,
             lead: None,
             note: None,
+            profiles_of: None,
             mark,
         }
     }
@@ -295,7 +296,7 @@ mod tests {
 
     fn found_logins() -> PermissionGroupViewModel {
         PermissionGroupViewModel {
-            label: i18n::t(Key::PluginsGroupFoundLogins),
+            label: i18n::t(Key::PluginsGroupFoundLogins).to_string(),
             meaning: Some(String::from(
                 "Logins and keys of Example Cloud accounts",
             )),
@@ -365,7 +366,7 @@ mod tests {
     fn the_card_of_a_part_marks_what_an_update_changes() {
         let palette = UiPalette::otty_dark();
         let groups = vec![PermissionGroupViewModel {
-            label: i18n::t(Key::PluginsGroupFiles),
+            label: i18n::t(Key::PluginsGroupFiles).to_string(),
             meaning: None,
             places: vec![
                 place("~/.x/**", None),

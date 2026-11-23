@@ -82,6 +82,27 @@ column = "value"
 fields = ["/key", "/access", "/refresh"]
 "#;
 
+/// A `logins` entry of the provider part of [`OPENAI_MANIFEST`]: inside
+/// each Codex profile folder it reads `sessions/**`, and the keys of
+/// `auth.json` as handles, and points `codex` at the folder with
+/// `CODEX_HOME`.
+pub(crate) const CODEX_LOGINS: &str = r#"
+[[agents.provider.logins]]
+agent = "codex"
+folder_env = "CODEX_HOME"
+read = ["sessions/**"]
+
+[[agents.provider.logins.keys]]
+files = ["auth.json"]
+fields = ["/OPENAI_API_KEY", "/tokens/access_token"]
+"#;
+
+/// [`OPENAI_MANIFEST`] whose provider part reads the logins of Codex
+/// profiles, [`CODEX_LOGINS`].
+pub(crate) fn with_codex_logins() -> String {
+    format!("{OPENAI_MANIFEST}{CODEX_LOGINS}")
+}
+
 /// `text` with the first `from` replaced by `to`; `from` must be there.
 pub(crate) fn edited(text: &str, from: &str, to: &str) -> String {
     assert!(text.contains(from), "the text holds {from:?}");

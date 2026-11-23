@@ -5,13 +5,13 @@ use std::fmt;
 
 use globset::Glob;
 
-use crate::manifest::ManifestError;
 use crate::manifest::raw::{
-    RawAgentPermissions, RawKeyPlace, RawKeyring, RawProgram,
-    RawProviderPermissions,
+    RawAgentPermissions, RawKeyPlace, RawKeyring, RawLoginKeys, RawLogins,
+    RawProgram, RawProviderPermissions,
 };
+use crate::manifest::{AgentPart, ManifestError};
 use crate::part::PartRef;
-use crate::path_glob::{PathGlob, is_variable_name};
+use crate::path_glob::{FolderGlob, PathGlob, is_variable_name};
 
 /// What one part of a plugin declares it may do (spec
 /// 2026-11-19-agent-plugins, "Permissions"). Only the part itself gets
@@ -27,6 +27,7 @@ pub struct PartPermissions {
     keyring: Vec<KeyringRule>,
     keys: Vec<KeyRule>,
     http: Vec<String>,
+    logins: Vec<LoginRule>,
 }
 
 impl PartPermissions {
@@ -76,6 +77,12 @@ impl PartPermissions {
         &self.http
     }
 
+    /// What a provider part reads inside the profile folders of agent
+    /// parts of its plugin, during a call that gives it those folders.
+    pub fn logins(&self) -> &[LoginRule] {
+        &self.logins
+    }
+
     /// The checked permissions of the agent part `part`.
     pub(crate) fn of_agent(
         raw: &RawAgentPermissions,
@@ -102,14 +109,18 @@ impl PartPermissions {
             keyring: keyring_rules(&raw.keyring, part)?,
             keys,
             http: Vec::new(),
+            logins: Vec::new(),
         })
     }
 
     /// The checked permissions of the provider part `part`: its hosts,
-    /// and the files, variables, programs and hidden terminals of the
-    /// ways it asks the agent itself.
+    /// the files, variables, programs and hidden terminals of the ways it
+    /// asks the agent itself, and the `logins` it reads in the profiles of
+    /// the agent parts `agents` of its plugin.
     pub(crate) fn of_provider(
         raw: &RawProviderPermissions,
+        logins: &[RawLogins],
+        agents: &[AgentPart],
         part: &PartRef,
     ) -> Result<Self, ManifestError> {
         for host in &raw.http {
@@ -120,6 +131,10 @@ impl PartPermissions {
         }
 
         let globs = |texts: &[String]| path_globs(texts, &raw.env, part);
+        let logins = logins
+            .iter()
+            .map(|login| LoginRule::of_raw(login, agents, part))
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             read: globs(&raw.read)?,
@@ -128,6 +143,7 @@ impl PartPermissions {
             run: program_rules(&raw.run, part)?,
             terminal: program_rules(&raw.terminal, part)?,
             http: raw.http.clone(),
+            logins,
             ..Self::default()
         })
     }
@@ -319,6 +335,125 @@ impl KeyRule {
     }
 }
 
+/// What a provider part reads inside each profile folder of one agent part
+/// of its plugin (spec 2026-11-23-accounts-apart-from-profiles, Decision
+/// 5). It applies only during a call that gives the part such folders,
+/// wherever they are, so a profile the user added in any folder works
+/// without a wider glob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginRule {
+    agent: String,
+    agent_name: String,
+    folder_env: Option<String>,
+    read: Vec<FolderGlob>,
+    keys: Vec<LoginKeys>,
+}
+
+impl LoginRule {
+    /// The id of the agent part whose profiles the part reads.
+    pub fn agent(&self) -> &str {
+        &self.agent
+    }
+
+    /// The name of that agent part, such as `Codex`.
+    pub fn agent_name(&self) -> &str {
+        &self.agent_name
+    }
+
+    /// The variable that points the agent at a profile folder, such as
+    /// `CODEX_HOME`: a program the part starts gets it only set to a login
+    /// folder of the call.
+    pub fn folder_env(&self) -> Option<&str> {
+        self.folder_env.as_deref()
+    }
+
+    /// The files the part reads inside each profile folder.
+    pub fn read(&self) -> &[FolderGlob] {
+        &self.read
+    }
+
+    /// The key files inside each profile folder, read only with their keys
+    /// replaced by handles.
+    pub fn keys(&self) -> &[LoginKeys] {
+        &self.keys
+    }
+
+    fn of_raw(
+        raw: &RawLogins,
+        agents: &[AgentPart],
+        part: &PartRef,
+    ) -> Result<Self, ManifestError> {
+        let Some(agent) = agents.iter().find(|agent| agent.id() == raw.agent)
+        else {
+            return Err(ManifestError::BadPart {
+                part: part.clone(),
+                reason: format!(
+                    "reads the logins of `{}`, which is not an agent part of \
+                     this plugin",
+                    raw.agent
+                ),
+            });
+        };
+        if let Some(name) = &raw.folder_env {
+            check_variable(name, part)?;
+        }
+
+        let keys = raw
+            .keys
+            .iter()
+            .map(|keys| LoginKeys::of_raw(keys, part))
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self {
+            agent: agent.id().to_string(),
+            agent_name: agent.name().to_string(),
+            folder_env: raw.folder_env.clone(),
+            read: folder_globs(&raw.read, part)?,
+            keys,
+        })
+    }
+}
+
+/// Key files inside each profile folder of a [`LoginRule`], with the JSON
+/// fields that hold keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginKeys {
+    files: Vec<FolderGlob>,
+    fields: Vec<JsonPointer>,
+}
+
+impl LoginKeys {
+    /// The key files, inside the profile folder.
+    pub fn files(&self) -> &[FolderGlob] {
+        &self.files
+    }
+
+    /// The fields that hold keys.
+    pub fn fields(&self) -> &[JsonPointer] {
+        &self.fields
+    }
+
+    fn of_raw(
+        raw: &RawLoginKeys,
+        part: &PartRef,
+    ) -> Result<Self, ManifestError> {
+        let fields = json_pointers(&raw.fields, part)?;
+        if fields.is_empty() {
+            return Err(ManifestError::BadPart {
+                part: part.clone(),
+                reason: "lists login key files with no `fields` holding the \
+                         keys"
+                    .to_string(),
+            });
+        }
+
+        Ok(Self {
+            files: folder_globs(&raw.files, part)?,
+            fields,
+        })
+    }
+}
+
 /// A JSON pointer such as `/tokens/access_token`, where a `*` part stands
 /// for any one key, as in `/*/key`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -391,6 +526,22 @@ fn path_globs(
                     glob: text.clone(),
                     problem,
                 }
+            })
+        })
+        .collect()
+}
+
+fn folder_globs(
+    texts: &[String],
+    part: &PartRef,
+) -> Result<Vec<FolderGlob>, ManifestError> {
+    texts
+        .iter()
+        .map(|text| {
+            FolderGlob::parse(text).map_err(|problem| ManifestError::BadGlob {
+                part: part.clone(),
+                glob: text.clone(),
+                problem,
             })
         })
         .collect()

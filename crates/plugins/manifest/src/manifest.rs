@@ -12,7 +12,9 @@ use crate::contract::Api;
 pub use crate::manifest::error::ManifestError;
 use crate::manifest::raw::{RawAgent, RawManifest, RawPlugin, RawProvider};
 use crate::part::{PartKind, PartRef, is_valid_id};
-use crate::permissions::{PartPermissions, PermissionLine, check_host};
+use crate::permissions::{
+    LoginRule, PartPermissions, PermissionLine, check_host,
+};
 use crate::version::PluginVersion;
 
 /// A checked manifest.
@@ -119,7 +121,7 @@ impl Manifest {
             .agents
             .provider
             .iter()
-            .map(ProviderPart::of_raw)
+            .map(|provider| ProviderPart::of_raw(provider, &agents))
             .collect::<Result<Vec<_>, _>>()?;
 
         let manifest = Self {
@@ -427,6 +429,12 @@ impl ProviderPart {
         &self.permissions
     }
 
+    /// The agent parts of the plugin whose profiles the part reads, with
+    /// what it reads inside each profile folder.
+    pub fn logins(&self) -> &[LoginRule] {
+        self.permissions.logins()
+    }
+
     /// The part's permissions in plain words, as the install dialog shows
     /// them, with the keys every provider part gets.
     pub fn permission_lines(&self) -> Vec<PermissionLine> {
@@ -436,7 +444,10 @@ impl ProviderPart {
         lines
     }
 
-    fn of_raw(raw: &RawProvider) -> Result<Self, ManifestError> {
+    fn of_raw(
+        raw: &RawProvider,
+        agents: &[AgentPart],
+    ) -> Result<Self, ManifestError> {
         let part = PartRef::provider(&raw.id);
         check_part_id(&part)?;
         check_name(&raw.name, &part)?;
@@ -479,7 +490,12 @@ impl ProviderPart {
             usage_page: raw.usage_page.clone(),
             plan_usage_page: raw.plan_usage_page.clone(),
             priced_as: raw.priced_as.clone(),
-            permissions: PartPermissions::of_provider(&raw.permissions, &part)?,
+            permissions: PartPermissions::of_provider(
+                &raw.permissions,
+                &raw.logins,
+                agents,
+                &part,
+            )?,
         })
     }
 }
@@ -533,8 +549,10 @@ fn is_plain_file_name(name: &str, extension: &str) -> bool {
 mod tests {
     use super::*;
     use crate::agent_program::ProgramPlace;
-    use crate::path_glob::GlobProblem;
-    use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST, edited};
+    use crate::path_glob::{FolderGlob, GlobProblem};
+    use crate::testing::{
+        OPENAI_MANIFEST, OPENCODE_MANIFEST, edited, with_codex_logins,
+    };
 
     fn refusal(text: &str) -> ManifestError {
         Manifest::parse(text).expect_err("refused")
@@ -571,6 +589,140 @@ description = "Reads ChatGPT limits and OpenAI API spending.""#,
             Some("Reads ChatGPT limits and OpenAI API spending.")
         );
         assert_eq!(with_provider.agents()[0].description(), None);
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: a
+    /// provider part names the agent parts of its plugin whose profiles
+    /// it reads, with what it reads inside each profile folder.
+    #[test]
+    fn a_provider_part_names_the_logins_it_reads_in_profiles() {
+        let manifest = Manifest::parse(&with_codex_logins()).expect("valid");
+
+        let logins = manifest.providers()[0].logins();
+
+        assert_eq!(logins.len(), 1);
+        assert_eq!(logins[0].agent(), "codex");
+        assert_eq!(logins[0].agent_name(), "Codex");
+        assert_eq!(logins[0].folder_env(), Some("CODEX_HOME"));
+        let read: Vec<&str> =
+            logins[0].read().iter().map(FolderGlob::as_str).collect();
+        assert_eq!(read, ["sessions/**"]);
+        let keys = &logins[0].keys()[0];
+        let files: Vec<&str> =
+            keys.files().iter().map(FolderGlob::as_str).collect();
+        let fields: Vec<&str> =
+            keys.fields().iter().map(|field| field.as_str()).collect();
+        assert_eq!(files, ["auth.json"]);
+        assert_eq!(fields, ["/OPENAI_API_KEY", "/tokens/access_token"]);
+        assert!(
+            Manifest::parse(OPENAI_MANIFEST).expect("valid").providers()[0]
+                .logins()
+                .is_empty()
+        );
+    }
+
+    /// Decision 5: a provider part never reads the profiles of another
+    /// plugin, so `agent` names an agent part of the same manifest.
+    #[test]
+    fn logins_of_no_agent_part_of_the_plugin_are_refused() {
+        for agent in ["claude-code", "openai", ""] {
+            let error = refusal(&edited(
+                &with_codex_logins(),
+                r#"agent = "codex""#,
+                &format!(r#"agent = "{agent}""#),
+            ));
+
+            assert!(
+                matches!(
+                    &error,
+                    ManifestError::BadPart { part, reason }
+                        if *part == PartRef::provider("openai")
+                            && reason.contains(&format!("`{agent}`"))
+                ),
+                "{agent}: {error:?}"
+            );
+        }
+    }
+
+    /// The paths of a `logins` entry are inside the profile folder: no
+    /// leading `/` or `~`, no `..` and no variable.
+    #[test]
+    fn a_login_path_outside_the_profile_folder_is_refused() {
+        let cases = [
+            ("/etc/passwd", GlobProblem::NotInsideFolder),
+            ("~/.codex/auth.json", GlobProblem::NotInsideFolder),
+            ("", GlobProblem::NotInsideFolder),
+            ("../.ssh/*", GlobProblem::ParentFolder),
+            ("sessions/../../x", GlobProblem::ParentFolder),
+            (
+                "{CODEX_HOME}/auth.json",
+                GlobProblem::VariableInside("CODEX_HOME".to_string()),
+            ),
+        ];
+
+        for (path, problem) in cases {
+            let read = refusal(&edited(
+                &with_codex_logins(),
+                r#"read = ["sessions/**"]"#,
+                &format!(r#"read = ["{path}"]"#),
+            ));
+            let keys = refusal(&edited(
+                &with_codex_logins(),
+                r#"files = ["auth.json"]"#,
+                &format!(r#"files = ["{path}"]"#),
+            ));
+
+            for error in [read, keys] {
+                assert_eq!(
+                    error,
+                    ManifestError::BadGlob {
+                        part: PartRef::provider("openai"),
+                        glob: path.to_string(),
+                        problem: problem.clone(),
+                    },
+                    "{path}"
+                );
+            }
+        }
+    }
+
+    /// The key fields of a login file are JSON pointers, as in the `keys`
+    /// of an agent part, and a key file names at least one.
+    #[test]
+    fn a_login_key_field_that_is_no_json_pointer_is_refused() {
+        let not_pointer = refusal(&edited(
+            &with_codex_logins(),
+            r#"fields = ["/OPENAI_API_KEY", "/tokens/access_token"]"#,
+            r#"fields = ["api_key"]"#,
+        ));
+        let none = refusal(&edited(
+            &with_codex_logins(),
+            r#"fields = ["/OPENAI_API_KEY", "/tokens/access_token"]"#,
+            "fields = []",
+        ));
+
+        assert!(
+            matches!(&not_pointer, ManifestError::BadPart { reason, .. } if reason.contains("JSON pointer")),
+            "{not_pointer:?}"
+        );
+        assert!(
+            matches!(&none, ManifestError::BadPart { reason, .. } if reason.contains("no `fields`")),
+            "{none:?}"
+        );
+    }
+
+    #[test]
+    fn a_login_folder_variable_that_is_no_variable_name_is_refused() {
+        let error = refusal(&edited(
+            &with_codex_logins(),
+            r#"folder_env = "CODEX_HOME""#,
+            r#"folder_env = "CODEX-HOME""#,
+        ));
+
+        assert!(
+            matches!(&error, ManifestError::BadPart { reason, .. } if reason.contains("`CODEX-HOME`")),
+            "{error:?}"
+        );
     }
 
     #[test]

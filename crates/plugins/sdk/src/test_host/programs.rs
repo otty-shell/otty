@@ -272,7 +272,9 @@ struct Screens {
 }
 
 /// Whether the part may start `program` (`allowed`) with the variables
-/// `env`: a variable it does not list is refused, as OTTY refuses it.
+/// `env`: a variable it does not list, or the folder variable of its
+/// logins set to anything but a login folder of the call, is refused, as
+/// OTTY refuses it.
 fn check(
     permissions: &Permissions,
     allowed: bool,
@@ -282,8 +284,9 @@ fn check(
     if !allowed {
         return Err(HostError::NotAllowed(program.to_string()));
     }
-    if let Some((name, _)) =
-        env.iter().find(|(name, _)| !permissions.may_read_var(name))
+    if let Some((name, _)) = env
+        .iter()
+        .find(|(name, value)| !permissions.may_pass_var(name, value))
     {
         return Err(HostError::NotAllowed(format!("variable {name}")));
     }

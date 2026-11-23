@@ -74,6 +74,12 @@ impl CallPrograms {
         self.has_started = false;
     }
 
+    /// The permissions of the next call, such as the part's permissions in
+    /// the login folders of that call.
+    pub(crate) fn set_permissions(&mut self, permissions: Arc<Permissions>) {
+        self.permissions = permissions;
+    }
+
     /// The call ended: every program it talks to is stopped, and the
     /// handles it gave find nothing any more.
     pub(crate) fn end_call(&mut self) {
@@ -276,8 +282,10 @@ struct Talk {
 
 /// The command that starts the program the part asked for as `asked`
 /// by `started`, with `args` and the variables `env`, once the called part
-/// may start it (`allowed`) and lists every variable in `env`. A variable
-/// it does not list is refused, so it never reaches the program.
+/// may start it (`allowed`) and may pass every variable of `env` with its
+/// value: a variable it lists, or the folder variable of its logins set to
+/// a login folder of the call. Any other variable is refused, so it never
+/// reaches the program.
 pub(crate) fn checked_command(
     permissions: &Permissions,
     allowed: bool,
@@ -289,8 +297,9 @@ pub(crate) fn checked_command(
     if !allowed {
         return Err(HostError::NotAllowed(asked.to_string()));
     }
-    if let Some((name, _)) =
-        env.iter().find(|(name, _)| !permissions.may_read_var(name))
+    if let Some((name, _)) = env
+        .iter()
+        .find(|(name, value)| !permissions.may_pass_var(name, value))
     {
         return Err(HostError::NotAllowed(format!("variable {name}")));
     }

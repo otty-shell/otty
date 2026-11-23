@@ -28,6 +28,9 @@ pub(crate) enum PermissionGroup {
     Keyring,
     /// Files, databases and variables it reads logins or keys from.
     Logins,
+    /// Files a provider part reads inside the profile folders of one agent
+    /// part of its plugin, the logins as handles.
+    ProfileLogins,
     /// Sites it sends requests to.
     Sites,
     /// Logins and keys of the provider's accounts that agent plugins
@@ -39,8 +42,9 @@ pub(crate) enum PermissionGroup {
 }
 
 impl PermissionGroup {
-    /// The short label of the group, such as "Files".
-    pub(crate) fn label(self) -> &'static str {
+    /// The short label of the group, such as "Files"; `agent` names the
+    /// agent part of the profiles of [`Self::ProfileLogins`].
+    pub(crate) fn label(self, agent: &str) -> String {
         let key = match self {
             Self::Files => Key::PluginsGroupFiles,
             Self::ChangesFiles => Key::PluginsGroupChangesFiles,
@@ -50,12 +54,18 @@ impl PermissionGroup {
             Self::HiddenTerminal => Key::PluginsGroupHiddenTerminal,
             Self::Keyring => Key::PluginsGroupKeyring,
             Self::Logins => Key::PluginsGroupLogins,
+            Self::ProfileLogins => {
+                return i18n::filled(
+                    Key::TplPluginsGroupProfileLogins,
+                    &[("agent", agent)],
+                );
+            },
             Self::Sites => Key::PluginsGroupSites,
             Self::FoundLogins => Key::PluginsGroupFoundLogins,
             Self::Other => Key::PluginsGroupOther,
         };
 
-        i18n::t(key)
+        i18n::t(key).to_string()
     }
 
     /// One muted line on what the group means, such as "Read only";
@@ -71,6 +81,7 @@ impl PermissionGroup {
             Self::HiddenTerminal => Key::PluginsGroupHiddenTerminalMeaning,
             Self::Keyring => Key::PluginsGroupKeyringMeaning,
             Self::Logins => Key::PluginsGroupLoginsMeaning,
+            Self::ProfileLogins => Key::PluginsGroupProfileLoginsMeaning,
             Self::Sites => Key::PluginsGroupSitesMeaning,
             Self::FoundLogins => {
                 return Some(i18n::filled(
@@ -109,6 +120,10 @@ pub(crate) struct PlaceViewModel {
     pub(crate) lead: Option<&'static str>,
     /// Muted words after the place, such as "once you allow the keyring".
     pub(crate) note: Option<&'static str>,
+    /// The name of the agent part whose profiles a place of
+    /// [`PermissionGroup::ProfileLogins`] lies in, such as "Codex": the
+    /// places of each agent are a group of their own.
+    pub(crate) profiles_of: Option<String>,
     /// What the update dialog says of it.
     pub(crate) mark: Option<PlaceMark>,
 }
@@ -128,7 +143,18 @@ impl PlaceViewModel {
             is_words: false,
             lead: None,
             note: None,
+            profiles_of: None,
             mark: None,
+        }
+    }
+
+    /// `glob` inside each profile folder of the agent part `agent`, with
+    /// the muted words `note`.
+    fn in_profiles(agent: &str, glob: &str, note: Key) -> Self {
+        Self {
+            note: Some(i18n::t(note)),
+            profiles_of: Some(agent.to_string()),
+            ..Self::name(PermissionGroup::ProfileLogins, glob)
         }
     }
 }
@@ -137,8 +163,8 @@ impl PlaceViewModel {
 /// places, one per line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PermissionGroupViewModel {
-    /// "Files", "Sites"…
-    pub(crate) label: &'static str,
+    /// "Files", "Sites", "Logins in Codex profiles"…
+    pub(crate) label: String,
     /// The muted line under the label, such as "Read only".
     pub(crate) meaning: Option<String>,
     /// Its places, in the order of the manifest.
@@ -146,31 +172,39 @@ pub(crate) struct PermissionGroupViewModel {
 }
 
 /// `places` of the part named `part` in their groups: the groups in their
-/// order, the places of a group in the order given, each place once.
+/// order, the places inside the profiles of each agent part a group of
+/// their own, the places of a group in the order given, each place once.
 pub(crate) fn grouped(
     mut places: Vec<PlaceViewModel>,
     part: &str,
 ) -> Vec<PermissionGroupViewModel> {
-    places.sort_by_key(|place| place.group);
+    places.sort_by(|one, other| {
+        (one.group, &one.profiles_of).cmp(&(other.group, &other.profiles_of))
+    });
 
-    let mut groups: Vec<(PermissionGroup, Vec<PlaceViewModel>)> = Vec::new();
+    let mut groups: Vec<Vec<PlaceViewModel>> = Vec::new();
     for place in places {
         match groups.last_mut() {
-            Some((group, kept)) if *group == place.group => {
+            Some(kept) if is_same_group(&kept[0], &place) => {
                 if !kept.contains(&place) {
                     kept.push(place);
                 }
             },
-            _ => groups.push((place.group, vec![place])),
+            _ => groups.push(vec![place]),
         }
     }
 
     groups
         .into_iter()
-        .map(|(group, places)| PermissionGroupViewModel {
-            label: group.label(),
-            meaning: group.meaning(part),
-            places,
+        .map(|places| {
+            let group = places[0].group;
+            let agent = places[0].profiles_of.clone().unwrap_or_default();
+
+            PermissionGroupViewModel {
+                label: group.label(&agent),
+                meaning: group.meaning(part),
+                places,
+            }
         })
         .collect()
 }
@@ -258,6 +292,16 @@ fn line_place(line: &PermissionLine) -> PlaceViewModel {
         PermissionLine::ReadsKeyInVariable(name) => {
             PlaceViewModel::name(PermissionGroup::Logins, name)
         },
+        PermissionLine::ReadsLoginsInProfiles { agent, glob } => {
+            PlaceViewModel::in_profiles(
+                agent,
+                glob,
+                Key::PluginsPlaceGivenAsHandles,
+            )
+        },
+        PermissionLine::ReadsInProfiles { agent, glob } => {
+            PlaceViewModel::in_profiles(agent, glob, Key::PluginsPlaceReadOnly)
+        },
         PermissionLine::SendsRequests(host) => {
             PlaceViewModel::name(PermissionGroup::Sites, host)
         },
@@ -272,6 +316,12 @@ fn line_place(line: &PermissionLine) -> PlaceViewModel {
             )
         },
     }
+}
+
+/// Whether `one` and `other` show in one group: the same group, and for
+/// the places in profiles, the profiles of the same agent part.
+fn is_same_group(one: &PlaceViewModel, other: &PlaceViewModel) -> bool {
+    one.group == other.group && one.profiles_of == other.profiles_of
 }
 
 /// Each permission of `part` of `manifest` as `plugins.json` keeps it, in
@@ -351,7 +401,7 @@ mod tests {
             grouped(part_places(&manifest(), &agent()), "Example Agent");
 
         let labels: Vec<&str> =
-            groups.iter().map(|group| group.label).collect();
+            groups.iter().map(|group| group.label.as_str()).collect();
         assert_eq!(
             labels,
             [
@@ -389,22 +439,91 @@ mod tests {
         let groups =
             grouped(part_places(&manifest(), &provider()), "Example Cloud");
 
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].label, i18n::t(Key::PluginsGroupSites));
-        assert_eq!(texts(&groups[0]), ["api.example.com"]);
-        assert_eq!(groups[1].label, i18n::t(Key::PluginsGroupFoundLogins));
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[1].label, i18n::t(Key::PluginsGroupSites));
+        assert_eq!(texts(&groups[1]), ["api.example.com"]);
+        assert_eq!(groups[2].label, i18n::t(Key::PluginsGroupFoundLogins));
         let accounts = i18n::filled(
             Key::TplPluginsPlaceAccounts,
             &[("provider", "Example Cloud")],
         );
-        assert_eq!(texts(&groups[1]), [accounts.as_str(), "example.com"]);
-        assert!(groups[1].places[0].is_words);
-        assert_eq!(groups[1].places[0].lead, None);
-        assert!(!groups[1].places[1].is_words);
+        assert_eq!(texts(&groups[2]), [accounts.as_str(), "example.com"]);
+        assert!(groups[2].places[0].is_words);
+        assert_eq!(groups[2].places[0].lead, None);
+        assert!(!groups[2].places[1].is_words);
         assert_eq!(
-            groups[1].places[1].lead,
+            groups[2].places[1].lead,
             Some(i18n::t(Key::PluginsPlaceKeysFor))
         );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: what a
+    /// provider part reads in the profiles of an agent part of its plugin
+    /// is a group of its own, "Logins in Example Agent profiles": the
+    /// login files given as handles and the other files read only, each
+    /// inside the folder of a profile.
+    #[test]
+    fn what_a_provider_part_reads_in_profiles_is_a_group_of_its_own() {
+        let groups =
+            grouped(part_places(&manifest(), &provider()), "Example Cloud");
+
+        let profiles = &groups[0];
+        let notes: Vec<Option<&str>> =
+            profiles.places.iter().map(|place| place.note).collect();
+
+        assert_eq!(
+            profiles.label,
+            i18n::filled(
+                Key::TplPluginsGroupProfileLogins,
+                &[("agent", "Example Agent")]
+            )
+        );
+        assert_eq!(
+            profiles.meaning.as_deref(),
+            Some(i18n::t(Key::PluginsGroupProfileLoginsMeaning))
+        );
+        assert_eq!(texts(profiles), ["auth.json", "sessions/*.jsonl"]);
+        assert_eq!(
+            notes,
+            [
+                Some(i18n::t(Key::PluginsPlaceGivenAsHandles)),
+                Some(i18n::t(Key::PluginsPlaceReadOnly)),
+            ]
+        );
+    }
+
+    /// The profiles of two agent parts are two groups, each named by its
+    /// agent.
+    #[test]
+    fn the_profiles_of_each_agent_are_a_group_of_their_own() {
+        let in_profiles = |agent: &str, glob: &str| {
+            line_place(&PermissionLine::ReadsLoginsInProfiles {
+                agent: agent.to_string(),
+                glob: glob.to_string(),
+            })
+        };
+
+        let groups = grouped(
+            vec![
+                in_profiles("Codex", "auth.json"),
+                in_profiles("Claude Code", ".credentials.json"),
+                in_profiles("Codex", "config.json"),
+            ],
+            "OpenAI",
+        );
+
+        let labels: Vec<&str> =
+            groups.iter().map(|group| group.label.as_str()).collect();
+        let codex = i18n::filled(
+            Key::TplPluginsGroupProfileLogins,
+            &[("agent", "Codex")],
+        );
+        let claude = i18n::filled(
+            Key::TplPluginsGroupProfileLogins,
+            &[("agent", "Claude Code")],
+        );
+        assert_eq!(labels, [claude.as_str(), codex.as_str()]);
+        assert_eq!(texts(&groups[1]), ["auth.json", "config.json"]);
     }
 
     /// Issue 36: under each label one muted line says what the group
@@ -446,6 +565,7 @@ mod tests {
             PermissionGroup::HiddenTerminal,
             PermissionGroup::Keyring,
             PermissionGroup::Logins,
+            PermissionGroup::ProfileLogins,
             PermissionGroup::Sites,
             PermissionGroup::FoundLogins,
         ];

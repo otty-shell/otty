@@ -1,11 +1,13 @@
 //! Calls into one part of a plugin: a store per batch of calls, with an
 //! empty WASI context, the memory cap, the permissions of that part only,
-//! and a deadline per call.
+//! made for the login folders of each call, and a deadline per call.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use otty_plugin_manifest::{Environment, PartKind, PartRef, Permissions};
+use otty_plugin_manifest::{
+    Environment, LoginFolder, PartKind, PartRef, Permissions,
+};
 use wasmtime::component::{Instance, ResourceTable};
 use wasmtime::{Store, StoreContextMut, UpdateDeadline};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
@@ -116,6 +118,14 @@ impl CallState {
         &mut self.zstd_cursor
     }
 
+    /// Sets the permissions of the next call, for its file operations, its
+    /// programs and its hidden terminals.
+    fn set_call_permissions(&mut self, permissions: Arc<Permissions>) {
+        self.programs.set_permissions(Arc::clone(&permissions));
+        self.terminals.set_permissions(Arc::clone(&permissions));
+        self.permissions = permissions;
+    }
+
     /// Moves the running call's deadline later by `wait`: a host operation
     /// that waited (HTTP, a program, a terminal) has its own timeout, and
     /// that wait does not count against the call.
@@ -218,8 +228,27 @@ impl<'plugin> CallBatch<'plugin> {
         kind: CallKind,
         call: impl FnOnce(&mut Store<CallState>, &Instance) -> wasmtime::Result<T>,
     ) -> Result<T, CallError> {
+        self.call_in_folders(kind, &[], call)
+    }
+
+    /// Runs `call` as [`Self::call`] does, with the login folders
+    /// `folders` given to the part for this call only: inside them it also
+    /// reads what its logins declare (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 5). The next call
+    /// has its own folders, or none.
+    pub(crate) fn call_in_folders<T>(
+        &mut self,
+        kind: CallKind,
+        folders: &[LoginFolder],
+        call: impl FnOnce(&mut Store<CallState>, &Instance) -> wasmtime::Result<T>,
+    ) -> Result<T, CallError> {
+        let permissions = match folders.is_empty() {
+            true => Arc::clone(&self.permissions),
+            false => Arc::new(self.permissions.in_login_folders(folders)),
+        };
         let (store, instance) = self.running()?;
 
+        store.data_mut().set_call_permissions(permissions);
         store.data_mut().deadline = Instant::now() + kind.deadline();
         store.set_epoch_deadline(ticks_for(kind.deadline()));
         store.data_mut().programs.start_call();

@@ -150,6 +150,8 @@ pub(crate) struct RawProvider {
     pub(crate) priced_as: Option<String>,
     #[serde(default)]
     pub(crate) permissions: RawProviderPermissions,
+    #[serde(default)]
+    pub(crate) logins: Vec<RawLogins>,
 }
 
 /// `[agents.provider.permissions]`. Files, variables, programs and hidden
@@ -170,4 +172,27 @@ pub(crate) struct RawProviderPermissions {
     pub(crate) run: Vec<RawProgram>,
     #[serde(default)]
     pub(crate) terminal: Vec<RawProgram>,
+}
+
+/// One `[[agents.provider.logins]]`: the profiles of an agent part of the
+/// same plugin whose logins the provider part reads, and what it reads
+/// inside each profile folder.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawLogins {
+    pub(crate) agent: String,
+    pub(crate) folder_env: Option<String>,
+    #[serde(default)]
+    pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) keys: Vec<RawLoginKeys>,
+}
+
+/// One `[[agents.provider.logins.keys]]`: JSON fields of files inside each
+/// profile folder that hold keys.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawLoginKeys {
+    pub(crate) files: Vec<String>,
+    pub(crate) fields: Vec<String>,
 }

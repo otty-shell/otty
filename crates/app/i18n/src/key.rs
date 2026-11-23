@@ -1884,6 +1884,16 @@ pub enum Key {
     PluginsPlaceKeysFor,
     /// A place of "Found logins": {provider} accounts.
     TplPluginsPlaceAccounts,
+    /// Group of permissions: what a provider part reads in the profiles of
+    /// an agent part of its plugin, "Logins in {agent} profiles".
+    TplPluginsGroupProfileLogins,
+    /// Muted line under the logins in profiles: only inside the folder of
+    /// each profile OTTY gives the part.
+    PluginsGroupProfileLoginsMeaning,
+    /// Muted words after a login file in profiles: given as handles.
+    PluginsPlaceGivenAsHandles,
+    /// Muted words after a file read in profiles: read only.
+    PluginsPlaceReadOnly,
     /// Mark of a permission an update asks for.
     PluginsMarkNew,
     /// Mark of a permission an update no longer asks for.
@@ -2002,7 +2012,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 935] = [
+    pub(super) const ALL: [Self; 939] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2882,6 +2892,10 @@ impl Key {
         Self::PluginsPlaceKeyringNote,
         Self::PluginsPlaceKeysFor,
         Self::TplPluginsPlaceAccounts,
+        Self::TplPluginsGroupProfileLogins,
+        Self::PluginsGroupProfileLoginsMeaning,
+        Self::PluginsPlaceGivenAsHandles,
+        Self::PluginsPlaceReadOnly,
         Self::PluginsMarkNew,
         Self::PluginsMarkNoLonger,
         Self::PluginsInstall,

@@ -9,7 +9,9 @@
 //! this OTTY does not know is refused with "Needs a newer OTTY".
 //! [`Permissions`] are the permissions of one part made concrete for an
 //! [`Environment`]: they answer whether that part may read a path, run a
-//! program, call a host or open a key place.
+//! program, call a host or open a key place. A provider part's
+//! [`LoginRule`]s add what it reads inside the [`LoginFolder`]s OTTY gives
+//! it for one call.
 
 mod agent_program;
 mod contract;
@@ -29,9 +31,10 @@ pub use crate::manifest::{
     AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,
 };
 pub use crate::part::{Domain, PartKind, PartRef};
-pub use crate::path_glob::{GlobProblem, PathGlob};
+pub use crate::path_glob::{FolderGlob, GlobProblem, PathGlob};
 pub use crate::permissions::{
-    JsonPointer, KeyColumn, KeyPlace, KeyRule, KeyringRule, PartPermissions,
-    PermissionLine, Permissions, ProgramRule,
+    JsonPointer, KeyColumn, KeyPlace, KeyRule, KeyringRule, LoginFolder,
+    LoginKeys, LoginRule, PartPermissions, PermissionLine, Permissions,
+    ProgramRule,
 };
 pub use crate::version::PluginVersion;

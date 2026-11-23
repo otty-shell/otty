@@ -112,7 +112,8 @@ mod tests {
         LineOutput, MockRunningProgram, MockStartProgram, RunOutput,
     };
     use crate::testing::{
-        TempDir, assert_same, load_programs_plugin, plan_of, read_by_way,
+        TempDir, assert_same, load_programs_plugin, load_programs_plugin_with,
+        plan_of, programs_logins_manifest, read_by_way, read_in_profiles,
     };
 
     /// The folder of the profile the account of the tests was found in.
@@ -147,6 +148,51 @@ mod tests {
         let numbers = read_by_way(&mut batch, FOLDER, "run");
 
         assert_same(plan_of(numbers), Ok("stand-in 1.2.3".to_string()));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles: a part that names
+    /// `STAND_IN_HOME` only as the `folder_env` of its logins starts
+    /// `stand-in` pointed at a login folder of the call, never at another
+    /// folder, and in a call with no login folder not at all.
+    #[test]
+    fn a_program_gets_the_folder_variable_only_with_a_login_folder() {
+        let cache = TempDir::new();
+        let mut starter = MockStartProgram::new();
+        starter
+            .expect_run()
+            .withf(|command, _, _| {
+                command.env()
+                    == [("STAND_IN_HOME".to_string(), FOLDER.to_string())]
+            })
+            .times(1)
+            .returning(|_, _, _| {
+                Ok(RunOutput::new(Some(0), b"stand-in 1.2.3".to_vec(), vec![]))
+            });
+        let engine = PluginEngine::new(cache.path().to_path_buf())
+            .expect("engine")
+            .with_programs(Arc::new(starter));
+        let plugin =
+            load_programs_plugin_with(&engine, &programs_logins_manifest());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider("test-provider"))
+            .expect("a listed part");
+        let other = "/home/test-user/.test-agent-other";
+        let refused = "ReadError::Host(HostError::NotAllowed(\"variable \
+                       STAND_IN_HOME\"))";
+
+        let in_folder =
+            read_in_profiles(&mut batch, &[("test-plugin", FOLDER)], "run");
+        let at_another_folder = read_in_profiles(
+            &mut batch,
+            &[("another-plugin", other), ("test-plugin", FOLDER)],
+            "run",
+        );
+        let with_no_folder =
+            read_in_profiles(&mut batch, &[("another-plugin", other)], "run");
+
+        assert_same(plan_of(in_folder), Ok("stand-in 1.2.3".to_string()));
+        assert_same(plan_of(at_another_folder), Err(refused.to_string()));
+        assert_same(plan_of(with_no_folder), Err(refused.to_string()));
     }
 
     #[test]

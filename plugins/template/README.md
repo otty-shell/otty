@@ -43,6 +43,16 @@ the folder into a new repository and replace what the parts read.
   works, answer numbers with nothing in them, not an error. The
   template's provider part has only its server, so a key that is not
   there reads nothing.
+- A provider part reads logins in the profiles of the agent parts of its
+  own plugin with `[[agents.provider.logins]]`: the agent part, the
+  files it reads inside each profile folder (`read`), the key files
+  there with their key fields (`keys`, keys as handles), and the
+  variable that points the agent at a folder (`folder_env`). OTTY gives
+  the part those folders for the call about a login found there,
+  wherever the folder is, and the rules apply only inside them and only
+  for that call. The template's provider part reads the key of
+  `auth.json` in such a folder itself. Its tests run it with
+  `TestHost::as_provider_in`, which gives the folders as OTTY does.
 - What the user must do for the agent or the provider, the part says
   itself as a need: an id, a title, a text and one button
   (`src/needs.rs`). The agent part gives one when nobody is logged in

@@ -1,6 +1,8 @@
 //! A path glob of a permission, such as `~/.codex*/**` or
 //! `{XDG_DATA_HOME}/opencode/*.db`, checked when the manifest is read and
-//! made into a concrete glob for this computer.
+//! made into a concrete glob for this computer; and a glob inside a login
+//! folder, such as `auth.json`, joined to each folder OTTY gives a
+//! provider part in a call.
 
 use std::fmt;
 use std::path::{Component, Path};
@@ -79,6 +81,59 @@ impl fmt::Display for PathGlob {
     }
 }
 
+/// A checked glob inside a login folder, such as `auth.json` or
+/// `sessions/**`: relative, with no leading `/` or `~`, no `..` and no
+/// variable. It is joined to each login folder OTTY gives a provider part
+/// in a call (spec 2026-11-23-accounts-apart-from-profiles, Decision 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderGlob {
+    text: String,
+}
+
+impl FolderGlob {
+    /// The glob as the manifest writes it.
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// The glob in `text`, checked.
+    pub(crate) fn parse(text: &str) -> Result<Self, GlobProblem> {
+        if text.split('/').any(|segment| segment == "..") {
+            return Err(GlobProblem::ParentFolder);
+        }
+        if text.is_empty() || text.starts_with(['/', '~']) {
+            return Err(GlobProblem::NotInsideFolder);
+        }
+        if let Some(name) = variable_inside(&format!("/{text}")) {
+            return Err(GlobProblem::VariableInside(name));
+        }
+        if let Err(error) = path_glob(&format!("/home/{text}")) {
+            return Err(GlobProblem::Syntax(error.kind().to_string()));
+        }
+
+        Ok(Self {
+            text: text.to_string(),
+        })
+    }
+
+    /// The glob inside `folder`; `None` when `folder` is not an absolute
+    /// path with no `..`, so the glob matches nothing.
+    pub(crate) fn resolve(&self, folder: &Path) -> Option<String> {
+        if !is_plain_absolute(folder) {
+            return None;
+        }
+        let base = folder.to_str()?.trim_end_matches('/');
+
+        Some(format!("{}/{}", globset::escape(base), self.text))
+    }
+}
+
+impl fmt::Display for FolderGlob {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.text)
+    }
+}
+
 /// What a glob starts from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GlobStart {
@@ -99,6 +154,8 @@ pub enum GlobProblem {
     UnlistedVariable(String),
     /// It names a variable after its start.
     VariableInside(String),
+    /// A glob inside a login folder starts with `/` or `~`, or is empty.
+    NotInsideFolder,
     /// It is not a glob.
     Syntax(String),
 }
@@ -120,6 +177,10 @@ impl fmt::Display for GlobProblem {
                 "uses `{{{name}}}` after its start; a variable may only \
                  start a glob"
             ),
+            GlobProblem::NotInsideFolder => formatter.write_str(
+                "must be a path inside the profile folder, with no leading \
+                 `/` or `~`",
+            ),
             GlobProblem::Syntax(reason) => {
                 write!(formatter, "is not a valid glob: {reason}")
             },
@@ -130,9 +191,18 @@ impl fmt::Display for GlobProblem {
 /// The set of the globs `globs` for this computer; globs that match
 /// nothing here are left out.
 pub(crate) fn glob_set(globs: &[PathGlob], env: &Environment) -> GlobSet {
+    let patterns: Vec<String> =
+        globs.iter().filter_map(|glob| glob.resolve(env)).collect();
+
+    pattern_set(&patterns)
+}
+
+/// The set of the concrete path globs `patterns`; a pattern that does not
+/// compile is left out.
+pub(crate) fn pattern_set(patterns: &[String]) -> GlobSet {
     let mut builder = GlobSetBuilder::new();
-    for pattern in globs.iter().filter_map(|glob| glob.resolve(env)) {
-        if let Ok(glob) = path_glob(&pattern) {
+    for pattern in patterns {
+        if let Ok(glob) = path_glob(pattern) {
             builder.add(glob);
         }
     }
@@ -315,6 +385,38 @@ mod tests {
 
         assert!(set.is_match("/home/[x]/a"));
         assert!(!set.is_match("/home/x/a"));
+    }
+
+    #[test]
+    fn a_folder_glob_matches_inside_the_folder_it_is_joined_to() {
+        let glob = FolderGlob::parse("sessions/*.jsonl").expect("valid");
+        let pattern = glob
+            .resolve(Path::new("/work/[codex]/"))
+            .expect("an absolute folder");
+        let set = pattern_set(&[pattern]);
+
+        assert!(set.is_match("/work/[codex]/sessions/a.jsonl"));
+        assert!(!set.is_match("/work/c/sessions/a.jsonl"));
+        assert!(!set.is_match("/work/[codex]/sessions/x/a.jsonl"));
+        assert_eq!(glob.resolve(Path::new("work/codex")), None);
+        assert_eq!(glob.resolve(Path::new("/work/../codex")), None);
+    }
+
+    #[test]
+    fn a_folder_glob_stays_inside_its_folder() {
+        assert_eq!(
+            FolderGlob::parse("/auth.json"),
+            Err(GlobProblem::NotInsideFolder)
+        );
+        assert_eq!(
+            FolderGlob::parse("a/../../b"),
+            Err(GlobProblem::ParentFolder)
+        );
+        assert!(matches!(
+            FolderGlob::parse("[abc"),
+            Err(GlobProblem::Syntax(_))
+        ));
+        assert!(FolderGlob::parse("{sessions,archived}/**").is_ok());
     }
 
     #[test]

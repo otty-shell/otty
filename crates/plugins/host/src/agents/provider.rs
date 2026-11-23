@@ -9,6 +9,7 @@ pub mod v0_1;
 
 use std::time::Instant;
 
+use otty_plugin_manifest::LoginFolder;
 use wasmtime::Store;
 use wasmtime::component::{InstancePre, Resource};
 
@@ -56,6 +57,12 @@ impl ProviderExports {
 /// a need of the part asked for them go with their slot, each also as a
 /// handle. Which keys a part may get is the caller's choice (only
 /// accounts of the part's own provider id or hosts).
+///
+/// Each call also gives the part its login folders: the folders of the
+/// profiles in `found-in` of the call's login of the part's own plugin.
+/// Inside them, for that call only, the part reads what the `logins` of
+/// its manifest declare for the agent part of the profile (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 5).
 pub struct ProviderCalls<'batch, 'plugin> {
     batch: &'batch mut CallBatch<'plugin>,
     exports: ProviderExports,
@@ -77,7 +84,7 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     ) -> Result<Result<AccountFacts, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
-        self.call_with_keys(key, &[], |guest, store, key, _| {
+        self.call_with_keys(found, key, &[], |guest, store, key, _| {
             guest.call_account(store, &provider, key, found)
         })
     }
@@ -104,8 +111,11 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
             return Ok(answer);
         }
 
-        let (answer, is_slow) =
-            self.call_with_keys(key, given, |guest, store, key, given| {
+        let (answer, is_slow) = self.call_with_keys(
+            found,
+            key,
+            given,
+            |guest, store, key, given| {
                 let answer = guest.call_numbers(
                     &mut *store,
                     &provider,
@@ -116,7 +126,8 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
                 )?;
 
                 Ok((answer, store.data().has_started_programs()))
-            })?;
+            },
+        )?;
 
         if is_slow {
             plugin.pacing().remember(pace, started_at, answer.clone());
@@ -137,7 +148,7 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     ) -> Result<Result<Bill, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
 
-        self.call_with_keys(key, given, |guest, store, key, given| {
+        self.call_with_keys(found, key, given, |guest, store, key, given| {
             guest.call_read_bill(
                 store, &provider, found, account, key, &given, days,
             )
@@ -146,10 +157,12 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
 
     /// Runs `call` with the exports of the plugin's version of the
     /// contract, a handle to the key of `source`, lent to the plugin for
-    /// this call only, and a handle to each key of `given` with its slot,
-    /// given to the plugin for this call.
+    /// this call only, a handle to each key of `given` with its slot,
+    /// given to the plugin for this call, and the login folders of
+    /// `found`.
     fn call_with_keys<T>(
         &mut self,
+        found: &LoginFacts,
         source: &KeySource,
         given: &[(String, KeySource)],
         call: impl FnOnce(
@@ -161,9 +174,13 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     ) -> Result<T, CallError> {
         let exports = self.exports.clone();
         let handle = KeyHandle::of(source.clone());
+        let plugin = self.batch.plugin().manifest().plugin().id();
+        let folders = login_folders(plugin, found);
 
-        self.batch
-            .call(CallKind::Numbers, |store, instance| match &exports {
+        self.batch.call_in_folders(
+            CallKind::Numbers,
+            &folders,
+            |store, instance| match &exports {
                 ProviderExports::V0_1(indices) => {
                     let guest = indices.load(&mut *store, instance)?;
                     let owned = store.data_mut().table().push(handle)?;
@@ -182,8 +199,22 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
 
                     result
                 },
-            })
+            },
+        )
     }
+}
+
+/// The login folders of a call about `found` into a part of the plugin
+/// `plugin`: the folders of its profiles of that plugin. The part's
+/// `logins` then tell what it reads in each, by the profile's agent part;
+/// a profile of another plugin is no login folder.
+fn login_folders(plugin: &str, found: &LoginFacts) -> Vec<LoginFolder> {
+    found
+        .found_in
+        .iter()
+        .filter(|profile| profile.plugin == plugin)
+        .map(|profile| LoginFolder::new(&profile.agent, &profile.folder))
+        .collect()
 }
 
 /// The folders of the profiles of `found`, one per line: what the pace
@@ -200,19 +231,221 @@ fn found_folders(found: &LoginFacts) -> String {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_manifest::{Environment, PartRef};
+    use std::path::Path;
+
+    use otty_plugin_manifest::{Environment, LoginFolder, PartRef};
 
     use super::*;
     use crate::agents::agent::Identity;
+    use crate::calls::CallKind;
     use crate::https::MockHttpsSend;
     use crate::keys::KeyText;
+    use crate::operations::v0_1::otty::host::files::Host as _;
     use crate::operations::v0_1::otty::host::http::Response;
     use crate::operations::v0_1::otty::host::keys::KeyPlace;
-    use crate::operations::v0_1::otty::host::types::NeedAction;
+    use crate::operations::v0_1::otty::host::types::{HostError, NeedAction};
     use crate::system_keyring::MockKeyringRead;
-    use crate::testing::{TempDir, engine_with, load_template, template_env};
+    use crate::testing::{
+        TempDir, debug_err, engine_with, found_profile, load_template,
+        template_env, write_file,
+    };
 
     const KEY: &str = "ex-made-up-key-0001";
+
+    /// The template's provider part.
+    const PROVIDER: &str = "example-cloud";
+
+    /// A folder of a profile of the template's agent part that no glob of
+    /// the template names, with its login in `auth.json` and its version
+    /// in `state.json`.
+    fn login_folder() -> TempDir {
+        let folder = TempDir::new();
+        write_file(
+            &folder.path().join("auth.json"),
+            format!(r#"{{"api_key": "{KEY}"}}"#).as_bytes(),
+        );
+        write_file(
+            &folder.path().join("state.json"),
+            br#"{"last_version": "1.4.2"}"#,
+        );
+
+        folder
+    }
+
+    /// What OTTY found of a login in the profiles of the plugins and
+    /// folders of `profiles`, of the template's agent part.
+    fn found_in(profiles: &[(&str, &Path)]) -> LoginFacts {
+        let found_in = profiles
+            .iter()
+            .map(|(plugin, folder)| {
+                let folder = folder.to_str().expect("a text path");
+
+                found_profile(plugin, "example-agent", folder)
+            })
+            .collect();
+
+        LoginFacts {
+            found_in,
+            ..key_facts()
+        }
+    }
+
+    /// The numbers the template's provider part reads about a login of
+    /// `found`, with a lent key that is not there: the part reads the key
+    /// of a login folder itself. `https` serves its requests.
+    // A `ReadError` may hold a need, a record the contract can not box.
+    #[allow(clippy::result_large_err)]
+    fn numbers_of(
+        found: &LoginFacts,
+        https: MockHttpsSend,
+    ) -> Result<AccountNumbers, ReadError> {
+        let cache = TempDir::new();
+        let engine = engine_with(&cache, https, MockKeyringRead::new());
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider(PROVIDER))
+            .expect("a listed part");
+        let unset =
+            KeySource::Place(KeyPlace::EnvVar("EXAMPLE_CLOUD_KEY".to_string()));
+
+        batch
+            .provider()
+            .expect("a provider part")
+            .numbers(found, &no_account(), &unset, &[])
+            .expect("the call")
+    }
+
+    /// An account the provider part knows nothing of.
+    fn no_account() -> AccountFacts {
+        AccountFacts {
+            identity: Identity {
+                account_id: None,
+                organization_id: None,
+                email: None,
+            },
+            plan: None,
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: in a
+    /// call about a login found in a profile of its own plugin, the part
+    /// reads `auth.json` in that folder itself, its key as a handle, also
+    /// when no glob of the part names the folder.
+    #[test]
+    fn in_a_call_with_a_folder_the_part_reads_the_login_there() {
+        let folder = login_folder();
+        let mut https = MockHttpsSend::new();
+        https
+            .expect_send()
+            .withf(|sent| {
+                sent.url == "https://api.example.com/v1/balance"
+                    && sent.headers.iter().any(|(name, value)| {
+                        name == "authorization"
+                            && *value == format!("Bearer {KEY}")
+                    })
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(Response {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: br#"{"balance": 7.5, "currency": "USD"}"#.to_vec(),
+                })
+            });
+
+        let numbers =
+            numbers_of(&found_in(&[("example", folder.path())]), https);
+
+        let Ok(numbers) = numbers else {
+            panic!("the part's answer: {numbers:?}");
+        };
+        assert_eq!(numbers.left.map(|left| left.amount), Some(7.5));
+    }
+
+    /// A profile of another plugin gives the part no login folder: it can
+    /// not read the login there, so it reads nothing and sends nothing.
+    #[test]
+    fn a_profile_of_another_plugin_is_no_login_folder() {
+        let folder = login_folder();
+        let mut https = MockHttpsSend::new();
+        https.expect_send().never();
+
+        let numbers =
+            numbers_of(&found_in(&[("another", folder.path())]), https);
+
+        let Ok(numbers) = numbers else {
+            panic!("the part's answer: {numbers:?}");
+        };
+        assert!(numbers.left.is_none());
+    }
+
+    /// What the template's provider part gets when it reads `file` with
+    /// its keys as handles, and the bytes of `file`, in a call with the
+    /// login folders `folders`.
+    fn reads_in_call(
+        folders: &[LoginFolder],
+        file: &Path,
+    ) -> (Result<String, String>, Result<Vec<u8>, String>) {
+        let cache = TempDir::new();
+        let engine =
+            engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider(PROVIDER))
+            .expect("a listed part");
+        let path = file.to_str().expect("a text path").to_string();
+
+        batch
+            .call_in_folders(CallKind::Quick, folders, |store, _| {
+                let state = store.data_mut();
+                let with_keys = state
+                    .read_json_with_keys(path.clone())
+                    .map(|document| document.json);
+                let bytes = state.read(path, 1024);
+
+                Ok((debug_err(with_keys), debug_err(bytes)))
+            })
+            .expect("the call")
+    }
+
+    fn not_allowed(path: &Path) -> String {
+        let error = HostError::NotAllowed(path.display().to_string());
+
+        format!("{error:?}")
+    }
+
+    /// The login file of a login folder is read only with its key as a
+    /// handle; the same read in a call with no folder, or with a folder of
+    /// another agent part, is refused.
+    #[test]
+    fn a_login_file_is_read_only_in_a_call_with_its_folder() {
+        let folder = login_folder();
+        let auth = folder.path().join("auth.json");
+        let own = LoginFolder::new("example-agent", folder.path());
+        let of_another_agent = LoginFolder::new("other-agent", folder.path());
+
+        let in_folder = reads_in_call(&[own], &auth);
+        let with_no_folder = reads_in_call(&[], &auth);
+        let in_another = reads_in_call(&[of_another_agent], &auth);
+
+        assert_eq!(in_folder.0, Ok(r#"{"api_key":{"$key":0}}"#.to_string()));
+        assert_eq!(in_folder.1, Err(not_allowed(&auth)));
+        assert_eq!(with_no_folder.0, Err(not_allowed(&auth)));
+        assert_eq!(in_another.0, Err(not_allowed(&auth)));
+    }
+
+    /// A file of the login folder the part does not declare is refused.
+    #[test]
+    fn a_file_of_the_folder_not_declared_is_refused() {
+        let folder = login_folder();
+        let state = folder.path().join("state.json");
+        let own = LoginFolder::new("example-agent", folder.path());
+
+        let (with_keys, bytes) = reads_in_call(&[own], &state);
+
+        assert_eq!(with_keys, Err(not_allowed(&state)));
+        assert_eq!(bytes, Err(not_allowed(&state)));
+    }
 
     /// What OTTY knows of a key it read itself: an API key, found in no
     /// profile.

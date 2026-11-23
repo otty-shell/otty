@@ -263,6 +263,7 @@ mod tests {
             is_words: false,
             lead: None,
             note: None,
+            profiles_of: None,
             mark,
         }
     }
@@ -295,7 +296,14 @@ mod tests {
             granted_groups(&granted, plugin.manifest.as_ref(), "Example Cloud")
         );
         assert_eq!(
-            dialog.groups[1].label,
+            dialog.groups[0].label,
+            i18n::filled(
+                Key::TplPluginsGroupProfileLogins,
+                &[("agent", "Example Agent")]
+            )
+        );
+        assert_eq!(
+            dialog.groups[2].label,
             i18n::t(Key::PluginsGroupFoundLogins)
         );
     }
@@ -359,7 +367,7 @@ mod tests {
             grouped(part_places(&manifest, &provider()), "Example Cloud")
         );
         assert_eq!(
-            dialog.parts[1].groups[0].label,
+            dialog.parts[1].groups[1].label,
             i18n::t(Key::PluginsGroupSites)
         );
     }
@@ -389,20 +397,17 @@ mod tests {
         let part = &dialog.parts[0];
         assert_eq!(part.name, "Example Cloud");
         assert_eq!(part.mark, None);
-        assert_eq!(part.groups[0].label, i18n::t(Key::PluginsGroupSites));
+        assert_eq!(part.groups[1].label, i18n::t(Key::PluginsGroupSites));
         assert_eq!(
-            part.groups[0].places,
+            part.groups[1].places,
             [
                 site("v2.example.com", Some(PlaceMark::New)),
                 site("api.example.com", Some(PlaceMark::NoLonger)),
             ]
         );
-        assert!(
-            part.groups[1]
-                .places
-                .iter()
-                .all(|place| place.mark.is_none())
-        );
+        for unchanged in [&part.groups[0], &part.groups[2]] {
+            assert!(unchanged.places.iter().all(|place| place.mark.is_none()));
+        }
     }
 
     /// A new part is marked new with all its permissions.
@@ -431,7 +436,7 @@ mod tests {
             Some("Reads the limits of Example Cloud accounts.")
         );
         assert_eq!(
-            dialog.parts[0].groups[0].places,
+            dialog.parts[0].groups[1].places,
             [site("api.example.com", None)]
         );
     }

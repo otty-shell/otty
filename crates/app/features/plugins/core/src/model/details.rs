@@ -470,10 +470,11 @@ mod tests {
             page.parts[1].description.as_deref(),
             Some("Reads the limits of Example Cloud accounts.")
         );
-        // Two folders, a variable and two login files; a site, the
+        // Two folders, a variable and two login files; a login file and
+        // the sessions in the example agent's profiles, a site, the
         // accounts and the keys of one host.
         assert_eq!(page.parts[0].places, 5);
-        assert_eq!(page.parts[1].places, 3);
+        assert_eq!(page.parts[1].places, 5);
     }
 
     /// Issue 36: a part whose manifest says nothing of what it does shows

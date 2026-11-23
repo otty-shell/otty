@@ -71,6 +71,12 @@ impl CallTerminals {
         self.has_started = false;
     }
 
+    /// The permissions of the next call, such as the part's permissions in
+    /// the login folders of that call.
+    pub(crate) fn set_permissions(&mut self, permissions: Arc<Permissions>) {
+        self.permissions = permissions;
+    }
+
     /// The call ended: every terminal it started is stopped, and the
     /// handles it gave find nothing any more.
     pub(crate) fn end_call(&mut self) {

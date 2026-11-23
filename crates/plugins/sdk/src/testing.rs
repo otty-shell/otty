@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// queries and keeps keys under `~/.made-up/` (and reads under the folder
 /// `MADE_UP_HOME` names) and runs, talks to and
 /// starts in a hidden terminal the program `made-up`, and a provider part
-/// that calls `api.example.com`.
+/// that calls `api.example.com`, runs `made-up --usage`, and reads
+/// `auth.json` and the sessions in the profile folders of the agent part
+/// a call gives it.
 pub(crate) const MANIFEST: &str = r#"
 [plugin]
 id = "made-up"
@@ -78,6 +80,19 @@ hosts = ["example.com"]
 
 [agents.provider.permissions]
 http = ["api.example.com"]
+
+[[agents.provider.permissions.run]]
+program = "made-up"
+args = ["--usage"]
+
+[[agents.provider.logins]]
+agent = "made-up-agent"
+folder_env = "MADE_UP_HOME"
+read = ["sessions/*.jsonl"]
+
+[[agents.provider.logins.keys]]
+files = ["auth.json"]
+fields = ["/token"]
 "#;
 
 static NEXT_FOLDER: AtomicUsize = AtomicUsize::new(0);

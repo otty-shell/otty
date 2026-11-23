@@ -436,25 +436,34 @@ pub(crate) fn read_by_way(
     folder: &str,
     way: &str,
 ) -> Result<AccountNumbers, ReadError> {
+    read_in_profiles(batch, &[("test-plugin", folder)], way)
+}
+
+/// The numbers the provider part of `batch` of the `programs` test plugin
+/// reads, the way `way` names, for an account found in the profiles of
+/// `test-agent` in `profiles`, each the id of its plugin and its folder.
+/// The test plugin reads in the first profile.
+// A `ReadError` may hold a need, a record the contract can not box.
+#[allow(clippy::result_large_err)]
+pub(crate) fn read_in_profiles(
+    batch: &mut CallBatch<'_>,
+    profiles: &[(&str, &str)],
+    way: &str,
+) -> Result<AccountNumbers, ReadError> {
     let identity = Identity {
         account_id: Some(way.to_string()),
         organization_id: None,
         email: None,
     };
+    let found_in = profiles
+        .iter()
+        .map(|(plugin, folder)| found_profile(plugin, "test-agent", folder))
+        .collect();
     let found = LoginFacts {
         kind: LoginKind::Subscription,
         identity: identity.clone(),
         plan: None,
-        found_in: vec![FoundProfile {
-            plugin: "test-plugin".to_string(),
-            agent: "test-agent".to_string(),
-            folder: folder.to_string(),
-            launch: Command {
-                program: "stand-in".to_string(),
-                args: Vec::new(),
-                env: Vec::new(),
-            },
-        }],
+        found_in,
     };
     let account = AccountFacts {
         identity,
@@ -467,6 +476,25 @@ pub(crate) fn read_by_way(
         .expect("a provider part")
         .numbers(&found, &account, &key, &[])
         .expect("the call")
+}
+
+/// The profile in `folder` of the agent part `agent` of the plugin
+/// `plugin`, as OTTY tells a provider part where an account was found.
+pub(crate) fn found_profile(
+    plugin: &str,
+    agent: &str,
+    folder: &str,
+) -> FoundProfile {
+    FoundProfile {
+        plugin: plugin.to_string(),
+        agent: agent.to_string(),
+        folder: folder.to_string(),
+        launch: Command {
+            program: "stand-in".to_string(),
+            args: Vec::new(),
+            env: Vec::new(),
+        },
+    }
 }
 
 /// What the program answered, as [`read_by_way`] gave it: the plan, or
@@ -484,7 +512,29 @@ pub(crate) fn plan_of(
 /// The `programs` test plugin loaded with [`PROGRAMS_MANIFEST`] by
 /// `engine`.
 pub(crate) fn load_programs_plugin(engine: &PluginEngine) -> LoadedPlugin {
-    let manifest = Manifest::parse(PROGRAMS_MANIFEST).expect("valid");
+    load_programs_plugin_with(engine, PROGRAMS_MANIFEST)
+}
+
+/// [`PROGRAMS_MANIFEST`] whose provider part `test-provider` does not list
+/// `STAND_IN_HOME` in `env`: it names it only as the `folder_env` of the
+/// logins it reads in the profiles of `test-agent`.
+pub(crate) fn programs_logins_manifest() -> String {
+    edited(
+        PROGRAMS_MANIFEST,
+        "[agents.provider.permissions]\nenv = [\"STAND_IN_HOME\"]\n",
+        "[[agents.provider.logins]]\n\
+         agent = \"test-agent\"\n\
+         folder_env = \"STAND_IN_HOME\"\n\n",
+    )
+}
+
+/// The `programs` test plugin loaded with the manifest `text` by
+/// `engine`.
+pub(crate) fn load_programs_plugin_with(
+    engine: &PluginEngine,
+    text: &str,
+) -> LoadedPlugin {
+    let manifest = Manifest::parse(text).expect("valid");
 
     engine
         .load(manifest, &fixture("programs"), &test_env())

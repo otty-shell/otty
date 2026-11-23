@@ -44,10 +44,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
+use otty_plugin_manifest::{
+    Environment, LoginFolder, Manifest, PartRef, Permissions,
+};
 
 pub use self::programs::StartedProgram;
-use crate::agents::{Place, PlaceItem};
+use crate::agents::{LoginFacts, Place, PlaceItem};
 use crate::files::{Batch, FileInfo};
 use crate::http::{Request, Response};
 use crate::log::Level;
@@ -300,7 +302,7 @@ impl TestHost {
     ///
     /// When the manifest lists no agent part `id`.
     pub fn as_agent<R>(&self, id: &str, run: impl FnOnce() -> R) -> R {
-        self.as_part(&PartRef::agent(id), run)
+        self.as_part(&PartRef::agent(id), &[], run)
     }
 
     /// Runs `run` as the provider part `id`: its host operations get only
@@ -310,7 +312,38 @@ impl TestHost {
     ///
     /// When the manifest lists no provider part `id`.
     pub fn as_provider<R>(&self, id: &str, run: impl FnOnce() -> R) -> R {
-        self.as_part(&PartRef::provider(id), run)
+        self.as_part(&PartRef::provider(id), &[], run)
+    }
+
+    /// Runs `run` as the provider part `id` in a call about the login
+    /// `found`, as OTTY calls it: the folders of the profiles of `found`
+    /// of this plugin are the login folders of the call, so the part also
+    /// reads inside them what the `logins` of its manifest declare.
+    ///
+    /// # Panics
+    ///
+    /// When the manifest lists no provider part `id`.
+    pub fn as_provider_in<R>(
+        &self,
+        id: &str,
+        found: &LoginFacts,
+        run: impl FnOnce() -> R,
+    ) -> R {
+        let folders: Vec<LoginFolder> = {
+            let state = self.state.borrow();
+            let plugin = state.manifest.plugin().id();
+
+            found
+                .found_in
+                .iter()
+                .filter(|profile| profile.plugin == plugin)
+                .map(|profile| {
+                    LoginFolder::new(&profile.agent, &profile.folder)
+                })
+                .collect()
+        };
+
+        self.as_part(&PartRef::provider(id), &folders, run)
     }
 
     /// The files of `places` the agent part `id` may read, each as OTTY
@@ -342,7 +375,12 @@ impl TestHost {
         items
     }
 
-    fn as_part<R>(&self, part: &PartRef, run: impl FnOnce() -> R) -> R {
+    fn as_part<R>(
+        &self,
+        part: &PartRef,
+        folders: &[LoginFolder],
+        run: impl FnOnce() -> R,
+    ) -> R {
         let permissions = {
             let state = self.state.borrow();
             let declared = state
@@ -351,6 +389,7 @@ impl TestHost {
                 .unwrap_or_else(|| panic!("otty-plugin.toml lists no {part}"));
 
             Permissions::new(declared, &state.environment())
+                .in_login_folders(folders)
         };
 
         let current = Current {
@@ -999,6 +1038,108 @@ mod tests {
 
         assert!(matches!(up_listed, Err(HostError::NotAllowed(_))));
         assert!(matches!(relative_listed, Err(HostError::NotAllowed(_))));
+    }
+
+    /// What OTTY found of a login in the profile `folder` of the agent
+    /// part `agent` of the plugin `plugin`.
+    fn found_in(plugin: &str, agent: &str, folder: &Path) -> LoginFacts {
+        crate::agents::LoginFacts {
+            kind: crate::agents::LoginKind::ApiKey,
+            identity: crate::agents::Identity::default(),
+            plan: None,
+            found_in: vec![crate::agents::FoundProfile {
+                plugin: plugin.to_string(),
+                agent: agent.to_string(),
+                folder: text(folder),
+                launch: crate::Command {
+                    program: "made-up".to_string(),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                },
+            }],
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: in a
+    /// call about a login found in a profile of its own plugin, a
+    /// provider part reads in that folder what its `logins` declare, the
+    /// login with its key as a handle; outside such a call, and in a
+    /// profile of another plugin, it reads nothing there.
+    #[test]
+    fn a_provider_part_reads_in_the_login_folders_of_its_call() {
+        let plugin = MadeUpPlugin::new();
+        let auth = plugin.write("work/auth.json", br#"{"token": "x.y.z"}"#);
+        let session = plugin.write("work/sessions/a.jsonl", b"{}\n");
+        let folder = auth.parent().expect("the profile folder");
+        let host = TestHost::new(plugin.folder());
+        let read = || {
+            let login = files::json_with_keys(&text(&auth))
+                .map(|document| document.json().to_string());
+
+            (login, files::read(&text(&session), 1024))
+        };
+
+        let in_call = host.as_provider_in(
+            PROVIDER,
+            &found_in("made-up", AGENT, folder),
+            read,
+        );
+        let outside = host.as_provider(PROVIDER, read);
+        let of_another_plugin = host.as_provider_in(
+            PROVIDER,
+            &found_in("other", AGENT, folder),
+            read,
+        );
+
+        assert_eq!(
+            in_call,
+            (
+                Ok(r#"{"token":{"$key":0}}"#.to_string()),
+                Ok(b"{}\n".to_vec())
+            )
+        );
+        for refused in [outside, of_another_plugin] {
+            assert_eq!(refused.0, Err(HostError::NotAllowed(text(&auth))));
+            assert_eq!(refused.1, Err(HostError::NotAllowed(text(&session))));
+        }
+    }
+
+    /// A program the provider part starts gets the folder variable of its
+    /// logins only set to a login folder of the call.
+    #[test]
+    fn the_folder_variable_reaches_a_program_only_with_a_login_folder() {
+        let plugin = MadeUpPlugin::new();
+        let auth = plugin.write("work/auth.json", br#"{"token": "x.y.z"}"#);
+        let folder = auth.parent().expect("the profile folder");
+        let host = TestHost::new(plugin.folder());
+        let found = found_in("made-up", AGENT, folder);
+        host.answer_run(
+            "made-up",
+            &["--usage"],
+            programs::Output {
+                status: Some(0),
+                stdout: b"12% used".to_vec(),
+                stderr: Vec::new(),
+            },
+        );
+        let run_in = |folder: &str| {
+            let env = [("MADE_UP_HOME".to_string(), folder.to_string())];
+
+            programs::run("made-up", &["--usage".to_string()], &env, 1000)
+                .map(|output| output.stdout)
+        };
+
+        let in_folder =
+            host.as_provider_in(PROVIDER, &found, || run_in(&text(folder)));
+        let elsewhere =
+            host.as_provider_in(PROVIDER, &found, || run_in("/elsewhere"));
+        let outside = host.as_provider(PROVIDER, || run_in(&text(folder)));
+
+        let refused =
+            HostError::NotAllowed("variable MADE_UP_HOME".to_string());
+        assert_eq!(in_folder, Ok(b"12% used".to_vec()));
+        assert_eq!(elsewhere, Err(refused.clone()));
+        assert_eq!(outside, Err(refused));
     }
 
     #[test]

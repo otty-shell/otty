@@ -150,7 +150,7 @@ mod tests {
             mark: None,
             is_removed: false,
             groups: vec![PermissionGroupViewModel {
-                label: "Sites",
+                label: String::from("Sites"),
                 meaning: Some(String::from("Sends requests only to these")),
                 places: vec![PlaceViewModel {
                     group: PermissionGroup::Sites,
@@ -158,6 +158,7 @@ mod tests {
                     is_words: false,
                     lead: None,
                     note: None,
+                    profiles_of: None,
                     mark: None,
                 }],
             }],

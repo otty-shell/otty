@@ -1,12 +1,14 @@
 //! The provider part `example-cloud`: a made-up provider whose API tells
-//! whose account a key is and how much money is left on it.
+//! whose account a key is and how much money is left on it. It reads the
+//! key of a login itself in the example agent's profile folders OTTY
+//! gives it, as its manifest's `logins` declare.
 
 use otty_plugin_sdk::agents::{
     AccountFacts, AccountNumbers, Bill, DayCost, DayRange, Identity,
     LoginFacts, Money, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, HostError, Key, Need, given_key};
+use otty_plugin_sdk::{GivenKey, HostError, Key, Need, files, given_key};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -14,6 +16,12 @@ use crate::{Example, needs};
 
 /// The provider's API.
 const API: &str = "https://api.example.com/v1";
+
+/// The id of this plugin, as OTTY names it in a found profile.
+const PLUGIN: &str = "example";
+
+/// The agent part whose profiles hold the logins the part reads.
+const AGENT: &str = "example-agent";
 
 /// The provider's name, as the texts of its needs say it.
 const NAME: &str = "Example Cloud";
@@ -29,6 +37,20 @@ const ADMIN_PREFIX: &str = "ex-admin-";
 
 /// The page where the user makes an admin key.
 const BILL_KEYS_PAGE: &str = "https://example.com/keys/admin";
+
+/// `auth.json` of a profile of the example agent, its key replaced by a
+/// handle.
+#[derive(Debug, Deserialize)]
+struct AuthFile {
+    api_key: Option<KeyMarker>,
+}
+
+/// `{"$key": n}`: where the host put a key.
+#[derive(Debug, Deserialize)]
+struct KeyMarker {
+    #[serde(rename = "$key")]
+    index: usize,
+}
 
 /// The answer of `/me`.
 #[derive(Debug, Deserialize)]
@@ -85,17 +107,21 @@ impl Provider for Example {
         })
     }
 
-    /// The money left on the key. A key that is not at its place now,
-    /// such as a variable the user unset, is a normal case: the part has
-    /// no other way to read the account, so it answers nothing, and sends
-    /// nothing.
+    /// The money left on the key of the login: the one the part reads
+    /// itself in a profile folder of the example agent, else the key OTTY
+    /// lends. A key that is not at its place now, such as a variable the
+    /// user unset, is a normal case: the part has no other way to read the
+    /// account, so it answers nothing, and sends nothing.
     fn numbers(
         _provider: &str,
-        _found: &LoginFacts,
+        found: &LoginFacts,
         _account: &AccountFacts,
         key: &Key,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
+        let own = login_key(found)?;
+        let key = own.as_ref().unwrap_or(key);
+
         if !is_there(key)? {
             return Ok(no_numbers());
         }
@@ -151,6 +177,40 @@ impl Provider for Example {
             .collect();
         Ok(Bill { days })
     }
+}
+
+/// The key of `auth.json` in the first profile folder of the example agent
+/// where the login was found that holds one, as a handle. Only a profile
+/// of this plugin is a login folder of the call; a folder with no
+/// `auth.json` is passed over.
+fn login_key(found: &LoginFacts) -> Result<Option<Key>, ReadError> {
+    let folders = found
+        .found_in
+        .iter()
+        .filter(|profile| profile.plugin == PLUGIN && profile.agent == AGENT)
+        .map(|profile| profile.folder.as_str());
+
+    for folder in folders {
+        let document =
+            match files::json_with_keys(&format!("{folder}/auth.json")) {
+                Ok(document) => document,
+                Err(HostError::NotFound(_)) => continue,
+                Err(error) => return Err(ReadError::Host(error)),
+            };
+        let (json, keys) = document.into_parts();
+        let Ok(auth) = serde_json::from_str::<AuthFile>(&json) else {
+            continue;
+        };
+
+        let key = auth
+            .api_key
+            .and_then(|marker| keys.into_iter().nth(marker.index));
+        if key.is_some() {
+            return Ok(key);
+        }
+    }
+
+    Ok(None)
 }
 
 /// Whether `key` reads bills: an admin key. A key that is not at its
@@ -226,9 +286,9 @@ fn get_json<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::LoginKind;
+    use otty_plugin_sdk::agents::{FoundProfile, LoginKind};
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{GivenKey, HostError, NeedAction, files};
+    use otty_plugin_sdk::{Command, GivenKey, HostError, NeedAction, files};
 
     use super::*;
 
@@ -254,6 +314,76 @@ mod tests {
             plan: None,
             found_in: Vec::new(),
         }
+    }
+
+    /// What OTTY found of a login in the profile in `folder` of the home
+    /// folder, of the example agent of the plugin `plugin`.
+    fn found_in_profile(
+        host: &TestHost,
+        plugin: &str,
+        folder: &str,
+    ) -> LoginFacts {
+        LoginFacts {
+            found_in: vec![FoundProfile {
+                plugin: plugin.to_string(),
+                agent: "example-agent".to_string(),
+                folder: host.home().join(folder).display().to_string(),
+                launch: Command {
+                    program: "example-agent".to_string(),
+                    args: Vec::new(),
+                    env: Vec::new(),
+                },
+            }],
+            ..found()
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the part
+    /// reads the key of `auth.json` in a profile folder OTTY gives it
+    /// itself, as a handle, and reads the balance with it.
+    #[test]
+    fn numbers_read_with_the_key_of_the_login_folder() {
+        let host = host();
+        host.answer(
+            "GET",
+            "https://api.example.com/v1/balance",
+            200,
+            br#"{"balance": 12.5, "currency": "USD"}"#,
+        );
+        let unset = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
+            "EXAMPLE_CLOUD_KEY".to_string(),
+        ));
+        let found = found_in_profile(&host, "example", ".example-agent-work");
+
+        let numbers = host
+            .as_provider_in(PROVIDER, &found, || {
+                Example::numbers(PROVIDER, &found, &account(), &unset, &[])
+            })
+            .expect("the numbers");
+
+        assert_eq!(numbers.left.map(|left| left.amount), Some(12.5));
+        assert_eq!(
+            host.requests()[0].header("authorization"),
+            Some("Bearer ex-made-up-key-0002")
+        );
+    }
+
+    /// A profile of another plugin is no login folder of the call: the
+    /// part reads no key there and sends nothing.
+    #[test]
+    fn a_profile_of_another_plugin_gives_no_key() {
+        let host = host();
+        let unset = host.key_at(&otty_plugin_sdk::KeyPlace::EnvVar(
+            "EXAMPLE_CLOUD_KEY".to_string(),
+        ));
+        let found = found_in_profile(&host, "another", ".example-agent-work");
+
+        let numbers = host.as_provider_in(PROVIDER, &found, || {
+            Example::numbers(PROVIDER, &found, &account(), &unset, &[])
+        });
+
+        assert_eq!(numbers, Ok(no_numbers()));
+        assert!(host.requests().is_empty(), "nothing is sent");
     }
 
     /// Issue 29: a key that is not at its place now is no failure: the

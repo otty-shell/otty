@@ -1,21 +1,27 @@
 //! The permissions of one part made concrete for this computer, as the
 //! host operations check them on every call (spec
-//! 2026-11-19-agent-plugins, Decision 7).
+//! 2026-11-19-agent-plugins, Decision 7), and for one call with login
+//! folders, what a provider part reads inside them (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 5).
 
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobMatcher, GlobSet};
 
 use crate::environment::Environment;
-use crate::path_glob::{glob_set, is_plain_absolute};
+use crate::path_glob::{glob_set, is_plain_absolute, pattern_set};
 use crate::permissions::declared::{
-    JsonPointer, KeyRule, KeyringRule, PartPermissions, ProgramRule,
+    JsonPointer, KeyRule, KeyringRule, LoginRule, PartPermissions, ProgramRule,
 };
 
 /// What one part may do right now, with `~` and its variables replaced
 /// by this computer's folders. A call carries the permissions of the part
 /// it is for only, so another part's paths and hosts are refused like any
 /// path or host nobody declared.
+///
+/// A call of a provider part may also carry login folders
+/// ([`Self::in_login_folders`]): inside them the part reads what its
+/// [`LoginRule`]s declare, and nowhere else.
 #[derive(Debug, Clone)]
 pub struct Permissions {
     read: GlobSet,
@@ -29,6 +35,10 @@ pub struct Permissions {
     keyring: Vec<KeyringRule>,
     keys: Vec<KeyMatcher>,
     http: Vec<String>,
+    logins: Vec<LoginRule>,
+    folder_read: GlobSet,
+    folder_key_files: GlobSet,
+    folder_vars: Vec<(String, PathBuf)>,
 }
 
 impl Permissions {
@@ -79,6 +89,61 @@ impl Permissions {
             keyring: declared.keyring().to_vec(),
             keys,
             http: declared.http().to_vec(),
+            logins: declared.logins().to_vec(),
+            folder_read: GlobSet::empty(),
+            folder_key_files: GlobSet::empty(),
+            folder_vars: Vec::new(),
+        }
+    }
+
+    /// The same permissions for one call with the login folders
+    /// `folders`: inside each folder of an agent part its [`LoginRule`]s
+    /// name, the part also reads their files and their key files, keys
+    /// as handles, and a program it starts may get the rule's
+    /// `folder_env` set to that folder. A folder of another agent part or
+    /// one that is not an absolute path with no `..` adds nothing.
+    pub fn in_login_folders(&self, folders: &[LoginFolder]) -> Self {
+        let mut read = Vec::new();
+        let mut key_files = Vec::new();
+        let mut keys = self.keys.clone();
+        let mut vars = Vec::new();
+        let usable = folders
+            .iter()
+            .filter(|folder| is_plain_absolute(folder.folder()));
+        for folder in usable {
+            let path = folder.folder();
+            let rules = self
+                .logins
+                .iter()
+                .filter(|rule| rule.agent() == folder.agent());
+            for rule in rules {
+                read.extend(
+                    rule.read().iter().filter_map(|glob| glob.resolve(path)),
+                );
+                for login_keys in rule.keys() {
+                    let files: Vec<String> = login_keys
+                        .files()
+                        .iter()
+                        .filter_map(|glob| glob.resolve(path))
+                        .collect();
+                    keys.push(KeyMatcher::JsonFile {
+                        files: pattern_set(&files),
+                        fields: login_keys.fields().to_vec(),
+                    });
+                    key_files.extend(files);
+                }
+                if let Some(name) = rule.folder_env() {
+                    vars.push((name.to_string(), path.to_path_buf()));
+                }
+            }
+        }
+
+        Self {
+            keys,
+            folder_read: pattern_set(&read),
+            folder_key_files: pattern_set(&key_files),
+            folder_vars: vars,
+            ..self.clone()
         }
     }
 
@@ -86,8 +151,8 @@ impl Permissions {
     /// is refused: it is read only with its keys replaced by handles.
     pub fn may_read(&self, path: &Path) -> bool {
         is_plain_absolute(path)
-            && self.read.is_match(path)
-            && !self.key_files.is_match(path)
+            && (self.read.is_match(path) || self.folder_read.is_match(path))
+            && !self.is_key_file(path)
     }
 
     /// Whether the part may write or delete the file `path`. A key file is
@@ -95,7 +160,7 @@ impl Permissions {
     pub fn may_write(&self, path: &Path) -> bool {
         is_plain_absolute(path)
             && self.write.is_match(path)
-            && !self.key_files.is_match(path)
+            && !self.is_key_file(path)
     }
 
     /// Whether the part may query the SQLite database `path`, read-only.
@@ -106,7 +171,7 @@ impl Permissions {
     /// Whether the part may read the key file `path` as JSON with its key
     /// fields replaced by handles.
     pub fn may_read_with_keys(&self, path: &Path) -> bool {
-        is_plain_absolute(path) && self.key_files.is_match(path)
+        is_plain_absolute(path) && self.is_key_file(path)
     }
 
     /// The JSON fields that hold keys in the key file `file`; none for a
@@ -161,6 +226,26 @@ impl Permissions {
     pub fn may_read_var(&self, name: &str) -> bool {
         self.env.iter().any(|listed| listed == name)
             && !self.key_vars.iter().any(|key_var| key_var == name)
+    }
+
+    /// Whether a program the part starts may get the variable `name` set
+    /// to `value`. In a call with login folders, a `folder_env` of the
+    /// part's logins may only point at one of those folders; any other
+    /// variable only when the part may read it as text.
+    pub fn may_pass_var(&self, name: &str, value: &str) -> bool {
+        let mut folders = self
+            .folder_vars
+            .iter()
+            .filter(|(var, _)| var == name)
+            .map(|(_, folder)| folder)
+            .peekable();
+        if folders.peek().is_none() {
+            return self.may_read_var(name);
+        }
+
+        let value = Path::new(value);
+
+        is_plain_absolute(value) && folders.any(|folder| folder == value)
     }
 
     /// Whether the part may run `program` with exactly the arguments
@@ -249,6 +334,52 @@ impl Permissions {
                         )
                     })
             },
+        }
+    }
+
+    /// Whether `path` is a key file of the part, declared in `keys` or in
+    /// a login folder of the call.
+    fn is_key_file(&self, path: &Path) -> bool {
+        self.key_files.is_match(path) || self.folder_key_files.is_match(path)
+    }
+}
+
+/// A login folder OTTY gives a provider part for one call: the config
+/// folder of a profile of an agent part of the same plugin, such as
+/// `~/.codex-work` of `codex`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginFolder {
+    agent: String,
+    folder: PathBuf,
+}
+
+impl LoginFolder {
+    /// The id of the agent part of the profile.
+    pub fn agent(&self) -> &str {
+        &self.agent
+    }
+
+    /// The profile's config folder.
+    pub fn folder(&self) -> &Path {
+        &self.folder
+    }
+
+    /// The folder `folder` of a profile of the agent part `agent`.
+    ///
+    /// ```
+    /// use std::path::Path;
+    ///
+    /// use otty_plugin_manifest::LoginFolder;
+    ///
+    /// let folder = LoginFolder::new("codex", "/home/user/.codex-work");
+    ///
+    /// assert_eq!(folder.agent(), "codex");
+    /// assert_eq!(folder.folder(), Path::new("/home/user/.codex-work"));
+    /// ```
+    pub fn new(agent: &str, folder: impl Into<PathBuf>) -> Self {
+        Self {
+            agent: agent.to_string(),
+            folder: folder.into(),
         }
     }
 }
@@ -419,7 +550,9 @@ mod tests {
     use super::*;
     use crate::manifest::Manifest;
     use crate::part::PartRef;
-    use crate::testing::{OPENAI_MANIFEST, OPENCODE_MANIFEST, edited};
+    use crate::testing::{
+        OPENAI_MANIFEST, OPENCODE_MANIFEST, edited, with_codex_logins,
+    };
 
     fn env() -> Environment {
         Environment::new(PathBuf::from("/home/user"))
@@ -436,6 +569,120 @@ mod tests {
 
     fn args(args: &[&str]) -> Vec<String> {
         args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    /// The permissions of the provider part of [`with_codex_logins`],
+    /// outside a call with login folders.
+    fn codex_logins() -> Permissions {
+        permissions_of(&with_codex_logins(), &PartRef::provider("openai"))
+    }
+
+    fn json_field(file: &str, pointer: &str) -> KeyPlace {
+        KeyPlace::JsonField {
+            file: PathBuf::from(file),
+            pointer: pointer.to_string(),
+        }
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, "What OTTY stores":
+    /// in a call with a login folder, wherever it is, the part reads its
+    /// declared files there, the key files only with keys as handles.
+    #[test]
+    fn in_a_login_folder_the_part_reads_what_its_logins_declare() {
+        let called = codex_logins()
+            .in_login_folders(&[LoginFolder::new("codex", "/work/codex-a")]);
+        let auth = Path::new("/work/codex-a/auth.json");
+
+        let fields: Vec<String> = called
+            .key_fields(auth)
+            .iter()
+            .map(|field| field.as_str().to_string())
+            .collect();
+
+        assert!(called.may_read_with_keys(auth));
+        assert!(!called.may_read(auth));
+        assert!(!called.may_write(auth));
+        assert_eq!(fields, ["/OPENAI_API_KEY", "/tokens/access_token"]);
+        assert!(called.may_open_key(&json_field(
+            "/work/codex-a/auth.json",
+            "/tokens/access_token"
+        )));
+        assert!(!called.may_open_key(&json_field(
+            "/work/codex-a/auth.json",
+            "/tokens/refresh_token"
+        )));
+        assert!(
+            called.may_read(Path::new("/work/codex-a/sessions/2026/a.jsonl"))
+        );
+        assert!(called.may_call("chatgpt.com"));
+    }
+
+    /// A file of the folder the part does not declare, a file of another
+    /// folder and a folder of another agent part are refused.
+    #[test]
+    fn a_login_folder_gives_only_its_declared_files() {
+        let called = codex_logins().in_login_folders(&[
+            LoginFolder::new("codex", "/work/codex-a"),
+            LoginFolder::new("claude-code", "/work/claude"),
+            LoginFolder::new("codex", "work/relative"),
+        ]);
+
+        assert!(!called.may_read(Path::new("/work/codex-a/config.toml")));
+        assert!(!called.may_read_with_keys(Path::new("/work/codex-a/a.json")));
+        assert!(
+            !called.may_read_with_keys(Path::new("/work/codex-b/auth.json"))
+        );
+        assert!(!called.may_read(Path::new("/work/codex-b/sessions/a.jsonl")));
+        assert!(
+            !called.may_read_with_keys(Path::new("/work/claude/auth.json"))
+        );
+        assert!(!called.may_read(Path::new("/work/codex-a/../x/auth.json")));
+        assert!(
+            !called.may_read_with_keys(Path::new("work/relative/auth.json"))
+        );
+    }
+
+    /// Nothing of the login rules applies outside a call with folders.
+    #[test]
+    fn with_no_login_folder_the_logins_give_nothing() {
+        let base = codex_logins();
+        let auth = Path::new("/work/codex-a/auth.json");
+
+        assert!(!base.may_read_with_keys(auth));
+        assert!(base.key_fields(auth).is_empty());
+        assert!(!base.may_open_key(&json_field(
+            "/work/codex-a/auth.json",
+            "/tokens/access_token"
+        )));
+        assert!(!base.may_read(Path::new("/work/codex-a/sessions/a.jsonl")));
+        assert!(!base.in_login_folders(&[]).may_read_with_keys(auth));
+    }
+
+    /// A program the part starts gets `folder_env` only pointing at a
+    /// login folder of the call; the part never reads it as text.
+    #[test]
+    fn the_folder_variable_points_only_at_a_login_folder() {
+        let base = codex_logins();
+        let called = base
+            .in_login_folders(&[LoginFolder::new("codex", "/work/codex-a")]);
+
+        assert!(called.may_pass_var("CODEX_HOME", "/work/codex-a"));
+        assert!(called.may_pass_var("CODEX_HOME", "/work/codex-a/"));
+        assert!(!called.may_pass_var("CODEX_HOME", "/work/codex-b"));
+        assert!(!called.may_pass_var("CODEX_HOME", "/work/codex-a/../x"));
+        assert!(!called.may_pass_var("CODEX_HOME", "codex-a"));
+        assert!(!called.may_read_var("CODEX_HOME"));
+        assert!(!base.may_pass_var("CODEX_HOME", "/work/codex-a"));
+    }
+
+    /// A variable the part lists in `env` reaches its programs with any
+    /// value, as before.
+    #[test]
+    fn a_listed_variable_reaches_a_program_with_any_value() {
+        let codex = permissions_of(OPENAI_MANIFEST, &PartRef::agent("codex"));
+
+        assert!(codex.may_pass_var("CODEX_HOME", "/data/codex"));
+        assert!(!codex.may_pass_var("HOME", "/home/user"));
     }
 
     #[test]
