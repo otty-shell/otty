@@ -10,7 +10,7 @@ interface agent {
   use otty:host/files@0.1.0.{file-info};
   use types.{read-error, identity, login-kind};
 
-  /// A config folder of the agent found on this computer.
+  /// A config folder of the agent on this computer.
   record profile-place {
     folder: string,
     /// Whether it is the agent's default folder, or the one its variable
@@ -164,7 +164,10 @@ interface agent {
     records: record-counts,
   }
 
-  /// The agent's config folders on this computer, default first.
+  /// The agent's default config folder only: the one the agent uses with
+  /// no variable set, or the one its variable names, marked `is-default`.
+  /// OTTY ignores any other place; the user adds other folders as
+  /// profiles.
   profiles: func(agent: string) -> list<profile-place>;
   /// Whether the profile is logged in.
   detect: func(profile: profile) -> profile-status;

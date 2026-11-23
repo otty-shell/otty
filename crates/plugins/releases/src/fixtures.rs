@@ -18,13 +18,28 @@ use crate::plugins_file::{InstalledPlugin, Source};
 /// The manifest of the template plugin, `assets/plugins/example/`, at
 /// `version`: an agent part `example-agent` and a provider part
 /// `example-cloud`.
+///
+/// The version line of the `[plugin]` table, the first that starts with
+/// `version =`, is replaced whatever version the template has now, so a
+/// new version of the template changes no test.
 pub fn example_manifest(version: &str) -> String {
-    include_str!("../../../../assets/plugins/example/otty-plugin.toml")
-        .replacen(
-            "version = \"0.1.0\"",
-            &format!("version = \"{version}\""),
-            1,
-        )
+    let text =
+        include_str!("../../../../assets/plugins/example/otty-plugin.toml");
+
+    let mut is_replaced = false;
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if is_replaced || !line.starts_with("version =") {
+                return line.to_string();
+            }
+
+            is_replaced = true;
+            format!("version = \"{version}\"")
+        })
+        .collect();
+
+    lines.join("\n") + "\n"
 }
 
 /// The plugin of `manifest` as `plugins.json` records it, installed from

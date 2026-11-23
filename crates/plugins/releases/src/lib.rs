@@ -25,7 +25,7 @@ mod choose;
 mod compiler;
 mod diff;
 mod error;
-#[cfg(feature = "fixtures")]
+#[cfg(any(test, feature = "fixtures"))]
 pub mod fixtures;
 mod github;
 mod http;

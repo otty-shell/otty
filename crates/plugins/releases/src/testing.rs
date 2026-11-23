@@ -207,15 +207,7 @@ pub(crate) fn releases_json(releases: &[(&str, bool, &[&str])]) -> Vec<u8> {
 
 /// The manifest of the template plugin with the version `version`.
 pub(crate) fn template_manifest(version: &str) -> String {
-    let text =
-        std::fs::read_to_string(Path::new(EXAMPLE_FOLDER).join(MANIFEST_FILE))
-            .expect("the template's manifest");
-
-    text.replacen(
-        "version = \"0.1.0\"",
-        &format!("version = \"{version}\""),
-        1,
-    )
+    crate::fixtures::example_manifest(version)
 }
 
 /// The parts of `manifest` as installed, all on.

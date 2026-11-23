@@ -56,29 +56,16 @@ struct StateFile {
 }
 
 impl Agent for Example {
+    /// The default config folder only: OTTY ignores any other place, and
+    /// the user adds other folders as profiles.
     fn profiles(_agent: &str) -> Vec<ProfilePlace> {
-        let home = env::home();
-        let default = env::var(HOME_VARIABLE)
-            .unwrap_or_else(|| format!("{home}/{DEFAULT_FOLDER}"));
-        let mut places = vec![ProfilePlace {
-            folder: default,
+        let folder = env::var(HOME_VARIABLE)
+            .unwrap_or_else(|| format!("{}/{DEFAULT_FOLDER}", env::home()));
+
+        vec![ProfilePlace {
+            folder,
             is_default: true,
-        }];
-
-        let sessions = format!("{home}/{DEFAULT_FOLDER}-*/sessions/*.jsonl");
-        for file in files::list(&sessions).unwrap_or_default() {
-            let Some(folder) = profile_folder(&file.path) else {
-                continue;
-            };
-            if places.iter().all(|place| place.folder != folder) {
-                places.push(ProfilePlace {
-                    folder,
-                    is_default: false,
-                });
-            }
-        }
-
-        places
+        }]
     }
 
     fn detect(profile: &Profile) -> ProfileStatus {
@@ -240,13 +227,6 @@ fn folder_exists(profile: &Profile) -> bool {
         .is_ok_and(|found| !found.is_empty())
 }
 
-/// The config folder of a session file `<folder>/sessions/<id>.jsonl`.
-fn profile_folder(session_file: &str) -> Option<String> {
-    let folder = Path::new(session_file).parent()?.parent()?;
-
-    Some(folder.to_string_lossy().into_owned())
-}
-
 /// The variable a profile in another folder than the default needs.
 fn folder_env(profile: &Profile) -> Vec<(String, String)> {
     if profile.is_default {
@@ -277,24 +257,20 @@ mod tests {
         }
     }
 
+    /// The fixture home holds `~/.example-agent-work` with a session, and
+    /// still the part gives only the default folder.
     #[test]
-    fn profiles_are_the_default_folder_and_the_found_ones() {
+    fn the_only_profile_is_the_default_folder() {
         let host = host();
 
         let places = host.as_agent(AGENT, || Example::profiles(AGENT));
 
         assert_eq!(
             places,
-            [
-                ProfilePlace {
-                    folder: profile(&host, ".example-agent", true).folder,
-                    is_default: true,
-                },
-                ProfilePlace {
-                    folder: profile(&host, ".example-agent-work", false).folder,
-                    is_default: false,
-                },
-            ]
+            [ProfilePlace {
+                folder: profile(&host, ".example-agent", true).folder,
+                is_default: true,
+            }]
         );
     }
 

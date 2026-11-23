@@ -100,7 +100,7 @@ mod tests {
         std::fs::create_dir_all(&folder).expect("the folder");
         std::fs::write(folder.join("state.json"), "{}").expect("a file");
 
-        Profile::found(AgentId::new("example-agent"), "Example", folder)
+        Profile::added(AgentId::new("example-agent"), "Example", folder)
     }
 
     /// Issue 20: a new language reaches the plugin that exports the

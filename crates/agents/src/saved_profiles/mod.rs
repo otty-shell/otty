@@ -55,10 +55,8 @@
 //! `found_report_shown` tells that the Found by OTTY report was shown once,
 //! so it does not open by itself again. `keyring_allowed` tells that the
 //! user allowed the plugin parts that declare an entry of the system
-//! keyring to read it. A profile OTTY found is not
-//! written; once the user changes it, it is saved as an added profile. It
-//! can still be hidden: a hidden profile is kept by its folder, not by an
-//! entry.
+//! keyring to read it. A hidden profile is kept by its folder, not by an
+//! entry, so a default profile the user did not change can be hidden too.
 //!
 //! Two plugins that serve one provider, or one host under two provider
 //! ids, each read its accounts, and each reading is an account of its own
@@ -943,7 +941,7 @@ mod tests {
             "theme": "dark"
         }"#;
         let future = AgentId::new("future-agent");
-        let gone = Profile::found(
+        let gone = Profile::added(
             AgentId::new("gone-agent"),
             "Gone Agent",
             PathBuf::from("/home/user/.config/gone-agent"),

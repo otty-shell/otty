@@ -1,7 +1,9 @@
 //! An agent read by an agent part of a plugin (spec
-//! 2026-11-19-agent-plugins, Decisions 4 and 6): the part finds the
-//! profiles, the logins, the sessions and the answers, and OTTY keeps the
-//! generic work, from walking the spend places to joining accounts.
+//! 2026-11-19-agent-plugins, Decisions 4 and 6): the part names the
+//! agent's default folder and finds the logins, the sessions and the
+//! answers, and OTTY keeps the generic work, from walking the spend places
+//! to joining accounts. Other folders are profiles only when the user adds
+//! them (spec 2026-11-23, Decision 4).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -246,13 +248,6 @@ impl Agent for PluginAgent {
             .map(|need| need.about_profile(profile.config_dir()))
     }
 
-    /// Read as the session list reads, so what it read is kept for it.
-    fn has_sessions(&self, profile: &Profile) -> bool {
-        let sessions = self.sessions.sessions(profile);
-
-        matches!(sessions, Ok(sessions) if !sessions.is_empty())
-    }
-
     fn version(&self, profile: &Profile) -> Option<String> {
         let asked = part_profile(profile);
 
@@ -307,20 +302,6 @@ impl Agent for PluginAgent {
     fn stats_source(&self) -> Option<Box<dyn StatsSource>> {
         Some(Box::new(Arc::clone(&self.spend)))
     }
-
-    fn found_config_dirs(&self, _env: &AgentEnv) -> Vec<PathBuf> {
-        let places = self
-            .part
-            .read("profiles", |batch| batch.agent()?.profiles())
-            .unwrap_or_default();
-
-        places
-            .into_iter()
-            .filter(|place| !place.is_default)
-            .map(|place| PathBuf::from(place.folder))
-            .filter(|folder| *folder != self.default_folder)
-            .collect()
-    }
 }
 
 /// The account `login` of `profile` is: known by its account id,
@@ -369,7 +350,7 @@ pub(crate) fn account_of(
 }
 
 /// The default folder of the part `id`, asked once; the folder `~/.<id>`
-/// when the read fails.
+/// when the read fails or the part marks no place as the default one.
 fn default_folder(part: &CalledPart, id: &str) -> PathBuf {
     let home = part.plugin().env().home().to_path_buf();
     let fallback = home.join(format!(".{id}"));
@@ -384,12 +365,10 @@ fn default_folder(part: &CalledPart, id: &str) -> PathBuf {
     }
 }
 
-/// The default place of `places`: the one marked default, else the first.
+/// The default place of `places`: the one marked default. Any other place
+/// the part gives is left out (spec 2026-11-23, Decision 4).
 fn default_place(places: &[ProfilePlace]) -> Option<&ProfilePlace> {
-    places
-        .iter()
-        .find(|place| place.is_default)
-        .or_else(|| places.first())
+    places.iter().find(|place| place.is_default)
 }
 
 /// Whether `found`, the provider of a login, is the provider of
@@ -464,10 +443,11 @@ mod tests {
         assert_eq!(agent.tested_version(), Some("1.4.2"));
     }
 
-    /// The default profile is the part's default folder; another folder
-    /// the part finds is a profile named after its end.
+    /// Spec 2026-11-23, Decision 4: the default profile is the part's
+    /// default folder, and another folder of the agent with a session is
+    /// no profile.
     #[test]
-    fn the_profiles_are_the_folders_the_part_finds() {
+    fn the_only_profile_is_the_default_folder_of_the_part() {
         let home = TemplateHome::new();
         home.write_session(
             ".example-agent-work",
@@ -484,15 +464,36 @@ mod tests {
             .iter()
             .map(|profile| (profile.name(), profile.config_dir().to_path_buf()))
             .collect();
-        assert_eq!(
-            listed,
-            [
-                ("Example Agent", home.folder()),
-                ("Work", home.home().join(".example-agent-work")),
-            ]
-        );
+        assert_eq!(listed, [("Example Agent", home.folder())]);
         assert_eq!(agents[0].config_folder().name(), ".example-agent");
         assert_eq!(agents[0].config_folder().variable(), "EXAMPLE_AGENT_HOME");
+    }
+
+    fn place(folder: &str, is_default: bool) -> ProfilePlace {
+        ProfilePlace {
+            folder: folder.to_string(),
+            is_default,
+        }
+    }
+
+    /// Spec 2026-11-23, Decision 4: OTTY takes the place the part marks
+    /// as the default one, wherever it is in the list, and no other.
+    #[test]
+    fn the_default_place_is_the_one_marked_default_only() {
+        let marked = [
+            place("/home/dev/.example-agent-work", false),
+            place("/home/dev/.example-agent", true),
+        ];
+        let unmarked = [place("/home/dev/.example-agent-work", false)];
+
+        let default = default_place(&marked);
+        let none = default_place(&unmarked);
+
+        assert_eq!(
+            default.map(|place| place.folder.as_str()),
+            Some("/home/dev/.example-agent")
+        );
+        assert!(none.is_none());
     }
 
     #[test]
@@ -576,7 +577,7 @@ mod tests {
         write_program(&place);
         let logged_out = home.home().join(".example-agent-work");
         write_file(&logged_out.join("state.json"), "{}");
-        let work = Profile::found(AgentId::new(AGENT), "Work", logged_out);
+        let work = Profile::added(AgentId::new(AGENT), "Work", logged_out);
         let agent = agent(&home);
         let full_path = place.display().to_string();
 
@@ -632,10 +633,10 @@ mod tests {
     }
 
     #[test]
-    fn a_found_profile_launches_with_its_folder() {
+    fn an_added_profile_launches_with_its_folder() {
         let home = TemplateHome::new();
         let agent = agent(&home);
-        let work = Profile::found(
+        let work = Profile::added(
             AgentId::new(AGENT),
             "Work",
             home.home().join(".example-agent-work"),

@@ -12,9 +12,10 @@
 //! program's screen starts it with the [`StartTerminal`] the app gives.
 //! [`projects`] groups the sessions of all profiles by their folder.
 //!
-//! [`profiles`] gives the list of profiles to show, from the default
-//! profile of each agent, the [`SavedProfiles`] of `agents.json` and the
-//! extra folders of each agent found in the home folder. An agent tells
+//! [`profiles`] gives the list of profiles to show: the default profile of
+//! each agent and the profiles the user added, from the
+//! [`SavedProfiles`] of `agents.json`. OTTY looks for no other folder of
+//! an agent (spec 2026-11-23, Decision 4). An agent tells
 //! its version from its session files with [`Agent::version`], else the app
 //! asks its program and reads the answer with [`version_in_output`]. The
 //! dialog that adds a profile gets its folder from [`proposed_config_dir`]

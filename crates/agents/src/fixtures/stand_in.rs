@@ -90,10 +90,6 @@ impl Agent for StandIn {
         Vec::new()
     }
 
-    fn has_sessions(&self, _profile: &Profile) -> bool {
-        false
-    }
-
     fn version(&self, _profile: &Profile) -> Option<String> {
         None
     }

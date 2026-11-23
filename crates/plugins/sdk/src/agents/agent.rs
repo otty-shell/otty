@@ -17,10 +17,10 @@ use crate::{Command, Need};
 /// supported". The rule of the spec: what breaks when the agent updates
 /// (field names, file names, JSON shapes, SQL) lives here, never in OTTY.
 pub trait Agent {
-    /// The config folders of the agent part `agent` found on this
-    /// computer, default first: the default folder (or the one its
-    /// variable names) and extra folders, such as `~/.codex-work`, that
-    /// hold a login or a session.
+    /// The default config folder of the agent part `agent` only, marked
+    /// `is_default`: the folder the agent uses with no variable set, or
+    /// the one its variable names. OTTY ignores any other place; the user
+    /// adds other folders, such as `~/.codex-work`, as profiles.
     fn profiles(agent: &str) -> Vec<ProfilePlace>;
 
     /// Whether the profile is logged in. A profile nobody is logged in

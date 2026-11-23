@@ -56,7 +56,6 @@ mock! {
         fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
         fn detect(&self, profile: &Profile) -> ProfileStatus;
         fn accounts(&self, profile: &Profile) -> Vec<Account>;
-        fn has_sessions(&self, profile: &Profile) -> bool;
         fn version(&self, profile: &Profile) -> Option<String>;
         fn launch<'a>(
             &self,
@@ -241,10 +240,6 @@ impl Agent for Coder {
 
     fn accounts(&self, _profile: &Profile) -> Vec<Account> {
         Vec::new()
-    }
-
-    fn has_sessions(&self, profile: &Profile) -> bool {
-        has_a_file(&profile.config_dir().join("sessions"))
     }
 
     fn version(&self, _profile: &Profile) -> Option<String> {
@@ -474,16 +469,4 @@ pub(crate) fn no_identity() -> otty_plugin_host::agents::agent::Identity {
         organization_id: None,
         email: None,
     }
-}
-
-/// Whether the folder `folder` holds a file, at any depth.
-fn has_a_file(folder: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(folder) else {
-        return false;
-    };
-
-    entries.flatten().any(|entry| {
-        let path = entry.path();
-        path.is_file() || has_a_file(&path)
-    })
 }

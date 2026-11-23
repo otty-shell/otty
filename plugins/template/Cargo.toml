@@ -2,7 +2,7 @@
 name = "otty-plugin-example"
 description = "The OTTY plugin template: a made-up agent and a made-up provider"
 readme = "README.md"
-version = "0.1.0"
+version = "0.1.1"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

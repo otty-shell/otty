@@ -369,19 +369,26 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-19, Decision 2: an extra folder of an agent with its
-    /// sessions is a profile with no setup, with the version its sessions
+    /// Spec 2026-11-23, Decision 4: with `~/.codex` and `~/.codex-work`
+    /// on disk and nothing added, only `~/.codex` is a profile; an extra
+    /// folder is one once the user adds it, with the version its sessions
     /// name. The read of the profiles never starts an agent's program, so a
     /// profile with no session has no version yet.
     #[test]
-    fn a_found_folder_is_a_profile_with_the_version_of_its_sessions() {
+    fn only_the_default_and_the_added_folders_are_profiles() {
         let home = TempDir::new("agents-read-versions");
+        let config_dir = home.path().join("otty");
         write(
-            &home.path().join(".claude/.credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
+            &home.path().join(".codex/config.toml"),
+            "model = \"gpt-5-codex\"",
         );
         write(
-            &home.path().join(".claude-semrush/projects/-work/a1.jsonl"),
+            &home.path().join(".codex-work/config.toml"),
+            "model = \"gpt-5-codex\"",
+        );
+        let semrush = home.path().join(".claude-semrush");
+        write(
+            &semrush.join("projects/-work/a1.jsonl"),
             r#"{"type":"user","version":"2.1.328","cwd":"/work","message":{"content":"Fix it"}}"#,
         );
         let env = AgentEnv::new(home.path().to_path_buf());
@@ -392,31 +399,44 @@ mod tests {
         )
         .display()
         .to_string();
+        let agents = agents_with_plugins(home.path());
 
-        let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
-            &env,
-            home.path(),
-            &prints_a_version,
+        let before =
+            read_profiles(&agents, &env, &config_dir, &prints_a_version);
+        write(
+            &config_dir.join("agents.json"),
+            &format!(
+                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Semrush","config_dir":"{}"}}]}}"#,
+                semrush.display()
+            ),
         );
+        let after =
+            read_profiles(&agents, &env, &config_dir, &prints_a_version);
 
-        let versions: Vec<_> = loaded
-            .profiles
-            .iter()
-            .map(|entry| {
-                (
-                    entry.profile.name(),
-                    entry.profile.is_found(),
-                    entry.version.as_deref(),
-                )
-            })
-            .collect();
+        let folders = |loaded: &LoadedProfiles| {
+            loaded
+                .profiles
+                .iter()
+                .map(|entry| {
+                    let folder = entry.profile.config_dir();
+                    let folder = folder.strip_prefix(home.path()).ok();
+                    (folder.map(Path::to_path_buf), entry.version.clone())
+                })
+                .collect::<Vec<_>>()
+        };
+        let named = |folder: &str, version: Option<&str>| {
+            (Some(PathBuf::from(folder)), version.map(String::from))
+        };
         assert_eq!(
-            versions,
+            folders(&before),
+            [named(".claude", None), named(".codex", None)]
+        );
+        assert_eq!(
+            folders(&after),
             [
-                ("Claude Code", false, None),
-                ("Codex", false, None),
-                ("Semrush", true, Some("2.1.328")),
+                named(".claude", None),
+                named(".codex", None),
+                named(".claude-semrush", Some("2.1.328")),
             ]
         );
     }

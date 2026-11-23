@@ -1,19 +1,22 @@
 //! The list of profiles the mode shows: the default profile of each known
-//! agent with the user's changes, then the profiles the user added, then
-//! the extra folders of the agents OTTY found in the home folder, and the
-//! state of each.
+//! agent with the user's changes, then the profiles the user added, and
+//! the state of each. OTTY looks for no other folder of an agent (spec
+//! 2026-11-23, Decision 4).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::agent::{Agent, agent_of};
 use crate::env::AgentEnv;
 use crate::profile::{Profile, ProfileStatus};
 use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 
-/// The profiles to show: for each agent of `agents`
-/// its default profile with the user's changes from `saved`, then the
-/// profiles the user added, in the order they were added, then the
-/// profiles OTTY found (spec Decision 2).
+/// The profiles to show: for each agent of `agents` its default profile
+/// with the user's changes from `saved`, then the profiles the user added,
+/// in the order they were added (spec 2026-11-23, Decision 4). No other
+/// folder of an agent is a profile until the user adds it. The profiles
+/// the user hid are in the list too: the app sets them apart with
+/// [`SavedProfiles::is_profile_hidden`], so that it can list them on
+/// request.
 ///
 /// The default profile's folder is the agent's default config folder (from
 /// its variable in `env`, else in the home folder), unless the user moved
@@ -28,14 +31,6 @@ use crate::saved_profiles::{DefaultProfileChanges, SavedProfiles};
 /// Each profile knows whether its folder is the agent's default folder, so
 /// its commands set the agent's config folder variable only when it is
 /// not.
-///
-/// A found profile is a folder in the home folder named after the agent's
-/// config folder with a `-` or `_` and more, such as `~/.coder-work`, that
-/// holds the agent's login or a session and is no other profile's folder.
-/// It is named after the rest of the folder name, "Work"; when another
-/// profile has that name, after its agent too, "Coder · Work". They
-/// come by agent, then by folder name. Only the folders are read; nothing
-/// is written.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -77,11 +72,6 @@ pub fn profiles(
             let default_dir = agent.default_config_dir(env);
             list.push(profile.clone().with_agent_default_dir(&default_dir));
         }
-    }
-
-    for agent in agents {
-        let found = found_profiles(agent.as_ref(), env, &list);
-        list.extend(found);
     }
 
     list
@@ -188,145 +178,6 @@ fn default_profile(
     let config_dir = changes.config_dir().unwrap_or(&default_dir);
     Profile::default_for(entry.id().clone(), name, config_dir.to_path_buf())
         .with_agent_default_dir(&default_dir)
-}
-
-/// The profiles of `agent` found on this computer
-/// ([`Agent::found_config_dirs`]) that no profile of `listed` uses, named
-/// so that no profile of `listed` or found before has its name.
-fn found_profiles(
-    agent: &dyn Agent,
-    env: &AgentEnv,
-    listed: &[Profile],
-) -> Vec<Profile> {
-    let entry = agent.entry();
-    let default_dir = agent.default_config_dir(env);
-    let base = agent.config_folder();
-    let mut found: Vec<Profile> = Vec::new();
-
-    for folder in agent.found_config_dirs(env) {
-        let is_listed = listed.iter().any(|profile| {
-            profile.agent() == entry.id() && profile.config_dir() == folder
-        });
-        if is_listed {
-            continue;
-        }
-
-        let name = match folder_suffix(&folder, base.name()) {
-            Some(suffix) => found_name(suffix),
-            None => folder_name(&folder),
-        };
-        let Some(name) = name else {
-            continue;
-        };
-
-        let is_taken = |name: &str| {
-            listed
-                .iter()
-                .chain(&found)
-                .any(|other| other.name() == name)
-        };
-        let name = if is_taken(&name) {
-            format!("{} · {name}", entry.name())
-        } else {
-            name
-        };
-        if is_taken(&name) {
-            continue;
-        }
-
-        let profile = Profile::found(entry.id().clone(), name, folder)
-            .with_agent_default_dir(&default_dir);
-        found.push(profile);
-    }
-
-    found
-}
-
-/// The folders in the home folder of `env` named after the config folder
-/// of `agent` with a `-` or `_` after it, such as `~/.coder-work`, that
-/// hold its login or a session, by name: what
-/// [`Agent::found_config_dirs`] gives for a reader built into OTTY.
-pub(crate) fn found_in_home<A: Agent + ?Sized>(
-    agent: &A,
-    env: &AgentEnv,
-) -> Vec<PathBuf> {
-    let base = agent.config_folder();
-    let id = agent.entry().id();
-
-    folders_in(env.home())
-        .into_iter()
-        .filter(|folder| folder_suffix(folder, base.name()).is_some())
-        .filter(|folder| {
-            let candidate = Profile::found(id.clone(), "", folder.clone());
-            let is_logged_in = matches!(
-                agent.detect(&candidate),
-                ProfileStatus::Connected { .. }
-            );
-
-            is_logged_in || agent.has_sessions(&candidate)
-        })
-        .collect()
-}
-
-/// The folders in `home`, by name. A home folder that can not be read has
-/// none.
-fn folders_in(home: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(home) else {
-        return Vec::new();
-    };
-
-    let mut folders: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect();
-    folders.sort();
-    folders
-}
-
-/// What follows the agent's config folder name `base` in the name of
-/// `folder` when it starts with a `-` or `_`, such as `-work` of
-/// `.coder-work`; `None` for a folder named otherwise.
-fn folder_suffix<'a>(folder: &'a Path, base: &str) -> Option<&'a str> {
-    let name = folder.file_name()?.to_str()?;
-    let rest = name.strip_prefix(base)?;
-
-    if !rest.starts_with(['-', '_']) {
-        return None;
-    }
-
-    Some(rest)
-}
-
-/// The name of a found profile whose folder is not named after the
-/// agent's config folder: the folder's own name, such as "agent-data".
-fn folder_name(folder: &Path) -> Option<String> {
-    let name = folder.file_name()?.to_str()?;
-
-    (!name.is_empty()).then(|| name.to_string())
-}
-
-/// The name of a found profile from the end of its folder name: each word
-/// between `-`, `_` and `.` with a capital first letter, such as "My Team"
-/// for `-my-team`. `None` when there is no word.
-fn found_name(suffix: &str) -> Option<String> {
-    let words: Vec<String> = suffix
-        .split(['-', '_', '.'])
-        .filter(|word| !word.is_empty())
-        .map(capitalized)
-        .collect();
-
-    (!words.is_empty()).then(|| words.join(" "))
-}
-
-/// `word` with its first letter in upper case.
-fn capitalized(word: &str) -> String {
-    let mut characters = word.chars();
-
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
-    }
 }
 
 #[cfg(test)]
@@ -538,29 +389,26 @@ mod tests {
         );
     }
 
-    /// A Coder session file in `config_dir`, made up.
-    fn coder_session(config_dir: &Path) {
+    /// A Coder session file and a Coder login in `config_dir`, made up.
+    fn coder_session_and_login(config_dir: &Path) {
         write_file(
             &config_dir.join(
                 "sessions/2026/11/19/rollout-2026-11-19T10-00-00-made-up.jsonl",
             ),
             r#"{"type":"session_meta","payload":{"id":"made-up","cwd":"/work"}}"#,
         );
+        write_file(&config_dir.join("auth.json"), "{}");
     }
 
-    fn found_names(list: &[Profile]) -> Vec<(&str, &Path)> {
-        list.iter()
-            .filter(|profile| profile.is_found())
-            .map(|profile| (profile.name(), profile.config_dir()))
-            .collect()
-    }
-
+    /// Spec 2026-11-23, Decision 4: OTTY does not look for other folders
+    /// of the agent in the home folder, even ones with a login and a
+    /// session.
     #[test]
-    fn an_extra_folder_is_a_profile_named_after_it() {
+    fn an_extra_folder_of_the_agent_is_not_a_profile() {
         let temp = TempDir::new();
-        make_dir(&temp.path().join(".coder"));
-        let work = temp.path().join(".coder-work");
-        coder_session(&work);
+        let coder_dir = make_dir(&temp.path().join(".coder"));
+        coder_session_and_login(&temp.path().join(".coder-work"));
+        coder_session_and_login(&temp.path().join(".coder_old"));
         let env = env_in(temp.path());
 
         let list = profiles(
@@ -572,121 +420,33 @@ mod tests {
 
         assert_eq!(
             list,
-            [
-                Profile::default_for(
-                    coder_id(),
-                    "Coder",
-                    temp.path().join(".coder")
-                ),
-                Profile::found(coder_id(), "Work", work.clone()),
-            ]
+            [Profile::default_for(coder_id(), "Coder", coder_dir)]
+        );
+    }
+
+    /// Spec 2026-11-23, Decision 4: another folder of the agent is a
+    /// profile once the user adds it.
+    #[test]
+    fn an_extra_folder_the_user_added_is_a_profile() {
+        let temp = TempDir::new();
+        let coder_dir = make_dir(&temp.path().join(".coder"));
+        let work = temp.path().join(".coder-work");
+        coder_session_and_login(&work);
+        let env = env_in(temp.path());
+        let added = Profile::added(coder_id(), "Coder · Work", work.clone());
+        let saved = SavedProfiles::default().with_added(added.clone());
+
+        let list = profiles(&test_agents(), &env, &saved, no_program);
+
+        assert_eq!(
+            list,
+            [Profile::default_for(coder_id(), "Coder", coder_dir), added]
         );
         assert_eq!(
             test_agents()[0].launch(&list[1], None),
             AgentCommand::new("coder")
                 .with_env("CODER_HOME", work.to_string_lossy())
         );
-    }
-
-    #[test]
-    fn an_extra_folder_with_sessions_is_a_profile() {
-        let temp = TempDir::new();
-        let semrush = temp.path().join(".coder-semrush");
-        coder_session(&semrush);
-        let env = env_in(temp.path());
-
-        let list = profiles(
-            &test_agents(),
-            &env,
-            &SavedProfiles::default(),
-            no_program,
-        );
-
-        assert_eq!(found_names(&list), [("Semrush", semrush.as_path())]);
-    }
-
-    #[test]
-    fn a_folder_without_a_login_or_sessions_is_skipped() {
-        let temp = TempDir::new();
-        make_dir(&temp.path().join(".coder-old/sessions"));
-        write_file(&temp.path().join(".coder-empty/config.toml"), "");
-        coder_session(&temp.path().join(".coderette"));
-        coder_session(&temp.path().join("coder-work"));
-        let env = env_in(temp.path());
-
-        let list = profiles(
-            &test_agents(),
-            &env,
-            &SavedProfiles::default(),
-            no_program,
-        );
-
-        assert!(list.is_empty(), "{list:?}");
-    }
-
-    #[test]
-    fn a_found_folder_that_is_a_saved_profile_is_not_listed_twice() {
-        let temp = TempDir::new();
-        let work = temp.path().join(".coder-work");
-        coder_session(&work);
-        let env = env_in(temp.path());
-        let added = Profile::added(coder_id(), "Coder · Office", work.clone());
-        let saved = SavedProfiles::default().with_added(added.clone());
-
-        let list = profiles(&test_agents(), &env, &saved, no_program);
-
-        assert_eq!(list, [added]);
-    }
-
-    #[test]
-    fn a_found_folder_that_is_the_moved_default_profile_is_not_listed() {
-        let temp = TempDir::new();
-        let work = temp.path().join(".coder-work");
-        coder_session(&work);
-        let env = env_in(temp.path());
-        let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(coder_id())
-                .with_config_dir(work.clone()),
-        );
-
-        let list = profiles(&test_agents(), &env, &saved, no_program);
-
-        assert_eq!(list.len(), 1);
-        assert!(list[0].is_default());
-        assert_eq!(list[0].config_dir(), work);
-    }
-
-    #[test]
-    fn a_found_name_taken_by_another_profile_gets_its_agents_name() {
-        let temp = TempDir::new();
-        let coder_work = temp.path().join(".coder-work");
-        coder_session(&coder_work);
-        let coder_team = temp.path().join(".coder_my-team");
-        coder_session(&coder_team);
-        let env = env_in(temp.path());
-        let saved = SavedProfiles::default().with_added(Profile::added(
-            coder_id(),
-            "Work",
-            temp.path().join("data/coder"),
-        ));
-
-        let list = profiles(&test_agents(), &env, &saved, no_program);
-
-        assert_eq!(
-            found_names(&list),
-            [
-                ("Coder · Work", coder_work.as_path()),
-                ("My Team", coder_team.as_path()),
-            ]
-        );
-    }
-
-    #[test]
-    fn the_name_of_a_found_folder_is_its_words_capitalized() {
-        assert_eq!(found_name("work"), Some(String::from("Work")));
-        assert_eq!(found_name("-my-team_2"), Some(String::from("My Team 2")));
-        assert_eq!(found_name("Semrush"), Some(String::from("Semrush")));
-        assert_eq!(found_name("--"), None);
     }
 
     /// A made-up agent whose program is `mock-agent`.
@@ -757,9 +517,6 @@ mod tests {
         agent
             .expect_default_config_dir()
             .return_const(home.join(".mock"));
-        agent.expect_config_folder().return_const(
-            crate::agent::ConfigFolder::new(".mock", "MOCK_HOME"),
-        );
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(agent)];
 
         let list = profiles(

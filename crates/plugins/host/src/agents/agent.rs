@@ -74,7 +74,7 @@ impl<'batch, 'plugin> AgentCalls<'batch, 'plugin> {
         Self { batch, exports }
     }
 
-    /// The agent's config folders on this computer, default first.
+    /// The agent's default config folder, the place marked default.
     pub fn profiles(&mut self) -> Result<Vec<ProfilePlace>, CallError> {
         let agent = self.batch.part().id().to_string();
 

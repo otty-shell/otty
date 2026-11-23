@@ -1,6 +1,6 @@
 # 02 OTTY shows only the default profiles and the ones the user added
 
-Status: ready
+Status: done
 Blocked by: none
 
 ## Why
@@ -44,3 +44,33 @@ another tool's, and the scan existed mostly to find more logins.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-23, done. OTTY no longer looks for other folders of an agent.
+`profiles` lists the default profile of each agent part that is on,
+then the profiles the user added. `Agent::found_config_dirs`,
+`found_in_home`, `Agent::has_sessions`, `Profile::found` and
+`Profile::is_found` are gone, so every profile is now either a default
+one or one the user added. A profile that is not the default one can be
+removed.
+
+The hidden profiles stay in the list `profiles` gives. The read of the
+profiles (`crates/app/features/agents/io/src/load.rs`) sets them apart,
+as before, because All profiles lists them when the user asks to show
+the hidden profiles. A hidden default profile is not among the shown
+profiles; the test `a_hidden_profile_comes_apart_and_is_not_checked`
+covers this.
+
+The doc comment of `profiles` in `agent.wit` (and in the SDK trait) now
+says it gives the default config folder only. There is no version bump
+(Decision 12). OTTY takes the place marked `is-default` and ignores any
+other place. When no place is marked, it uses `~/.<id>`. Found by OTTY
+counts only the shown profiles, and Add profile works as before.
+
+Plugins: `openai` 0.2.5 → 0.2.6 and `anthropic` 0.2.5 → 0.2.6 give
+only `CODEX_HOME`/`~/.codex` and `CLAUDE_CONFIG_DIR`/`~/.claude`. The
+template `example` 0.1.0 → 0.1.1 gives only its default folder. All
+three were rebuilt into `assets/plugins/`. `opencode` already gave only
+its default folder, so it did not change. The template's version was
+written into the test fixtures, so `example_manifest` (and
+`template_manifest` of `otty-plugin-releases`) now replace whatever
+version the template has.

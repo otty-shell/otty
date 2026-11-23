@@ -11,7 +11,6 @@ use crate::command::AgentCommand;
 use crate::env::AgentEnv;
 use crate::part_need::PartNeed;
 use crate::profile::{Profile, ProfileStatus};
-use crate::profile_list::found_in_home;
 use crate::session::{SessionId, SessionSource};
 use crate::source_id::SourceId;
 use crate::spend::SpendCounter;
@@ -290,7 +289,8 @@ pub trait Agent: Send + Sync {
     /// cost, exact, not an estimate at the list prices.
     fn writes_cost(&self) -> bool;
 
-    /// Config folder of the default profile.
+    /// Config folder of the default profile: the only folder of the agent
+    /// OTTY lists by itself (spec 2026-11-23, Decision 4).
     fn default_config_dir(&self, env: &AgentEnv) -> PathBuf;
 
     /// Whether the profile is installed and logged in.
@@ -307,11 +307,6 @@ pub trait Agent: Send + Sync {
     ///
     /// [`merge_accounts`]: crate::merge_accounts
     fn accounts(&self, profile: &Profile) -> Vec<Account>;
-
-    /// Whether the folder of `profile` holds a session of the agent,
-    /// without reading one. An extra folder of the agent in the home folder
-    /// is a profile when it holds a login or a session (spec Decision 2).
-    fn has_sessions(&self, profile: &Profile) -> bool;
 
     /// The version of the agent's program as the agent wrote it in the
     /// newest session of `profile`, such as "2.1.328". `None` when no
@@ -353,15 +348,6 @@ pub trait Agent: Send + Sync {
     /// local files (spec Decision 14). `None`: not supported, and Show
     /// statistics is off for the agent's sessions.
     fn stats_source(&self) -> Option<Box<dyn StatsSource>>;
-
-    /// The config folders of the agent besides its default one found on
-    /// this computer: by default the folders in the home folder whose
-    /// names start with the name of its config folder and a `-` or `_`,
-    /// such as `~/.coder-work`, that hold a login or a session (spec
-    /// 2026-11-19, Decision 2). A plugin part finds them itself.
-    fn found_config_dirs(&self, env: &AgentEnv) -> Vec<PathBuf> {
-        found_in_home(self, env)
-    }
 
     /// The login of `account` as the plugin part that found it in
     /// `profile` names it, with the place its key sits, so that a

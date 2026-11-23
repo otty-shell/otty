@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use crate::agent::AgentId;
 use crate::profile::Profile;
 
-/// A hidden profile, kept by its agent and its config folder: a profile
-/// OTTY found has no entry of its own, and a new name keeps it hidden.
+/// A hidden profile, kept by its agent and its config folder: a default
+/// profile has no entry of its own, and a new name keeps it hidden.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct HiddenProfile {
     pub(super) agent: AgentId,
@@ -59,8 +59,8 @@ mod tests {
         )
     }
 
-    fn found_codex() -> Profile {
-        Profile::found(
+    fn work_codex() -> Profile {
+        Profile::added(
             codex_id(),
             "Work",
             PathBuf::from("/home/user/.codex-work"),
@@ -68,13 +68,13 @@ mod tests {
     }
 
     /// Spec 2026-11-19, Decision 7: a hidden profile is kept by its agent
-    /// and its folder, so a profile OTTY found, which has no entry of its
+    /// and its folder, so a default profile, which has no entry of its
     /// own, stays hidden, and so does a profile after a new name.
     #[test]
     fn hidden_profiles_are_saved_by_agent_and_folder_and_read_back() {
         let saved = SavedProfiles::default()
             .with_profile_hidden(&default_claude(), true)
-            .with_profile_hidden(&found_codex(), true);
+            .with_profile_hidden(&work_codex(), true);
         let renamed = Profile::added(
             codex_id(),
             "Codex · Office",
@@ -106,20 +106,20 @@ mod tests {
 
         let expected = SavedProfiles::default()
             .with_profile_hidden(&default_claude(), true)
-            .with_profile_hidden(&found_codex(), true);
+            .with_profile_hidden(&work_codex(), true);
         assert_eq!(load(text), expected);
     }
 
     #[test]
     fn show_again_forgets_the_hidden_profile() {
         let hidden = SavedProfiles::default()
-            .with_profile_hidden(&found_codex(), true)
-            .with_profile_hidden(&found_codex(), true);
+            .with_profile_hidden(&work_codex(), true)
+            .with_profile_hidden(&work_codex(), true);
 
-        let shown = hidden.clone().with_profile_hidden(&found_codex(), false);
+        let shown = hidden.clone().with_profile_hidden(&work_codex(), false);
         let text = shown.to_json().expect("the paths are text");
 
-        assert!(hidden.is_profile_hidden(&found_codex()));
+        assert!(hidden.is_profile_hidden(&work_codex()));
         assert_eq!(shown, SavedProfiles::default());
         assert!(!text.contains("hidden"), "{text}");
     }
@@ -134,7 +134,7 @@ mod tests {
                 { "agent": "future-agent", "config_dir": "/home/user/.future" }
             ]
         }"#;
-        let future = Profile::found(
+        let future = Profile::added(
             AgentId::new("future-agent"),
             "Future",
             PathBuf::from("/home/user/.future"),

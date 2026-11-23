@@ -8,8 +8,9 @@ use crate::part_need::PartNeed;
 
 /// One agent together with one config folder and a name.
 ///
-/// Two profiles of the same agent are two accounts, such as "Coder" in
-/// `~/.coder` and "Coder · Work" in `~/.coder-work`.
+/// Two profiles of the same agent are two config folders, such as "Coder"
+/// in `~/.coder`, the agent's default one, and "Coder · Work" in
+/// `~/.coder-work`, which the user added.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     agent: AgentId,
@@ -38,14 +39,6 @@ impl Profile {
     /// Whether this is the agent's profile in its default config folder.
     pub fn is_default(&self) -> bool {
         self.origin == Origin::Default
-    }
-
-    /// Whether OTTY found this profile by itself: an extra folder of the
-    /// agent in the home folder that holds its login or sessions, such as
-    /// `~/.coder-work` (spec Decision 2). It is not saved: once the user
-    /// changes it, it becomes a profile the user added.
-    pub fn is_found(&self) -> bool {
-        self.origin == Origin::Found
     }
 
     /// Whether the config folder is the agent's own default folder, the
@@ -84,36 +77,25 @@ impl Profile {
         Self::new(agent, name.into(), config_dir, Origin::Default)
     }
 
-    /// A profile OTTY found in an extra folder of the agent in the home
-    /// folder.
+    /// A profile the user added.
+    ///
+    /// The profile counts as being outside the agent's default folder. The
+    /// list of profiles ([`profiles`](crate::profiles)) checks this against
+    /// the agent's real default folder.
     ///
     /// ```
     /// use std::path::PathBuf;
     ///
     /// use otty_agents::{AgentId, Profile};
     ///
-    /// let profile = Profile::found(
+    /// let profile = Profile::added(
     ///     AgentId::new("writer"),
     ///     "Work",
     ///     PathBuf::from("/home/user/.writer-work"),
     /// );
     ///
-    /// assert!(profile.is_found());
     /// assert!(!profile.is_default());
     /// ```
-    pub fn found(
-        agent: AgentId,
-        name: impl Into<String>,
-        config_dir: PathBuf,
-    ) -> Self {
-        Self::new(agent, name.into(), config_dir, Origin::Found)
-    }
-
-    /// A profile the user added.
-    ///
-    /// The profile counts as being outside the agent's default folder. The
-    /// list of profiles ([`profiles`](crate::profiles)) checks this against
-    /// the agent's real default folder.
     pub fn added(
         agent: AgentId,
         name: impl Into<String>,
@@ -146,12 +128,10 @@ impl Profile {
     }
 }
 
-/// Where a profile comes from: the agent's default folder, a folder OTTY
-/// found, or the user.
+/// Where a profile comes from: the agent's default folder, or the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Origin {
     Default,
-    Found,
     Added,
 }
 
