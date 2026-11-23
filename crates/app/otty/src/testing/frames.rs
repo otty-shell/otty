@@ -74,6 +74,33 @@ impl Frames {
         .expect("the dialog should have its scroller")
     }
 
+    /// Build a frame of `app`, press and release the left button at `point`
+    /// and return what the window sent.
+    pub(crate) fn press(&mut self, app: &App, point: Point) -> Vec<AppEvent> {
+        use iced_test::runtime::user_interface::UserInterface;
+
+        let mut ui = UserInterface::build(
+            view(app),
+            self.window,
+            self.cache.take().expect("the frames keep their cache"),
+            &mut self.renderer,
+        );
+
+        let clicks: Vec<iced::Event> = iced_test::simulator::click().collect();
+        let mut events = Vec::new();
+        let _ = ui.update(
+            &clicks,
+            iced::mouse::Cursor::Available(point),
+            &mut self.renderer,
+            &mut iced::advanced::clipboard::Null,
+            &mut events,
+        );
+
+        self.cache = Some(ui.into_cache());
+
+        events
+    }
+
     /// Build a frame of `app`, give it the wheel at the pointer if any, and
     /// return how far the last scroller whose content `is_scroller` picks
     /// is scrolled.

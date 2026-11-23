@@ -1,6 +1,6 @@
 # 41 The mode dock scrolls sideways; More stays on top at its size
 
-Status: ready
+Status: done
 Blocked by: 39
 
 ## Why
@@ -42,3 +42,27 @@ shrinking.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-23, done. A new private kit widget, `ModeDock`
+(`crates/ui/kit/src/components/mode_dock.rs`), holds the tabs of the
+`ModeSwitcher` in a horizontal `scrollable` and draws More over its right
+end. The row of tabs ends in a free space as wide as More, so the last
+tab can be scrolled fully out from under it; in a wide dock that space is
+where More sits, so nothing moves from before. More keeps its size, has the
+dock color behind it and its 2 px gap, and takes the presses there, so a
+tab under it is never pressed. A wheel or trackpad move over the dock
+scrolls the tabs sideways along its larger part, one tab per notch of the
+wheel. When the active tab changes (click, shortcut, More), the dock
+scrolls just enough to show it left of More, as the floating list keeps
+its highlighted row in view (it reuses `offset_showing`).
+
+No bar: the kit's 4 px bar floats over the content, so in the 32 px dock it
+would lie over the bottom of the tabs, and its right end, where the
+scroller sits when scrolled to the end, would hide under More. A soft fade
+(12 px, from the dock color) shows a cut edge instead: at the left edge
+while tabs lie past it, and just left of More while tabs lie under it. The
+`scrollable` itself is the only scrolling; its bar is hidden.
+
+More still sends `ModesIntent::ToggleMenu`; the app test presses it at the
+right end of a narrow left panel through `update_input`, and it opens and
+closes the All modes menu.

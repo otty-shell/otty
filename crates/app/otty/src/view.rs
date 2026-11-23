@@ -335,7 +335,9 @@ mod tests {
     use super::*;
     use crate::frame::title_bar::TitleBarIntent;
     use crate::message::Message;
-    use crate::testing::frames::{Frames, LOW_WINDOW, scroll_dialog_body};
+    use crate::testing::frames::{
+        Frames, LOW_WINDOW, left_panel_split, scroll_dialog_body,
+    };
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
         open_secret_prompt, open_settings, show_toast,
@@ -408,6 +410,67 @@ mod tests {
             let _ = app.update(Message::Input(event));
         }
         assert!(app.modes.is_menu_open());
+    }
+
+    /// A window whose left panel, at its smallest, is too narrow for the
+    /// switcher tabs: they scroll under More.
+    const NARROW_WINDOW: iced::Size = iced::Size::new(600.0, 768.0);
+
+    /// Presses the left button at `point` in a [`NARROW_WINDOW`] and passes
+    /// what the window sends through the app, as the runtime does.
+    fn press_in_narrow_window(app: &mut App, point: Point) {
+        let events = Frames::in_window(NARROW_WINDOW).press(app, point);
+
+        for event in events {
+            let _ = app.update(Message::Input(event));
+        }
+    }
+
+    /// More stays at the right end of the left panel when the tabs do not
+    /// fit, and keeps opening and closing the All modes menu.
+    #[test]
+    fn in_a_narrow_left_panel_more_at_its_right_end_opens_and_closes_the_menu()
+    {
+        let mut app = app();
+        let panel_right = left_panel_split(&app, NARROW_WINDOW);
+        let more = Point::new(
+            panel_right - 8.0 - 3.0 - size::MODE_TAB_WIDTH / 2.0,
+            switcher_tab(0.0).y,
+        );
+
+        press_in_narrow_window(&mut app, more);
+        let opened = app.modes.is_menu_open();
+        press_in_narrow_window(&mut app, more);
+
+        assert!(opened);
+        assert!(!app.modes.is_menu_open());
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// A mode picked while its tab lies under More, by a shortcut or in the
+    /// All modes menu, has its tab scrolled into view, where a press on it
+    /// reaches it.
+    #[test]
+    fn in_a_narrow_left_panel_the_picked_mode_tab_is_scrolled_into_view() {
+        let mut app = app();
+        let panel_right = left_panel_split(&app, NARROW_WINDOW);
+        let just_left_of_more = Point::new(
+            panel_right - 8.0 - 3.0 - size::MODE_TAB_WIDTH - 2.0 - 4.0,
+            switcher_tab(0.0).y,
+        );
+        let mut frames = Frames::in_window(NARROW_WINDOW);
+        frames.build(&app);
+
+        let _ = app.update(Message::Input(AppEvent::Modes(
+            ModesIntent::Select(Mode::Agents),
+        )));
+        frames.build(&app);
+        let pressed = frames.press(&app, just_left_of_more);
+
+        assert!(matches!(
+            mode_events(pressed).as_slice(),
+            [AppEvent::Modes(ModesIntent::Select(Mode::Agents))]
+        ));
     }
 
     #[test]

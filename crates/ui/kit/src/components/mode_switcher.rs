@@ -1,18 +1,17 @@
 //! `ModeSwitcher`: row of icon tabs that picks the active mode.
 
-use iced::widget::{button, container, row, svg};
+use iced::widget::{button, container, svg};
 use iced::{Border, Color, Element, Length};
 
 use super::glyph;
 use super::icon_hover::IconHover;
+use super::mode_dock::ModeDock;
 use super::tooltip::tooltip;
 use crate::palette::UiPalette;
 use crate::{radius, size};
 
 /// Padding of the group (`padding: 3px`).
 const GROUP_PADDING: f32 = 3.0;
-/// Gap between tabs (`gap: 2px`).
-const TAB_GAP: f32 = 2.0;
 /// Icon edge length inside a tab. 16 keeps the icon on whole pixels at
 /// common display scales (see `IconButton`).
 const ICON_SIZE: f32 = 16.0;
@@ -77,6 +76,10 @@ struct MoreButton<Message> {
 }
 
 /// Raised group of icon tabs with a trailing "⋯" button.
+///
+/// No tab and not the "⋯" button ever shrinks. When the tabs do not fit,
+/// they scroll sideways under the "⋯" button, which stays at the right end,
+/// and the active tab is scrolled into view when it changes.
 ///
 /// The caller passes the tabs in display order: Terminal, the pinned modes,
 /// then the temporary tab of the active mode if it is not pinned.
@@ -151,8 +154,9 @@ impl<'a, Message: Clone + 'a> From<ModeSwitcher<Message>>
 {
     fn from(value: ModeSwitcher<Message>) -> Self {
         let palette = value.palette;
+        let active = value.tabs.iter().position(|tab| tab.is_active);
 
-        let mut tabs = row![].spacing(TAB_GAP);
+        let mut tabs = Vec::with_capacity(value.tabs.len());
         for tab in value.tabs {
             let hint = match &tab.shortcut {
                 Some(shortcut) => format!("{} ({shortcut})", tab.label),
@@ -166,15 +170,9 @@ impl<'a, Message: Clone + 'a> From<ModeSwitcher<Message>>
                 },
                 is_temporary: tab.is_temporary,
             };
-            tabs = tabs.push(tab_view(
-                tab.icon,
-                hint,
-                look,
-                tab.on_press,
-                &palette,
-            ));
+            tabs.push(tab_view(tab.icon, hint, look, tab.on_press, &palette));
         }
-        if let Some(more) = value.more {
+        let more = value.more.map(|more| {
             let look = TabLook {
                 tone: if more.is_open {
                     TabTone::MenuOpen
@@ -183,17 +181,18 @@ impl<'a, Message: Clone + 'a> From<ModeSwitcher<Message>>
                 },
                 is_temporary: false,
             };
-            tabs = tabs.push(tab_view(
+
+            tab_view(
                 glyph::dots(),
                 more.label,
                 look,
                 Some(more.on_press),
                 &palette,
-            ));
-        }
+            )
+        });
 
         let background = palette.surface_raised();
-        container(tabs)
+        container(ModeDock::new(tabs, more, active, background))
             .padding(GROUP_PADDING)
             .style(move |_| container::Style {
                 background: Some(background.into()),
@@ -289,10 +288,12 @@ fn tab_button_style(palette: &UiPalette, look: TabLook) -> button::Style {
 
 #[cfg(test)]
 mod tests {
-    use iced::Point;
+    use iced::{Event, Point, mouse};
     use iced_test::{Simulator, simulator};
 
+    use super::super::mode_dock::TAB_GAP;
     use super::*;
+    use crate::testing::live_app::LiveApp;
     use crate::testing::pictures::assert_icon_lights_up;
 
     #[test]
@@ -355,7 +356,7 @@ mod tests {
         )
     }
 
-    fn click_at(ui: &mut Simulator<'_, Message>, point: Point) {
+    fn click_at<M>(ui: &mut Simulator<'_, M>, point: Point) {
         ui.point_at(point);
         let _ = ui.simulate(iced_test::simulator::click());
     }
@@ -455,5 +456,215 @@ mod tests {
 
         assert_eq!(style.border.width, 1.0);
         assert_eq!(style.border.color, palette.line());
+    }
+
+    /// Tabs of the narrow dock tests.
+    const MANY_TABS: usize = 5;
+    /// A dock with room for two tabs and a part of the third left of More:
+    /// the tabs take 82px of its 114px inside, More and its gap the rest.
+    const NARROW: f32 = 120.0;
+    /// Middle of the tabs and of More, from the top of the dock.
+    const TABS_MIDDLE: f32 = GROUP_PADDING + size::MODE_TAB_HEIGHT / 2.0;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Pick {
+        Tab(usize),
+        More,
+    }
+
+    /// A dock of [`MANY_TABS`] tabs with More, `width` wide, with the tab at
+    /// `active` active.
+    fn many_tabs(width: f32, active: usize) -> Element<'static, Pick> {
+        let palette = UiPalette::otty_dark();
+        let mut switcher = ModeSwitcher::new(&palette);
+        for index in 0..MANY_TABS {
+            switcher = switcher.tab(
+                ModeTab::new(glyph::plus(), format!("Mode {index}"))
+                    .active(index == active)
+                    .on_press(Pick::Tab(index)),
+            );
+        }
+        let switcher = switcher.more("All modes", false, Pick::More);
+
+        container(switcher).width(width).into()
+    }
+
+    /// What a press at `x` along the middle of the tabs sends, in a new
+    /// dock `width` wide after `scroll` moved it over the tabs.
+    fn pick_after(
+        width: f32,
+        scroll: Option<mouse::ScrollDelta>,
+        x: f32,
+    ) -> Vec<Pick> {
+        let mut ui = simulator(many_tabs(width, 0));
+        if let Some(delta) = scroll {
+            ui.point_at(Point::new(tab_left(0) + 10.0, TABS_MIDDLE));
+            let _ = ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
+                delta,
+            })]);
+        }
+
+        click_at(&mut ui, Point::new(x, TABS_MIDDLE));
+
+        ui.into_messages().collect()
+    }
+
+    /// Left edge of the tab at `index` in a dock that is not scrolled.
+    fn tab_left(index: usize) -> f32 {
+        GROUP_PADDING + index as f32 * (size::MODE_TAB_WIDTH + TAB_GAP)
+    }
+
+    /// Left edge of More in a dock `width` wide.
+    fn more_left(width: f32) -> f32 {
+        width - GROUP_PADDING - size::MODE_TAB_WIDTH
+    }
+
+    #[test]
+    fn given_a_narrow_dock_then_every_tab_keeps_its_width() {
+        let last_pixel_of_first = tab_left(0) + size::MODE_TAB_WIDTH - 1.0;
+        let gap = tab_left(0) + size::MODE_TAB_WIDTH + 1.0;
+        let first_pixel_of_second = tab_left(1) + 1.0;
+
+        assert_eq!(
+            pick_after(NARROW, None, last_pixel_of_first),
+            vec![Pick::Tab(0)]
+        );
+        assert_eq!(pick_after(NARROW, None, gap), vec![]);
+        assert_eq!(
+            pick_after(NARROW, None, first_pixel_of_second),
+            vec![Pick::Tab(1)]
+        );
+    }
+
+    #[test]
+    fn given_any_room_then_more_keeps_its_width_at_the_right_end_over_the_tabs()
+    {
+        for width in [NARROW, 150.0] {
+            let more = more_left(width);
+
+            assert_eq!(
+                pick_after(width, None, more + 1.0),
+                vec![Pick::More],
+                "{width}"
+            );
+            assert_eq!(
+                pick_after(width, None, more + size::MODE_TAB_WIDTH - 1.0),
+                vec![Pick::More],
+                "{width}"
+            );
+            // A tab lies under the gap before More, which covers it.
+            assert_eq!(pick_after(width, None, more - 1.0), vec![], "{width}");
+        }
+    }
+
+    #[test]
+    fn given_a_narrow_dock_when_the_wheel_turns_then_the_tabs_move_sideways() {
+        let first_slot = tab_left(0) + size::MODE_TAB_WIDTH / 2.0;
+        let notch_down = mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 };
+        let notch_up = mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 };
+        let swipe = mouse::ScrollDelta::Pixels {
+            x: -(size::MODE_TAB_WIDTH + TAB_GAP),
+            y: 0.0,
+        };
+
+        assert_eq!(
+            pick_after(NARROW, Some(notch_down), first_slot),
+            vec![Pick::Tab(1)]
+        );
+        assert_eq!(
+            pick_after(NARROW, Some(swipe), first_slot),
+            vec![Pick::Tab(1)]
+        );
+        assert_eq!(
+            pick_after(NARROW, Some(notch_up), first_slot),
+            vec![Pick::Tab(0)]
+        );
+    }
+
+    #[test]
+    fn given_a_narrow_dock_scrolled_to_the_end_then_the_last_tab_is_out_from_under_more()
+     {
+        let far_right = mouse::ScrollDelta::Pixels {
+            x: -10_000.0,
+            y: 0.0,
+        };
+        let more = more_left(NARROW);
+        let last_tab_left = more - TAB_GAP - size::MODE_TAB_WIDTH;
+
+        assert_eq!(
+            pick_after(NARROW, Some(far_right), last_tab_left + 1.0),
+            vec![Pick::Tab(MANY_TABS - 1)]
+        );
+        assert_eq!(
+            pick_after(NARROW, Some(far_right), more - TAB_GAP - 1.0),
+            vec![Pick::Tab(MANY_TABS - 1)]
+        );
+        assert_eq!(
+            pick_after(NARROW, Some(far_right), more + 1.0),
+            vec![Pick::More]
+        );
+    }
+
+    #[test]
+    fn given_a_wide_dock_when_the_wheel_turns_then_nothing_moves() {
+        let wide = 400.0;
+        let notch_down = mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 };
+        let second = tab_left(1) + size::MODE_TAB_WIDTH / 2.0;
+        let more = tab_left(MANY_TABS) + 1.0;
+        let past_more = tab_left(MANY_TABS) + size::MODE_TAB_WIDTH + 1.0;
+
+        assert_eq!(
+            pick_after(wide, Some(notch_down), second),
+            vec![Pick::Tab(1)]
+        );
+        assert_eq!(pick_after(wide, None, more), vec![Pick::More]);
+        assert_eq!(pick_after(wide, None, past_more), vec![]);
+    }
+
+    /// The dock of a running app: the tab pressed last is the active one.
+    fn live_dock() -> LiveApp<usize, Pick> {
+        LiveApp::new(
+            0,
+            |active| many_tabs(NARROW, *active),
+            |active, pick| {
+                if let Pick::Tab(index) = pick {
+                    *active = index;
+                }
+            },
+        )
+    }
+
+    /// The tab active after a press at `x` along the middle of the tabs.
+    fn press_in_live(app: &mut LiveApp<usize, Pick>, x: f32) -> usize {
+        app.point_at(Point::new(x, TABS_MIDDLE));
+        app.click();
+
+        *app.state()
+    }
+
+    #[test]
+    fn given_a_mode_change_to_a_hidden_tab_then_the_dock_scrolls_it_into_view()
+    {
+        let mut app = live_dock();
+        app.send([]);
+        let last_tab_middle =
+            more_left(NARROW) - TAB_GAP - size::MODE_TAB_WIDTH / 2.0;
+
+        // A shortcut picks the last mode, whose tab lies under More.
+        *app.state_mut() = MANY_TABS - 1;
+
+        assert_eq!(press_in_live(&mut app, last_tab_middle), MANY_TABS - 1);
+    }
+
+    #[test]
+    fn given_a_press_on_a_tab_cut_by_more_then_the_dock_shows_it_whole() {
+        let mut app = live_dock();
+        let cut_part_of_third = tab_left(2) + 3.0;
+        let shown_left = more_left(NARROW) - TAB_GAP - size::MODE_TAB_WIDTH;
+
+        assert_eq!(press_in_live(&mut app, cut_part_of_third), 2);
+
+        assert_eq!(press_in_live(&mut app, shown_left + 1.0), 2);
+        assert_eq!(press_in_live(&mut app, shown_left - TAB_GAP - 1.0), 1);
     }
 }

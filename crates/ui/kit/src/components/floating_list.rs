@@ -509,6 +509,25 @@ pub(super) fn open_list<'a, Message: Clone + 'a>(
         .tallest(LIST_MAX_HEIGHT)
 }
 
+/// Returns the scroll offset that shows the row spanning `top..bottom` in a
+/// view `height` high now scrolled to `offset`; `None` when it already shows.
+/// The mode dock uses it along the width: the tab spanning `top..bottom`
+/// from the left in a view `height` wide.
+pub(super) fn offset_showing(
+    top: f32,
+    bottom: f32,
+    offset: f32,
+    height: f32,
+) -> Option<f32> {
+    if top < offset {
+        Some(top)
+    } else if bottom > offset + height {
+        Some(bottom - height)
+    } else {
+        None
+    }
+}
+
 /// The floating surface with one row per entry of `rows`, in the look of a
 /// menu, the highlighted one lit. Past [`LIST_ROWS`] rows it scrolls.
 fn list_view<'a, Message: Clone + 'a>(
@@ -564,23 +583,6 @@ fn list_position(
     };
 
     Point::new(x, y)
-}
-
-/// Returns the scroll offset that shows the row spanning `top..bottom` in a
-/// view `height` high now scrolled to `offset`; `None` when it already shows.
-fn offset_showing(
-    top: f32,
-    bottom: f32,
-    offset: f32,
-    height: f32,
-) -> Option<f32> {
-    if top < offset {
-        Some(top)
-    } else if bottom > offset + height {
-        Some(bottom - height)
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]

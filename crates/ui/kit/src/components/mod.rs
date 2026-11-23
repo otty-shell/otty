@@ -50,6 +50,7 @@ pub mod letter_icon;
 pub mod log_view;
 pub mod mapping_field;
 pub mod menu;
+mod mode_dock;
 pub mod mode_menu;
 pub mod mode_switcher;
 pub mod note_select;
