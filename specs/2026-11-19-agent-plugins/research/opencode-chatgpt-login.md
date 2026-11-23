@@ -152,7 +152,7 @@ What the code shows:
 - `parseOpenCode` reads only the legacy `auth.json` entry `openai`: `type == "oauth"`, `access`, `refresh`, `expires` (milliseconds), and a top-level `accountId`. It does not read the `credential` table for `openai`, `methodID`, or `metadata` (so neither `metadata.accountID` nor `metadata.clientID`). It sets `idToken` to nil and does not decode the access token, so for OpenCode it never gets an account id from JWT claims. For native Codex logins it does decode JWTs (`accountIDFromJWT`: `chatgpt_account_id`, `https://api.openai.com/auth.chatgpt_account_id`, `organizations[0].id`).
 - Limits: `GET https://chatgpt.com/backend-api/wham/usage` (or `chatgpt_base_url` from `~/.codex/config.toml`) with `Authorization: Bearer <access>`, `User-Agent: CodexBar`, `Accept: application/json`, and `ChatGPT-Account-Id: <accountId>` only when an account id is known (`CodexOAuthUsageFetcher.swift`). So for a login with no account id, it calls `wham/usage` without the account header. The response's `plan_type` and `account_id` are decoded.
 - Account name and plan (`CodexReconciledState.oauthIdentity`): the email comes only from `id_token` claims (`email` or `https://api.openai.com/profile.email`). An OpenCode login therefore has no email in CodexBar. The plan comes from the `wham/usage` field `plan_type`, falling back to the `id_token` claim `chatgpt_plan_type`. The response's `account_id` is used only for the credits and balance calls, not as the account's identity.
-- Refresh: CodexBar does not refresh OpenCode tokens. A token that expires within 60 seconds raises `readOnlySource` ("stale and read-only. Sign in again with its owning app"), and no fallback follows. The code comment explains why: redeeming a shared refresh token without writing the new one back leaves the owner with a dead token. (A refresher for `https://auth.openai.com/oauth/token` with client id `app_EMoamEEZ73f0CkXaXp7hrann` exists, but writing back is allowed only for the native `~/.codex` source.) The OpenCode Go reader also refuses an expired OAuth row instead of refreshing it.
+- Refresh: CodexBar does not refresh OpenCode tokens. A token that expires within 60 seconds raises `readOnlySource` ("stale and read-only. Sign in again with its owning app"), and no fallback follows. The code comment explains why: redeeming a shared refresh token without writing the new one back leaves the owner with a dead token. (A refresher for `https://auth.openai.com/oauth/token` with client id `app_EMoamEEZ73f0CkXaXp7hrann` exists in the code, but CodexBar's current docs say normal use never writes `~/.codex/auth.json`: the Codex CLI owns the refresh, see "How CodexBar adds providers" below.) The OpenCode Go reader also refuses an expired OAuth row instead of refreshing it.
 - Duplicate accounts: CodexBar has no logic that links an OpenCode login to a Codex login. It never has both at once, because OpenCode is read only when the Codex file is missing. Codex accounts are identified by `CodexIdentityResolver` (`Sources/CodexBarCore/Providers/Codex/CodexIdentity.swift`): the account id first, then the lowercased email, otherwise `unresolved`.
 - One more identity endpoint, used only for Codex personal access tokens (not OAuth tokens): `GET https://auth.openai.com/api/accounts/v1/user-auth-credential/whoami` with `Authorization: Bearer <token>`, a Codex CLI `User-Agent` and an `originator` header. It returns `chatgpt_account_id`, `chatgpt_plan_type` and `email` (`Sources/CodexBarCore/Providers/Codex/CodexPAT/CodexPATUsageFetcher.swift`).
 
@@ -186,3 +186,185 @@ and no email through these endpoints: only the opaque per-client `sub`.
 An OTTY "Sign in with ChatGPT" of the same kind would get the email once
 from the id_token at sign-in, but no limits. ChatGPT limits stay
 reachable only through a Codex-style login (the Codex CLI client).
+
+## How CodexBar adds providers
+
+Read from the CodexBar source at commit `a26ca57b` (2026-11-21), shallow clone of
+https://github.com/steipete/CodexBar. Nothing was run. Paths below are relative
+to that repo. Facts come from the code and the repo docs; guesses are marked.
+
+### The model in one paragraph
+
+Each provider is one folder with a **descriptor** (name, links, default on/off,
+which sources it supports) and an ordered list of **fetch strategies** ("ways to
+get usage": `oauth`, `cli`, `web` cookies, `api` key, `local` files). In `auto`
+mode CodexBar tries the strategies in order and falls back on auth errors
+(`docs/provider.md`, `Sources/CodexBarCore/Providers/<Name>/`). Credential
+handling is a per-provider "credential adapter" next to the descriptor. Shared
+helpers do the heavy lifting: browser cookie import (SweetCookieKit), a PTY
+runner, a subprocess runner, a hidden WebView, a Keychain cache. On top of the
+115 built-in providers, many simple API-key or cookie providers are now
+**bundled JavaScript plugins** run in QuickJS with a declared manifest
+(endpoints, auth header, settings, cookie domains), and users can drop their own
+`.js`/`.ts` provider into `~/.config/codexbar/providers/` (`docs/plugins.md`).
+So "lots of providers" is mostly cheap: most of them are "paste a key" or
+"reuse the browser session" against one HTTP endpoint. Only a handful (Codex,
+Claude, Gemini, Antigravity, Copilot, Cursor) have real login logic.
+
+### 1. Providers and where their credentials come from
+
+CodexBar registers 115 provider IDs (`docs/providers.md`, README). Grouped by
+credential source; the agent CLIs are listed one by one.
+
+| Provider | Credential source(s), in `auto` order |
+|---|---|
+| **Codex** (ChatGPT) | 1) personal access token (`personal_access_token` in `auth.json`); 2) OAuth tokens read from `$CODEX_HOME/auth.json` (default `~/.codex`), read-only; 3) runs `codex -s read-only -a never app-server` (JSON-RPC `account/read`, `account/rateLimits/read`). Opt-in: other apps' files (`~/.config/codex/auth.json`, OpenCode `auth.json`); opt-in: chatgpt.com browser cookies in a hidden WebView for dashboard extras. Login: runs `codex login` (own `CODEX_HOME` per added account, see point 4). |
+| **Claude** | Admin API key (`sk-ant-admin…`, pasted or `ANTHROPIC_ADMIN_KEY`) when set. Otherwise 1) OAuth token from CodexBar's Keychain cache, `~/.claude/.credentials.json`, or Claude Code's Keychain item `Claude Code-credentials`; 2) PTY probe: runs `claude` and types `/usage` (and `/status`); 3) claude.ai `sessionKey` cookie (Safari/Chromium/Firefox, Claude desktop app cookies opt-in, or pasted). Env override `CODEXBAR_CLAUDE_OAUTH_TOKEN`. Opt-in: runs `cswap --list --json` / `tcr list --json` for several accounts. Login button runs `claude auth login --claudeai`. |
+| Claude Platform | platform.claude.com `sessionKey` cookie (browser or pasted). |
+| OpenAI (API) | Admin or normal API key (pasted, `OPENAI_ADMIN_KEY`, `OPENAI_API_KEY`). |
+| Gemini | Gemini CLI file `~/.gemini/oauth_creds.json`; refreshes it with the client id/secret it extracts from the installed Gemini CLI (`oauth2.js`). Opt-in: gemini.google.com cookies. Login: deletes the creds file and opens Terminal running `gemini`. |
+| Antigravity | Local language server probe; runs `agy`; Google OAuth that CodexBar performs itself with Antigravity's client id, read out of `Antigravity.app` (or `ANTIGRAVITY_OAUTH_CLIENT_ID`). |
+| Copilot | GitHub device flow that CodexBar performs itself, client id `Iv1.b507a08c87ecfe98` ("VS Code Client ID" in the code), scope `read:user`; or env/config token. Optional github.com cookies for budgets. |
+| Cursor | cursor.com cookies (browser import or pasted) → stored session → Cursor.app's local token (decrypted with the `Cursor Safe Storage` Keychain item) → `cursor-agent` token. |
+| OpenCode / OpenCode Go | opencode.ai cookies; for Go also an API key or the OpenCode CLI login in `opencode.db`. |
+| Kiro | runs `kiro-cli chat --no-interactive "/usage"` (or its token → API). |
+| Grok | runs `grok agent stdio` (JSON-RPC `x.ai/billing`), reads `~/.grok/auth.json`; grok.com cookies as fallback. |
+| Amp / Augment / CodeRabbit / Alibaba Token Plan | run the vendor CLI first (`amp usage`, `auggie`, CodeRabbit report, `bl`), then cookies or token. |
+| Kilo, Codebuff, ClinePass, Droid (Factory), Muse Code, Nous Portal, Hugging Face | API key/token, else the vendor CLI's own login file (e.g. `~/.local/share/kilo/auth.json`, `~/.config/manicode/credentials.json`, `~/.factory/.env`, Hermes/Muse/Cline/HF CLI logins). |
+| Zed, JetBrains AI, Windsurf, Pi, Vertex AI, AWS Bedrock | Local app data: Zed's Keychain session; JetBrains `AIAssistantQuotaManager2.xml`; Windsurf browser localStorage or `state.vscdb`; Pi transcripts; `gcloud` ADC; AWS keys/profile from env. |
+| Devin, Kimi | Chromium localStorage token or pasted bearer/JWT (Kimi also API key). |
+| StepFun | username + password that the user types in, or a pasted token. |
+| ~40 cookie-only web providers (T3 Chat, Mistral, Abacus, Notion AI, Perplexity, Manus, Qoder, Raycast, Replicate, LongCat, …) | Browser cookies imported automatically, or a pasted `Cookie:` header ("Manual"). |
+| ~50 API-key providers (OpenRouter, z.ai, DeepSeek, ElevenLabs, Warp, Synthetic, Chutes, xAI, LiteLLM, sub2api, …) | Key pasted in Settings, `codexbar config set-api-key`, or the vendor's env var (`Z_AI_API_KEY`, `OPENROUTER_API_KEY`, …). Some also need a base URL / team / project id. |
+
+Browser cookies: Safari (needs Full Disk Access), Chrome and the Chromium forks
+(decrypted with each browser's "Safe Storage" Keychain item, which makes macOS
+show a prompt), Firefox and Zen (plain SQLite). Imports run one browser at a time
+in a shared order, never prompt in the background, and back off for six hours
+after a Keychain denial (`docs/provider.md`). On Linux, automatic import is
+mostly missing; the user pastes cookies.
+
+### 2. How the user adds a provider, and multiple accounts
+
+- **First launch** turns on Codex, Claude, Gemini and Antigravity if their CLI,
+  app or credential file is found; otherwise only Codex
+  (`Sources/CodexBar/Settings/SettingsStore+ProviderDetection.swift`).
+- **Settings → Providers** is a sidebar list with an on/off toggle per provider
+  (also `codexbar config enable --provider x`). Each provider page has, as
+  needed: a *Usage source* picker (Auto/OAuth/CLI/Web/API), a *Cookie source*
+  picker (Automatic / Manual / Off) with a field for a pasted `Cookie:` header,
+  an API key field, and a login button for the few providers with one
+  ("Sign in with Claude Code…", Codex "Add Account…", Copilot GitHub sign-in,
+  Cursor "Add Account" which opens cursor.com/login in a chosen browser and then
+  reads its cookies, Antigravity "Login with Google", Gemini login via Terminal).
+- **Settings → Plugins → Install…** adds a user JS/TS provider. An approval
+  sheet lists its exact origins, auth mode, secret names and cookie domains;
+  approval is stored in `~/Library/Application Support/CodexBar/plugin-approvals.json`.
+- **Generic multi-account ("token accounts")**: about 40 providers (Claude,
+  Copilot, Cursor, OpenAI, OpenRouter, z.ai, Antigravity, …) accept a list of
+  `{label, token}` entries in `providers[].tokenAccounts` (with `activeIndex`).
+  The token is a cookie, a key, or an access token; it is injected as a cookie
+  header or an env var. Accounts are told apart by the **user's label** (often
+  the email), and by the API identity where the provider returns one (Copilot:
+  API host + numeric GitHub user id; Cursor: stable account id, else email).
+  The menu shows them stacked or with a switcher.
+- **Codex**: "managed accounts", each with its own private `CODEX_HOME` (point
+  4), keyed by a UUID and identified by email + ChatGPT workspace id; the
+  user can rename them; duplicates of the same email/workspace get a short
+  hash suffix. The real `~/.codex` shows as the "System" account. Advanced
+  users can also list existing Codex homes in `codexProfileHomePaths`.
+- **Claude**: no own multi-account login. Options are token accounts (pasted
+  `sessionKey` or `sk-ant-oat…` tokens, which expire without refresh) or the
+  opt-in **claude-swap / tcr** adapter: CodexBar runs `cswap --list --json` and
+  shows one card per slot (`claude-swap:<slot>`); switching runs
+  `cswap --switch-to <slot> --json`. The design doc rejected "a first-party
+  OAuth account vault" as too much new login/storage/security surface
+  (`docs/claude-multi-account-and-status-items.md`).
+
+### 3. Where CodexBar keeps what the user gives it
+
+- **One JSON config file** holds API keys, pasted cookie headers, source choices,
+  provider order and token accounts, in plain text with `0600` permissions:
+  `~/.config/codexbar/config.json` (older installs `~/.codexbar/config.json`;
+  `CODEXBAR_CONFIG` overrides). Keys: `providers[].apiKey`, `cookieHeader`,
+  `cookieSource`, `source`, `tokenAccounts`, `enterpriseHost`, `workspaceID`.
+  Copilot's device-flow token also goes to `providers[].apiKey` or a token
+  account. Older per-provider Keychain items were migrated into this file
+  (`docs/KEYCHAIN_FIX.md`, `docs/configuration.md`).
+- **macOS Keychain**, service `com.steipete.codexbar.cache`: imported cookies
+  (account `cookie.<provider>`) and the Claude OAuth cache (`oauth.claude`, and
+  per-`CLAUDE_CONFIG_DIR` keys `claude.profile.<hash>`).
+- **`~/Library/Application Support/CodexBar/`**: `managed-codex-accounts.json`
+  (account list, no tokens), `managed-codex-homes/<uuid>/` (Codex logins),
+  `cursor-session.json`, `ClaudeProbe/` (working folder for the `claude` probe),
+  plugin approvals. Antigravity logins go to `~/.codexbar/antigravity/oauth_creds.json`
+  plus token accounts.
+- **Writes into other apps' files** (facts):
+  - Codex: the usage path never writes `~/.codex/auth.json` and never redeems
+    its refresh token; when it is stale, CodexBar asks the Codex CLI to recover
+    (`docs/codex-oauth.md`). But the explicit **"promote to System account"**
+    action (menu, or `codexbar codex-accounts promote`) atomically replaces the
+    live `$CODEX_HOME/auth.json` with a managed account's file, after saving the
+    old one, and may run `codex app-server daemon restart`.
+  - Claude: never writes `~/.claude/.credentials.json` or Claude Code's Keychain
+    item. When Claude Code's token is expired, it hands the refresh to the
+    `claude` CLI (only on a user click). It refreshes on its own (client id
+    `9d1c250a-e61b-44d9-88ed-5944d1962f5e`, `https://platform.claude.com/v1/oauth/token`)
+    only tokens it marks as CodexBar-owned in its own cache.
+  - Gemini: **does** write the refreshed `access_token`, `expiry_date` and
+    `id_token` back into `~/.gemini/oauth_creds.json`
+    (`GeminiStatusProbe.updateStoredCredentials`), and its login deletes that
+    file before starting `gemini`.
+  - Antigravity: to run `agy` for a chosen account, it writes the account's
+    tokens into a temporary home (`0700`) and deletes it afterwards, so the
+    normal `agy` login and Keychain stay untouched.
+
+### 4. A private config folder for an agent CLI ("hidden profile")
+
+- **Codex: yes.** "Add Account…" creates
+  `~/Library/Application Support/CodexBar/managed-codex-homes/<random-uuid>/`
+  and runs `codex login` with `CODEX_HOME` set to it
+  (`Sources/CodexBar/Providers/Codex/ManagedCodexAccountService.swift`,
+  `CodexLoginRunner.swift`). The resulting `auth.json` there is CodexBar's own
+  Codex login, read with `CODEX_HOME` pointed at that folder. Renewal is again
+  `codex login` in the same folder ("Reauthenticate"). This is the default way
+  to have several Codex accounts.
+- **Antigravity: similar, but short-lived.** A temporary home per fetch for
+  `agy` (above), plus CodexBar's own Google OAuth login.
+- **Claude: no.** The login runs `claude auth login --claudeai` with the
+  normal environment, so it signs in the user's ordinary Claude Code. CodexBar
+  reads `CLAUDE_CONFIG_DIR` when it is set but never sets it to a folder of its
+  own (`ClaudeConfigPaths.swift`; no assignment in the code). For several
+  Claude accounts it relies on claude-swap or tcr.
+- Guess: the Claude asymmetry likely comes from Claude Code on macOS keeping
+  its login in the Keychain rather than in the config folder, which makes a
+  private folder less clean than for Codex; the repo does not say this.
+
+### 5. How subscription limits are fetched
+
+- **Claude:** `GET https://api.anthropic.com/api/oauth/usage` with
+  `Authorization: Bearer <Claude Code OAuth token>` and
+  `anthropic-beta: oauth-2025-04-20` (needs the `user:profile` scope); fields
+  `five_hour`, `seven_day`, `seven_day_sonnet/opus`, `extra_usage`. Fallbacks:
+  the `claude` PTY probe with `/usage` in `~/Library/Application Support/CodexBar/ClaudeProbe`,
+  then `GET https://claude.ai/api/organizations/{orgId}/usage` with the
+  `sessionKey` cookie.
+- **ChatGPT/Codex:** `GET https://chatgpt.com/backend-api/wham/usage` with
+  `Authorization: Bearer <access_token from auth.json>` and
+  `ChatGPT-Account-Id`; `rate_limit.primary_window` / `secondary_window` are the
+  5-hour and weekly windows, plus `credits` and `plan_type`. Fallback: `codex
+  app-server` JSON-RPC `account/rateLimits/read`. Optional extras from the
+  chatgpt.com dashboard in a hidden WebView with browser cookies.
+
+### Takeaways for OTTY
+
+- CodexBar does not have one generic "add provider" flow. It has a few shared
+  credential kinds (pasted key, pasted or imported cookie, vendor CLI file,
+  vendor CLI run, own OAuth/device flow) and each provider declares which ones
+  it accepts, in order. That matches OTTY's plugin idea: a plugin declares its
+  sources, the host owns the risky parts (Keychain, cookies, processes, HTTP).
+- The only "own login" it performs for agent CLIs is the Codex private
+  `CODEX_HOME` trick, and it uses the vendor's own `codex login` to do it. For
+  Claude it chose not to keep its own login.
+- It avoids refreshing other apps' tokens (Codex, Claude, OpenCode), with
+  Gemini as the exception.
