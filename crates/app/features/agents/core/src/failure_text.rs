@@ -113,6 +113,7 @@ pub(crate) fn unavailable_text(reason: &Unavailable) -> String {
             i18n::filled(Key::TplAgentsProgramMissing, &[("program", program)])
         },
         Unavailable::ReadStopped => i18n::t(Key::AgentsReadStopped).to_string(),
+        Unavailable::NoLogIn => i18n::t(Key::AgentsNoLogIn).to_string(),
     }
 }
 
@@ -222,6 +223,7 @@ mod tests {
             not_available(Unavailable::NotAFolder(path.clone())),
             not_available(Unavailable::ProgramNotFound("coder")),
             not_available(Unavailable::ReadStopped),
+            not_available(Unavailable::NoLogIn),
             unexpected(Unexpected::ServerStatus(502)),
             unexpected(Unexpected::NotJsonObject),
             unexpected(Unexpected::NoPrices),

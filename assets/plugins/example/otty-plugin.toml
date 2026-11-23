@@ -4,7 +4,7 @@
 [plugin]
 id = "example"
 name = "Example"
-version = "0.1.5"
+version = "0.1.6"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/otty-shell/otty-plugin-example"
 license = "Apache-2.0"
@@ -71,9 +71,16 @@ http = ["api.example.com"]
 # reads there what this entry lists: `read` as plain files, `keys` with
 # the keys replaced by handles. A program it starts may get `folder_env`
 # set only to one of those folders.
+#
+# `log_in = true` offers Add account → "Log in with Example Agent": OTTY
+# makes a folder of its own, runs the command the part's `log_in` gives
+# there in a terminal tab, and then asks the part for the accounts in it,
+# which the part reads as it reads a profile folder of this entry. At
+# most one entry of a part offers it.
 [[agents.provider.logins]]
 agent = "example-agent"
 folder_env = "EXAMPLE_AGENT_HOME"
+log_in = true
 read = ["sessions/*.jsonl"]
 
 [[agents.provider.logins.keys]]

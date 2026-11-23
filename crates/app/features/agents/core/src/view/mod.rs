@@ -1,4 +1,5 @@
 mod account_page;
+pub(crate) mod add_account_dialog;
 mod blocks;
 mod chips;
 mod entry_icon;

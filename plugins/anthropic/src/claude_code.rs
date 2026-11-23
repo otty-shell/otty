@@ -97,6 +97,16 @@ pub(crate) fn claude_in_folder(folder: &str) -> Command {
     command_in(folder, is_default, Vec::new())
 }
 
+/// `claude auth login --claudeai` with `CLAUDE_CONFIG_DIR` set to OTTY's
+/// own login folder `folder`, which is never the default one: Log in with
+/// Claude Code (spec 2026-11-23-accounts-apart-from-profiles, Decision 6,
+/// the command the owner chose on 2026-11-23).
+pub(crate) fn claude_login_in(folder: &str) -> Command {
+    let args = ["auth", "login", "--claudeai"].map(String::from).to_vec();
+
+    command_in(folder, false, args)
+}
+
 /// `claude` with `args` in the config folder `folder`, with
 /// `CLAUDE_CONFIG_DIR` when the folder is not the default one. The
 /// default folder sets nothing: with the variable set, Claude Code would
@@ -180,6 +190,24 @@ mod tests {
         assert_eq!(
             Anthropic::launch(&profile, Some(SESSION)),
             command(&["--resume", SESSION], &env)
+        );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: Log in
+    /// with Claude Code runs `claude auth login --claudeai` with
+    /// `CLAUDE_CONFIG_DIR` set to OTTY's own folder (owner, 2026-11-23).
+    #[test]
+    fn log_in_runs_claude_auth_login_in_the_own_folder() {
+        let folder = "/home/dev/.local/share/otty/accounts/6f0c1e2a";
+
+        let command_of = Anthropic::log_in(PROVIDER, folder);
+
+        assert_eq!(
+            command_of,
+            Some(command(
+                &["auth", "login", "--claudeai"],
+                &[(CONFIG_VARIABLE, folder)]
+            ))
         );
     }
 

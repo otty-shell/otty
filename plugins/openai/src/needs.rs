@@ -376,6 +376,18 @@ const BILL_KEY_HINT: &[(&str, &str)] = &[
     ),
 ];
 
+/// `codex login` with `CODEX_HOME` set to the config folder `folder`: how
+/// a login expired there is renewed, and how Log in with Codex logs in to
+/// OTTY's own login folder (spec 2026-11-23-accounts-apart-from-profiles,
+/// Decision 6).
+pub(crate) fn codex_login_in(folder: &str) -> Command {
+    Command {
+        program: PROGRAM.to_string(),
+        args: vec!["login".to_string()],
+        env: vec![(CONFIG_VARIABLE.to_string(), folder.to_string())],
+    }
+}
+
 /// Nobody is logged in with the profile: the button runs `login`, `codex
 /// login` in the profile's config folder, in a terminal tab.
 pub(crate) fn not_logged_in(login: Command) -> Need {
@@ -395,11 +407,7 @@ pub(crate) fn not_logged_in(login: Command) -> Need {
 /// read as one need (spec 2026-11-23-accounts-apart-from-profiles,
 /// Decision 9).
 pub(crate) fn login_expired(folder: &str) -> Need {
-    let login = Command {
-        program: PROGRAM.to_string(),
-        args: vec!["login".to_string()],
-        env: vec![(CONFIG_VARIABLE.to_string(), folder.to_string())],
-    };
+    let login = codex_login_in(folder);
 
     Need {
         id: "login-expired".to_string(),

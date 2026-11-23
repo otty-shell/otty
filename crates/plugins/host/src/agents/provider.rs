@@ -25,6 +25,7 @@ use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::ProviderVersion;
 use crate::keys::{KeyHandle, KeySource};
 use crate::operations::v0_1::otty::host::keys::GivenKey;
+use crate::operations::v0_1::otty::host::types::Command;
 use crate::pacing::PaceKey;
 
 /// The provider contract of one loaded plugin, in the version its `[api]`
@@ -142,6 +143,28 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
         })
     }
 
+    /// The agent's official login command pointed at OTTY's own login
+    /// folder `folder`, such as `codex login` with `CODEX_HOME` set to it
+    /// (spec 2026-11-23-accounts-apart-from-profiles, Decision 6); `None`
+    /// from a part that offers no "Log in with". The part only says the
+    /// command: OTTY runs it in a terminal tab the user sees.
+    pub fn log_in(
+        &mut self,
+        folder: &str,
+    ) -> Result<Option<Command>, CallError> {
+        let provider = self.batch.part().id().to_string();
+        let exports = self.exports.clone();
+
+        self.batch
+            .call(CallKind::Quick, |store, instance| match &exports {
+                ProviderExports::V0_1(indices) => {
+                    let guest = indices.load(&mut *store, instance)?;
+
+                    guest.call_log_in(store, &provider, folder)
+                },
+            })
+    }
+
     /// Runs `call` with the exports of the plugin's version of the
     /// contract, the login folders `folders` and a handle to each key of
     /// `given` with its slot, given to the plugin for this call.
@@ -181,14 +204,20 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
 }
 
 /// `folders` as the permissions of a call name them: the agent part of
-/// each profile and its folder.
+/// each profile and its folder, and OTTY's own login folders, which the
+/// `logins` entry that offers `log_in` reads.
 fn folders_of_call(
     folders: &[LoginFolder],
 ) -> Vec<otty_plugin_manifest::LoginFolder> {
     folders
         .iter()
-        .map(|LoginFolder::Profile((agent, folder))| {
-            otty_plugin_manifest::LoginFolder::new(agent, folder)
+        .map(|folder| match folder {
+            LoginFolder::Profile((agent, folder)) => {
+                otty_plugin_manifest::LoginFolder::new(agent, folder)
+            },
+            LoginFolder::OwnLogin((_, folder)) => {
+                otty_plugin_manifest::LoginFolder::own(folder)
+            },
         })
         .collect()
 }
@@ -205,7 +234,9 @@ mod tests {
     use crate::keys::KeyText;
     use crate::operations::v0_1::otty::host::files::Host as _;
     use crate::operations::v0_1::otty::host::http::Response;
-    use crate::operations::v0_1::otty::host::types::{HostError, NeedAction};
+    use crate::operations::v0_1::otty::host::types::{
+        Command, HostError, NeedAction,
+    };
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{
         TempDir, debug_err, engine_with, load_template, template_env,
@@ -273,7 +304,10 @@ mod tests {
         account
             .found_in
             .iter()
-            .map(|LoginFolder::Profile((_, folder))| folder.as_str())
+            .map(|folder| match folder {
+                LoginFolder::Profile((_, folder))
+                | LoginFolder::OwnLogin((_, folder)) => folder.as_str(),
+            })
             .collect()
     }
 
@@ -370,6 +404,58 @@ mod tests {
             ]
         );
         assert!(found.needs.is_empty());
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: in OTTY's
+    /// own login folder the part finds its account as in a profile folder
+    /// of the entry that offers `log_in`, and the account names that
+    /// folder.
+    #[test]
+    fn an_account_is_found_in_an_own_login_folder() {
+        let folder = login_folder();
+        let text = folder.path().to_str().expect("a text path").to_string();
+        let own = LoginFolder::OwnLogin(("6f0c1e2a".to_string(), text.clone()));
+
+        let found = accounts_in(&[own]);
+
+        assert_eq!(found.accounts.len(), 1, "{found:?}");
+        assert_eq!(found.accounts[0].name, "dev@example.com");
+        assert!(
+            matches!(&found.accounts[0].found_in[..],
+                [LoginFolder::OwnLogin((id, folder))]
+                    if id == "6f0c1e2a" && *folder == text),
+            "{found:?}"
+        );
+    }
+
+    /// Decision 6: the part gives the agent's own login command pointed at
+    /// OTTY's own login folder, which OTTY runs in a terminal tab.
+    #[test]
+    fn the_part_gives_its_login_command_for_an_own_folder() {
+        let cache = TempDir::new();
+        let engine =
+            engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
+        let plugin = load_template(&engine, &template_env());
+        let mut batch = plugin
+            .start_calls(&PartRef::provider(PROVIDER))
+            .expect("a listed part");
+        let folder = "/home/user/.local/share/otty/accounts/6f0c1e2a";
+
+        let command = batch
+            .provider()
+            .expect("a provider part")
+            .log_in(folder)
+            .expect("the call");
+
+        let Some(Command { program, args, env }) = command else {
+            panic!("a login command");
+        };
+        assert_eq!(program, "example-agent");
+        assert_eq!(args, ["login"]);
+        assert_eq!(
+            env,
+            [("EXAMPLE_AGENT_HOME".to_string(), folder.to_string())]
+        );
     }
 
     /// The part reads a login only inside a folder of an agent part its

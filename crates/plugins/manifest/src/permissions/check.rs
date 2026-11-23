@@ -100,8 +100,9 @@ impl Permissions {
     /// `folders`: inside each folder of an agent part its [`LoginRule`]s
     /// name, the part also reads their files and their key files, keys
     /// as handles, and a program it starts may get the rule's
-    /// `folder_env` set to that folder. A folder of another agent part or
-    /// one that is not an absolute path with no `..` adds nothing.
+    /// `folder_env` set to that folder. OTTY's own login folder is read by
+    /// the rule that offers "Log in with". A folder of another agent part
+    /// or one that is not an absolute path with no `..` adds nothing.
     pub fn in_login_folders(&self, folders: &[LoginFolder]) -> Self {
         let mut read = Vec::new();
         let mut key_files = Vec::new();
@@ -112,10 +113,11 @@ impl Permissions {
             .filter(|folder| is_plain_absolute(folder.folder()));
         for folder in usable {
             let path = folder.folder();
-            let rules = self
-                .logins
-                .iter()
-                .filter(|rule| rule.agent() == folder.agent());
+            let rules =
+                self.logins.iter().filter(|rule| match folder.agent() {
+                    Some(agent) => rule.agent() == agent,
+                    None => rule.offers_log_in(),
+                });
             for rule in rules {
                 read.extend(
                     rule.read().iter().filter_map(|glob| glob.resolve(path)),
@@ -346,17 +348,18 @@ impl Permissions {
 
 /// A login folder OTTY gives a provider part for one call: the config
 /// folder of a profile of an agent part of the same plugin, such as
-/// `~/.codex-work` of `codex`.
+/// `~/.codex-work` of `codex`, or OTTY's own login folder of the part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginFolder {
-    agent: String,
+    agent: Option<String>,
     folder: PathBuf,
 }
 
 impl LoginFolder {
-    /// The id of the agent part of the profile.
-    pub fn agent(&self) -> &str {
-        &self.agent
+    /// The id of the agent part of the profile; `None` for OTTY's own
+    /// login folder, which the entry that offers "Log in with" reads.
+    pub fn agent(&self) -> Option<&str> {
+        self.agent.as_deref()
     }
 
     /// The profile's config folder.
@@ -373,12 +376,30 @@ impl LoginFolder {
     ///
     /// let folder = LoginFolder::new("codex", "/home/user/.codex-work");
     ///
-    /// assert_eq!(folder.agent(), "codex");
+    /// assert_eq!(folder.agent(), Some("codex"));
     /// assert_eq!(folder.folder(), Path::new("/home/user/.codex-work"));
     /// ```
     pub fn new(agent: &str, folder: impl Into<PathBuf>) -> Self {
         Self {
-            agent: agent.to_string(),
+            agent: Some(agent.to_string()),
+            folder: folder.into(),
+        }
+    }
+
+    /// OTTY's own login folder `folder` of the part (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 6), such as
+    /// `~/.local/share/otty/accounts/<id>`.
+    ///
+    /// ```
+    /// use otty_plugin_manifest::LoginFolder;
+    ///
+    /// let folder = LoginFolder::own("/home/user/.local/share/otty/accounts/1");
+    ///
+    /// assert_eq!(folder.agent(), None);
+    /// ```
+    pub fn own(folder: impl Into<PathBuf>) -> Self {
+        Self {
+            agent: None,
             folder: folder.into(),
         }
     }
@@ -640,6 +661,32 @@ mod tests {
         assert!(
             !called.may_read_with_keys(Path::new("work/relative/auth.json"))
         );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: OTTY's
+    /// own login folder is read as a folder of the agent part whose entry
+    /// offers "Log in with", and the entry's variable may point there.
+    #[test]
+    fn an_own_login_folder_is_read_as_the_entry_that_offers_log_in() {
+        let offering = edited(
+            &with_codex_logins(),
+            r#"folder_env = "CODEX_HOME""#,
+            "folder_env = \"CODEX_HOME\"\nlog_in = true",
+        );
+        let base = permissions_of(&offering, &PartRef::provider("openai"));
+        let own = "/data/otty/accounts/6f0c1e2a";
+
+        let called = base.in_login_folders(&[LoginFolder::own(own)]);
+        let not_offered =
+            codex_logins().in_login_folders(&[LoginFolder::own(own)]);
+
+        let auth = Path::new("/data/otty/accounts/6f0c1e2a/auth.json");
+        let session = "/data/otty/accounts/6f0c1e2a/sessions/a.jsonl";
+        assert!(called.may_read_with_keys(auth));
+        assert!(called.may_read(Path::new(session)));
+        assert!(called.may_pass_var("CODEX_HOME", own));
+        assert!(!not_offered.may_read_with_keys(auth));
+        assert!(!not_offered.may_pass_var("CODEX_HOME", own));
     }
 
     /// Nothing of the login rules applies outside a call with folders.

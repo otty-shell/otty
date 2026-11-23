@@ -18,7 +18,9 @@
 //! (`chatgpt:<account id>`), an API key is a key known by its fingerprint
 //! (`key:<fingerprint>`), and one account in two folders is one account
 //! with two places (`accounts.rs`). A login behind a gateway is no OpenAI
-//! account. It reads the numbers any way it can (issue 29), only in the
+//! account. Add account → "Log in with Codex" runs `codex login` with
+//! `CODEX_HOME` set to OTTY's own folder, and the part reads that folder
+//! as a Codex profile folder. It reads the numbers any way it can (issue 29), only in the
 //! account's folders: the limits and credits of a ChatGPT login from
 //! `chatgpt.com` with its token, else the limits Codex tells there
 //! (`codex app-server` and the records of its session files), and the

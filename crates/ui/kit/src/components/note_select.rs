@@ -10,14 +10,19 @@ use super::{faded, field_chrome, glyph, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
+/// Edge of the logo before the label of an option.
+const ICON_SIZE: f32 = 14.0;
+
 /// Edge of the caret after the picked option.
 const CARET_SIZE: f32 = 12.0;
 
-/// One option of a [`NoteSelect`]: its label, an optional note shown
-/// after it, muted, and why it can not be picked, if it can not.
+/// One option of a [`NoteSelect`]: its label, an optional logo before it,
+/// an optional note shown after it, muted, and why it can not be picked,
+/// if it can not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteSelectOption {
     label: String,
+    icon: Option<svg::Handle>,
     note: Option<String>,
     disabled_reason: Option<String>,
 }
@@ -27,6 +32,7 @@ impl NoteSelectOption {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
+            icon: None,
             note: None,
             disabled_reason: None,
         }
@@ -35,6 +41,23 @@ impl NoteSelectOption {
     /// The same option with `note` after its label.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
+        self
+    }
+
+    /// The same option with the one-color SVG `icon`, such as the logo of a
+    /// provider, before its label, tinted as the label.
+    ///
+    /// ```
+    /// use iced::widget::svg;
+    /// use otty_ui_kit::components::note_select::NoteSelectOption;
+    ///
+    /// let logo = svg::Handle::from_memory(&b"<svg/>"[..]);
+    /// let openai = NoteSelectOption::new("OpenAI")
+    ///     .with_icon(logo)
+    ///     .with_note("OpenAI plugin");
+    /// ```
+    pub fn with_icon(mut self, icon: svg::Handle) -> Self {
+        self.icon = Some(icon);
         self
     }
 
@@ -173,20 +196,23 @@ fn field_view<'a, Message: Clone + 'a>(
     let body = typography::BODY;
     let strong = palette.text_strong();
     let muted = palette.text_muted();
-    let (label, note) = match picked {
-        Some(option) => (option.label, option.note),
-        None => (String::new(), None),
+    let (label, icon, note) = match picked {
+        Some(option) => (option.label, option.icon, option.note),
+        None => (String::new(), None, None),
     };
 
-    let mut content = row![
+    let mut content =
+        row![].spacing(spacing::SPACE_3).align_y(Alignment::Center);
+    if let Some(icon) = icon {
+        content = content.push(option_icon(icon, strong));
+    }
+    content = content.push(
         text(label)
             .size(body.size())
             .line_height(iced::Pixels(body.line_height()))
             .font(fonts::UI)
-            .color(strong)
-    ]
-    .spacing(spacing::SPACE_3)
-    .align_y(Alignment::Center);
+            .color(strong),
+    );
     if let Some(note) = note {
         content = content.push(
             text(note)
@@ -239,9 +265,16 @@ fn option_rows<'a, Message: 'a>(
             if option.disabled_reason.is_some() {
                 label = label.color(off);
             }
-            let mut content = row![label]
-                .spacing(spacing::SPACE_3)
-                .align_y(Alignment::Center);
+            let mut content =
+                row![].spacing(spacing::SPACE_3).align_y(Alignment::Center);
+            if let Some(icon) = option.icon {
+                let color = match option.disabled_reason {
+                    Some(_) => off,
+                    None => palette.text_body(),
+                };
+                content = content.push(option_icon(icon, color));
+            }
+            content = content.push(label);
             if let Some(note) = option.note {
                 content = content.push(
                     text(note)
@@ -257,6 +290,19 @@ fn option_rows<'a, Message: 'a>(
             }
         })
         .collect()
+}
+
+/// The logo `icon` of an option, a square as tall as a small icon, tinted
+/// `color`.
+fn option_icon<'a, Message: 'a>(
+    icon: svg::Handle,
+    color: iced::Color,
+) -> Element<'a, Message> {
+    svg(icon)
+        .width(ICON_SIZE)
+        .height(ICON_SIZE)
+        .style(move |_, _| svg::Style { color: Some(color) })
+        .into()
 }
 
 /// The look of the field, the same as `Select`: `surface-raised`, and
@@ -403,6 +449,48 @@ mod tests {
         assert!(
             !draws(&money_off("No prices"), window, None, &hovered),
             "the reason shows only under the pointer"
+        );
+    }
+
+    /// A field of one option with a square logo and its note, picked, its
+    /// list open or not.
+    fn with_logo(is_open: bool, logo: &'static str) -> Element<'static, ()> {
+        let palette = UiPalette::otty_dark();
+        let icon = svg::Handle::from_memory(logo.as_bytes());
+        let options = vec![
+            NoteSelectOption::new("OpenAI")
+                .with_note("OpenAI plugin")
+                .with_icon(icon),
+        ];
+
+        let field = NoteSelect::new(options, Some(0), &palette)
+            .open(is_open)
+            .on_toggle(())
+            .on_pick(|_| ());
+
+        iced::widget::container(field).width(260.0).into()
+    }
+
+    /// An option may carry a logo, such as a provider's, drawn before its
+    /// label in the field and in the list, and the option still picks.
+    #[test]
+    fn an_option_with_a_logo_draws_it_and_still_picks() {
+        let square = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="currentColor"/></svg>"#;
+        let empty = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>"#;
+        let folder = TempDir::new("note-select-logo");
+        let drawn = folder.path().join("drawn");
+        let window = iced::Size::new(300.0, 200.0);
+        let mut ui = simulator(with_logo(true, square));
+
+        ui.find("OpenAI plugin").expect("the note should show");
+        let _ = ui.click("OpenAI");
+        let sent: Vec<()> = ui.into_messages().collect();
+        assert!(draws(&|| with_logo(false, square), window, None, &drawn));
+
+        assert!(!sent.is_empty(), "a press on the option picks it");
+        assert!(
+            !draws(&|| with_logo(false, empty), window, None, &drawn),
+            "the logo is drawn"
         );
     }
 

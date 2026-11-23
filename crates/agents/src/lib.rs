@@ -61,6 +61,12 @@
 //! account's money is only what its provider tells. Accounts are not
 //! added by hand (Decision 10).
 //!
+//! An [`OwnLogin`] is OTTY's own login of a provider part (Decision 6):
+//! a folder of OTTY's own, `<data dir>/accounts/<id>/`, where the agent's
+//! official login command ran, [`log_in_command`]. The part finds
+//! accounts there as in a profile folder ([`FoundIn::OwnLogin`],
+//! [`own_login_accounts`]); the folder is never a profile.
+//!
 //! What the user must do for an agent or a provider comes from its part
 //! as a [`PartNeed`], in the language the host tells the part: a profile
 //! nobody is logged in with ([`ProfileStatus::NotLoggedIn`]), an account
@@ -119,6 +125,7 @@ mod limits;
 mod litellm;
 mod local_time;
 mod money_estimate;
+mod own_login;
 mod part_need;
 mod percent;
 mod plugin_agent;
@@ -182,6 +189,7 @@ pub use crate::limits::{
 };
 pub use crate::local_time::LocalNow;
 pub use crate::money_estimate::MoneyTotal;
+pub use crate::own_login::{OwnLogin, log_in_command, own_login_accounts};
 pub use crate::part_need::{KeyAsk, PartNeed, PartNeedAction};
 pub use crate::percent::Percent;
 pub use crate::plugin_agent::PluginAgent;
@@ -198,7 +206,7 @@ pub use crate::program::{
 };
 pub use crate::program_version::version_in_output;
 pub use crate::project::{Project, ProjectSession, projects};
-pub use crate::provider::{ProviderEntry, ProviderId, ProviderRef};
+pub use crate::provider::{LogInWith, ProviderEntry, ProviderId, ProviderRef};
 pub use crate::record_format::FormatChange;
 pub use crate::registry::Registry;
 pub use crate::saved_profiles::{

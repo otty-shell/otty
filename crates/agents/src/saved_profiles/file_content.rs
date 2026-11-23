@@ -7,12 +7,15 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::hidden_profiles::HiddenProfile;
+use super::own_logins::is_plain_id;
 use super::saved_accounts::SavedAccount;
 use super::{DefaultProfileChanges, SavedProfiles};
 use crate::account::AccountKey;
 use crate::agent::AgentId;
 use crate::given_key::{GivenKey, KeyRef};
+use crate::own_login::OwnLogin;
 use crate::profile::Profile;
+use crate::provider::ProviderId;
 
 /// The whole text of `agents.json`.
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -25,6 +28,8 @@ pub(super) struct FileContent {
     accounts: Vec<AccountEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hidden_profiles: Vec<HiddenProfileEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    own_logins: Vec<OwnLoginEntry>,
     #[serde(default, skip_serializing_if = "is_false")]
     found_report_shown: bool,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -59,6 +64,11 @@ impl FileContent {
                 .iter()
                 .map(HiddenProfileEntry::from_hidden)
                 .collect(),
+            own_logins: saved
+                .own_logins
+                .iter()
+                .map(OwnLoginEntry::from_login)
+                .collect(),
             found_report_shown: saved.is_found_report_shown,
             keyring_allowed: saved.is_keyring_allowed,
         }
@@ -67,7 +77,8 @@ impl FileContent {
     /// The content this text holds. The entries of every agent and
     /// plugin are kept, whether or not an entry of the registry names
     /// them; an account entry that names no plugin or no id, or keeps
-    /// nothing, and a given key of no place are left out.
+    /// nothing, a given key of no place and an own login whose id is no
+    /// plain name are left out.
     pub(super) fn into_saved(self) -> SavedProfiles {
         let mut saved = SavedProfiles::default();
 
@@ -96,6 +107,11 @@ impl FileContent {
             .hidden_profiles
             .into_iter()
             .map(HiddenProfileEntry::into_hidden)
+            .collect();
+        saved.own_logins = self
+            .own_logins
+            .into_iter()
+            .filter_map(OwnLoginEntry::into_login)
             .collect();
         saved.is_found_report_shown = self.found_report_shown;
         saved.is_keyring_allowed = self.keyring_allowed;
@@ -217,6 +233,50 @@ impl HiddenProfileEntry {
             agent: AgentId::new(self.agent),
             config_dir: self.config_dir,
         }
+    }
+}
+
+/// One own login in the text: its id, the plugin, the provider part and
+/// the agent part. Its folder is not written.
+#[derive(Debug, Serialize, Deserialize)]
+struct OwnLoginEntry {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    plugin: String,
+    #[serde(default)]
+    provider: String,
+    #[serde(default)]
+    agent: String,
+}
+
+impl OwnLoginEntry {
+    fn from_login(login: &OwnLogin) -> Self {
+        Self {
+            id: login.id().to_string(),
+            plugin: login.plugin().to_string(),
+            provider: login.provider().as_str().to_string(),
+            agent: login.agent().as_str().to_string(),
+        }
+    }
+
+    /// The own login, of any plugin; `None` when its id is no plain name,
+    /// so its folder would be another place than `accounts/<id>`, or when
+    /// it names no plugin, provider part or agent part.
+    fn into_login(self) -> Option<OwnLogin> {
+        let names_its_parts = !self.plugin.is_empty()
+            && !self.provider.is_empty()
+            && !self.agent.is_empty();
+        if !is_plain_id(&self.id) || !names_its_parts {
+            return None;
+        }
+
+        Some(OwnLogin::new(
+            self.id,
+            self.plugin,
+            ProviderId::new(self.provider),
+            AgentId::new(self.agent),
+        ))
     }
 }
 

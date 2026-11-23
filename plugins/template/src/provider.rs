@@ -10,11 +10,13 @@ use otty_plugin_sdk::agents::{
     LoginFolder, Money, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
-use otty_plugin_sdk::{GivenKey, HostError, Key, Need, files, given_key};
+use otty_plugin_sdk::{
+    Command, GivenKey, HostError, Key, Need, files, given_key,
+};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::{Example, needs};
+use crate::{Example, agent, needs};
 
 /// The provider's API.
 const API: &str = "https://api.example.com/v1";
@@ -85,14 +87,14 @@ impl Provider for Example {
     /// named by the email of the file, else by the end of the
     /// fingerprint. An admin key is an organization. A folder with no
     /// login gives nothing: the agent part says it is not logged in.
+    /// OTTY's own login folder is read as a profile folder.
     fn accounts(_provider: &str, folders: &[LoginFolder]) -> Found {
         let mut accounts: Vec<Account> = Vec::new();
 
         for folder in folders {
-            let LoginFolder::Profile((agent, path)) = folder;
-            if agent != AGENT {
+            let Some(path) = agent_folder(folder) else {
                 continue;
-            }
+            };
             let Some(login) = folder_login(path) else {
                 continue;
             };
@@ -193,15 +195,32 @@ impl Provider for Example {
             .collect();
         Ok(Bill { days })
     }
+
+    /// Log in with Example Agent (the `log_in` of the manifest's
+    /// `logins`): `example-agent login` pointed at OTTY's own folder.
+    fn log_in(_provider: &str, folder: &str) -> Option<Command> {
+        Some(agent::login_in(folder))
+    }
 }
 
 /// The login of the first folder of `account` that holds one.
 fn account_login(account: &Account) -> Option<FolderLogin> {
-    account.found_in.iter().find_map(|folder| {
-        let LoginFolder::Profile((agent, path)) = folder;
+    account
+        .found_in
+        .iter()
+        .filter_map(agent_folder)
+        .find_map(folder_login)
+}
 
-        (agent == AGENT).then(|| folder_login(path)).flatten()
-    })
+/// The path of `folder` when it holds a login of the example agent: a
+/// profile folder of it, or OTTY's own login folder, where the example
+/// agent logged in.
+fn agent_folder(folder: &LoginFolder) -> Option<&str> {
+    match folder {
+        LoginFolder::Profile((agent, path)) if agent == AGENT => Some(path),
+        LoginFolder::OwnLogin((_, path)) => Some(path),
+        _ => None,
+    }
 }
 
 /// The key of `auth.json` in the profile folder `folder`, as a handle,
@@ -292,7 +311,7 @@ fn get_json<T: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::test_host::TestHost;
-    use otty_plugin_sdk::{GivenKey, HostError, NeedAction, files};
+    use otty_plugin_sdk::{Command, GivenKey, HostError, NeedAction, files};
 
     use super::*;
 
@@ -402,6 +421,43 @@ mod tests {
 
         assert_eq!(found.accounts.len(), 1);
         assert_eq!(found.accounts[0].found_in.len(), 2);
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: OTTY's
+    /// own login folder holds an account as a profile folder does, and
+    /// the account names that folder.
+    #[test]
+    fn an_own_login_folder_gives_its_account() {
+        let host = host();
+        let path = host.home().join(".example-agent").display().to_string();
+        let own = LoginFolder::OwnLogin(("6f0c1e2a".to_string(), path));
+
+        let found = accounts_in(&host, std::slice::from_ref(&own));
+
+        assert_eq!(found.accounts.len(), 1, "{found:?}");
+        assert_eq!(found.accounts[0].name, "dev@example.com");
+        assert_eq!(found.accounts[0].found_in, [own]);
+    }
+
+    /// Decision 6: Log in with Example Agent runs `example-agent login`
+    /// pointed at OTTY's own folder.
+    #[test]
+    fn log_in_runs_the_agents_login_in_the_folder() {
+        let folder = "/home/user/.local/share/otty/accounts/6f0c1e2a";
+
+        let command = Example::log_in(PROVIDER, folder);
+
+        assert_eq!(
+            command,
+            Some(Command {
+                program: "example-agent".to_string(),
+                args: vec!["login".to_string()],
+                env: vec![(
+                    "EXAMPLE_AGENT_HOME".to_string(),
+                    folder.to_string()
+                )],
+            })
+        );
     }
 
     /// A folder of another agent part is not read.

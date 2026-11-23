@@ -10,9 +10,10 @@ use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
 use super::{
-    found_report, key_dialog, keyring, menu_actions, need, new_session_dialog,
-    profile_actions, profile_dialog, program_version, reads, real_failures,
-    rename_dialog, session_actions, stats_dialog,
+    add_account_dialog, found_report, key_dialog, keyring, login_tabs,
+    menu_actions, need, new_session_dialog, profile_actions, profile_dialog,
+    program_version, reads, real_failures, rename_dialog, session_actions,
+    stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -306,9 +307,34 @@ pub(super) fn reduce(
             state.watch_fix_tab(tab_id);
             Vec::new()
         },
-        AgentsIntent::TabClosed(tab_id) => match state.forget_fix_tab(tab_id) {
-            true => reads::load_profiles(state),
-            false => Vec::new(),
+        AgentsIntent::TabClosed(tab_id) => {
+            if let Some(outcomes) = login_tabs::tab_closed(state, tab_id) {
+                return outcomes;
+            }
+            match state.forget_fix_tab(tab_id) {
+                true => reads::load_profiles(state),
+                false => Vec::new(),
+            }
+        },
+        AgentsIntent::OpenAddAccount => add_account_dialog::open(state),
+        AgentsIntent::AddAccount(intent) => {
+            add_account_dialog::reduce(state, intent)
+        },
+        AgentsIntent::OwnLoginPrepared(answer) => {
+            add_account_dialog::prepared(state, answer)
+        },
+        AgentsIntent::OwnLoginFolderMade { login, made } => {
+            add_account_dialog::folder_made(state, login, made)
+        },
+        AgentsIntent::LoginTabOpened { tab_id, login } => {
+            state.watch_login_tab(tab_id, login);
+            Vec::new()
+        },
+        AgentsIntent::OwnLoginChecked(checked) => {
+            login_tabs::checked(state, checked)
+        },
+        AgentsIntent::OwnLoginFolderRemoved(result) => {
+            login_tabs::folder_removed(result)
         },
         AgentsIntent::ToggleAccountsSection => {
             state.toggle_accounts_section();

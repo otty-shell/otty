@@ -50,6 +50,10 @@ pub(crate) struct App {
     /// Agents mode and the folder its hidden terminals run in. It is found
     /// once at start, next to `config_dir`.
     pub(crate) cache_dir: PathBuf,
+    /// OTTY's data folder (`~/.local/share/otty`): the installed plugins
+    /// and the folders of OTTY's own logins of Agents mode,
+    /// `accounts/<id>/`. It is found once at start.
+    pub(crate) data_dir: PathBuf,
     /// The system shell, read from `SHELL` at start: the default shell of
     /// the settings, used when the saved shell is missing or empty.
     pub(crate) default_shell: String,
@@ -154,6 +158,7 @@ impl App {
             default_shell,
             config_dir,
             cache_dir,
+            data_dir,
             readers.agents,
             readers.registry,
             readers.env,
@@ -183,7 +188,7 @@ impl App {
     /// Build the window state from what was read at start: the saved
     /// settings (the theme, the shell new terminals start, ...), the pinned
     /// modes, the saved launches, the home folder, the system shell, the
-    /// config and cache folders, the agents OTTY knows, the registry that
+    /// config, cache and data folders, the agents OTTY knows, the registry that
     /// names the agents and their providers, and what the agents look at
     /// in the environment. It reads nothing from disk.
     ///
@@ -200,6 +205,7 @@ impl App {
         default_shell: String,
         config_dir: PathBuf,
         cache_dir: PathBuf,
+        data_dir: PathBuf,
         agents: AgentList,
         registry: Arc<Registry>,
         agent_env: AgentEnv,
@@ -228,6 +234,7 @@ impl App {
             home,
             config_dir,
             cache_dir,
+            data_dir,
             screen_size,
             title_bar: TitleBar::new(),
             sidebar: SidebarWidget::new(),
@@ -455,6 +462,7 @@ mod tests {
         assert_ne!(app.config_dir, config_dir(&files_home));
         assert!(app.cache_dir.starts_with(std::env::temp_dir()));
         assert_ne!(app.cache_dir, cache_dir(&files_home));
+        assert!(app.data_dir.starts_with(std::env::temp_dir()));
     }
 
     #[test]

@@ -88,6 +88,7 @@ args = ["--usage"]
 [[agents.provider.logins]]
 agent = "made-up-agent"
 folder_env = "MADE_UP_HOME"
+log_in = true
 read = ["sessions/*.jsonl"]
 
 [[agents.provider.logins.keys]]

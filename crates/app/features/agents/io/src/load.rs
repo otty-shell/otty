@@ -24,7 +24,8 @@ use crate::time_zone::user_time_zone;
 /// Read the profiles in the background: the saved ones in `agents.json` in
 /// `config_dir` and the default profile of each of `agents`, each with its
 /// state, and the accounts each provider part of `providers` finds in the
-/// shown profiles of its own plugin. A program is looked up through the
+/// shown profiles of its own plugin and in the folders of its own logins
+/// in OTTY's data folder `data_dir`. A program is looked up through the
 /// user's shell at `shell`. The answer comes back as
 /// [`AgentsIntent::ProfilesLoaded`], or as
 /// [`AgentsIntent::ProfilesReadStopped`] when the read stops before it
@@ -46,6 +47,7 @@ use crate::time_zone::user_time_zone;
 ///     &providers,
 ///     &AgentEnv::new(PathBuf::from("/home/user")),
 ///     Path::new("/home/user/.config/otty"),
+///     Path::new("/home/user/.local/share/otty"),
 ///     "/bin/zsh",
 /// );
 ///
@@ -56,19 +58,27 @@ pub fn load_profiles(
     providers: &ProviderList,
     env: &AgentEnv,
     config_dir: &Path,
+    data_dir: &Path,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let agents = Arc::clone(agents);
     let providers = Arc::clone(providers);
     let env = env.clone();
     let config_dir = config_dir.to_path_buf();
+    let data_dir = data_dir.to_path_buf();
     let shell = shell.to_string();
 
     on_own_thread(
         String::from("reading the agent profiles"),
         move || {
-            let loaded =
-                read_profiles(&agents, &providers, &env, &config_dir, &shell);
+            let loaded = read_profiles(
+                &agents,
+                &providers,
+                &env,
+                &config_dir,
+                &data_dir,
+                &shell,
+            );
             AgentsIntent::ProfilesLoaded(loaded)
         },
         || AgentsIntent::ProfilesReadStopped,
@@ -106,6 +116,7 @@ fn read_profiles(
     providers: &[PluginProvider],
     env: &AgentEnv,
     config_dir: &Path,
+    data_dir: &Path,
     shell: &str,
 ) -> LoadedProfiles {
     let (saved, problem) = read_saved(config_dir);
@@ -138,7 +149,13 @@ fn read_profiles(
         .iter()
         .map(|loaded| loaded.profile.clone())
         .collect();
-    let accounts = otty_agents::find_accounts(agents, providers, &shown);
+    let accounts = otty_agents::find_accounts(
+        agents,
+        providers,
+        &shown,
+        saved.own_logins(),
+        data_dir,
+    );
 
     LoadedProfiles {
         profiles,
@@ -287,6 +304,7 @@ mod tests {
             &[],
             &env,
             home.path(),
+            home.path(),
             &shell(&home, true),
         );
 
@@ -328,12 +346,14 @@ mod tests {
             &[],
             &env,
             home.path(),
+            home.path(),
             &finds,
         );
         let not_found = read_profiles(
             &agents_with_plugins(home.path()),
             &[],
             &env,
+            home.path(),
             home.path(),
             &finds_nothing,
         );
@@ -389,8 +409,14 @@ mod tests {
         .to_string();
         let agents = agents_with_plugins(home.path());
 
-        let before =
-            read_profiles(&agents, &[], &env, &config_dir, &prints_a_version);
+        let before = read_profiles(
+            &agents,
+            &[],
+            &env,
+            &config_dir,
+            home.path(),
+            &prints_a_version,
+        );
         write(
             &config_dir.join("agents.json"),
             &format!(
@@ -398,8 +424,14 @@ mod tests {
                 semrush.display()
             ),
         );
-        let after =
-            read_profiles(&agents, &[], &env, &config_dir, &prints_a_version);
+        let after = read_profiles(
+            &agents,
+            &[],
+            &env,
+            &config_dir,
+            home.path(),
+            &prints_a_version,
+        );
 
         let folders = |loaded: &LoadedProfiles| {
             loaded
@@ -450,6 +482,7 @@ mod tests {
             &[],
             &env,
             &config_dir,
+            home.path(),
             &finds,
         );
 
@@ -496,6 +529,7 @@ mod tests {
             &[],
             &env,
             &config_dir,
+            home.path(),
             &finds,
         );
 
@@ -532,6 +566,7 @@ mod tests {
             &[],
             &env,
             &config_dir,
+            home.path(),
             &finds,
         );
 
@@ -576,6 +611,7 @@ mod tests {
             &providers_with_plugins(home.path()),
             &env,
             &config_dir,
+            home.path(),
             &finds,
         );
 
@@ -591,6 +627,65 @@ mod tests {
         assert!(loaded.saved.is_some(), "the file was read");
     }
 
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the
+    /// provider part finds the account of OTTY's own login in its folder
+    /// under the data folder, and that folder is never a profile, so none
+    /// of its sessions is read.
+    #[test]
+    fn an_own_login_gives_its_account_and_is_never_a_profile() {
+        let home = TempDir::new("agents-read-own-login");
+        let config_dir = home.path().join("otty");
+        let data_dir = home.path().join("data");
+        let own = data_dir.join("accounts").join("6f0c1e2a");
+        write(
+            &own.join(".claude.json"),
+            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"own@example.com"}}"#,
+        );
+        write(
+            &own.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000,"subscriptionType":"pro"}}"#,
+        );
+        write(
+            &own.join("projects").join("-work").join("a.jsonl"),
+            r#"{"type":"user","cwd":"/work","message":{"content":"Probe"}}"#,
+        );
+        write(
+            &config_dir.join("agents.json"),
+            r#"{"own_logins":[{"id":"6f0c1e2a","plugin":"anthropic","provider":"anthropic","agent":"claude-code"}]}"#,
+        );
+        let env = AgentEnv::new(home.path().to_path_buf());
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(
+            &agents_with_plugins(home.path()),
+            &providers_with_plugins(home.path()),
+            &env,
+            &config_dir,
+            &data_dir,
+            &finds,
+        );
+
+        let found: Vec<_> = loaded
+            .accounts
+            .accounts()
+            .iter()
+            .filter(|account| account.is_found_in_own_login("6f0c1e2a"))
+            .collect();
+        assert_eq!(found.len(), 1, "{:?}", loaded.accounts);
+        assert_eq!(found[0].plugin(), "anthropic");
+        assert_eq!(
+            found[0].found_in(),
+            [otty_agents::FoundIn::own_login("6f0c1e2a", own.clone())]
+        );
+        let folders: Vec<&Path> = loaded
+            .profiles
+            .iter()
+            .map(|entry| entry.profile.config_dir())
+            .chain(loaded.hidden_profiles.iter().map(Profile::config_dir))
+            .collect();
+        assert!(!folders.contains(&own.as_path()), "{folders:?}");
+    }
+
     #[test]
     fn a_broken_agents_json_is_told_and_the_defaults_are_used() {
         let home = TempDir::new("agents-read-broken");
@@ -603,6 +698,7 @@ mod tests {
             &agents_with_plugins(home.path()),
             &[],
             &env,
+            home.path(),
             home.path(),
             &finds_nothing,
         );
@@ -628,6 +724,7 @@ mod tests {
             &[],
             &env,
             home.path(),
+            home.path(),
             &finds,
         );
         let unread = read_profiles(
@@ -635,6 +732,7 @@ mod tests {
             &[],
             &env,
             broken.path(),
+            home.path(),
             &finds,
         );
 
@@ -710,6 +808,7 @@ mod tests {
             &agents,
             &providers,
             &env,
+            home.path(),
             home.path(),
             &finds_nothing,
         ));

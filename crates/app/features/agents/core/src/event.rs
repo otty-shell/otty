@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
 use otty_agents::{
-    Account, AgentCommand, AgentId, GivenKey, Profile, SavedProfiles, SessionId,
+    Account, AgentCommand, AgentId, GivenKey, OwnLogin, Profile, ProviderId,
+    SavedProfiles, SessionId,
 };
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::{PluginNotes, PluginsPlace};
 use otty_ui_kit::components::tag_search::TagSearchAction;
 
+use super::add_account_dialog::AddAccountIntent;
 use super::key_dialog::KeyDialogIntent;
 use super::need::NeedAction;
 use super::new_session_dialog::NewSessionDialogIntent;
@@ -14,9 +16,10 @@ use super::profile_dialog::ProfileDialogIntent;
 use super::project_filter::ProjectFilterChange;
 use super::rename_dialog::RenameIntent;
 use super::types::{
-    AgentReaders, FolderQuery, LoadedAccountNumbers, LoadedBill, LoadedFolder,
-    LoadedLimits, LoadedPrices, LoadedProfiles, LoadedProjectStats,
-    LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
+    AgentReaders, CheckedOwnLogin, FolderQuery, LoadedAccountNumbers,
+    LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices, LoadedProfiles,
+    LoadedProjectStats, LoadedSessionStats, LoadedSessions, LoadedSpend,
+    LoadedVersion, PreparedOwnLogin,
 };
 use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
 
@@ -194,6 +197,36 @@ pub enum AgentsIntent {
     OpenAddProfile,
     /// The dialog of a key a plugin part asks for was used.
     KeyDialog(KeyDialogIntent),
+    /// The `+` of the Accounts section was pressed: open the Add account
+    /// dialog (spec 2026-11-23-accounts-apart-from-profiles, Decision 6).
+    OpenAddAccount,
+    /// The Add account dialog was used.
+    AddAccount(AddAccountIntent),
+    /// The provider part picked in Add account gave the login command of
+    /// a new own login, or why it could not.
+    OwnLoginPrepared(PreparedOwnLogin),
+    /// The folder of `login` was made, or why it could not be, ready to
+    /// show.
+    OwnLoginFolderMade {
+        /// The own login whose folder was asked for.
+        login: OwnLogin,
+        /// Whether the folder was made.
+        made: Result<(), String>,
+    },
+    /// The tab of [`AgentsOutcome::OpenLoginTab`] opened as the tab
+    /// `tab_id`: once it closes, OTTY asks for the accounts of `login`.
+    LoginTabOpened {
+        /// The id of the tab.
+        tab_id: u64,
+        /// The own login that logs in there.
+        login: OwnLogin,
+    },
+    /// The provider part was asked for the accounts in the folder of an
+    /// own login whose tab closed.
+    OwnLoginChecked(CheckedOwnLogin),
+    /// The folder of an own login with no account was removed, or why it
+    /// could not be, ready to show.
+    OwnLoginFolderRemoved(Result<(), String>),
     /// Edit of a profile's menu was pressed: open the profile dialog with
     /// it.
     EditProfile(Profile),
@@ -379,6 +412,42 @@ pub enum AgentsOutcome {
         /// The program, arguments and variables the need runs.
         command: AgentCommand,
     },
+    /// Make a new own login of the provider part `provider` of the plugin
+    /// `plugin`, logged in with its agent part `agent`: a fresh id, and
+    /// the login command the part gives for its folder. Nothing is made
+    /// on disk yet. Answer [`AgentsIntent::OwnLoginPrepared`].
+    PrepareOwnLogin {
+        /// The id of the plugin.
+        plugin: String,
+        /// The provider part, which offers "Log in with".
+        provider: ProviderId,
+        /// The agent part it logs in with.
+        agent: AgentId,
+    },
+    /// Make the empty folder of this own login, `<data dir>/accounts/<id>`;
+    /// answer [`AgentsIntent::OwnLoginFolderMade`].
+    MakeOwnLoginFolder(OwnLogin),
+    /// Open a terminal tab named `title` that runs the login command of
+    /// `login` in `folder`, then show Terminal mode, as
+    /// [`AgentsOutcome::OpenFixTab`] does. The app tells the id of the tab
+    /// with [`AgentsIntent::LoginTabOpened`].
+    OpenLoginTab {
+        /// The own login that logs in there.
+        login: OwnLogin,
+        /// The title of the tab, such as "Log in with Codex".
+        title: String,
+        /// The folder the command runs in: the home folder.
+        folder: PathBuf,
+        /// The agent's login command, pointed at the own login's folder.
+        command: AgentCommand,
+    },
+    /// Ask the provider part of this own login for the accounts in its
+    /// folder alone; answer [`AgentsIntent::OwnLoginChecked`].
+    CheckOwnLogin(OwnLogin),
+    /// Remove the folder of this own login, where no login is; answer
+    /// [`AgentsIntent::OwnLoginFolderRemoved`]. Only that folder goes,
+    /// never a profile folder.
+    RemoveOwnLoginFolder(OwnLogin),
     /// Split the focused pane of the terminal tab in front, run `command`
     /// in `folder` in the new pane, then show Terminal mode. The feature
     /// reports it only while that tab is a terminal tab on this computer

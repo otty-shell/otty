@@ -43,10 +43,18 @@
 //!   "hidden_profiles": [
 //!     { "agent": "coder", "config_dir": "/home/user/.coder-old" }
 //!   ],
+//!   "own_logins": [
+//!     { "id": "6f0c1e2a", "plugin": "example", "provider": "example-cloud", "agent": "coder" }
+//!   ],
 //!   "found_report_shown": true,
 //!   "keyring_allowed": true
 //! }
 //! ```
+//!
+//! An own login is OTTY's own login of a provider part (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 6), kept by its id;
+//! its folder, `<data dir>/accounts/<id>/`, is not written. It is no
+//! hidden profile: `hidden_profiles` are the profiles the user hid.
 //!
 //! `found_report_shown` tells that the Found by OTTY report was shown once,
 //! so it does not open by itself again. `keyring_allowed` tells that the
@@ -69,6 +77,7 @@
 
 mod file_content;
 mod hidden_profiles;
+mod own_logins;
 mod saved_accounts;
 
 use std::path::{Path, PathBuf};
@@ -79,12 +88,13 @@ use self::saved_accounts::SavedAccount;
 use crate::account::Account;
 use crate::agent::AgentId;
 use crate::given_key::{GivenKey, KeyRef};
+use crate::own_login::OwnLogin;
 use crate::profile::Profile;
 
 /// The content of `agents.json`: the profiles the user added, what they
 /// changed in the default profiles, the user's names and hidden accounts,
-/// the hidden profiles, and where the keys the user gave for the accounts
-/// are kept.
+/// the hidden profiles, where the keys the user gave for the accounts are
+/// kept, and OTTY's own logins.
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -108,11 +118,18 @@ pub struct SavedProfiles {
     added: Vec<Profile>,
     accounts: Vec<SavedAccount>,
     hidden_profiles: Vec<HiddenProfile>,
+    own_logins: Vec<OwnLogin>,
     is_found_report_shown: bool,
     is_keyring_allowed: bool,
 }
 
 impl SavedProfiles {
+    /// OTTY's own logins, in the order they were made, of every plugin,
+    /// whether or not it is installed.
+    pub fn own_logins(&self) -> &[OwnLogin] {
+        &self.own_logins
+    }
+
     /// What the user changed in the default profile of `agent`, if
     /// anything.
     pub fn default_changes_of(
@@ -283,6 +300,19 @@ impl SavedProfiles {
     /// parts to read the system keyring.
     pub fn with_keyring_allowed(mut self) -> Self {
         self.is_keyring_allowed = true;
+        self
+    }
+
+    /// The same content with one more own login, at the end.
+    pub fn with_own_login(mut self, login: OwnLogin) -> Self {
+        self.own_logins.push(login);
+        self
+    }
+
+    /// The same content without the own login `id`. Only the entry goes:
+    /// its folder is the app's to delete.
+    pub fn without_own_login(mut self, id: &str) -> Self {
+        self.own_logins.retain(|login| login.id() != id);
         self
     }
 

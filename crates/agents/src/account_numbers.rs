@@ -11,12 +11,15 @@
 //! request, from where they keep it, and reaches the part only as a
 //! handle.
 
+use std::path::Path;
+
 use crate::account::Account;
 use crate::agent::Agent;
 use crate::balance::Balance;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenKey, read_given_keys};
 use crate::limits::Limits;
+use crate::own_login::OwnLogin;
 use crate::part_need::PartNeed;
 use crate::plugin_provider::PluginProvider;
 use crate::profile::Profile;
@@ -61,18 +64,24 @@ impl FoundAccounts {
 
 /// The accounts each provider part of `providers` finds in the folders of
 /// `profiles`, the shown profiles: only in those of the agent parts of its
-/// own plugin it names in its `logins`, as `agents` tell. A part that
-/// failed finds none this time; its failure counts in its health. It
-/// blocks.
+/// own plugin it names in its `logins`, as `agents` tell; and in the
+/// folders in OTTY's data folder `data_dir` of the own logins of
+/// `own_logins` it made (spec 2026-11-23-accounts-apart-from-profiles,
+/// Decision 6). A part that failed finds none this time; its failure
+/// counts in its health. It blocks.
 pub fn find_accounts(
     agents: &[Box<dyn Agent>],
     providers: &[PluginProvider],
     profiles: &[Profile],
+    own_logins: &[OwnLogin],
+    data_dir: &Path,
 ) -> FoundAccounts {
     let mut found = FoundAccounts::default();
 
     for provider in providers {
-        let Ok((accounts, needs)) = provider.accounts(agents, profiles) else {
+        let Ok((accounts, needs)) =
+            provider.accounts(agents, profiles, own_logins, data_dir)
+        else {
             continue;
         };
 
@@ -220,6 +229,8 @@ mod tests {
             &[coder()],
             &[part("one-cloud"), part("other-cloud")],
             &[profile],
+            &[],
+            std::path::Path::new("/home/user/.local/share/otty"),
         );
 
         let providers: Vec<&str> = found
@@ -255,6 +266,8 @@ mod tests {
                 PluginProvider::made_up("openai", &["coder"], working),
             ],
             &[profile],
+            &[],
+            std::path::Path::new("/home/user/.local/share/otty"),
         );
 
         assert_eq!(found.accounts(), [chatgpt_login("made-up")]);

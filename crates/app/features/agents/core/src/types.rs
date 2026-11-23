@@ -4,10 +4,10 @@ use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
 use otty_agents::{
-    Account, AccountNumbers, Agent, AgentEnv, AgentId, AgentSession, Answer,
-    Bill, FetchedPrices, FoundAccounts, GivenKey, Limits, Profile,
-    ProfileStatus, ProjectStats, Registry, SavedProfiles, SessionId,
-    SessionStats, SourceError, SourceFailure, Spend,
+    Account, AccountNumbers, Agent, AgentCommand, AgentEnv, AgentId,
+    AgentSession, Answer, Bill, FetchedPrices, FoundAccounts, GivenKey, Limits,
+    OwnLogin, Profile, ProfileStatus, ProjectStats, Registry, SavedProfiles,
+    SessionId, SessionStats, SourceError, SourceFailure, Spend,
 };
 
 /// The agents OTTY knows, shared by the feature and the reads that run on
@@ -277,6 +277,30 @@ pub struct LoadedAccountNumbers {
     pub numbers: Result<AccountNumbers, SourceError>,
     /// When the read ended.
     pub read_at: SystemTime,
+}
+
+/// The answer of [`AgentsOutcome::PrepareOwnLogin`](crate::AgentsOutcome):
+/// a new own login with a fresh id, and the login command its provider
+/// part gives for its folder, or why it gave none (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedOwnLogin {
+    /// The own login to make; its folder is not made yet.
+    pub login: OwnLogin,
+    /// The agent's official login command pointed at its folder.
+    pub command: Result<AgentCommand, SourceError>,
+}
+
+/// The answer of [`AgentsOutcome::CheckOwnLogin`](crate::AgentsOutcome):
+/// whether the provider part found an account in the folder of the own
+/// login once its login tab closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckedOwnLogin {
+    /// The own login asked about.
+    pub login: OwnLogin,
+    /// Whether an account was found there, or why the part could not
+    /// tell.
+    pub found: Result<bool, SourceError>,
 }
 
 /// The answer of the read of the list prices of the money at API prices (spec

@@ -52,9 +52,58 @@ impl Delivery for AgentsIntent {
                 &app.plugin_providers,
                 app.agents.env(),
                 &app.config_dir,
+                &app.data_dir,
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            // OTTY's own logins live in its data folder, `accounts/<id>/`
+            // (spec 2026-11-23-accounts-apart-from-profiles, Decision 6).
+            AgentsOutcome::PrepareOwnLogin {
+                plugin,
+                provider,
+                agent,
+            } => agents_io::prepare_own_login(
+                &app.plugin_providers,
+                &app.data_dir,
+                plugin,
+                provider,
+                agent,
+            )
+            .map(AppEvent::Agents),
+            AgentsOutcome::MakeOwnLoginFolder(login) => {
+                agents_io::make_own_login_folder(&app.data_dir, login)
+                    .map(AppEvent::Agents)
+            },
+            AgentsOutcome::CheckOwnLogin(login) => agents_io::check_own_login(
+                &app.plugin_providers,
+                &app.data_dir,
+                login,
+            )
+            .map(AppEvent::Agents),
+            AgentsOutcome::RemoveOwnLoginFolder(login) => {
+                agents_io::remove_own_login_folder(&app.data_dir, login)
+                    .map(AppEvent::Agents)
+            },
+            // The login tab opens like the tab of a need; the feature is
+            // told which tab it is, and asks for the accounts of the own
+            // login once it closes (see `dispatch/tabs.rs`).
+            AgentsOutcome::OpenLoginTab {
+                login,
+                title,
+                folder,
+                command,
+            } => {
+                let intent = agent_tab_intent(app, title, &folder, &command);
+                let opened = deliver(app, intent);
+                let watched = match app.tabs.active_tab_id() {
+                    Some(tab_id) => deliver(
+                        app,
+                        AgentsIntent::LoginTabOpened { tab_id, login },
+                    ),
+                    None => Task::none(),
+                };
+                Task::batch([opened, watched])
+            },
             AgentsOutcome::LoadVersion(agent) => agents_io::load_version(
                 app.agents.known_agents(),
                 agent,
@@ -638,6 +687,41 @@ mod tests {
 
         assert!(watched);
         assert_eq!(app.tabs.len(), 0);
+        assert!(!app.agents.is_watching_tab(tab_id));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the login
+    /// tab of OTTY's own login opens as the tab of a need does, the
+    /// feature watches it, and once it closes the feature no longer does.
+    /// The terminals are mocks: no agent logs in.
+    #[test]
+    fn the_login_tab_of_an_own_login_is_watched_until_it_closes() {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(&mut app, ModesIntent::Select(Mode::Agents));
+        let login = otty_agents::OwnLogin::new(
+            "6f0c1e2a",
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            otty_agents::AgentId::new("codex"),
+        );
+
+        let _ = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::OpenLoginTab {
+                login,
+                title: String::from("Log in with Codex"),
+                folder: PathBuf::from("/home/user"),
+                command: AgentCommand::new("sh")
+                    .with_arg("-c")
+                    .with_arg("echo logged in"),
+            },
+        );
+        let tab_id = app.tabs.active_tab_id().expect("the login tab");
+        let watched = app.agents.is_watching_tab(tab_id);
+        let _ = deliver(&mut app, TabsIntent::CloseTab { tab_id });
+
+        assert!(watched);
+        assert_eq!(app.modes.active(), Mode::Terminal);
         assert!(!app.agents.is_watching_tab(tab_id));
     }
 

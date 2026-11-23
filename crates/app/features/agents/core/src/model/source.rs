@@ -1,7 +1,7 @@
 //! The Source of an account, as the account page and the Found by OTTY
 //! report write it (spec 2026-11-23-accounts-apart-from-profiles,
 //! "Account page"): where its provider part found it, such as "Found in
-//! ~/.codex", with the folder written from `~`.
+//! ~/.codex", with the folder written from `~`, or OTTY's own login.
 
 use std::path::Path;
 
@@ -10,10 +10,15 @@ use otty_app_domain::folder_path::tilde_path;
 use otty_app_i18n::{self as i18n, Key};
 
 /// The Source line of `place`, such as "Found in ~/.codex", with the
-/// folder written from `~` when it is in the `home` folder.
+/// folder written from `~` when it is in the `home` folder, or "OTTY's own
+/// login" for OTTY's own login, whose private folder is not a place the
+/// user goes to.
 pub(crate) fn source_text(place: &FoundIn, home: &Path) -> String {
-    let folder = tilde_path(place.folder(), home);
+    if let FoundIn::OwnLogin { .. } = place {
+        return i18n::t(Key::AgentsSourceOwnLogin).to_string();
+    }
 
+    let folder = tilde_path(place.folder(), home);
     i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", &folder)])
 }
 
@@ -35,5 +40,21 @@ mod tests {
 
         assert_eq!(source_text(&folder, home), found_in("~/.codex"));
         assert_eq!(source_text(&elsewhere, home), found_in("/opt/codex"));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, "Account page": the
+    /// Source of OTTY's own login is "OTTY's own login", not its private
+    /// folder.
+    #[test]
+    fn an_own_login_is_the_source_otty_s_own_login() {
+        let own = FoundIn::own_login(
+            "6f0c1e2a",
+            "/home/user/.local/share/otty/accounts/6f0c1e2a",
+        );
+
+        assert_eq!(
+            source_text(&own, Path::new("/home/user")),
+            i18n::t(Key::AgentsSourceOwnLogin)
+        );
     }
 }

@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.10"
+version = "0.2.11"
 description = "Codex, ChatGPT and OpenAI accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -93,9 +93,15 @@ args = ["-s", "read-only", "-a", "never", "app-server"]
 # where Codex writes the limits it was last told, as plain files, and
 # `auth.json` with its keys replaced by handles. `codex app-server` gets
 # `CODEX_HOME` set only to one of those folders.
+#
+# `log_in` offers Add account → "Log in with Codex": OTTY makes a folder
+# of its own and runs `codex login` there with `CODEX_HOME` set to it, in
+# a terminal tab the user sees. The part reads that folder as a Codex
+# profile folder of this entry.
 [[agents.provider.logins]]
 agent = "codex"
 folder_env = "CODEX_HOME"
+log_in = true
 read = ["config.toml", "sessions/**", "archived_sessions/**"]
 
 [[agents.provider.logins.keys]]

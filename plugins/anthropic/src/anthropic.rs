@@ -15,10 +15,10 @@ use otty_plugin_sdk::agents::{
     Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
     Provider, ReadError,
 };
-use otty_plugin_sdk::{GivenKey, HostError, Key, given_key};
+use otty_plugin_sdk::{Command, GivenKey, HostError, Key, given_key};
 
-use crate::claude_code::claude_in_folder;
-use crate::logins::{Access, logins};
+use crate::claude_code::{claude_in_folder, claude_login_in};
+use crate::logins::{Access, claude_folder, logins};
 use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
 use crate::{Anthropic, cost_report, oauth_usage, usage_probe};
 
@@ -93,6 +93,13 @@ impl Provider for Anthropic {
 
         cost_report::bill(&own_key, days)
     }
+
+    /// Log in with Claude Code (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 6): `claude auth login --claudeai` with `CLAUDE_CONFIG_DIR`
+    /// set to OTTY's own folder, which the user runs in a terminal tab.
+    fn log_in(_provider: &str, folder: &str) -> Option<Command> {
+        Some(claude_login_in(folder))
+    }
 }
 
 /// Adds `account`, found in one folder, to `accounts`: an account with
@@ -123,7 +130,9 @@ fn account_access(account: &Account) -> Option<(String, Access)> {
     let mut without_token: Option<(String, Access)> = None;
 
     for folder in &account.found_in {
-        let LoginFolder::Profile((_, path)) = folder;
+        let Some(path) = claude_folder(folder) else {
+            continue;
+        };
         let Some(login) = logins(folder)
             .into_iter()
             .find(|login| login.account().id == account.id)
@@ -134,9 +143,9 @@ fn account_access(account: &Account) -> Option<(String, Access)> {
         let (_, access) = login.into_parts();
         match access {
             Access::Claude(None) => {
-                without_token.get_or_insert((path.clone(), access));
+                without_token.get_or_insert((path.to_string(), access));
             },
-            _ => return Some((path.clone(), access)),
+            _ => return Some((path.to_string(), access)),
         }
     }
 

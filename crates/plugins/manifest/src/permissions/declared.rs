@@ -131,10 +131,19 @@ impl PartPermissions {
         }
 
         let globs = |texts: &[String]| path_globs(texts, &raw.env, part);
-        let logins = logins
+        let logins: Vec<LoginRule> = logins
             .iter()
             .map(|login| LoginRule::of_raw(login, agents, part))
             .collect::<Result<_, _>>()?;
+        let offering = logins.iter().filter(|rule| rule.offers_log_in());
+        if offering.count() > 1 {
+            return Err(ManifestError::BadPart {
+                part: part.clone(),
+                reason: "has more than one `logins` entry with `log_in`"
+                    .to_string(),
+            });
+        }
+
         let keys = raw
             .keys
             .iter()
@@ -351,6 +360,7 @@ pub struct LoginRule {
     agent: String,
     agent_name: String,
     folder_env: Option<String>,
+    offers_log_in: bool,
     read: Vec<FolderGlob>,
     keys: Vec<LoginKeys>,
 }
@@ -371,6 +381,14 @@ impl LoginRule {
     /// folder of the call.
     pub fn folder_env(&self) -> Option<&str> {
         self.folder_env.as_deref()
+    }
+
+    /// Whether Add account offers "Log in with" this agent part (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 6): OTTY makes a
+    /// folder of its own and runs the agent's login there. The part reads
+    /// that folder as it reads a profile folder of this entry.
+    pub fn offers_log_in(&self) -> bool {
+        self.offers_log_in
     }
 
     /// The files the part reads inside each profile folder.
@@ -414,6 +432,7 @@ impl LoginRule {
             agent: agent.id().to_string(),
             agent_name: agent.name().to_string(),
             folder_env: raw.folder_env.clone(),
+            offers_log_in: raw.log_in,
             read: folder_globs(&raw.read, part)?,
             keys,
         })

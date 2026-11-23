@@ -20,7 +20,9 @@
 //! `claude` pointed at the folder in a hidden terminal, such as a profile
 //! whose `.credentials.json` holds no token while Claude Code still
 //! works; and the bill of an organization with an admin key. With no way
-//! that works it reads nothing.
+//! that works it reads nothing. Add account → "Log in with Claude Code"
+//! runs `claude auth login --claudeai` with `CLAUDE_CONFIG_DIR` set to
+//! OTTY's own folder, and the part reads that folder as a profile folder.
 //!
 //! What only the user can do, the parts give as needs (`needs.rs`): log
 //! in to Claude Code, run Claude Code in a folder so it renews a login

@@ -146,6 +146,16 @@ impl Agent for Example {
     }
 }
 
+/// `example-agent login` pointed at `folder`, which is never the default
+/// one: how the provider part logs in to OTTY's own login folder.
+pub(crate) fn login_in(folder: &str) -> Command {
+    Command {
+        program: PROGRAM.to_string(),
+        args: vec!["login".to_string()],
+        env: vec![(HOME_VARIABLE.to_string(), folder.to_string())],
+    }
+}
+
 /// The command that logs the profile in: `example-agent login`.
 fn login_run(profile: &Profile) -> Command {
     Command {

@@ -42,7 +42,6 @@ pub(crate) fn read_codex_limits(
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::LoginFolder;
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{JsonField, KeyPlace, NeedAction};
 
@@ -129,8 +128,7 @@ mod tests {
     fn an_expired_login_starts_no_app_server_and_asks_to_log_in() {
         let host = host().with_now_ms(TEN);
         host.answer_talk("codex", &APP_SERVER_ARGS, &[]);
-        let LoginFolder::Profile((_, folder)) =
-            codex_folder(&host, ".codex-expired");
+        let folder = path(&host, ".codex-expired");
 
         let limits = read(&host, ".codex-expired", true);
 

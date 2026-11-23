@@ -60,6 +60,9 @@ pub(crate) struct AccountsSectionViewModel {
     pub(crate) all: Option<AllRowViewModel>,
     /// The accounts, in the order of the profiles they were found in.
     pub(crate) accounts: Vec<AccountRowViewModel>,
+    /// Whether `+` (Add account) acts: `agents.json` was read, so OTTY's
+    /// own login can be saved.
+    pub(crate) can_add: bool,
     /// The text in place of the rows while the profiles are read for the
     /// first time.
     pub(crate) note: Option<&'static str>,
@@ -88,6 +91,7 @@ impl AccountsSectionViewModel {
                 is_selected: state.is_all_accounts_selected(),
             }),
             accounts,
+            can_add: state.profiles().saved().is_some(),
             note: (!is_loaded).then(|| i18n::t(Key::AgentsLoading)),
         }
     }
@@ -495,6 +499,7 @@ mod tests {
 
         assert!(vm.agents.profiles.is_empty());
         assert!(!vm.agents.can_add);
+        assert!(!vm.accounts.can_add);
         assert_eq!(vm.agents.all, None);
         assert_eq!(vm.agents.note, Some(i18n::t(Key::AgentsLoading)));
         assert_eq!(vm.accounts.all, None);

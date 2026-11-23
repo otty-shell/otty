@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.10"
+version = "0.2.11"
 description = "Claude Code and Anthropic accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -131,9 +131,15 @@ args = [
 # entry lists: `read` as plain files, `keys` with the keys replaced by
 # handles. The `/usage` probe may get `CLAUDE_CONFIG_DIR` set only to one
 # of those folders.
+#
+# `log_in` offers Add account → "Log in with Claude Code": OTTY makes a
+# folder of its own and runs `claude auth login --claudeai` there with
+# `CLAUDE_CONFIG_DIR` set to it, in a terminal tab the user sees. The
+# part reads that folder as a Claude Code profile folder of this entry.
 [[agents.provider.logins]]
 agent = "claude-code"
 folder_env = "CLAUDE_CONFIG_DIR"
+log_in = true
 read = ["projects/*--cache-otty-agent-probe/*.jsonl"]
 
 # The Claude login: its token, and the refresh token Claude Code renews

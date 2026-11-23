@@ -8,6 +8,7 @@
 //! issue 20). It never sees a key and never the profiles of another
 //! plugin.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -26,15 +27,17 @@ use crate::account_numbers::AccountNumbers;
 use crate::agent::{Agent, AgentId, agent_of};
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::bill::Bill;
+use crate::command::AgentCommand;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenSecret, KeySecret};
 use crate::limits::{Billing, ExtraUsage, Limits, UsageWindows};
-use crate::part_need::PartNeed;
+use crate::own_login::OwnLogin;
+use crate::part_need::{PartNeed, started_command};
 use crate::plugin_bill::BillDays;
 use crate::plugin_sources::read_error;
 use crate::plugin_values::{credits_of, limits_of};
 use crate::profile::Profile;
-use crate::provider::{ProviderEntry, ProviderId};
+use crate::provider::{LogInWith, ProviderEntry, ProviderId};
 use crate::source_id::SourceId;
 use crate::walk::Answer;
 
@@ -44,6 +47,9 @@ const READ_ACCOUNTS: &str = "accounts";
 const READ_NUMBERS: &str = "numbers";
 /// The name of the read of a bill in reports.
 const READ_BILL: &str = "read-bill";
+/// The name of the call for the login command of an own login in
+/// reports.
+const READ_LOG_IN: &str = "log-in";
 
 /// The calls a [`PluginProvider`] makes into its part. A trait so that
 /// the tests count the calls a refresh makes without a plugin; the one
@@ -75,6 +81,14 @@ pub(crate) trait ProviderPartCalls: Send + Sync {
         given: &[(String, KeySource)],
         days: &DayRange,
     ) -> Result<PartBill, SourceError>;
+
+    /// The agent's official login command pointed at OTTY's own login
+    /// folder `folder`, as the app runs it; `None` when the part gives
+    /// none.
+    fn log_in(
+        &self,
+        folder: &Path,
+    ) -> Result<Option<AgentCommand>, SourceError>;
 }
 
 /// One provider part of a loaded plugin, with the entry it puts in the
@@ -134,6 +148,10 @@ impl PluginProvider {
         if let Some(name) = manifest_part.priced_as() {
             entry = entry.with_priced_as(name);
         }
+        if let Some(rule) = manifest_part.log_in() {
+            let agent = AgentId::new(rule.agent());
+            entry = entry.with_log_in(LogInWith::new(agent, rule.agent_name()));
+        }
         let login_agents = manifest_part
             .logins()
             .iter()
@@ -160,17 +178,26 @@ impl PluginProvider {
             && account.plugin() == self.entry.part().plugin()
     }
 
+    /// Whether the part made the own login `login`: only it reads that
+    /// folder.
+    pub fn made(&self, login: &OwnLogin) -> bool {
+        login.is_of(self.entry.part().plugin(), self.entry.id())
+    }
+
     /// The accounts the part finds in the folders of `profiles` it reads:
     /// the profiles of the agent parts its manifest names in `logins`, of
-    /// its own plugin, as `agents` tell, and its needs that belong to no
-    /// account. A part with no such profile is not called and finds none
-    /// (spec Decision 11).
+    /// its own plugin, as `agents` tell; and in the folders in `data_dir`
+    /// of the own logins of `own_logins` it made (spec Decision 6). With
+    /// them come its needs that belong to no account. A part with no such
+    /// folder is not called and finds none (spec Decision 11).
     pub(crate) fn accounts(
         &self,
         agents: &[Box<dyn Agent>],
         profiles: &[Profile],
+        own_logins: &[OwnLogin],
+        data_dir: &Path,
     ) -> Result<(Vec<Account>, Vec<PartNeed>), SourceError> {
-        let folders: Vec<LoginFolder> = profiles
+        let profile_folders = profiles
             .iter()
             .filter(|profile| self.reads_logins_of(agents, profile))
             .map(|profile| {
@@ -178,8 +205,18 @@ impl PluginProvider {
                     profile.agent().as_str().to_string(),
                     profile.config_dir().display().to_string(),
                 ))
-            })
-            .collect();
+            });
+        let own_folders = own_logins
+            .iter()
+            .filter(|login| self.made(login))
+            .map(|login| {
+                LoginFolder::OwnLogin((
+                    login.id().to_string(),
+                    login.folder_in(data_dir).display().to_string(),
+                ))
+            });
+        let folders: Vec<LoginFolder> =
+            profile_folders.chain(own_folders).collect();
 
         if folders.is_empty() {
             return Ok((Vec::new(), Vec::new()));
@@ -257,6 +294,16 @@ impl PluginProvider {
         )?;
 
         Ok(days.bill_of(&read))
+    }
+
+    /// The agent's official login command the part gives for OTTY's own
+    /// login folder `folder` (spec Decision 6); `None` from a part that
+    /// offers no "Log in with".
+    pub(crate) fn log_in(
+        &self,
+        folder: &Path,
+    ) -> Result<Option<AgentCommand>, SourceError> {
+        self.calls.log_in(folder)
     }
 
     /// A provider with the entry `entry` whose part is called through
@@ -389,6 +436,22 @@ impl ProviderPartCalls for PartCalls {
             read_error(&self.part, READ_BILL, &error, not_supported, None)
         })
     }
+
+    fn log_in(
+        &self,
+        folder: &Path,
+    ) -> Result<Option<AgentCommand>, SourceError> {
+        let folder = folder.display().to_string();
+
+        let command = self
+            .part
+            .read(READ_LOG_IN, |batch| batch.provider()?.log_in(&folder))?;
+
+        Ok(
+            command
+                .map(|command| started_command(self.part.plugin(), &command)),
+        )
+    }
 }
 
 /// The account `account` the provider part `provider` of the plugin
@@ -407,8 +470,13 @@ fn account_of(
     let found_in = account
         .found_in
         .iter()
-        .map(|LoginFolder::Profile((agent, folder))| {
-            FoundIn::profile(AgentId::new(agent.as_str()), folder)
+        .map(|place| match place {
+            LoginFolder::Profile((agent, folder)) => {
+                FoundIn::profile(AgentId::new(agent.as_str()), folder)
+            },
+            LoginFolder::OwnLogin((id, folder)) => {
+                FoundIn::own_login(id.as_str(), folder)
+            },
         })
         .collect();
 
@@ -438,6 +506,10 @@ fn part_account(account: &Account) -> PartAccount {
         .map(|place| match place {
             FoundIn::ProfileFolder { agent, folder } => LoginFolder::Profile((
                 agent.as_str().to_string(),
+                folder.display().to_string(),
+            )),
+            FoundIn::OwnLogin { id, folder } => LoginFolder::OwnLogin((
+                id.clone(),
                 folder.display().to_string(),
             )),
         })
@@ -605,14 +677,128 @@ mod tests {
         }
     }
 
-    /// The folders of `folders`, as text.
+    /// The folders of `folders`, as text: the agent part of a profile
+    /// folder, the id of an own login folder.
     fn folders_of(folders: &[LoginFolder]) -> Vec<(&str, &str)> {
         folders
             .iter()
-            .map(|LoginFolder::Profile((agent, folder))| {
-                (agent.as_str(), folder.as_str())
+            .map(|folder| match folder {
+                LoginFolder::Profile((agent, folder))
+                | LoginFolder::OwnLogin((agent, folder)) => {
+                    (agent.as_str(), folder.as_str())
+                },
             })
             .collect()
+    }
+
+    const DATA_DIR: &str = "/home/dev/.local/share/otty";
+
+    /// An own login of the part `provider` of the plugin `plugin`.
+    fn own_login_of(id: &str, plugin: &str, provider: &str) -> OwnLogin {
+        OwnLogin::new(
+            id,
+            plugin,
+            ProviderId::new(provider),
+            AgentId::new("coder"),
+        )
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the part
+    /// gets the folders of its own logins next to its profile folders,
+    /// each under OTTY's data folder; the own logins of another part or
+    /// plugin are not its.
+    #[test]
+    fn the_part_gets_its_own_logins_next_to_its_profile_folders() {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_accounts()
+            .withf(|folders| {
+                folders_of(folders)
+                    == [
+                        ("coder", "/home/dev/.coder"),
+                        ("a1", "/home/dev/.local/share/otty/accounts/a1"),
+                    ]
+            })
+            .times(1)
+            .returning(|_| Ok((Vec::new(), Vec::new())));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let own_logins = [
+            own_login_of("a1", "example", "example-cloud"),
+            own_login_of("b2", "another", "example-cloud"),
+            own_login_of("c3", "example", "other-cloud"),
+        ];
+
+        let found = provider.accounts(
+            &[coder_of("example")],
+            &[profile_of("coder", "/home/dev/.coder")],
+            &own_logins,
+            Path::new(DATA_DIR),
+        );
+
+        assert_eq!(found, Ok((Vec::new(), Vec::new())));
+    }
+
+    /// Decision 6: an own login is enough to ask the part, with no
+    /// profile of its agent part shown.
+    #[test]
+    fn a_part_with_only_an_own_login_is_asked() {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_accounts()
+            .times(1)
+            .returning(|_| Ok((Vec::new(), Vec::new())));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+
+        let found = provider.accounts(
+            &[],
+            &[],
+            &[own_login_of("a1", "example", "example-cloud")],
+            Path::new(DATA_DIR),
+        );
+
+        assert_eq!(found, Ok((Vec::new(), Vec::new())));
+    }
+
+    /// Decision 8: an account found in an own login folder names that
+    /// login, and goes back to the part the same way.
+    #[test]
+    fn an_account_found_in_an_own_login_keeps_that_place() {
+        let part = PartAccount {
+            id: "key:made-up".to_string(),
+            name: "dev@example.com".to_string(),
+            kind: PartKind::Key,
+            plan: None,
+            found_in: vec![
+                LoginFolder::Profile((
+                    "coder".to_string(),
+                    "/home/dev/.coder".to_string(),
+                )),
+                LoginFolder::OwnLogin((
+                    "a1".to_string(),
+                    "/home/dev/.local/share/otty/accounts/a1".to_string(),
+                )),
+            ],
+            needs: Vec::new(),
+        };
+
+        let account = account_of("example", "example-cloud", &part, Vec::new());
+
+        assert_eq!(
+            account.found_in(),
+            [
+                FoundIn::profile(AgentId::new("coder"), "/home/dev/.coder"),
+                FoundIn::own_login(
+                    "a1",
+                    "/home/dev/.local/share/otty/accounts/a1"
+                ),
+            ]
+        );
+        assert_eq!(
+            format!("{:?}", part_account(&account)),
+            format!("{part:?}")
+        );
     }
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 5: the part
@@ -640,7 +826,12 @@ mod tests {
             profile_of("coder", "/home/dev/.w"),
         ];
 
-        let found = provider.accounts(&[coder_of("example")], &profiles);
+        let found = provider.accounts(
+            &[coder_of("example")],
+            &profiles,
+            &[],
+            Path::new(DATA_DIR),
+        );
 
         assert_eq!(found, Ok((vec![subscription()], Vec::new())));
     }
@@ -656,7 +847,12 @@ mod tests {
             PluginProvider::made_up("example-cloud", &["coder"], calls);
         let profiles = [profile_of("coder", "/home/dev/.coder")];
 
-        let found = provider.accounts(&[coder_of("another")], &profiles);
+        let found = provider.accounts(
+            &[coder_of("another")],
+            &profiles,
+            &[],
+            Path::new(DATA_DIR),
+        );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));
     }
@@ -670,7 +866,12 @@ mod tests {
         let provider = PluginProvider::made_up("example-cloud", &[], calls);
         let profiles = [profile_of("coder", "/home/dev/.coder")];
 
-        let found = provider.accounts(&[coder_of("example")], &profiles);
+        let found = provider.accounts(
+            &[coder_of("example")],
+            &profiles,
+            &[],
+            Path::new(DATA_DIR),
+        );
 
         assert_eq!(found, Ok((Vec::new(), Vec::new())));
     }

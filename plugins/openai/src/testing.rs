@@ -76,6 +76,12 @@ pub(crate) fn codex_folder(host: &TestHost, name: &str) -> LoginFolder {
     LoginFolder::Profile((AGENT.to_string(), path(host, name)))
 }
 
+/// The config folder `name` of `host` as OTTY gives it to the provider
+/// part as its own login `id`, where `codex login` ran.
+pub(crate) fn own_folder(host: &TestHost, id: &str, name: &str) -> LoginFolder {
+    LoginFolder::OwnLogin((id.to_string(), path(host, name)))
+}
+
 /// A file a listing found at `path`, changed at `changed_ms`.
 pub(crate) fn file_info(path: &str, changed_ms: i64) -> FileInfo {
     FileInfo {

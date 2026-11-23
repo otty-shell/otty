@@ -4,16 +4,17 @@
 // owns its accounts (spec 2026-11-23-accounts-apart-from-profiles,
 // Decisions 5 and 8): it finds them from the logins in the folders OTTY
 // gives it, the profiles of the agent parts of its own plugin that its
-// manifest names in `logins`, and never sees another plugin's profiles.
-// It reads an account's numbers any way it can, only in the account's
-// folders: from the provider's server with the login there, or by asking
-// the agent itself, such as `claude /usage` or the limits Codex writes in
-// its files. It gets keys only as handles. The values it shares with the
-// agent contract come from `otty:agents-agent/types`.
+// manifest names in `logins`, and OTTY's own logins of the part (Decision
+// 6), and never sees another plugin's profiles. It reads an account's
+// numbers any way it can, only in the account's folders: from the
+// provider's server with the login there, or by asking the agent itself,
+// such as `claude /usage` or the limits Codex writes in its files. It
+// gets keys only as handles. The values it shares with the agent contract
+// come from `otty:agents-agent/types`.
 package otty:agents-provider@0.1.0;
 
 interface provider {
-  use otty:host/types@0.1.0.{need};
+  use otty:host/types@0.1.0.{command, need};
   use otty:host/keys@0.1.0.{given-key};
   use otty:agents-agent/types@0.1.0.{read-error};
 
@@ -24,6 +25,12 @@ interface provider {
     /// A profile of an agent part of the same plugin: the agent part's
     /// id, such as `codex`, and the profile's config folder.
     profile(tuple<string, string>),
+    /// OTTY's own login of this part: the own login's id and its folder,
+    /// `<OTTY's data folder>/accounts/<id>`, where the agent of the
+    /// `logins` entry that offers `log_in` logged in. The part reads there
+    /// what that entry declares. It is never a profile: the part reads no
+    /// session or project there for OTTY to show.
+    own-login(tuple<string, string>),
   }
 
   /// What kind of account it is.
@@ -166,6 +173,12 @@ interface provider {
   /// part that needs a key it has not got answers `needs-user` with
   /// `ask-key`.
   read-bill: func(provider: string, account: account, given: list<given-key>, days: day-range) -> result<bill, read-error>;
+  /// The agent's official login command pointed at `folder`, OTTY's own
+  /// login folder, such as `codex login` with `CODEX_HOME=<folder>`. OTTY
+  /// runs it in a terminal tab the user sees, so OTTY never handles a
+  /// password or a login flow itself, and then asks `accounts` about
+  /// that folder. None for a part whose manifest offers no `log_in`.
+  log-in: func(provider: string, folder: string) -> option<command>;
 }
 
 /// What a component with provider parts imports and exports. Files,

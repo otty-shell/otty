@@ -76,13 +76,13 @@ pub(crate) enum Access {
 }
 
 /// The logins of the profile folder `folder`: the Claude login first,
-/// then the Console key, then the key of the settings. A folder of
-/// another agent part, or with no login, gives none.
+/// then the Console key, then the key of the settings. OTTY's own login
+/// folder is read as a profile folder. A folder of another agent part, or
+/// with no login, gives none.
 pub(crate) fn logins(folder: &LoginFolder) -> Vec<FolderLogin> {
-    let LoginFolder::Profile((agent, path)) = folder;
-    if agent != CLAUDE_CODE {
+    let Some(path) = claude_folder(folder) else {
         return Vec::new();
-    }
+    };
 
     let configs = read_global_configs(path);
     let settings = read_settings(path);
@@ -100,6 +100,20 @@ pub(crate) fn logins(folder: &LoginFolder) -> Vec<FolderLogin> {
         .and_then(|key| key_login(folder, key));
 
     [claude, console, settings].into_iter().flatten().collect()
+}
+
+/// The path of `folder` when it is a Claude Code config folder: a
+/// profile folder of `claude-code`, or OTTY's own login folder, where
+/// `claude auth login` ran with `CLAUDE_CONFIG_DIR` (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 6).
+pub(crate) fn claude_folder(folder: &LoginFolder) -> Option<&str> {
+    match folder {
+        LoginFolder::Profile((agent, path)) if agent == CLAUDE_CODE => {
+            Some(path)
+        },
+        LoginFolder::OwnLogin((_, path)) => Some(path),
+        _ => None,
+    }
 }
 
 /// The Claude login of the account `account` in the profile folder
@@ -481,6 +495,29 @@ mod tests {
         let found = accounts_of(&host, ".claude-expired");
 
         assert_eq!(found[0].needs, []);
+    }
+
+    /// Decision 6: OTTY's own login folder, where `claude auth login` ran
+    /// with `CLAUDE_CONFIG_DIR`, holds its Claude login as a profile
+    /// folder outside the default one does, and the account names it.
+    #[test]
+    fn an_own_login_folder_holds_its_claude_login() {
+        let host = host();
+        let own = LoginFolder::OwnLogin((
+            "6f0c1e2a".to_string(),
+            path(&host, ".claude-work"),
+        ));
+
+        let found = as_provider_in(&host, std::slice::from_ref(&own), || {
+            logins(&own)
+                .into_iter()
+                .map(|login| login.into_parts().0)
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "own@example.com · Example Org");
+        assert_eq!(found[0].found_in, [own]);
     }
 
     #[test]

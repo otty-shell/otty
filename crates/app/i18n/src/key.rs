@@ -1946,6 +1946,36 @@ pub enum Key {
     AgentsFieldSource,
     /// Source of an account: a profile folder it was found in. Placeholders: `{folder}`.
     TplAgentsSourceFoundIn,
+    /// Source of an account: OTTY's own login, in its private folder.
+    AgentsSourceOwnLogin,
+    /// Title of the Add account dialog and tooltip of its `+`.
+    AgentsAddAccountTitle,
+    /// First line of the Add account dialog.
+    AgentsAddAccountIntro,
+    /// Caption of the ways to add an account in the Add account dialog.
+    AgentsFieldHow,
+    /// Way to add an account: OTTY's own login with an agent. Placeholders: `{agent}`.
+    TplAgentsLogInWith,
+    /// Line under Log in with. Placeholders: `{command}`.
+    TplAgentsLogInWithText,
+    /// Way to add an account by its key, not offered yet.
+    AgentsPasteKey,
+    /// Line under Paste a key. Placeholders: `{provider}`.
+    TplAgentsPasteKeyText,
+    /// Why Paste a key is off.
+    AgentsComingLater,
+    /// A provider no agent logs in to. Placeholders: `{provider}`.
+    TplAgentsNoAgentLogin,
+    /// The Add account dialog with no provider part on.
+    AgentsNoProviderPart,
+    /// No account was found in OTTY's own login once its tab closed.
+    AgentsLoginNotFinished,
+    /// The provider part gave no login command for OTTY's own login.
+    AgentsNoLogIn,
+    /// The folder of OTTY's own login could not be made. Placeholders: `{path}`, `{error}`.
+    TplAgentsOwnFolderNotMade,
+    /// The folder of OTTY's own login could not be removed. Placeholders: `{path}`, `{error}`.
+    TplAgentsOwnFolderNotRemoved,
     /// Read by: no plugin serves the provider.
     AgentsReadByNoPlugin,
     /// Read by: a part that is off; {plugin} is its plugin and version.
@@ -1977,7 +2007,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 923] = [
+    pub(super) const ALL: [Self; 938] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2888,6 +2918,21 @@ impl Key {
         Self::AgentsKindOrganization,
         Self::AgentsFieldSource,
         Self::TplAgentsSourceFoundIn,
+        Self::AgentsSourceOwnLogin,
+        Self::AgentsAddAccountTitle,
+        Self::AgentsAddAccountIntro,
+        Self::AgentsFieldHow,
+        Self::TplAgentsLogInWith,
+        Self::TplAgentsLogInWithText,
+        Self::AgentsPasteKey,
+        Self::TplAgentsPasteKeyText,
+        Self::AgentsComingLater,
+        Self::TplAgentsNoAgentLogin,
+        Self::AgentsNoProviderPart,
+        Self::AgentsLoginNotFinished,
+        Self::AgentsNoLogIn,
+        Self::TplAgentsOwnFolderNotMade,
+        Self::TplAgentsOwnFolderNotRemoved,
         Self::AgentsReadByNoPlugin,
         Self::TplAgentsReadByOff,
         Self::AgentsPluginsPlace,

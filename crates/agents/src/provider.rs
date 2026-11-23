@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use otty_plugin_host::PluginPart;
 
 use crate::account::AccountKind;
+use crate::agent::AgentId;
 
 /// The id of a provider, such as `example-cloud`.
 ///
@@ -134,6 +135,7 @@ pub struct ProviderEntry {
     priced_as: Option<String>,
     part: PluginPart,
     keyring_services: Vec<String>,
+    log_in: Option<LogInWith>,
 }
 
 impl ProviderEntry {
@@ -187,6 +189,13 @@ impl ProviderEntry {
         &self.keyring_services
     }
 
+    /// The agent part Add account logs in with for OTTY's own login of
+    /// this provider (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 6); `None` when its part offers no "Log in with".
+    pub fn log_in(&self) -> Option<&LogInWith> {
+        self.log_in.as_ref()
+    }
+
     /// The page of the provider where the user sees the use of an account
     /// of `kind`, opened in the browser: the plan's page for a
     /// subscription, the console's usage page for a key or an
@@ -234,6 +243,7 @@ impl ProviderEntry {
             priced_as: None,
             part,
             keyring_services: Vec::new(),
+            log_in: None,
         }
     }
 
@@ -282,6 +292,50 @@ impl ProviderEntry {
     pub fn with_keyring_services(mut self, services: Vec<String>) -> Self {
         self.keyring_services = services;
         self
+    }
+
+    /// The same entry whose part offers Add account → "Log in with" the
+    /// agent part of `log_in`.
+    pub fn with_log_in(mut self, log_in: LogInWith) -> Self {
+        self.log_in = Some(log_in);
+        self
+    }
+}
+
+/// The agent part a provider part logs in with for OTTY's own login: its
+/// id, and its name for the label "Log in with <name>".
+///
+/// ```
+/// use otty_agents::{AgentId, LogInWith};
+///
+/// let codex = LogInWith::new(AgentId::new("codex"), "Codex");
+///
+/// assert_eq!(codex.agent().as_str(), "codex");
+/// assert_eq!(codex.name(), "Codex");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogInWith {
+    agent: AgentId,
+    name: String,
+}
+
+impl LogInWith {
+    /// The id of the agent part, of the same plugin.
+    pub fn agent(&self) -> &AgentId {
+        &self.agent
+    }
+
+    /// The name of the agent part, such as "Codex".
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The agent part `agent` named `name`.
+    pub fn new(agent: AgentId, name: impl Into<String>) -> Self {
+        Self {
+            agent,
+            name: name.into(),
+        }
     }
 }
 

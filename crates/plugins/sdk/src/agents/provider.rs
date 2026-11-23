@@ -2,10 +2,10 @@
 
 use std::marker::PhantomData;
 
-use crate::GivenKey;
 use crate::agents::{
     Account, AccountNumbers, Bill, DayRange, Found, LoginFolder, ReadError,
 };
+use crate::{Command, GivenKey};
 
 /// One company that sells model use: its accounts and their numbers. A
 /// plugin implements it once and serves each provider part its manifest
@@ -19,6 +19,12 @@ use crate::agents::{
 /// keeps the user's name and Hide by, so the same account must have the
 /// same id after its tokens are renewed. Whether two logins are one
 /// account is the part's call.
+///
+/// A part whose manifest offers `log_in` in a `logins` entry gives the
+/// agent's official login command for OTTY's own login folder
+/// ([`Provider::log_in`]), and finds accounts there as in a profile
+/// folder of that entry ([`LoginFolder::OwnLogin`]). That folder is never a
+/// profile: no session or project of it is shown.
 ///
 /// It reads an account's numbers any way it can, only in the folders the
 /// account was found in ([`Account::found_in`]): from the provider's
@@ -59,6 +65,14 @@ pub trait Provider {
     ) -> Result<Bill, ReadError> {
         Err(ReadError::NotSupported)
     }
+
+    /// The agent's official login command pointed at OTTY's own login
+    /// folder `folder`, such as `codex login` with `CODEX_HOME=<folder>`,
+    /// which OTTY runs in a terminal tab the user sees. Default: none,
+    /// for a part whose manifest offers no `log_in`.
+    fn log_in(_provider: &str, _folder: &str) -> Option<Command> {
+        None
+    }
 }
 
 /// What [`export!`](crate::export) exports for a plugin type `T` with
@@ -76,7 +90,7 @@ mod wasm {
     };
     use crate::bindings::agents_provider::exports::otty::agents_provider::provider::Guest;
     use crate::bindings::host::otty::host::keys::GivenKey as WitGivenKey;
-    use crate::{GivenKey, Key};
+    use crate::{Command, GivenKey, Key};
 
     impl<T: Provider> Guest for ProviderExport<T> {
         fn accounts(provider: String, folders: Vec<LoginFolder>) -> Found {
@@ -98,6 +112,10 @@ mod wasm {
             days: DayRange,
         ) -> Result<Bill, ReadError> {
             T::read_bill(&provider, &account, &given_keys(given), &days)
+        }
+
+        fn log_in(provider: String, folder: String) -> Option<Command> {
+            T::log_in(&provider, &folder)
         }
     }
 

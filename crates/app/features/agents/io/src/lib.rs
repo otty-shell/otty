@@ -7,7 +7,8 @@
 //! default profile of each agent and checks each profile: its program is
 //! looked up through the user's login shell, the way the agent tab starts
 //! it. With the profiles it asks each provider part for the accounts it
-//! finds in the shown profiles of its own plugin. [`load_sessions`] reads
+//! finds in the shown profiles of its own plugin and in the folders of its
+//! own logins. [`load_sessions`] reads
 //! the sessions of one profile and finds the project folders that no
 //! longer exist. [`load_limits`] reads the limits of one profile through
 //! the provider part that found the account whose limits it shows, in the
@@ -37,6 +38,10 @@
 //! its typed folder is there and which folders it may stand for.
 //! [`open_page`] opens a page, such as the usage page of an account, in
 //! the user's browser.
+//! [`prepare_own_login`], [`make_own_login_folder`], [`check_own_login`]
+//! and [`remove_own_login_folder`] make OTTY's own login of a provider part
+//! in its data folder, `accounts/<id>/`, ask the part about it once its
+//! login tab closed, and remove that folder when it holds no login.
 //! [`PluginParts`] loads the parts that are on of the installed plugins
 //! ([`Readers`]): the agents, the provider parts and the registry. [`plugin_engine`] makes
 //! the one engine of the plugins, and [`readers_now`] and
@@ -57,6 +62,7 @@ mod hidden_terminal;
 mod limits;
 mod load;
 mod login_shell;
+mod own_login;
 mod plugin_language;
 mod plugin_parts;
 mod plugin_programs;
@@ -80,6 +86,10 @@ pub use clipboard::{copy_command, copy_text};
 pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
+pub use own_login::{
+    check_own_login, make_own_login_folder, prepare_own_login,
+    remove_own_login_folder,
+};
 pub use plugin_language::{LanguageReceivers, tell_language};
 pub use plugin_parts::{
     InstalledParts, PluginParts, ProviderList, Readers, RunningParts,

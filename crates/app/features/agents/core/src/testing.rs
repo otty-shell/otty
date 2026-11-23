@@ -11,10 +11,10 @@ use otty_agents::{
     Account, AccountKind, AgentCommand, AgentEnv, AgentId, AgentSession,
     Answer, Bill, Billing, DayCost, DaySpend, Dollars, FetchedPrices,
     FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow, Limits,
-    ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile, ProfileStatus,
-    ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef, Registry,
-    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
-    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    LogInWith, ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile,
+    ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef,
+    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
+    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -140,14 +140,16 @@ fn test_registry() -> Registry {
             "anthropic.com",
             "https://console.anthropic.com/settings/usage",
         )
-        .with_plan_usage_page("https://claude.ai/settings/usage"),
+        .with_plan_usage_page("https://claude.ai/settings/usage")
+        .with_log_in(LogInWith::new(claude_id(), "Claude Code")),
         plugin_provider(
             "openai",
             "OpenAI",
             "openai.com",
             "https://platform.openai.com/usage",
         )
-        .with_plan_usage_page("https://chatgpt.com/codex/settings/usage"),
+        .with_plan_usage_page("https://chatgpt.com/codex/settings/usage")
+        .with_log_in(LogInWith::new(codex_id(), "Codex")),
         plugin_provider(
             "deepseek",
             "DeepSeek",
@@ -1101,7 +1103,7 @@ pub(crate) fn right_click() -> [iced::Event; 2] {
 
 /// What a profiles read long ago found: `profiles`, each with the version
 /// [`SESSION_VERSION`] from its sessions, and `saved` in `agents.json`.
-fn loaded_profiles(
+pub(crate) fn loaded_profiles(
     profiles: &[(Profile, ProfileStatus)],
     saved: SavedProfiles,
 ) -> LoadedProfiles {

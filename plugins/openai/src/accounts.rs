@@ -197,7 +197,8 @@ pub(crate) fn accounts(folders: &[LoginFolder]) -> Found {
     }
 }
 
-/// The Codex profile folders `account` was found in.
+/// The Codex config folders `account` was found in: its profile folders
+/// and OTTY's own login folders.
 pub(crate) fn codex_folders(account: &Account) -> Vec<&str> {
     account.found_in.iter().filter_map(codex_folder).collect()
 }
@@ -208,11 +209,15 @@ pub(crate) fn has_no_login(folder: &str) -> bool {
     AuthFile::read(folder).is_none_or(|auth| !auth.is_logged_in())
 }
 
-/// The path of `folder` when it is a profile folder of Codex.
+/// The path of `folder` when it is a Codex config folder: a profile
+/// folder of Codex, or OTTY's own login folder, where `codex login` ran
+/// (spec 2026-11-23-accounts-apart-from-profiles, Decision 6).
 fn codex_folder(folder: &LoginFolder) -> Option<&str> {
-    let LoginFolder::Profile((agent, path)) = folder;
-
-    (agent == CODEX).then_some(path.as_str())
+    match folder {
+        LoginFolder::Profile((agent, path)) if agent == CODEX => Some(path),
+        LoginFolder::OwnLogin((_, path)) => Some(path),
+        _ => None,
+    }
 }
 
 /// The API key of `auth`, when the config sends it to OpenAI.
@@ -270,7 +275,9 @@ mod tests {
     use otty_plugin_sdk::{Command, NeedAction};
 
     use super::*;
-    use crate::testing::{ACCOUNT, PROVIDER, TEN, codex_folder, host};
+    use crate::testing::{
+        ACCOUNT, PROVIDER, TEN, codex_folder, host, own_folder, path,
+    };
 
     /// What the part finds in the Codex profile folders `names`, in a
     /// call given them.
@@ -454,8 +461,7 @@ mod tests {
     #[test]
     fn an_expired_login_needs_codex_login_in_its_folder() {
         let host = host().with_now_ms(TEN).with_language("ru");
-        let LoginFolder::Profile((_, folder)) =
-            codex_folder(&host, ".codex-expired");
+        let folder = path(&host, ".codex-expired");
 
         let account = account_in(&host, ".codex-expired");
 
@@ -482,13 +488,46 @@ mod tests {
         assert!(account.needs.is_empty());
     }
 
+    /// Decision 6: OTTY's own login folder, where `codex login` ran, holds
+    /// an account as a Codex profile folder does.
+    #[test]
+    fn an_own_login_folder_holds_its_account() {
+        let host = host();
+        let own = own_folder(&host, "6f0c1e2a", ".codex-plus");
+
+        let found =
+            host.as_provider_in(PROVIDER, std::slice::from_ref(&own), || {
+                accounts(std::slice::from_ref(&own))
+            });
+
+        assert_eq!(found.accounts.len(), 1, "{found:?}");
+        assert_eq!(found.accounts[0].name, "dev@example.com");
+        assert_eq!(found.accounts[0].found_in, [own]);
+    }
+
+    /// Decision 8: one ChatGPT account in `~/.codex` and in OTTY's own
+    /// login is one account with both places.
+    #[test]
+    fn one_account_in_a_profile_and_an_own_login_is_one_account() {
+        let host = host();
+        let folders = [
+            codex_folder(&host, ".codex-plus"),
+            own_folder(&host, "6f0c1e2a", ".codex-renewed"),
+        ];
+
+        let found =
+            host.as_provider_in(PROVIDER, &folders, || accounts(&folders));
+
+        assert_eq!(found.accounts.len(), 1, "{found:?}");
+        assert_eq!(found.accounts[0].found_in, folders);
+    }
+
     /// Decision 5: the part reads only the profiles of its own plugin's
     /// agent part.
     #[test]
     fn a_folder_of_another_agent_part_is_not_read() {
         let host = host();
-        let LoginFolder::Profile((_, folder)) =
-            codex_folder(&host, ".codex-plus");
+        let folder = path(&host, ".codex-plus");
         let folders = [LoginFolder::Profile(("opencode".to_string(), folder))];
 
         let found =

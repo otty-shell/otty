@@ -373,10 +373,11 @@ fn app_with_terminal(
 ) -> App {
     let config_dir = test_config_dir();
     let cache_dir = test_home().join(".cache").join("otty");
+    let data_dir = test_home().join(".local").join("share").join("otty");
     let plugin_io = PluginIo::in_folders(
         &config_dir,
         &cache_dir,
-        &test_home().join(".local").join("share").join("otty"),
+        &data_dir,
         TEST_SHELL_PATH,
     );
 
@@ -388,6 +389,7 @@ fn app_with_terminal(
         String::from(TEST_SHELL_PATH),
         config_dir,
         cache_dir,
+        data_dir,
         std::sync::Arc::from(test_agents()),
         std::sync::Arc::new(test_registry()),
         otty_agents::AgentEnv::new(test_home()),

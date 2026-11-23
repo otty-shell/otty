@@ -2,7 +2,7 @@
 name = "otty-plugin-deepseek"
 description = "The official DeepSeek plugin of OTTY: the money left on a DeepSeek account"
 readme = "README.md"
-version = "0.1.4"
+version = "0.1.5"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

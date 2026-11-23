@@ -15,7 +15,7 @@ use otty_plugin_sdk::agents::{
     Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
     Provider, ReadError,
 };
-use otty_plugin_sdk::{GivenKey, given_key};
+use otty_plugin_sdk::{Command, GivenKey, given_key};
 
 use crate::accounts::{
     ChatgptLogin, FolderLogin, KeyLogin, codex_folders, has_no_login,
@@ -98,6 +98,13 @@ impl Provider for OpenAi {
 
         organization_costs::bill(admin_key, days)
     }
+
+    /// Log in with Codex (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 6): `codex login` with `CODEX_HOME` set to OTTY's own
+    /// folder, which the user runs in a terminal tab.
+    fn log_in(_provider: &str, folder: &str) -> Option<Command> {
+        Some(needs::codex_login_in(folder))
+    }
 }
 
 /// The ChatGPT logins of `account` in its Codex profile folders
@@ -168,7 +175,8 @@ mod tests {
     use otty_plugin_sdk::http::{self, Request};
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{
-        GivenKey, HostError, JsonField, KeyPlace, Need, NeedAction, files, keys,
+        Command, GivenKey, HostError, JsonField, KeyPlace, Need, NeedAction,
+        files, keys,
     };
 
     use super::*;
@@ -315,6 +323,25 @@ mod tests {
         assert_eq!(command.program, "codex");
         assert_eq!(command.args, ["login"]);
         assert_eq!(command.env, [("CODEX_HOME".to_string(), folder)]);
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: Log in
+    /// with Codex runs `codex login` with `CODEX_HOME` set to OTTY's own
+    /// folder.
+    #[test]
+    fn log_in_runs_codex_login_in_the_own_folder() {
+        let folder = "/home/user/.local/share/otty/accounts/6f0c1e2a";
+
+        let command = OpenAi::log_in(PROVIDER, folder);
+
+        assert_eq!(
+            command,
+            Some(Command {
+                program: "codex".to_string(),
+                args: vec!["login".to_string()],
+                env: vec![("CODEX_HOME".to_string(), folder.to_string())],
+            })
+        );
     }
 
     /// Issue 29: the server failed, so the part reads what Codex knows in

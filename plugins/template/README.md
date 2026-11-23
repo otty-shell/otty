@@ -51,6 +51,12 @@ the folder into a new repository and replace what the parts read.
   in and its needs; the same login in two folders is one account with
   two places. The template's account is the key of `auth.json`, known by
   its fingerprint and named by the email of the file.
+- A `logins` entry with `log_in = true` offers Add account → "Log in with
+  <agent>". OTTY makes a folder of its own, asks the part's `log_in` for
+  the agent's login command pointed at it (`example-agent login` with
+  `EXAMPLE_AGENT_HOME`), runs it in a terminal tab, and then calls
+  `accounts` with that folder as `LoginFolder::OwnLogin`, read with the
+  rules of that entry. It is never a profile.
 - A provider part reads an account's numbers any way it can, only in the
   folders the account was found in (`account.found_in`): from the
   provider's server with the login there, or by asking the agent there,

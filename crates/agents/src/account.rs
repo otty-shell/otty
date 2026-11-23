@@ -63,8 +63,8 @@ pub enum AccountKind {
     Organization,
 }
 
-/// Where an account was found. OTTY's own logins join as another place
-/// with issue 08.
+/// Where an account was found: a profile folder, or OTTY's own login
+/// (spec 2026-11-23-accounts-apart-from-profiles, Decisions 5 and 6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FoundIn {
     /// The config folder of a profile of an agent part of the same
@@ -73,6 +73,14 @@ pub enum FoundIn {
         /// The agent part whose profile it is.
         agent: AgentId,
         /// The profile's config folder.
+        folder: PathBuf,
+    },
+    /// OTTY's own login of the part, in its folder under OTTY's data
+    /// folder. It is never a profile.
+    OwnLogin {
+        /// The id of the own login.
+        id: String,
+        /// Its folder, `<data dir>/accounts/<id>`.
         folder: PathBuf,
     },
 }
@@ -86,10 +94,33 @@ impl FoundIn {
         }
     }
 
-    /// The config folder of the profile the account was found in.
+    /// OTTY's own login `id` in its folder `folder`.
+    ///
+    /// ```
+    /// use std::path::Path;
+    ///
+    /// use otty_agents::FoundIn;
+    ///
+    /// let own = FoundIn::own_login("a1", "/data/otty/accounts/a1");
+    ///
+    /// assert_eq!(own.folder(), Path::new("/data/otty/accounts/a1"));
+    /// ```
+    pub fn own_login(
+        id: impl Into<String>,
+        folder: impl Into<PathBuf>,
+    ) -> Self {
+        Self::OwnLogin {
+            id: id.into(),
+            folder: folder.into(),
+        }
+    }
+
+    /// The folder the account was found in: the config folder of the
+    /// profile, or the folder of the own login.
     pub fn folder(&self) -> &Path {
         match self {
-            Self::ProfileFolder { folder, .. } => folder,
+            Self::ProfileFolder { folder, .. }
+            | Self::OwnLogin { folder, .. } => folder,
         }
     }
 }
@@ -155,13 +186,21 @@ impl Account {
     }
 
     /// Whether the account was found in the profile folder `folder` of the
-    /// agent `agent`.
+    /// agent `agent`. An own login folder is never a profile folder.
     pub fn is_found_in(&self, agent: &AgentId, folder: &Path) -> bool {
         self.found_in.iter().any(|place| match place {
             FoundIn::ProfileFolder {
                 agent: found_by,
                 folder: found_at,
             } => found_by == agent && found_at == folder,
+            FoundIn::OwnLogin { .. } => false,
+        })
+    }
+
+    /// Whether the account was found in OTTY's own login `id`.
+    pub fn is_found_in_own_login(&self, id: &str) -> bool {
+        self.found_in.iter().any(|place| {
+            matches!(place, FoundIn::OwnLogin { id: own, .. } if own == id)
         })
     }
 
@@ -260,6 +299,37 @@ mod tests {
         assert!(one.is_same_account(&renamed));
         assert!(!one.is_same_account(&account("other", "chatgpt:made-up")));
         assert!(!one.is_same_account(&account("openai", "chatgpt:other")));
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: OTTY's
+    /// own login folder is never a profile folder, and the account tells
+    /// it was found in that own login.
+    #[test]
+    fn an_own_login_folder_is_no_profile_folder() {
+        let folder = "/home/user/.local/share/otty/accounts/a1";
+        let account = Account::new(
+            "openai",
+            ProviderId::new("openai"),
+            "chatgpt:made-up",
+            "you@example.com",
+            AccountKind::Subscription,
+            vec![FoundIn::own_login("a1", folder)],
+        );
+
+        assert!(
+            !account.is_found_in(&AgentId::new("codex"), Path::new(folder))
+        );
+        assert!(account.is_found_in_own_login("a1"));
+        assert!(!account.is_found_in_own_login("b2"));
+        assert_eq!(account.found_in()[0].folder(), Path::new(folder));
+        assert!(
+            !account_of_codex().is_found_in_own_login("a1"),
+            "a profile folder is no own login"
+        );
+    }
+
+    fn account_of_codex() -> Account {
+        account("openai", "chatgpt:made-up")
     }
 
     #[test]

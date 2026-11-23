@@ -125,6 +125,10 @@ pub enum Unavailable {
     /// sent the answer back.
     #[error("the read stopped")]
     ReadStopped,
+    /// No provider part gives a login command for OTTY's own login: the
+    /// part is not on, or it offers no "Log in with".
+    #[error("the plugin gives no login command")]
+    NoLogIn,
 }
 
 /// What an answer has that the code does not expect.

@@ -435,6 +435,14 @@ impl ProviderPart {
         self.permissions.logins()
     }
 
+    /// The `logins` entry that offers Add account → "Log in with" its
+    /// agent part, if one does (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 6); at most one
+    /// does.
+    pub fn log_in(&self) -> Option<&LoginRule> {
+        self.logins().iter().find(|rule| rule.offers_log_in())
+    }
+
     /// The part's permissions in plain words, as the install dialog shows
     /// them. A provider part gets no key another part found: it reads the
     /// logins of its accounts itself, as its `logins` declare.
@@ -616,6 +624,45 @@ description = "Reads ChatGPT limits and OpenAI API spending.""#,
             Manifest::parse(OPENAI_MANIFEST).expect("valid").providers()[0]
                 .logins()
                 .is_empty()
+        );
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: a
+    /// `logins` entry may offer "Log in with" its agent part, which makes
+    /// OTTY's own login there; an entry offers nothing by default.
+    #[test]
+    fn a_logins_entry_may_offer_log_in_with_its_agent() {
+        let offering = edited(
+            &with_codex_logins(),
+            r#"folder_env = "CODEX_HOME""#,
+            "folder_env = \"CODEX_HOME\"\nlog_in = true",
+        );
+
+        let manifest = Manifest::parse(&offering).expect("valid");
+        let plain = Manifest::parse(&with_codex_logins()).expect("valid");
+
+        let part = &manifest.providers()[0];
+        assert!(part.logins()[0].offers_log_in());
+        assert_eq!(part.log_in().map(LoginRule::agent_name), Some("Codex"));
+        assert!(!plain.providers()[0].logins()[0].offers_log_in());
+        assert_eq!(plain.providers()[0].log_in(), None);
+    }
+
+    /// Decision 6: at most one entry of a part offers "Log in with", so
+    /// Add account knows which agent logs in.
+    #[test]
+    fn two_entries_that_offer_log_in_are_refused() {
+        let entry =
+            "\n[[agents.provider.logins]]\nagent = \"codex\"\nlog_in = true\n";
+        let text = format!("{}{entry}{entry}", with_codex_logins());
+
+        let error = refusal(&text);
+
+        assert!(
+            matches!(&error, ManifestError::BadPart { part, reason }
+                if *part == PartRef::provider("openai")
+                    && reason.contains("log_in")),
+            "{error:?}"
         );
     }
 

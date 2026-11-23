@@ -138,7 +138,10 @@ impl otty_plugin_sdk::agents::Provider for Plugin {
         let folder = account
             .found_in
             .first()
-            .map(|LoginFolder::Profile((_, folder))| folder.clone())
+            .map(|folder| match folder {
+                LoginFolder::Profile((_, folder))
+                | LoginFolder::OwnLogin((_, folder)) => folder.clone(),
+            })
             .unwrap_or_default();
 
         let plan = programs_plan(&folder, &account.name)?;

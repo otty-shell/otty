@@ -337,7 +337,8 @@ impl TestHost {
     /// folders `folders`, as OTTY calls `accounts`, or `numbers` and
     /// `read-bill` with the folders an account was found in: inside each
     /// folder the part also reads what the `logins` of its manifest
-    /// declare for the folder's agent part.
+    /// declare for the folder's agent part, and in OTTY's own login
+    /// folder what the entry that offers `log_in` declares.
     ///
     /// # Panics
     ///
@@ -350,8 +351,13 @@ impl TestHost {
     ) -> R {
         let folders: Vec<otty_plugin_manifest::LoginFolder> = folders
             .iter()
-            .map(|LoginFolder::Profile((agent, folder))| {
-                otty_plugin_manifest::LoginFolder::new(agent, folder)
+            .map(|folder| match folder {
+                LoginFolder::Profile((agent, folder)) => {
+                    otty_plugin_manifest::LoginFolder::new(agent, folder)
+                },
+                LoginFolder::OwnLogin((_, folder)) => {
+                    otty_plugin_manifest::LoginFolder::own(folder)
+                },
             })
             .collect();
 
@@ -1125,6 +1131,24 @@ mod tests {
             assert_eq!(refused.0, Err(HostError::NotAllowed(text(&auth))));
             assert_eq!(refused.1, Err(HostError::NotAllowed(text(&session))));
         }
+    }
+
+    /// Decision 6: OTTY's own login folder of a call is read as the
+    /// folders of the `logins` entry that offers `log_in`.
+    #[test]
+    fn a_provider_part_reads_in_its_own_login_folder_as_the_log_in_entry() {
+        let plugin = MadeUpPlugin::new();
+        let auth = plugin.write("accounts/1/auth.json", br#"{"token": "x"}"#);
+        let folder = auth.parent().expect("the own login folder");
+        let host = TestHost::new(plugin.folder());
+        let own = [LoginFolder::OwnLogin(("1".to_string(), text(folder)))];
+
+        let login = host.as_provider_in(PROVIDER, &own, || {
+            files::json_with_keys(&text(&auth))
+                .map(|document| document.json().to_string())
+        });
+
+        assert_eq!(login, Ok(r#"{"token":{"$key":0}}"#.to_string()));
     }
 
     /// A program the provider part starts gets the folder variable of its

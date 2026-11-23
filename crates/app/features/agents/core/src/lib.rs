@@ -7,7 +7,10 @@
 //! profile the tokens it spent and their money at API prices. Nothing links
 //! a profile to an account: a profile page has no accounts, and an account
 //! page no profiles (spec 2026-11-23-accounts-apart-from-profiles,
-//! Decisions 1 and 3).
+//! Decisions 1 and 3). The `+` of the Accounts section opens Add account,
+//! which makes OTTY's own login with an agent's official login command in
+//! a terminal tab it watches, and asks the provider part for the account
+//! once the tab closes (Decision 6).
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
 //! profiles first, then the sessions, the limits, the tokens and the money
@@ -101,6 +104,7 @@
 //! );
 //! ```
 
+mod add_account_dialog;
 mod bill;
 mod ctx;
 mod event;
@@ -113,6 +117,7 @@ mod key_dialog;
 mod key_place_field;
 mod keyring;
 mod limits;
+mod login_tabs;
 mod menu_actions;
 mod menus;
 mod model;
@@ -148,6 +153,7 @@ mod view;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+pub use add_account_dialog::AddAccountIntent;
 pub use ctx::AgentsCtx;
 pub use event::{
     AccountAction, AgentsIntent, AgentsOutcome, ProfileAction, SessionAction,
@@ -158,10 +164,10 @@ use iced::{Element, Subscription};
 pub use key_dialog::KeyDialogIntent;
 pub use key_place_field::KeyPlaceChoice;
 use model::{
-    FoundReportViewModel, KeyDialogViewModel, KeyringDialogViewModel,
-    LeftPanelViewModel, MainAreaViewModel, MenuViewModel,
-    RemoveDialogViewModel, RenameDialogViewModel, StatsDialogViewModel,
-    StatusBarViewModel, own_account_name,
+    AddAccountDialogViewModel, FoundReportViewModel, KeyDialogViewModel,
+    KeyringDialogViewModel, LeftPanelViewModel, MainAreaViewModel,
+    MenuViewModel, RemoveDialogViewModel, RenameDialogViewModel,
+    StatsDialogViewModel, StatusBarViewModel, own_account_name,
 };
 pub use need::NeedAction;
 pub use new_session_dialog::NewSessionDialogIntent;
@@ -179,18 +185,18 @@ pub use project_filter::ProjectFilterChange;
 pub use rename_dialog::RenameIntent;
 use state::AgentsState;
 pub use types::{
-    AgentList, AgentReaders, FolderAsker, FolderQuery, LimitsRead,
-    LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits, LoadedPrices,
-    LoadedProfile, LoadedProfiles, LoadedProjectStats, LoadedSessionStats,
-    LoadedSessions, LoadedSpend, LoadedVersion, ProjectStatsFailure,
-    SessionsRead, SpendCount,
+    AgentList, AgentReaders, CheckedOwnLogin, FolderAsker, FolderQuery,
+    LimitsRead, LoadedAccountNumbers, LoadedBill, LoadedFolder, LoadedLimits,
+    LoadedPrices, LoadedProfile, LoadedProfiles, LoadedProjectStats,
+    LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
+    PreparedOwnLogin, ProjectStatsFailure, SessionsRead, SpendCount,
 };
 pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
 use view::{
-    found_report as found_view, key_dialog as key_view,
-    keyring_dialog as keyring_view, left_panel, main_area, menus as menu_view,
-    remove_dialog, rename_dialog as rename_view, stats_dialog as stats_view,
-    status_bar,
+    add_account_dialog as add_account_view, found_report as found_view,
+    key_dialog as key_view, keyring_dialog as keyring_view, left_panel,
+    main_area, menus as menu_view, remove_dialog, rename_dialog as rename_view,
+    stats_dialog as stats_view, status_bar,
 };
 
 /// The id of the search field of the projects in the left panel; the
@@ -263,8 +269,9 @@ impl Agents {
     }
 
     /// Return whether the tab `tab_id` fixes what a profile needs, such as
-    /// the install of an agent's program: once it closes, the profiles are
-    /// read again.
+    /// the install of an agent's program, or runs the login of OTTY's own
+    /// login: once it closes, the profiles are read again, or the provider
+    /// part is asked about the own login's folder.
     pub fn is_watching_tab(&self, tab_id: u64) -> bool {
         self.state.is_fix_tab(tab_id)
     }
@@ -302,13 +309,16 @@ impl Agents {
     }
 
     /// Return the open overlay of Agents mode on top: the profile dialog
-    /// lies over the key dialog, that over the Rename dialog, that over the remove dialog, that over
+    /// lies over the Add account dialog, that over the key dialog, that over the Rename dialog, that over the remove dialog, that over
     /// the keyring dialog, that over the statistics dialog, that over the New session dialog, that over
     /// the Found by OTTY report, and all over a menu. The overlay drawn is
     /// this one, and the binary gives it the user's input first.
     pub fn top_overlay(&self) -> Option<AgentsOverlay> {
         if self.state.dialog().is_some() {
             return Some(AgentsOverlay::ProfileDialog);
+        }
+        if self.state.add_account().is_some() {
+            return Some(AgentsOverlay::AddAccountDialog);
         }
         if self.state.key_dialog().is_some() {
             return Some(AgentsOverlay::KeyDialog);
@@ -467,6 +477,14 @@ impl Overlays for Agents {
 
                 Some(Overlay::dialog(dialog))
             },
+            AgentsOverlay::AddAccountDialog => {
+                let vm = AddAccountDialogViewModel::from_state(&self.state)?;
+                let dialog = add_account_view::view(
+                    add_account_view::AddAccountDialogProps { vm, theme },
+                );
+
+                Some(Overlay::dialog(dialog))
+            },
             AgentsOverlay::KeyDialog => {
                 let vm = KeyDialogViewModel::from_state(&self.state)?;
                 let dialog =
@@ -557,6 +575,8 @@ impl StatusBar for Agents {
 pub enum AgentsOverlay {
     /// The dialog that adds or edits a profile.
     ProfileDialog,
+    /// The dialog that adds an account by OTTY's own login.
+    AddAccountDialog,
     /// The dialog of a key a plugin part asks for.
     KeyDialog,
     /// The dialog that names an account or a profile.

@@ -2,13 +2,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use otty_agents::{
-    Account, Agent, AgentEnv, AgentId, Profile, Project, ProjectSession,
-    Registry,
+    Account, Agent, AgentEnv, AgentId, OwnLogin, Profile, Project,
+    ProjectSession, Registry,
 };
 use otty_app_domain::plugins::PluginNotes;
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
+use super::add_account_dialog::AddAccountDialog;
 use super::key_dialog::KeyDialog;
 use super::menus::{AgentsMenu, OpenMenu};
 use super::model::EntryIcon;
@@ -45,10 +46,12 @@ pub(crate) struct AgentsState {
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
     fix_tabs: Vec<u64>,
+    login_tabs: Vec<(u64, OwnLogin)>,
     is_keyring_dialog_open: bool,
     is_keyring_given: bool,
     rename: Option<RenameDialog>,
     key_dialog: Option<KeyDialog>,
+    add_account: Option<AddAccountDialog>,
     stats: Option<StatsDialog>,
     new_session: Option<NewSessionDialog>,
     is_found_report_open: bool,
@@ -142,9 +145,19 @@ impl AgentsState {
         self.is_found_report_open
     }
 
-    /// Whether the tab `tab_id` fixes what a profile needs.
+    /// Whether the feature watches the tab `tab_id`: it fixes what a
+    /// profile needs, or an own login logs in there.
     pub(crate) fn is_fix_tab(&self, tab_id: u64) -> bool {
         self.fix_tabs.contains(&tab_id)
+            || self
+                .login_tabs
+                .iter()
+                .any(|(watched, _)| *watched == tab_id)
+    }
+
+    /// The open Add account dialog.
+    pub(crate) fn add_account(&self) -> Option<&AddAccountDialog> {
+        self.add_account.as_ref()
     }
 
     /// Whether Agents mode is the active mode.
@@ -254,10 +267,12 @@ impl AgentsState {
             dialog: None,
             removing: None,
             fix_tabs: Vec::new(),
+            login_tabs: Vec::new(),
             is_keyring_dialog_open: false,
             is_keyring_given: false,
             rename: None,
             key_dialog: None,
+            add_account: None,
             stats: None,
             new_session: None,
             is_found_report_open: false,
@@ -731,6 +746,38 @@ impl AgentsState {
         self.fix_tabs.retain(|watched| *watched != tab_id);
 
         self.fix_tabs.len() != count
+    }
+
+    /// The tab `tab_id` runs the login of `login`: once it closes, OTTY
+    /// asks for the accounts in its folder.
+    pub(crate) fn watch_login_tab(&mut self, tab_id: u64, login: OwnLogin) {
+        self.login_tabs.push((tab_id, login));
+    }
+
+    /// Forget the tab `tab_id`, which closed, and return the own login
+    /// that logged in there, if it was a login tab.
+    pub(crate) fn forget_login_tab(&mut self, tab_id: u64) -> Option<OwnLogin> {
+        let position = self
+            .login_tabs
+            .iter()
+            .position(|(watched, _)| *watched == tab_id)?;
+
+        Some(self.login_tabs.remove(position).1)
+    }
+
+    /// Open the Add account dialog.
+    pub(crate) fn open_add_account(&mut self, dialog: AddAccountDialog) {
+        self.add_account = Some(dialog);
+    }
+
+    /// The open Add account dialog, to change it.
+    pub(crate) fn add_account_mut(&mut self) -> Option<&mut AddAccountDialog> {
+        self.add_account.as_mut()
+    }
+
+    /// Close the Add account dialog and return it.
+    pub(crate) fn take_add_account(&mut self) -> Option<AddAccountDialog> {
+        self.add_account.take()
     }
 
     /// Open or close the keyring dialog.
