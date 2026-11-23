@@ -454,8 +454,8 @@ const BILL_KEY_HINT: &[(&str, &str)] = &[
 ];
 
 /// Nobody is logged in with the profile: the button runs `login`,
-/// `claude` in the profile's config folder, which asks to log in on its
-/// first start there, in a terminal tab.
+/// `claude auth login --claudeai` in the profile's config folder, in a
+/// terminal tab.
 pub(crate) fn not_logged_in(login: Command) -> Need {
     Need {
         id: "not-logged-in".to_string(),

@@ -2,7 +2,7 @@
 name = "otty-plugin-opencode"
 description = "The official OpenCode plugin of OTTY: the OpenCode agent part"
 readme = "README.md"
-version = "0.1.8"
+version = "0.1.9"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

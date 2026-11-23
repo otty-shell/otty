@@ -503,6 +503,108 @@ mod tests {
         );
     }
 
+    /// The login need of `status`: the command its button runs.
+    fn login_command(status: &ProfileStatus) -> &otty_agents::AgentCommand {
+        let ProfileStatus::NotLoggedIn(Some(need)) = status else {
+            panic!("a login need, not {status:?}");
+        };
+        let otty_agents::PartNeedAction::Run(command) = need.action() else {
+            panic!("a command to run, not {:?}", need.action());
+        };
+
+        command
+    }
+
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: an added
+    /// folder that is there but empty is never "folder not found". Codex
+    /// and Claude Code need a login in it, run with the folder's variable,
+    /// and OpenCode, which works with no login, is found. Only a folder
+    /// that is not there is not found.
+    #[test]
+    fn an_empty_added_folder_needs_what_its_agent_says_and_only_a_missing_one_is_not_found()
+     {
+        let home = TempDir::new("agents-read-empty");
+        let config_dir = home.path().join("otty");
+        let codex_new = home.path().join(".codex-new");
+        let claude_new = home.path().join(".claude-new");
+        let opencode_new = home.path().join("work/opencode");
+        let codex_gone = home.path().join(".codex-gone");
+        for folder in [&codex_new, &claude_new, &opencode_new] {
+            std::fs::create_dir_all(folder).expect("the empty folder");
+        }
+        let added = |agent: &str, name: &str, folder: &Path| {
+            format!(
+                r#"{{"agent":"{agent}","name":"{name}","config_dir":"{}"}}"#,
+                folder.display()
+            )
+        };
+        let profiles = [
+            added("codex", "Codex · New", &codex_new),
+            added("claude-code", "Claude Code · New", &claude_new),
+            added("opencode", "OpenCode · New", &opencode_new),
+            added("codex", "Codex · Gone", &codex_gone),
+        ];
+        write(
+            &config_dir.join("agents.json"),
+            &format!(r#"{{"added_profiles":[{}]}}"#, profiles.join(",")),
+        );
+        let env = AgentEnv::new(home.path().to_path_buf());
+        let finds = shell(&home, true);
+
+        let loaded = read_profiles(
+            &agents_with_plugins(home.path()),
+            &[],
+            &env,
+            &config_dir,
+            home.path(),
+            &finds,
+        );
+        let opencode = read_profiles(
+            &agents_with_opencode(home.path()),
+            &[],
+            &env,
+            &config_dir,
+            home.path(),
+            &finds,
+        );
+
+        let status_of = |loaded: &LoadedProfiles, name: &str| {
+            loaded
+                .profiles
+                .iter()
+                .find(|entry| entry.profile.name() == name)
+                .map(|entry| entry.status.clone())
+                .expect("the profile")
+        };
+        let codex = status_of(&loaded, "Codex · New");
+        let codex_login = login_command(&codex);
+        assert_eq!(codex_login.program(), "codex");
+        assert_eq!(codex_login.args(), ["login"]);
+        assert_eq!(
+            codex_login.env(),
+            [("CODEX_HOME".to_string(), codex_new.display().to_string())]
+        );
+        let claude = status_of(&loaded, "Claude Code · New");
+        let claude_login = login_command(&claude);
+        assert_eq!(claude_login.program(), "claude");
+        assert_eq!(claude_login.args(), ["auth", "login", "--claudeai"]);
+        assert_eq!(
+            claude_login.env(),
+            [(
+                "CLAUDE_CONFIG_DIR".to_string(),
+                claude_new.display().to_string()
+            )]
+        );
+        assert_eq!(
+            status_of(&opencode, "OpenCode · New"),
+            ProfileStatus::Connected
+        );
+        assert_eq!(
+            status_of(&loaded, "Codex · Gone"),
+            ProfileStatus::ConfigDirNotFound
+        );
+    }
+
     /// Spec 2026-11-19, Decision 7: a hidden profile comes apart from the
     /// others and is not checked, so none of its files is read.
     #[test]

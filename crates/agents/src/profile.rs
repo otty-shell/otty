@@ -149,6 +149,7 @@ pub enum ProfileStatus {
     NotLoggedIn(Option<Box<PartNeed>>),
     /// The agent's program was not found.
     ProgramNotFound,
-    /// The config folder does not exist.
+    /// The config folder does not exist. OTTY checks it itself, before it
+    /// asks the agent: an empty folder exists.
     ConfigDirNotFound,
 }

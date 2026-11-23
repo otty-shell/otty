@@ -522,7 +522,9 @@ interface provider {
 
 Built as (issues 05, 06 and 08): the case `own` is `own-login`, since
 `own` is a WIT keyword. `log-in` returns `option<command>`. `profile-status`
-is `found`, `not-logged-in(need)` or `config-folder-not-found`. The prices
+is `found` or `not-logged-in(need)`: OTTY itself says "folder not found"
+before it asks, only for a folder that is not there, so an empty folder is
+the part's to judge (issue 12). The prices
 an agent part asks for are the imported interface `otty:agents-agent/prices`
 with `price-of`, and an `answer` carries its `cost` (Decision 3).
 

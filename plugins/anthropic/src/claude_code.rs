@@ -21,10 +21,12 @@ impl Agent for Anthropic {
         profiles()
     }
 
-    /// A profile nobody is logged in with needs `claude`, which asks to
-    /// log in on its first start in a config folder.
+    /// A profile nobody is logged in with, such as a new one with an
+    /// empty folder, needs `claude auth login --claudeai` in its folder.
     fn detect(profile: &Profile) -> ProfileStatus {
-        detect::status(&profile.folder, start_command(profile, Vec::new()))
+        let login = start_command(profile, login_args());
+
+        detect::status(&profile.folder, login)
     }
 
     /// The version the records of the newest session file name.
@@ -102,9 +104,13 @@ pub(crate) fn claude_in_folder(folder: &str) -> Command {
 /// Claude Code (spec 2026-11-23-accounts-apart-from-profiles, Decision 6,
 /// the command the owner chose on 2026-11-23).
 pub(crate) fn claude_login_in(folder: &str) -> Command {
-    let args = ["auth", "login", "--claudeai"].map(String::from).to_vec();
+    command_in(folder, false, login_args())
+}
 
-    command_in(folder, false, args)
+/// The arguments of Claude Code's login with a Claude account: `auth login
+/// --claudeai`.
+fn login_args() -> Vec<String> {
+    ["auth", "login", "--claudeai"].map(String::from).to_vec()
 }
 
 /// `claude` with `args` in the config folder `folder`, with
@@ -142,6 +148,9 @@ mod tests {
     const AFTER_EXPIRY_MS: i64 = 1_800_000_000_000;
 
     const SESSION: &str = "0b6c4e8a-1f2d-4c3b-9a7e-5d1f2e3c4b5a";
+
+    /// The arguments of Claude Code's login.
+    const LOGIN_ARGS: [&str; 3] = ["auth", "login", "--claudeai"];
 
     fn default_profile() -> Profile {
         Profile {
@@ -238,9 +247,9 @@ mod tests {
         assert_eq!(need.title, "Needs login");
     }
 
-    /// The need of a profile nobody is logged in with starts `claude`,
-    /// which asks to log in on its first start, in the profile's config
-    /// folder and in the language of OTTY.
+    /// The need of a profile nobody is logged in with runs `claude auth
+    /// login --claudeai` in the profile's config folder, in the language
+    /// of OTTY (issue 12 of spec 2026-11-23-accounts-apart-from-profiles).
     #[test]
     fn a_profile_nobody_is_logged_in_with_needs_claude_to_log_in() {
         let host = host().with_language("ru");
@@ -259,14 +268,38 @@ mod tests {
         assert_eq!(
             need.action,
             NeedAction::Run(command(
-                &[],
+                &LOGIN_ARGS,
                 &[(CONFIG_VARIABLE, added.folder.as_str())]
             ))
         );
         let ProfileStatus::NotLoggedIn(need) = default_status else {
             panic!("not logged in: {default_status:?}");
         };
-        assert_eq!(need.action, NeedAction::Run(command(&[], &[])));
+        assert_eq!(need.action, NeedAction::Run(command(&LOGIN_ARGS, &[])));
+    }
+
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: an added
+    /// config folder with no file in it yet needs `claude auth login
+    /// --claudeai` there, with `CLAUDE_CONFIG_DIR` set to it.
+    #[test]
+    fn an_added_empty_folder_needs_claude_auth_login_in_it() {
+        let host = host();
+        let added = profile(&host, ".claude-new", false);
+
+        let status = as_part(&host, || Anthropic::detect(&added));
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(need.title, "Needs login");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(command(
+                &LOGIN_ARGS,
+                &[(CONFIG_VARIABLE, added.folder.as_str())]
+            ))
+        );
     }
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the files

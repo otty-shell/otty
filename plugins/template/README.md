@@ -35,7 +35,8 @@ the folder into a new repository and replace what the parts read.
   in English only writes `export!(Example with agents::agent)` and only
   `agents.agent` in `[api]`.
 - An agent part knows nothing of accounts: `detect` says only found,
-  not logged in with its need, or folder not found. Each answer carries
+  or not logged in with its need. OTTY asks only about a folder that is
+  there, so the part decides what an empty one needs. Each answer carries
   its money: the cost the agent wrote (`cost_microdollars` of a made-up
   answer), else its tokens at the API price OTTY gives for the model,
   both made by `agents::answer_cost`. OTTY only adds the money up.

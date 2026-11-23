@@ -1,14 +1,13 @@
 //! The agent part `opencode`: OpenCode, the coding agent by Anomaly, and
 //! the commands that start it.
 
+use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::{
     Agent, Answers, Place, PlaceItem, Profile, ProfilePlace, ProfileStatus,
     ReadError, Session,
 };
-use otty_plugin_sdk::{Command, files};
 
 use crate::database::{Database, database_places};
-use crate::glob::escaped;
 use crate::location::{database_of, profiles, start_command};
 use crate::sessions::newest_version;
 use crate::{OpenCode, answers, sessions};
@@ -19,15 +18,14 @@ impl Agent for OpenCode {
         profiles()
     }
 
-    /// Found whenever its data folder is there: OpenCode works with no
-    /// login, with its free models, so the part never says a login is
-    /// missing (spec 2026-11-23-accounts-apart-from-profiles, Decision 9).
-    /// Looking for the program on `PATH` is left to OTTY.
-    fn detect(profile: &Profile) -> ProfileStatus {
-        match folder_exists(&profile.folder) {
-            true => ProfileStatus::Found,
-            false => ProfileStatus::ConfigFolderNotFound,
-        }
+    /// Always found: OpenCode works with no login, with its free models,
+    /// so the part never says a login is missing, not even for an empty
+    /// data folder, as a new profile is (spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 9, issue 12).
+    /// Looking for the program on `PATH` and for the folder is left to
+    /// OTTY.
+    fn detect(_profile: &Profile) -> ProfileStatus {
+        ProfileStatus::Found
     }
 
     /// The version of OpenCode that wrote the session that changed last.
@@ -77,16 +75,6 @@ impl Agent for OpenCode {
 
         start_command(profile, args)
     }
-}
-
-/// Whether the data folder `folder` holds any file. A folder is never
-/// listed itself, so an empty folder counts as missing.
-fn folder_exists(folder: &str) -> bool {
-    let folder = escaped(folder);
-    let has_files =
-        |glob: String| files::list(&glob).is_ok_and(|found| !found.is_empty());
-
-    has_files(format!("{folder}/*")) || has_files(format!("{folder}/**"))
 }
 
 #[cfg(test)]
@@ -151,9 +139,11 @@ mod tests {
     }
 
     /// Decision 9: OpenCode works with no login, so a data folder with no
-    /// login is found too, and one that is not there is not found.
+    /// login is found, and so is an empty one, as a new profile is, with
+    /// no need (issue 12 of spec 2026-11-23-accounts-apart-from-profiles).
+    /// OTTY tells a folder that is not there before it asks the part.
     #[test]
-    fn a_folder_with_no_login_is_found_and_an_empty_one_is_not() {
+    fn a_folder_with_no_login_and_an_empty_one_are_found() {
         let no_login = DataFolder::new();
         let _database = no_login.first_shape();
         let empty = DataFolder::new();
@@ -163,7 +153,7 @@ mod tests {
         let empty_status = empty.run(|| OpenCode::detect(&empty.profile()));
 
         assert_eq!(no_login_status, ProfileStatus::Found);
-        assert_eq!(empty_status, ProfileStatus::ConfigFolderNotFound);
+        assert_eq!(empty_status, ProfileStatus::Found);
     }
 
     #[test]

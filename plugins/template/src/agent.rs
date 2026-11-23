@@ -64,13 +64,13 @@ impl Agent for Example {
 
     /// Found with a key in `auth.json`, else not logged in with the need
     /// that runs the agent's login in the profile's folder: whether the
-    /// agent can log in is this part's call.
+    /// agent can log in is this part's call. OTTY asks only about a folder
+    /// that is there, so an empty one, as a new profile is, has no
+    /// `auth.json` and needs the login. An agent that works with no login
+    /// would say found there.
     fn detect(profile: &Profile) -> ProfileStatus {
         match read_auth(profile) {
             Ok(AuthFile { api_key: Some(_) }) => ProfileStatus::Found,
-            Err(HostError::NotFound(_)) if !folder_exists(profile) => {
-                ProfileStatus::ConfigFolderNotFound
-            },
             _ => ProfileStatus::NotLoggedIn(needs::not_logged_in(login_run(
                 profile,
             ))),
@@ -192,12 +192,6 @@ fn auth_path(profile: &Profile) -> String {
     format!("{}/auth.json", profile.folder)
 }
 
-/// Whether the profile's config folder holds any file.
-fn folder_exists(profile: &Profile) -> bool {
-    files::list(&format!("{}/**", profile.folder))
-        .is_ok_and(|found| !found.is_empty())
-}
-
 /// The variable a profile in another folder than the default needs.
 fn folder_env(profile: &Profile) -> Vec<(String, String)> {
     if profile.is_default {
@@ -298,14 +292,31 @@ mod tests {
         );
     }
 
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: a folder
+    /// with no file in it yet, as a new profile is, needs the agent's
+    /// login there. The part decides what an empty folder needs: an agent
+    /// that works with no login would say found. OTTY tells a folder that
+    /// is not there before it asks the part.
     #[test]
-    fn a_missing_folder_is_told_apart() {
+    fn an_empty_folder_needs_a_login_in_it() {
         let host = host();
-        let profile = profile(&host, ".example-agent-gone", false);
+        let profile = profile(&host, ".example-agent-new", false);
+        let folder = profile.folder.clone();
 
         let status = host.as_agent(AGENT, || Example::detect(&profile));
 
-        assert_eq!(status, ProfileStatus::ConfigFolderNotFound);
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(Command {
+                program: PROGRAM.to_string(),
+                args: vec!["login".to_string()],
+                env: vec![(HOME_VARIABLE.to_string(), folder)],
+            })
+        );
     }
 
     #[test]

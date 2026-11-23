@@ -31,7 +31,9 @@ pub trait Agent {
     /// in, such as a [`NeedAction::Run`](crate::NeedAction) of the agent's
     /// login command, when the agent can not log in with it. Whether a
     /// login is missing or expired is the part's own call; an agent that
-    /// works with no login is always found.
+    /// works with no login is always found. OTTY asks only about a profile
+    /// folder that is there, so the part decides what an empty one needs,
+    /// as a new profile is.
     fn detect(profile: &Profile) -> ProfileStatus;
 
     /// The agent's version written in the profile's newest files. `None`:

@@ -243,7 +243,7 @@ A plugin with only agent parts and texts only in English writes
 | `Agent`                                   | Gives OTTY                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------- |
 | `profiles(agent)`                         | The agent's default config folder only, marked `is_default`: the folder the agent uses with no variable set, or the one its variable names. OTTY ignores any other place, and the user adds other folders as profiles. |
-| `detect(profile)`                         | `ProfileStatus::Found`, `ProfileStatus::NotLoggedIn(need)` with the [need](#login-needs) that says how to log in, or no folder. Never whose login it is. |
+| `detect(profile)`                         | `ProfileStatus::Found`, or `ProfileStatus::NotLoggedIn(need)` with the [need](#login-needs) that says how to log in. Never whose login it is. OTTY asks only about a folder that is there and itself says "folder not found" for one that is not, so you decide what an empty folder needs, as a new profile is: a login, or nothing when the agent works with no login. |
 | `version(profile)`                        | The version written in the newest files. `None` makes OTTY run `<program> --version`. |
 | `session_places(profile)`                 | File globs or a database that hold the sessions. OTTY re-reads only what changed. |
 | `read_sessions(profile, item)`            | What one file tells about its sessions: the id, and the folder and the title when the file names them. |

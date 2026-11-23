@@ -209,9 +209,6 @@ impl Agent for Coder {
     fn detect(&self, profile: &Profile) -> ProfileStatus {
         let config_dir = profile.config_dir();
 
-        if !config_dir.is_dir() {
-            return ProfileStatus::ConfigDirNotFound;
-        }
         if !config_dir.join("auth.json").is_file() {
             return ProfileStatus::NotLoggedIn(None);
         }

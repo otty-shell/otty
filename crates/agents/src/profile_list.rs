@@ -81,7 +81,11 @@ pub fn profiles(
 /// `is_program_found` says whether a program, given by its name, can be
 /// started, the same way as for [`profiles`]; when it says no, the first of
 /// the agent's program places that holds a program is where it is, and the
-/// agent starts it from there (issue 32). The agent checks the rest.
+/// agent starts it from there (issue 32). Then OTTY checks that the config
+/// folder is there: only a folder that is not there is "folder not found",
+/// and the agent is not asked about it. An empty folder is there: the agent
+/// checks the rest and says what it needs, such as a login, or that it
+/// needs nothing (issue 12 of spec 2026-11-23-accounts-apart-from-profiles).
 ///
 /// ```
 /// use std::path::PathBuf;
@@ -106,6 +110,9 @@ pub fn profile_status(
 ) -> ProfileStatus {
     if !find_program(agent, &is_program_found) {
         return ProfileStatus::ProgramNotFound;
+    }
+    if !profile.config_dir().is_dir() {
+        return ProfileStatus::ConfigDirNotFound;
     }
 
     agent.detect(profile)
@@ -458,8 +465,19 @@ mod tests {
         agent
     }
 
+    /// An added profile of the made-up agent in the folder `folder`.
+    fn mock_profile_in(folder: &Path) -> Profile {
+        Profile::added(AgentId::new("mock"), "Mock", folder.to_path_buf())
+    }
+
+    /// An added profile of the made-up agent in a folder that is not
+    /// there.
     fn mock_profile() -> Profile {
-        Profile::added(AgentId::new("mock"), "Mock", PathBuf::from("/m"))
+        mock_profile_in(Path::new("/no/such/mock"))
+    }
+
+    fn finds_mock(program: &str) -> bool {
+        program == "mock-agent"
     }
 
     #[test]
@@ -498,7 +516,8 @@ mod tests {
             .expect_detect()
             .return_const(ProfileStatus::NotLoggedIn(None));
 
-        let status = profile_status(&agent, &mock_profile(), no_program);
+        let status =
+            profile_status(&agent, &mock_profile_in(temp.path()), no_program);
 
         assert_eq!(status, ProfileStatus::NotLoggedIn(None));
     }
@@ -558,15 +577,60 @@ mod tests {
 
     #[test]
     fn a_profile_whose_program_is_found_has_the_state_its_agent_checks() {
+        let temp = TempDir::new();
         let mut agent = mock();
         agent
             .expect_detect()
             .return_const(ProfileStatus::NotLoggedIn(None));
 
-        let status = profile_status(&agent, &mock_profile(), |program| {
-            program == "mock-agent"
-        });
+        let status =
+            profile_status(&agent, &mock_profile_in(temp.path()), finds_mock);
 
         assert_eq!(status, ProfileStatus::NotLoggedIn(None));
+    }
+
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: OTTY
+    /// itself tells a folder that is not there, and does not ask the
+    /// agent.
+    #[test]
+    fn a_folder_that_is_not_there_is_not_found_and_the_agent_is_not_asked() {
+        let mut agent = mock();
+        agent.expect_detect().never();
+
+        let status = profile_status(&agent, &mock_profile(), finds_mock);
+
+        assert_eq!(status, ProfileStatus::ConfigDirNotFound);
+    }
+
+    /// Issue 12: an empty folder is there. The agent says what it needs,
+    /// such as a login, or that it needs nothing.
+    #[test]
+    fn an_empty_folder_is_there_and_its_agent_says_what_it_needs() {
+        let temp = TempDir::new();
+        let mut agent = mock();
+        agent
+            .expect_detect()
+            .times(1)
+            .return_const(ProfileStatus::Connected);
+
+        let status =
+            profile_status(&agent, &mock_profile_in(temp.path()), finds_mock);
+
+        assert_eq!(status, ProfileStatus::Connected);
+    }
+
+    /// Issue 12: a file in place of the folder is no folder.
+    #[test]
+    fn a_file_in_place_of_the_folder_is_not_found() {
+        let temp = TempDir::new();
+        let file = temp.path().join("not-a-folder");
+        write_file(&file, "text");
+        let mut agent = mock();
+        agent.expect_detect().never();
+
+        let status =
+            profile_status(&agent, &mock_profile_in(&file), finds_mock);
+
+        assert_eq!(status, ProfileStatus::ConfigDirNotFound);
     }
 }

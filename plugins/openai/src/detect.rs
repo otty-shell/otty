@@ -1,7 +1,9 @@
-//! Whether a Codex profile can be used: its config folder and whether a
-//! login is there. Whose login it is, the agent part does not say: the
-//! provider part `openai` finds the account (spec
-//! 2026-11-23-accounts-apart-from-profiles, Decision 2).
+//! Whether a Codex profile can be used: whether a login is in its config
+//! folder. Whose login it is, the agent part does not say: the provider
+//! part `openai` finds the account (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 2). OTTY asks only
+//! about a folder that is there (issue 12): an empty one, as a new profile
+//! is, holds no login, so it needs `codex login` there.
 //!
 //! Whether the login expired is the plugin's call (Decision 9). The part
 //! checks what the provider part checks for the account found in the
@@ -10,11 +12,10 @@
 //! `codex login` in the folder, so acting on either fixes both. An API
 //! key tells no expiry, so a profile that logs in with one is found.
 
+use otty_plugin_sdk::Command;
 use otty_plugin_sdk::agents::ProfileStatus;
-use otty_plugin_sdk::{Command, files};
 
 use crate::auth_file::AuthFile;
-use crate::glob::escaped;
 use crate::needs;
 use crate::token_expiry::has_expired;
 
@@ -24,10 +25,6 @@ use crate::token_expiry::has_expired;
 /// key or token counts as none. A ChatGPT login that expired is not
 /// logged in either, with the need to log in again in `folder`.
 pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
-    if !folder_exists(folder) {
-        return ProfileStatus::ConfigFolderNotFound;
-    }
-
     let auth = AuthFile::read(folder).filter(AuthFile::is_logged_in);
 
     match auth {
@@ -43,16 +40,6 @@ pub(crate) fn status(folder: &str, login: Command) -> ProfileStatus {
 /// expired.
 fn has_expired_login(auth: &AuthFile) -> bool {
     !auth.is_api_key() && auth.access_token().is_some_and(has_expired)
-}
-
-/// Whether the config folder `folder` holds any file. A folder is never
-/// listed itself, so an empty folder counts as missing.
-fn folder_exists(folder: &str) -> bool {
-    let folder = escaped(folder);
-    let has_files =
-        |glob: String| files::list(&glob).is_ok_and(|found| !found.is_empty());
-
-    has_files(format!("{folder}/*")) || has_files(format!("{folder}/**"))
 }
 
 #[cfg(test)]
@@ -113,11 +100,11 @@ mod tests {
         assert!(is_not_logged_in(".codex-broken"));
     }
 
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: a config
+    /// folder with no file in it, as a new profile is, has no login. OTTY
+    /// tells a folder that is not there before it asks the part.
     #[test]
-    fn a_missing_config_folder_is_not_found() {
-        assert_eq!(
-            status_of(".codex-gone"),
-            ProfileStatus::ConfigFolderNotFound
-        );
+    fn a_folder_with_no_file_is_not_logged_in() {
+        assert!(is_not_logged_in(".codex-new"));
     }
 }

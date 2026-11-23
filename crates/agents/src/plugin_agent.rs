@@ -165,9 +165,6 @@ impl Agent for PluginAgent {
 
         match status {
             Ok(PartStatus::Found) => ProfileStatus::Connected,
-            Ok(PartStatus::ConfigFolderNotFound) => {
-                ProfileStatus::ConfigDirNotFound
-            },
             Ok(PartStatus::NotLoggedIn(need)) => ProfileStatus::NotLoggedIn(
                 PartNeed::of_called_part(&self.part, &need)
                     .map(|need| need.about_profile(profile.config_dir()))

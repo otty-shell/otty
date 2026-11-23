@@ -33,8 +33,10 @@ interface agent {
   }
 
   /// Whether a profile can be used. OTTY itself tells when the agent's
-  /// program is missing. Whose login the profile holds is no word of the
-  /// agent part's.
+  /// program is missing, and when the profile folder is not there: it asks
+  /// only about a folder that is there, which may be empty, as a new
+  /// profile is. Whose login the profile holds is no word of the agent
+  /// part's.
   variant profile-status {
     /// The profile can be used: the agent is logged in with it, or needs
     /// no login.
@@ -44,7 +46,6 @@ interface agent {
     /// the login expired. Whether a login is missing or expired is the
     /// part's own call; an agent that works with no login never says it.
     not-logged-in(need),
-    config-folder-not-found,
   }
 
   /// What one file tells about one conversation the agent can continue.

@@ -215,6 +215,30 @@ mod tests {
         assert_eq!(need.action, NeedAction::Run(command(&["login"], &[])));
     }
 
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: an added
+    /// config folder with no file in it yet needs `codex login` there,
+    /// with `CODEX_HOME` set to it.
+    #[test]
+    fn an_added_empty_folder_needs_codex_login_in_it() {
+        let host = host();
+        let added = profile(&host, ".codex-new", false);
+
+        let status = as_part(&host, || OpenAi::detect(&added));
+
+        let ProfileStatus::NotLoggedIn(need) = status else {
+            panic!("not logged in: {status:?}");
+        };
+        assert_eq!(need.id, "not-logged-in");
+        assert_eq!(need.title, "Needs login");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(command(
+                &["login"],
+                &[(CONFIG_VARIABLE, added.folder.as_str())]
+            ))
+        );
+    }
+
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 9: the files
     /// tell that the ChatGPT login expired, so the profile needs the login
     /// again, with the very need the provider part gives on the account

@@ -30,7 +30,7 @@ accounts, and the Anthropic part shows no profile.
 | Runs           | Nothing.                                                                                              |
 | Sends          | Nothing.                                                                                              |
 | Program        | `claude`, found on the `PATH` of your login shell or where the native installer puts it, `~/.local/bin/claude`. OTTY then starts it by that path, also for `/usage`. Found nowhere, the profile shows "program not found" with **Install Claude Code**, which runs the native installer, `curl -fsSL https://claude.ai/install.sh \| bash`, in a terminal tab you see, and **Open code.claude.com**, the setup page of Claude Code. |
-| Commands       | New session `claude`, continue `claude --resume <id>`, Log in `claude`.                                |
+| Commands       | New session `claude`, continue `claude --resume <id>`, Log in `claude auth login --claudeai`.          |
 
 The money of each answer is its tokens at the API price of its model, marked "at API prices", on a
 subscription too. A profile whose `ANTHROPIC_BASE_URL` sends Claude Code to another server, such as
@@ -111,7 +111,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 
 | Need                             | Part        | When                                                                 | Button |
 | -------------------------------- | ----------- | -------------------------------------------------------------------- | ------ |
-| Needs login                      | Claude Code | Nobody is logged in with the profile's folder.                       | **Run claude**, with the profile's folder: Claude Code asks you to log in on its first start there. |
+| Needs login                      | Claude Code | Nobody is logged in with the profile's folder, such as a new folder that is still empty. | **Run claude auth login --claudeai**, with `CLAUDE_CONFIG_DIR` set to the profile's folder. |
 | The login expired                | Claude Code, Anthropic | The Claude login of the folder expired with no way to renew it (both parts, on the profile and on its account), or Anthropic refused it, or `/usage` asked to log in (Anthropic, on the account). | **Run claude** in that folder: Claude Code renews the login or asks you to log in again. Acting on either page fixes both. |
 | Log in again                     | Anthropic   | Anthropic refused OTTY's own login, or Claude Code could not renew it there. Shown on the account only. | **Run claude auth login --claudeai** in OTTY's own folder. |
 | The real bill needs an admin key | Anthropic   | An organization has no admin key of its own in its folders.          | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |

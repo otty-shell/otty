@@ -658,6 +658,34 @@ mod tests {
         assert!(unused.facts.contains(&fact(Key::AgentsSessions, "0")));
     }
 
+    /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: an added
+    /// folder that is there but still empty, which the agent part finds
+    /// (OpenCode needs no login), says plainly that it has no sessions
+    /// yet, with no need and no error.
+    #[test]
+    fn an_empty_found_profile_has_no_sessions_yet_and_no_error() {
+        let work = crate::testing::codex_work();
+        let mut state = with_accounts(
+            &[(work.clone(), connected(), Vec::new())],
+            SavedProfiles::default(),
+        );
+        read(&mut state, &work, Vec::new());
+        let _ = reduce(&mut state, AgentsIntent::SelectProfile(work));
+
+        let vm = page(&state);
+
+        assert!(vm.needs.is_empty(), "{:?}", vm.needs);
+        assert_eq!(vm.failure, None);
+        assert_eq!(
+            vm.info,
+            Some(i18n::filled(
+                Key::TplAgentsNoSessionsYet,
+                &[("agent", "Codex")]
+            ))
+        );
+        assert!(vm.facts.contains(&fact(Key::AgentsSessions, "0")));
+    }
+
     #[test]
     fn before_the_sessions_are_read_the_counts_are_dashes() {
         let mut state = with_accounts(

@@ -74,7 +74,9 @@ Anthropic, OpenAI, DeepSeek and OpenRouter. See
 **Profiles.** OTTY shows the default profile of each agent whose plugin part is on: the folder the
 agent uses with no variable set, or the one its variable names, such as `~/.codex` or the folder of
 `CODEX_HOME`. Other folders you add with **Add profile**. OTTY does not look through your home
-folder for more, such as `~/.codex-work`.
+folder for more, such as `~/.codex-work`. A profile shows "folder not found" only when its folder is
+not there. A new folder that is still empty is there: its agent says what it needs, such as **Run
+codex login** in it, or nothing, as OpenCode, and its page says it has no sessions yet.
 
 **Accounts.** Each provider part of a plugin finds its own accounts, in two places: the profiles of
 the agents of its own plugin, and its own logins. The OpenAI plugin finds a ChatGPT login in your
