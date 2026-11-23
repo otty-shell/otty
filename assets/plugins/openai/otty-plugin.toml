@@ -3,7 +3,7 @@
 [plugin]
 id = "openai"
 name = "OpenAI"
-version = "0.2.11"
+version = "0.2.12"
 description = "Codex, ChatGPT and OpenAI accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openai"
 license = "Apache-2.0"
@@ -97,7 +97,9 @@ args = ["-s", "read-only", "-a", "never", "app-server"]
 # `log_in` offers Add account → "Log in with Codex": OTTY makes a folder
 # of its own and runs `codex login` there with `CODEX_HOME` set to it, in
 # a terminal tab the user sees. The part reads that folder as a Codex
-# profile folder of this entry.
+# profile folder of this entry, but for its session files, and reads its
+# limits with `codex app-server` there first, so Codex renews OTTY's own
+# login itself; the part never renews a token.
 [[agents.provider.logins]]
 agent = "codex"
 folder_env = "CODEX_HOME"

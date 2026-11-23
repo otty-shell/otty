@@ -9,6 +9,7 @@
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
@@ -23,12 +24,7 @@ pub(crate) fn view<'a>(
     vm: AccountPageViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let header = overview::header(
-        vm.icon.clone(),
-        vm.name.clone(),
-        AgentsIntent::OpenAccountMenu(vm.account.clone()),
-        palette,
-    );
+    let header = header(&vm, palette);
     let body = page_blocks(vm, palette);
 
     let page = column![header, body]
@@ -41,6 +37,40 @@ pub(crate) fn view<'a>(
         .center_x(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+/// The header: the logo and the name, then Refresh and "⋯". OTTY's own
+/// login has the mark "OTTY's own login" after the name and a small Log in
+/// again before Refresh (issue 09 of spec
+/// 2026-11-23-accounts-apart-from-profiles).
+fn header<'a>(
+    vm: &AccountPageViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
+    if !vm.has_own_login {
+        return overview::header(
+            vm.icon.clone(),
+            vm.name.clone(),
+            menu,
+            palette,
+        );
+    }
+
+    let mark = i18n::t(Key::AgentsSourceOwnLogin).to_string();
+    let log_in_again = Button::new(i18n::t(Key::AgentsLogInAgain), palette)
+        .kind(ButtonKind::Secondary)
+        .size(ButtonSize::Small)
+        .on_press(AgentsIntent::LogInAgain(vm.account.clone()));
+
+    overview::header_with(
+        vm.icon.clone(),
+        vm.name.clone(),
+        Some(mark),
+        Some(log_in_again.into()),
+        menu,
+        palette,
+    )
 }
 
 /// The blocks under the header, in their order: the line of a hidden
@@ -139,6 +169,7 @@ mod tests {
                 ),
             ],
             hidden_note: None,
+            has_own_login: false,
         }
     }
 
@@ -262,6 +293,33 @@ mod tests {
 
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();
         assert_eq!(intents, vec![AgentsIntent::OpenAccountMenu(chatgpt())]);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// header of an account with OTTY's own login has the mark "OTTY's own
+    /// login" and a Log in again button; a found account has neither.
+    #[test]
+    fn the_header_of_an_own_login_has_its_mark_and_logs_in_again() {
+        let vm = AccountPageViewModel {
+            has_own_login: true,
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut found = simulator(
+            container(view(page(), themes.current().ui())).width(WIDTH),
+        );
+        let mut own = simulator(
+            container(view(vm.clone(), themes.current().ui())).width(WIDTH),
+        );
+
+        own.find(i18n::t(Key::AgentsSourceOwnLogin))
+            .expect("the mark shows");
+        assert!(found.find(i18n::t(Key::AgentsSourceOwnLogin)).is_err());
+        assert!(found.find(i18n::t(Key::AgentsLogInAgain)).is_err());
+        assert_eq!(
+            sent(vm, i18n::t(Key::AgentsLogInAgain)),
+            [AgentsIntent::LogInAgain(chatgpt())]
+        );
     }
 
     #[test]

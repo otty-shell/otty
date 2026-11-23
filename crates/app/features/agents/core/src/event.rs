@@ -227,6 +227,13 @@ pub enum AgentsIntent {
     /// The folder of an own login with no account was removed, or why it
     /// could not be, ready to show.
     OwnLoginFolderRemoved(Result<(), String>),
+    /// Log in again of the header of an account's page was pressed: run
+    /// the login of its own login again in the same folder (issue 09 of
+    /// spec 2026-11-23-accounts-apart-from-profiles).
+    LogInAgain(Account),
+    /// The provider part of an own login gave the agent's login command
+    /// for its folder for Log in again, or why it could not.
+    LogInAgainPrepared(PreparedOwnLogin),
     /// Edit of a profile's menu was pressed: open the profile dialog with
     /// it.
     EditProfile(Profile),
@@ -401,7 +408,8 @@ pub enum AgentsOutcome {
     /// Open a terminal tab named `title` that runs `command` in `folder`,
     /// then show Terminal mode, as [`AgentsOutcome::OpenTab`] does, for
     /// what a profile needs: the command of a need, such as a login or the
-    /// install of the agent's program (issue 32), and Log in of a profile.
+    /// install of the agent's program (issue 32), Log in of a profile and
+    /// Log in again of OTTY's own login of an account.
     /// The app tells the id of the tab with [`AgentsIntent::FixTabOpened`],
     /// and the profiles are read again once it closes.
     OpenFixTab {
@@ -444,10 +452,15 @@ pub enum AgentsOutcome {
     /// Ask the provider part of this own login for the accounts in its
     /// folder alone; answer [`AgentsIntent::OwnLoginChecked`].
     CheckOwnLogin(OwnLogin),
-    /// Remove the folder of this own login, where no login is; answer
+    /// Remove the folder of this own login, where no login is or whose
+    /// account the user removed; answer
     /// [`AgentsIntent::OwnLoginFolderRemoved`]. Only that folder goes,
     /// never a profile folder.
     RemoveOwnLoginFolder(OwnLogin),
+    /// Ask the provider part of this own login for the agent's login
+    /// command pointed at its folder, for Log in again; answer
+    /// [`AgentsIntent::LogInAgainPrepared`]. Nothing is made on disk.
+    PrepareLogInAgain(OwnLogin),
     /// Split the focused pane of the terminal tab in front, run `command`
     /// in `folder` in the new pane, then show Terminal mode. The feature
     /// reports it only while that tab is a terminal tab on this computer
@@ -526,6 +539,12 @@ pub enum SessionAction {
 pub enum AccountAction {
     /// Give the account a name of the user's own.
     Rename,
+    /// Run the login of OTTY's own login of the account again, in its
+    /// folder.
+    LogInAgain,
+    /// Ask, then remove OTTY's own login of the account: its folder and
+    /// its entry in `agents.json`.
+    Remove,
     /// Open the usage page of the account at its provider in the browser.
     OpenUsagePage,
     /// Stop reading the account and take it out of the lists.

@@ -10,7 +10,9 @@
 //! Decisions 1 and 3). The `+` of the Accounts section opens Add account,
 //! which makes OTTY's own login with an agent's official login command in
 //! a terminal tab it watches, and asks the provider part for the account
-//! once the tab closes (Decision 6).
+//! once the tab closes (Decision 6). The menu of such an account has Log
+//! in again, which runs that login again in the same folder, and Remove,
+//! which asks first and deletes only OTTY's own folder.
 //!
 //! What the mode shows is read when OTTY starts, with the mode away: the
 //! profiles first, then the sessions, the limits, the tokens and the money
@@ -123,6 +125,7 @@ mod menus;
 mod model;
 mod need;
 mod new_session_dialog;
+mod own_login_actions;
 mod own_reads;
 mod prices;
 mod profile_actions;
@@ -326,7 +329,9 @@ impl Agents {
         if self.state.rename().is_some() {
             return Some(AgentsOverlay::RenameDialog);
         }
-        if self.state.removing().is_some() {
+        if self.state.removing().is_some()
+            || self.state.removing_own_login().is_some()
+        {
             return Some(AgentsOverlay::RemoveDialog);
         }
         if self.state.is_keyring_dialog_open() {

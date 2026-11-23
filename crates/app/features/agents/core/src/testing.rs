@@ -11,10 +11,11 @@ use otty_agents::{
     Account, AccountKind, AgentCommand, AgentEnv, AgentId, AgentSession,
     Answer, Bill, Billing, DayCost, DaySpend, Dollars, FetchedPrices,
     FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef, LimitWindow, Limits,
-    LogInWith, ModelPrice, ModelTokens, MoneyTotal, PriceTable, Profile,
-    ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef,
-    Registry, SavedProfiles, SessionId, SourceError, SourceFailure, SourceId,
-    Spend, TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
+    LogInWith, ModelPrice, ModelTokens, MoneyTotal, OwnLogin, PriceTable,
+    Profile, ProfileStatus, ProjectModelTokens, ProviderEntry, ProviderId,
+    ProviderRef, Registry, SavedProfiles, SessionId, SourceError,
+    SourceFailure, SourceId, Spend, TokenCount, TokenPrices, Unavailable,
+    UsageWindows, WindowId,
 };
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
@@ -735,6 +736,52 @@ pub(crate) fn chatgpt_login_in(folder: &str) -> Account {
         AccountKind::Subscription,
         vec![found_in(codex_id(), folder)],
     )
+}
+
+/// OTTY's own login of Codex of the tests, made by the OpenAI part.
+pub(crate) fn codex_own_login() -> OwnLogin {
+    OwnLogin::new("6f0c1e2a", "openai", ProviderId::new("openai"), codex_id())
+}
+
+/// The folder of [`codex_own_login`] under OTTY's data folder.
+pub(crate) const OWN_LOGIN_FOLDER: &str =
+    "/home/user/.local/share/otty/accounts/6f0c1e2a";
+
+/// The [`chatgpt_login`] as found in OTTY's own login only.
+pub(crate) fn chatgpt_own_login() -> Account {
+    let own = FoundIn::own_login("6f0c1e2a", OWN_LOGIN_FOLDER);
+
+    found_in_folders(&chatgpt_login(), vec![own])
+}
+
+/// The [`chatgpt_login`] as found in `~/.codex` and in OTTY's own login.
+pub(crate) fn chatgpt_login_in_both() -> Account {
+    let own = FoundIn::own_login("6f0c1e2a", OWN_LOGIN_FOLDER);
+    let codex = found_in(codex_id(), "/home/user/.codex");
+
+    found_in_folders(&chatgpt_login(), vec![codex, own])
+}
+
+/// Agents mode entered with Codex connected, [`codex_own_login`] saved in
+/// `saved`, and `accounts` found by the provider parts.
+pub(crate) fn with_own_login_in(
+    accounts: Vec<Account>,
+    saved: SavedProfiles,
+) -> AgentsState {
+    let mut state = AgentsState::new(agents(), registry(), env());
+    let _ = reduce(&mut state, AgentsIntent::Enter);
+
+    let saved = saved.with_own_login(codex_own_login());
+    let mut loaded = loaded_profiles(&[(codex(), connected())], saved);
+    loaded.accounts = FoundAccounts::new(accounts, Vec::new());
+    let _ = reduce(&mut state, AgentsIntent::ProfilesLoaded(loaded));
+
+    state
+}
+
+/// [`with_own_login_in`] with nothing else in `agents.json`.
+pub(crate) fn with_own_login(accounts: Vec<Account>) -> AgentsState {
+    with_own_login_in(accounts, SavedProfiles::default())
 }
 
 /// The key the user gave for [`organization`] under the slot `admin`,

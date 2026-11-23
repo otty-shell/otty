@@ -45,6 +45,7 @@ pub(crate) struct AgentsState {
     table: SessionsTable,
     dialog: Option<ProfileDialog>,
     removing: Option<Profile>,
+    removing_own_login: Option<Account>,
     fix_tabs: Vec<u64>,
     login_tabs: Vec<(u64, OwnLogin)>,
     is_keyring_dialog_open: bool,
@@ -107,6 +108,11 @@ impl AgentsState {
     /// The profile the user is asked to confirm the removal of.
     pub(crate) fn removing(&self) -> Option<&Profile> {
         self.removing.as_ref()
+    }
+
+    /// The account whose own login the remove dialog asks about.
+    pub(crate) fn removing_own_login(&self) -> Option<&Account> {
+        self.removing_own_login.as_ref()
     }
 
     /// Whether the keyring dialog asks the user to allow the read of the
@@ -266,6 +272,7 @@ impl AgentsState {
             table: SessionsTable::default(),
             dialog: None,
             removing: None,
+            removing_own_login: None,
             fix_tabs: Vec::new(),
             login_tabs: Vec::new(),
             is_keyring_dialog_open: false,
@@ -731,6 +738,16 @@ impl AgentsState {
     /// Stop asking about a removal and return the profile it was about.
     pub(crate) fn take_removing(&mut self) -> Option<Profile> {
         self.removing.take()
+    }
+
+    /// Ask the user to confirm the removal of the own login of `account`.
+    pub(crate) fn ask_own_login_removal(&mut self, account: Account) {
+        self.removing_own_login = Some(account);
+    }
+
+    /// Take the account whose own login removal was asked about.
+    pub(crate) fn take_own_login_removal(&mut self) -> Option<Account> {
+        self.removing_own_login.take()
     }
 
     /// The tab `tab_id` fixes what a profile needs: once it closes, the

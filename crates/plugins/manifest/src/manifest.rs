@@ -716,8 +716,13 @@ description = "Reads ChatGPT limits and OpenAI API spending.""#,
                 r#"files = ["auth.json"]"#,
                 &format!(r#"files = ["{path}"]"#),
             ));
+            let write = refusal(&edited(
+                &with_codex_logins(),
+                r#"read = ["sessions/**"]"#,
+                &format!(r#"write = ["{path}"]"#),
+            ));
 
-            for error in [read, keys] {
+            for error in [read, keys, write] {
                 assert_eq!(
                     error,
                     ManifestError::BadGlob {

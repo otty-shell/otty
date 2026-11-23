@@ -35,10 +35,15 @@ pointed at that folder, unable to run anything, in a terminal nobody
 sees, types `/usage` and reads the panel from the screen. It answers
 Claude Code's question whether to trust a folder only for OTTY's own
 probe folder, and afterwards deletes the session files that run left in
-`projects/<probe folder>/`; its manifest allows it to delete nothing
-else. OTTY runs this at most once in five minutes per account. With no
-way that works it reads nothing, which is no failure. It renews no token
-itself: Claude Code renews it when it runs.
+`projects/<probe folder>/` of that folder; its manifest allows it to
+delete nothing else (`write` of its `logins` entry, inside the folders
+of the call only). OTTY runs this at most once in five minutes per
+account. With no way that works it reads nothing, which is no failure.
+It renews no token itself: Claude Code renews it when it runs. OTTY's
+own login (Add account → "Log in with Claude Code") is read first, and
+when its token is past its time or Anthropic refused it, the `/usage`
+probe runs there, so Claude Code keeps that login fresh; when even that
+fails, the account needs "Log in again".
 
 What only the user can do, the parts ask for themselves, in OTTY's
 language, which they follow when the user picks another: `claude` in a

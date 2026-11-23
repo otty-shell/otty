@@ -84,6 +84,12 @@ impl Delivery for AgentsIntent {
                 agents_io::remove_own_login_folder(&app.data_dir, login)
                     .map(AppEvent::Agents)
             },
+            AgentsOutcome::PrepareLogInAgain(login) => agents_io::log_in_again(
+                &app.plugin_providers,
+                &app.data_dir,
+                login,
+            )
+            .map(AppEvent::Agents),
             // The login tab opens like the tab of a need; the feature is
             // told which tab it is, and asks for the accounts of the own
             // login once it closes (see `dispatch/tabs.rs`).
@@ -524,6 +530,27 @@ mod tests {
                 given: Vec::new(),
                 may_start_programs: false,
             },
+        );
+
+        assert_eq!(task.units(), 1);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: Log in
+    /// again asks the part for its login command in the background; no
+    /// plugin is installed here, so nothing is asked of an agent.
+    #[test]
+    fn log_in_again_asks_for_the_login_command_in_the_background() {
+        let mut app = app();
+        let login = otty_agents::OwnLogin::new(
+            "6f0c1e2a",
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            otty_agents::AgentId::new("codex"),
+        );
+
+        let task = AgentsIntent::read(
+            &mut app,
+            AgentsOutcome::PrepareLogInAgain(login),
         );
 
         assert_eq!(task.units(), 1);

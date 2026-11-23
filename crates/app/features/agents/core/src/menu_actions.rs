@@ -9,7 +9,7 @@ use otty_app_i18n::{self as i18n, Key};
 use super::event::{AccountAction, AgentsOutcome, ProfileAction};
 use super::menus::AgentsMenu;
 use super::state::AgentsState;
-use super::{hiding, rename_dialog};
+use super::{hiding, own_login_actions, rename_dialog};
 
 /// Open `menu` at the pointer; it takes the keyboard.
 pub(crate) fn open(
@@ -37,6 +37,13 @@ pub(crate) fn act_on_account(
     match action {
         AccountAction::Rename => {
             rename_dialog::open_for_account(state, account)
+        },
+        AccountAction::LogInAgain => {
+            own_login_actions::log_in_again(state, &account)
+        },
+        AccountAction::Remove => {
+            own_login_actions::ask_removal(state, account);
+            Vec::new()
         },
         AccountAction::OpenUsagePage => state
             .registry()

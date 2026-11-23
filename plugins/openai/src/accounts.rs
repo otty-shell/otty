@@ -150,13 +150,20 @@ impl FolderLogin {
             kind,
             plan,
             found_in: vec![folder.clone()],
-            needs: self.needs(path),
+            needs: self.needs(folder, path),
         }
     }
 
-    /// What the user must do for the login in the folder at `path`: log
-    /// in again when its token expired.
-    fn needs(&self, path: &str) -> Vec<Need> {
+    /// What the user must do for the login in `folder` at `path`: log in
+    /// again when its token expired. In OTTY's own login an expired token
+    /// is no need: the part reads there with `codex app-server`, which
+    /// renews its own login (spec 2026-11-23-accounts-apart-from-profiles,
+    /// Decision 7).
+    fn needs(&self, folder: &LoginFolder, path: &str) -> Vec<Need> {
+        if let LoginFolder::OwnLogin(_) = folder {
+            return Vec::new();
+        }
+
         match self {
             Self::Chatgpt(login) if login.has_expired() => {
                 vec![needs::login_expired(path)]
@@ -185,7 +192,7 @@ pub(crate) fn accounts(folders: &[LoginFolder]) -> Found {
             Some(known) if known.found_in.contains(folder) => {},
             Some(known) => {
                 known.found_in.push(folder.clone());
-                known.needs.extend(login.needs(path));
+                known.needs.extend(login.needs(folder, path));
             },
             None => accounts.push(login.account(folder, path)),
         }
@@ -201,6 +208,19 @@ pub(crate) fn accounts(folders: &[LoginFolder]) -> Found {
 /// and OTTY's own login folders.
 pub(crate) fn codex_folders(account: &Account) -> Vec<&str> {
     account.found_in.iter().filter_map(codex_folder).collect()
+}
+
+/// The folders of OTTY's own logins `account` was found in (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 6).
+pub(crate) fn own_login_folders(account: &Account) -> Vec<&str> {
+    account
+        .found_in
+        .iter()
+        .filter_map(|folder| match folder {
+            LoginFolder::OwnLogin((_, path)) => Some(path.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Whether the Codex profile folder `folder` holds no login at all, of

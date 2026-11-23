@@ -41,7 +41,9 @@
 //! [`prepare_own_login`], [`make_own_login_folder`], [`check_own_login`]
 //! and [`remove_own_login_folder`] make OTTY's own login of a provider part
 //! in its data folder, `accounts/<id>/`, ask the part about it once its
-//! login tab closed, and remove that folder when it holds no login.
+//! login tab closed, and remove that folder when it holds no login or the
+//! user removed its account; [`log_in_again`] asks the part for the login
+//! command of a folder made before.
 //! [`PluginParts`] loads the parts that are on of the installed plugins
 //! ([`Readers`]): the agents, the provider parts and the registry. [`plugin_engine`] makes
 //! the one engine of the plugins, and [`readers_now`] and
@@ -87,7 +89,7 @@ pub use folder_lookup::look_up_folder;
 pub use limits::{load_limits, load_limits_in_background};
 pub use load::{load_profiles, load_sessions};
 pub use own_login::{
-    check_own_login, make_own_login_folder, prepare_own_login,
+    check_own_login, log_in_again, make_own_login_folder, prepare_own_login,
     remove_own_login_folder,
 };
 pub use plugin_language::{LanguageReceivers, tell_language};

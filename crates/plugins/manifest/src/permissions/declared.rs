@@ -362,6 +362,7 @@ pub struct LoginRule {
     folder_env: Option<String>,
     offers_log_in: bool,
     read: Vec<FolderGlob>,
+    write: Vec<FolderGlob>,
     keys: Vec<LoginKeys>,
 }
 
@@ -394,6 +395,12 @@ impl LoginRule {
     /// The files the part reads inside each profile folder.
     pub fn read(&self) -> &[FolderGlob] {
         &self.read
+    }
+
+    /// The files the part may write and delete inside each profile
+    /// folder, such as the session files a probe of the agent left there.
+    pub fn write(&self) -> &[FolderGlob] {
+        &self.write
     }
 
     /// The key files inside each profile folder, read only with their keys
@@ -434,6 +441,7 @@ impl LoginRule {
             folder_env: raw.folder_env.clone(),
             offers_log_in: raw.log_in,
             read: folder_globs(&raw.read, part)?,
+            write: folder_globs(&raw.write, part)?,
             keys,
         })
     }

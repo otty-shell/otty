@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "otty-plugin-openai"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "jiff",
  "otty-plugin-sdk",

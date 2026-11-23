@@ -281,6 +281,9 @@ fn line_place(line: &PermissionLine) -> PlaceViewModel {
         PermissionLine::ReadsInProfiles { agent, glob } => {
             PlaceViewModel::in_profiles(agent, glob, Key::PluginsPlaceReadOnly)
         },
+        PermissionLine::WritesInProfiles { agent, glob } => {
+            PlaceViewModel::in_profiles(agent, glob, Key::PluginsPlaceMayChange)
+        },
         PermissionLine::SendsRequests(host) => {
             PlaceViewModel::name(PermissionGroup::Sites, host)
         },
@@ -422,6 +425,21 @@ mod tests {
                 Some(i18n::t(Key::PluginsPlaceReadOnly)),
             ]
         );
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: what a
+    /// provider part writes and deletes inside each profile folder shows
+    /// in the group of those profiles, noted so.
+    #[test]
+    fn what_a_part_writes_in_profiles_shows_in_their_group() {
+        let place = line_place(&PermissionLine::WritesInProfiles {
+            agent: "Claude Code".to_string(),
+            glob: "projects/*.jsonl".to_string(),
+        });
+
+        assert_eq!(place.group, PermissionGroup::ProfileLogins);
+        assert_eq!(place.profiles_of.as_deref(), Some("Claude Code"));
+        assert_eq!(place.note, Some(i18n::t(Key::PluginsPlaceMayChange)));
     }
 
     /// The profiles of two agent parts are two groups, each named by its

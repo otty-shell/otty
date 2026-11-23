@@ -12,6 +12,7 @@ use std::time::SystemTime;
 use otty_agents::{Account, AccountKind};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::super::own_login_actions::has_own_login;
 use super::super::state::AgentsState;
 use super::FactViewModel;
 use super::account_name::short_account_name;
@@ -42,6 +43,10 @@ pub(crate) struct AccountPageViewModel {
     /// For an account the user hid, the line under the title that says
     /// OTTY does not read it; its page then has no needs or numbers.
     pub(crate) hidden_note: Option<String>,
+    /// Whether the account has OTTY's own login: the header shows the mark
+    /// "OTTY's own login" and Log in again (issue 09 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    pub(crate) has_own_login: bool,
 }
 
 impl AccountPageViewModel {
@@ -60,6 +65,7 @@ impl AccountPageViewModel {
             numbers: None,
             info: info(state, &account),
             hidden_note: None,
+            has_own_login: has_own_login(state, &account),
             account,
         };
         if state.profiles().is_account_hidden(&page.account) {
@@ -250,6 +256,23 @@ mod tests {
                 read_by_plugin("OpenAI 0.1.0", "openai"),
             ]
         );
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the page
+    /// of an account with OTTY's own login has its mark and Log in again in
+    /// the header; the page of a found account has neither.
+    #[test]
+    fn only_the_page_of_an_own_login_has_its_mark() {
+        let own = crate::testing::with_own_login(vec![
+            crate::testing::chatgpt_login_in_both(),
+        ]);
+        let found = shared_chatgpt();
+
+        let own_page = page_of(&own, chatgpt_login());
+        let found_page = page_of(&found, chatgpt_login());
+
+        assert!(own_page.has_own_login);
+        assert!(!found_page.has_own_login);
     }
 
     /// A key shows the name its part gives it and the folder it was

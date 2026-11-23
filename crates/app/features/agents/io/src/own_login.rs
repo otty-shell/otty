@@ -3,9 +3,11 @@
 //! provider part gives for its folder, the empty folder
 //! `<data dir>/accounts/<id>/` made on Continue, the question to the part
 //! whether the folder holds an account once the login tab closed, and the
-//! removal of that folder when it holds none. They touch files or call a
-//! plugin part, so each runs on a thread of its own. Only the folder of
-//! an own login is ever removed, never a profile folder.
+//! removal of that folder when it holds none or the user removed its
+//! account. Log in again asks the part for the login command of a folder
+//! already made. They touch files or call a plugin part, so each runs on
+//! a thread of its own. Only the folder of an own login is ever removed,
+//! never a profile folder.
 
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -53,23 +55,55 @@ pub fn prepare_own_login(
     provider: ProviderId,
     agent: AgentId,
 ) -> Task<AgentsIntent> {
-    let providers = Arc::clone(providers);
-    let data_dir = data_dir.to_path_buf();
     let login = OwnLogin::new(new_login_id(), plugin, provider, agent);
-    let fallback = login.clone();
 
-    on_own_thread(
-        format!("asking {} for its login", login.provider().as_str()),
-        move || {
-            let command =
-                otty_agents::log_in_command(&providers, &login, &data_dir);
-            PreparedOwnLogin { login, command }
-        },
-        move || PreparedOwnLogin {
-            login: fallback,
-            command: Err(read_stopped()),
-        },
+    ask_login_command(
+        providers,
+        data_dir,
+        login,
         AgentsIntent::OwnLoginPrepared,
+    )
+}
+
+/// Ask the provider part of `providers` that made `login`, in the
+/// background, for the agent's login command pointed at its folder in
+/// `data_dir`, for Log in again (issue 09 of spec
+/// 2026-11-23-accounts-apart-from-profiles). The answer comes back as
+/// [`AgentsIntent::LogInAgainPrepared`].
+///
+/// # Example
+///
+/// ```
+/// use std::path::Path;
+/// use std::sync::Arc;
+///
+/// use otty_agents::{AgentId, OwnLogin, ProviderId};
+///
+/// let providers: otty_app_agents_io::ProviderList = Arc::from(Vec::new());
+/// let login = OwnLogin::new(
+///     "6f0c1e2a",
+///     "example",
+///     ProviderId::new("example-cloud"),
+///     AgentId::new("coder"),
+/// );
+/// let asked = otty_app_agents_io::log_in_again(
+///     &providers,
+///     Path::new("/home/user/.local/share/otty"),
+///     login,
+/// );
+///
+/// assert_eq!(asked.units(), 1);
+/// ```
+pub fn log_in_again(
+    providers: &ProviderList,
+    data_dir: &Path,
+    login: OwnLogin,
+) -> Task<AgentsIntent> {
+    ask_login_command(
+        providers,
+        data_dir,
+        login,
+        AgentsIntent::LogInAgainPrepared,
     )
 }
 
@@ -135,6 +169,33 @@ pub fn remove_own_login_folder(
         move || remove_folder(&data_dir, &login),
         || Err(i18n::t(Key::AgentsSaveStopped).to_string()),
         AgentsIntent::OwnLoginFolderRemoved,
+    )
+}
+
+/// Ask the part that made `login` for its login command in the
+/// background; `answer` makes the intent of the answer.
+fn ask_login_command(
+    providers: &ProviderList,
+    data_dir: &Path,
+    login: OwnLogin,
+    answer: fn(PreparedOwnLogin) -> AgentsIntent,
+) -> Task<AgentsIntent> {
+    let providers = Arc::clone(providers);
+    let data_dir = data_dir.to_path_buf();
+    let fallback = login.clone();
+
+    on_own_thread(
+        format!("asking {} for its login", login.provider().as_str()),
+        move || {
+            let command =
+                otty_agents::log_in_command(&providers, &login, &data_dir);
+            PreparedOwnLogin { login, command }
+        },
+        move || PreparedOwnLogin {
+            login: fallback,
+            command: Err(read_stopped()),
+        },
+        answer,
     )
 }
 

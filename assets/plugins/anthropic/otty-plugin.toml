@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.11"
+version = "0.2.12"
 description = "Claude Code and Anthropic accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -83,25 +83,17 @@ plan_usage_page = "https://claude.ai/settings/usage"
 # in the folders of a call.
 #
 # The `/usage` probe runs `claude` in OTTY's working folder of hidden
-# terminals, `~/.cache/otty/agent-probe`, pointed at the profile's folder
-# as the `claude-code` part starts it there, and Claude Code writes a
-# session file for the run in the project folder named after it,
-# `projects/-home-<user>--cache-otty-agent-probe`. The probe lists those
-# files (`read` of `logins`) and deletes them, and the folder once it is
-# empty; nothing else may be written. `logins` can not give a part the
-# right to delete, so the deletion stays a plain permission, of the
-# folders `~/.claude*` and `CLAUDE_CONFIG_DIR` only. `DISABLE_AUTOUPDATER`
-# is passed to that run only. `CLAUDE_CONFIG_DIR` also tells the part
-# which folder is the default one, where Claude Code runs with no
-# variable set.
+# terminals, `~/.cache/otty/agent-probe`, pointed at a folder the account
+# was found in as the `claude-code` part starts it there, and Claude Code
+# writes a session file for the run in the project folder named after
+# it, `projects/-home-<user>--cache-otty-agent-probe`. The probe lists
+# those files and deletes them, and the folder once it is empty, inside
+# the folders of the call only (`read` and `write` of `logins`).
+# `DISABLE_AUTOUPDATER` is passed to that run only. `CLAUDE_CONFIG_DIR`
+# also tells the part which folder is the default one, where Claude Code
+# runs with no variable set.
 [agents.provider.permissions]
 http = ["api.anthropic.com"]
-write = [
-  "~/.claude*/projects/*--cache-otty-agent-probe",
-  "~/.claude*/projects/*--cache-otty-agent-probe/*.jsonl",
-  "{CLAUDE_CONFIG_DIR}/projects/*--cache-otty-agent-probe",
-  "{CLAUDE_CONFIG_DIR}/projects/*--cache-otty-agent-probe/*.jsonl",
-]
 env = ["CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER"]
 
 # The global config file of the default profile sits next to `~/.claude`,
@@ -136,11 +128,21 @@ args = [
 # folder of its own and runs `claude auth login --claudeai` there with
 # `CLAUDE_CONFIG_DIR` set to it, in a terminal tab the user sees. The
 # part reads that folder as a Claude Code profile folder of this entry.
+# There the `/usage` probe also runs when the login token is past its
+# time or Anthropic refused it, so Claude Code renews OTTY's own login
+# itself; the part never renews a token.
+#
+# `write` is the session files of the probe and their folder, the only
+# files the part may delete, inside each folder of the call.
 [[agents.provider.logins]]
 agent = "claude-code"
 folder_env = "CLAUDE_CONFIG_DIR"
 log_in = true
 read = ["projects/*--cache-otty-agent-probe/*.jsonl"]
+write = [
+  "projects/*--cache-otty-agent-probe",
+  "projects/*--cache-otty-agent-probe/*.jsonl",
+]
 
 # The Claude login: its token, and the refresh token Claude Code renews
 # it with.

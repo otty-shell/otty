@@ -242,19 +242,28 @@ fn profile_menu(
     menu
 }
 
-/// The menu of an account: Rename…, Open usage page, then after a line
-/// Hide (or Show again for a hidden account).
+/// The menu of an account: Rename…, Log in again for OTTY's own login,
+/// Open usage page, then after a line Hide (or Show again for a hidden
+/// account) and Remove for OTTY's own login, as the owner's prototype
+/// shows.
 fn account_menu(
     vm: &AccountMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let act = AgentsIntent::AccountMenu;
 
-    Menu::new(palette)
-        .item(
-            MenuItem::new(i18n::t(Key::AgentsRename))
-                .on_press(act(AccountAction::Rename)),
-        )
+    let mut menu = Menu::new(palette).item(
+        MenuItem::new(i18n::t(Key::AgentsRename))
+            .on_press(act(AccountAction::Rename)),
+    );
+    if vm.has_own_login {
+        menu = menu.item(
+            MenuItem::new(i18n::t(Key::AgentsLogInAgain))
+                .on_press(act(AccountAction::LogInAgain)),
+        );
+    }
+
+    menu = menu
         .item(
             MenuItem::new(i18n::t(Key::AgentsOpenUsagePage))
                 .on_press(act(AccountAction::OpenUsagePage)),
@@ -264,7 +273,16 @@ fn account_menu(
             vm.is_hidden,
             act(AccountAction::Hide),
             act(AccountAction::ShowAgain),
-        ))
+        ));
+    if vm.has_own_login {
+        menu = menu.item(
+            MenuItem::new(i18n::t(Key::ButtonRemove))
+                .danger(true)
+                .on_press(act(AccountAction::Remove)),
+        );
+    }
+
+    menu
 }
 
 /// Hide, or Show again while `is_hidden`.
@@ -682,7 +700,30 @@ mod tests {
         MenuViewModel::Account(AccountMenuViewModel {
             place: place(),
             is_hidden,
+            has_own_login: false,
         })
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the menu
+    /// of an account with OTTY's own login logs in again and removes it.
+    #[test]
+    fn the_menu_of_an_own_login_logs_in_again_and_removes() {
+        let own = || {
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                is_hidden: false,
+                has_own_login: true,
+            })
+        };
+
+        let again = pressed(own(), i18n::t(Key::AgentsLogInAgain));
+        let removed = pressed(own(), i18n::t(Key::ButtonRemove));
+
+        assert_eq!(
+            again,
+            [AgentsIntent::AccountMenu(AccountAction::LogInAgain)]
+        );
+        assert_eq!(removed, [AgentsIntent::AccountMenu(AccountAction::Remove)]);
     }
 
     #[test]
@@ -717,6 +758,7 @@ mod tests {
 
         assert!(ui.find("Edit key…").is_err(), "no Edit key…");
         assert!(ui.find(i18n::t(Key::ButtonRemove)).is_err(), "no Remove");
+        assert!(ui.find(i18n::t(Key::AgentsLogInAgain)).is_err());
         assert!(ui.find(i18n::t(Key::AgentsHide)).is_ok());
     }
 

@@ -10,17 +10,25 @@
 //! what Codex knows there (`codex_limits.rs`); else, with no login in any
 //! of them now, from what Codex wrote in a folder that holds no login;
 //! else nothing.
+//!
+//! OTTY's own login is read first, with `codex app-server` started in
+//! its folder even when its token is past its time, so Codex renews its
+//! own login there (spec 2026-11-23-accounts-apart-from-profiles,
+//! Decision 7). The part never renews a token, and never reads the
+//! session files of an own login. A login refused there needs "Log in
+//! again" (Decision 9).
 
 use otty_plugin_sdk::agents::{
     Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
     Provider, ReadError,
 };
-use otty_plugin_sdk::{Command, GivenKey, given_key};
+use otty_plugin_sdk::{Command, GivenKey, Need, given_key};
 
 use crate::accounts::{
     ChatgptLogin, FolderLogin, KeyLogin, codex_folders, has_no_login,
+    own_login_folders,
 };
-use crate::codex_limits::read_codex_limits;
+use crate::codex_limits::{read_codex_limits, read_own_login_limits};
 use crate::limits::Limits;
 use crate::needs::{self, ADMIN_SLOT};
 use crate::{OpenAi, accounts, chatgpt_usage, organization_costs};
@@ -48,8 +56,18 @@ impl Provider for OpenAi {
             return Ok(no_numbers());
         }
 
+        let own = own_login_folders(account);
         let folders = codex_folders(account);
         let logins = chatgpt_logins(account, &folders);
+
+        // OTTY's own login first, with `codex app-server` there, so Codex
+        // keeps that login fresh.
+        let own_login = logins.iter().find(|(folder, _)| own.contains(folder));
+        if let Some((folder, _)) = own_login
+            && let Ok(limits) = read_own_login_limits(folder)
+        {
+            return Ok(limits.into_numbers());
+        }
 
         let server = logins.iter().find_map(|(folder, login)| {
             let token = login.token()?;
@@ -57,17 +75,30 @@ impl Provider for OpenAi {
             Some(chatgpt_usage::chatgpt_limits(
                 token,
                 login.account_id(),
-                &needs::login_expired(folder),
+                &refused_login_need(&own, folder),
             ))
         });
 
+        // What Codex wrote is read in the profile folders only.
+        let profile_folders: Vec<&str> = folders
+            .iter()
+            .filter(|folder| !own.contains(folder))
+            .copied()
+            .collect();
+        let profile_logins: Vec<&(&str, ChatgptLogin)> = logins
+            .iter()
+            .filter(|(folder, _)| !own.contains(folder))
+            .collect();
+
         let limits = match server {
             Some(Ok(limits)) => Ok(limits),
-            Some(Err(error)) => match codex_limits(&folders, &logins) {
-                Some(Ok(limits)) => Ok(limits),
-                _ => Err(error),
+            Some(Err(error)) => {
+                match codex_limits(&profile_folders, &profile_logins) {
+                    Some(Ok(limits)) => Ok(limits),
+                    _ => Err(error),
+                }
             },
-            None => match codex_limits(&folders, &logins) {
+            None => match codex_limits(&profile_folders, &profile_logins) {
                 Some(Ok(limits)) => Ok(limits),
                 _ => return Ok(no_numbers()),
             },
@@ -129,13 +160,23 @@ fn login_of(account: &Account, folder: &str) -> Option<FolderLogin> {
     FolderLogin::read(folder).filter(|login| login.id() == account.id)
 }
 
+/// The need of a login the server refused in `folder`: "Log in again"
+/// when it is OTTY's own login, one of `own`, else "The login expired",
+/// both running `codex login` there (Decision 9).
+fn refused_login_need(own: &[&str], folder: &str) -> Need {
+    match own.contains(&folder) {
+        true => needs::log_in_again(folder),
+        false => needs::login_expired(folder),
+    }
+}
+
 /// What Codex knows of the limits: in the first folder of `logins`, with
 /// its token; else, with no login of the account in any folder now, what
 /// Codex wrote in the first of `folders` that holds no login. `None` when
 /// there is no such folder.
 fn codex_limits(
     folders: &[&str],
-    logins: &[(&str, ChatgptLogin)],
+    logins: &[&(&str, ChatgptLogin)],
 ) -> Option<Result<Limits, ReadError>> {
     if let Some((folder, login)) = logins.first() {
         return Some(read_codex_limits(folder, login.token()));
@@ -181,7 +222,9 @@ mod tests {
 
     use super::*;
     use crate::app_server::APP_SERVER_ARGS;
-    use crate::testing::{ACCOUNT, PROVIDER, TEN, codex_folder, host, path};
+    use crate::testing::{
+        ACCOUNT, PROVIDER, TEN, codex_folder, host, own_folder, path,
+    };
 
     /// The access token of `.codex-plus`, made up.
     const PLUS_TOKEN: &str =
@@ -341,6 +384,79 @@ mod tests {
                 args: vec!["login".to_string()],
                 env: vec![("CODEX_HOME".to_string(), folder.to_string())],
             })
+        );
+    }
+
+    /// The one account the part finds in the config folder `name` of
+    /// `host` given as OTTY's own login `a1`.
+    fn own_account_in(host: &TestHost, name: &str) -> Account {
+        let folders = [own_folder(host, "a1", name)];
+
+        host.as_provider_in(PROVIDER, &folders, || {
+            OpenAi::accounts(PROVIDER, &folders)
+        })
+        .accounts
+        .remove(0)
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles, Decision
+    /// 7: in OTTY's own login the part reads the limits with `codex
+    /// app-server` started there first, even with the token past its
+    /// time, so Codex renews its own login. Nothing is sent and the token
+    /// is never renewed by the part; the expiry is no need.
+    #[test]
+    fn an_own_login_is_read_by_codex_app_server_in_its_folder() {
+        let host = host().with_now_ms(TEN);
+        host.answer_talk(
+            "codex",
+            &APP_SERVER_ARGS,
+            &[
+                r#"{"id":1,"result":{}}"#,
+                r#"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":42,"windowDurationMins":300,"resetsAt":1794826800},"planType":"pro"}}}"#,
+            ],
+        );
+        let account = own_account_in(&host, ".codex-expired");
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
+        assert_eq!(account.needs, []);
+        assert_eq!(numbers.windows[0].percent_used, 42.0);
+        assert!(host.requests().is_empty(), "nothing is sent");
+        assert_eq!(
+            host.started()[0].env(),
+            [("CODEX_HOME".to_string(), path(&host, ".codex-expired"))]
+        );
+    }
+
+    /// Issue 09: the session files of OTTY's own login are never read,
+    /// though Codex may write them there.
+    #[test]
+    fn the_session_files_of_an_own_login_are_not_read() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 500, b"{}");
+        let account = own_account_in(&host, ".codex-limits");
+
+        let numbers = numbers_of(&host, &account);
+
+        assert!(numbers.is_err(), "{numbers:?}");
+    }
+
+    /// Issue 09, Decision 9: OpenAI refused the token of OTTY's own login
+    /// and `codex app-server` could not read it either: the account needs
+    /// "Log in again", `codex login` in that folder.
+    #[test]
+    fn a_refused_own_login_needs_log_in_again() {
+        let host = host().with_now_ms(TEN);
+        host.answer("GET", USAGE_URL, 401, b"{}");
+        let account = own_account_in(&host, ".codex-renewed");
+        let folder = path(&host, ".codex-renewed");
+
+        let need = need_of(numbers_of(&host, &account));
+
+        assert_eq!(need.id, "log-in-again");
+        assert_eq!(
+            need.action,
+            NeedAction::Run(needs::codex_login_in(&folder))
         );
     }
 

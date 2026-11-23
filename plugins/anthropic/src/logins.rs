@@ -28,12 +28,13 @@
 //! token on its next run, also in the `/usage` probe, so a token past its
 //! time is no need. A token past its time with no refresh token beside it
 //! can not be renewed: that login expired, and the account gets the need
-//! that runs `claude` in its folder.
+//! that runs `claude` in its folder, or in OTTY's own login "Log in
+//! again", Claude Code's login in that folder.
 
 use otty_plugin_sdk::agents::{Account, AccountKind, LoginFolder, ProviderRef};
-use otty_plugin_sdk::{Key, clock};
+use otty_plugin_sdk::{Key, Need, clock};
 
-use crate::claude_code::claude_in_folder;
+use crate::claude_code::{claude_in_folder, claude_login_in};
 use crate::config_files::{
     Credentials, GlobalConfig, KeyFile, OauthAccount, OauthLogin, Settings,
     read_credentials, read_global_configs, read_settings,
@@ -68,9 +69,16 @@ impl FolderLogin {
 
 /// How the part reads the account of a login.
 pub(crate) enum Access {
-    /// A Claude login, with its token when `.credentials.json` holds one:
-    /// Claude Code may keep it elsewhere and still work.
-    Claude(Option<Key>),
+    /// A Claude login, with its token when `.credentials.json` holds one
+    /// (Claude Code may keep it elsewhere and still work), and whether
+    /// that token is past its time, so Claude Code renews it on its next
+    /// run.
+    Claude {
+        /// The handle of the login token.
+        token: Option<Key>,
+        /// Whether the token is past its `expiresAt`.
+        is_past: bool,
+    },
     /// An API key or an admin key.
     Key(Key),
 }
@@ -130,6 +138,7 @@ fn claude_login(
         .as_ref()
         .and_then(|credentials| credentials.fields().login());
     let plan = login.and_then(OauthLogin::plan);
+    let is_past = login.is_some_and(is_past_its_time);
     let has_lapsed = credentials
         .as_ref()
         .zip(login)
@@ -157,7 +166,7 @@ fn claude_login(
     };
 
     let needs = match has_lapsed {
-        true => vec![needs::login_expired(claude_in_folder(path))],
+        true => vec![lapsed_login_need(place, path)],
         false => Vec::new(),
     };
     Some(FolderLogin {
@@ -169,8 +178,20 @@ fn claude_login(
             found_in: vec![place.clone()],
             needs,
         },
-        access: Access::Claude(token),
+        access: Access::Claude { token, is_past },
     })
+}
+
+/// What a Claude login in `place` at `path` that can not be renewed
+/// needs: Claude Code run in a profile folder, which renews it or asks to
+/// log in again, or for OTTY's own login "Log in again", Claude Code's
+/// login in that folder (spec 2026-11-23-accounts-apart-from-profiles,
+/// Decision 9).
+fn lapsed_login_need(place: &LoginFolder, path: &str) -> Need {
+    match place {
+        LoginFolder::OwnLogin(_) => needs::log_in_again(claude_login_in(path)),
+        _ => needs::login_expired(claude_in_folder(path)),
+    }
 }
 
 /// Whether the Claude login `login` of `credentials` expired for good:
@@ -180,11 +201,14 @@ pub(crate) fn has_lapsed(
     credentials: &KeyFile<Credentials>,
     login: &OauthLogin,
 ) -> bool {
-    let is_past = login
-        .expires_at_ms()
-        .is_some_and(|expires_at| expires_at <= clock::now_ms());
+    is_past_its_time(login) && !credentials.holds_key(login.refresh_token())
+}
 
-    is_past && !credentials.holds_key(login.refresh_token())
+/// Whether the token of the Claude login `login` is past its time.
+fn is_past_its_time(login: &OauthLogin) -> bool {
+    login
+        .expires_at_ms()
+        .is_some_and(|expires_at| expires_at <= clock::now_ms())
 }
 
 /// What the user knows a Claude subscription by: its email, with the name
@@ -475,6 +499,32 @@ mod tests {
             panic!("a command: {need:?}");
         };
         assert_eq!(command.program, "claude");
+        assert_eq!(command.env, [(CONFIG_VARIABLE.to_string(), folder)]);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles, Decision
+    /// 9: OTTY's own login that can not be renewed needs "Log in again",
+    /// which runs Claude Code's login in that folder.
+    #[test]
+    fn an_expired_own_login_needs_log_in_again() {
+        let host = host().with_now_ms(AFTER_EXPIRY_MS);
+        let folder = path(&host, ".claude-expired");
+        let own = LoginFolder::OwnLogin(("a1".to_string(), folder.clone()));
+
+        let found = as_provider_in(&host, std::slice::from_ref(&own), || {
+            logins(&own)
+                .into_iter()
+                .map(|login| login.into_parts().0)
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(found[0].needs.len(), 1);
+        let need = &found[0].needs[0];
+        assert_eq!(need.id, "log-in-again");
+        let NeedAction::Run(command) = &need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.args, ["auth", "login", "--claudeai"]);
         assert_eq!(command.env, [(CONFIG_VARIABLE.to_string(), folder)]);
     }
 

@@ -61,6 +61,14 @@ pub enum PermissionLine {
         /// The glob inside the profile folder.
         glob: String,
     },
+    /// Writes and deletes files matching a glob inside each profile folder
+    /// of an agent part of the plugin.
+    WritesInProfiles {
+        /// The name of the agent part, such as `Claude Code`.
+        agent: String,
+        /// The glob inside the profile folder.
+        glob: String,
+    },
 }
 
 impl fmt::Display for PermissionLine {
@@ -118,6 +126,10 @@ impl fmt::Display for PermissionLine {
                 formatter,
                 "Reads your login in `{glob}` in each {agent} profile (OTTY \
                  gives it only as a handle)"
+            ),
+            PermissionLine::WritesInProfiles { agent, glob } => write!(
+                formatter,
+                "Writes and deletes files in `{glob}` in each {agent} profile"
             ),
         }
     }
@@ -184,8 +196,15 @@ fn login_lines(rule: &LoginRule) -> Vec<PermissionLine> {
             agent: agent.to_string(),
             glob: glob.to_string(),
         });
+    let write =
+        rule.write()
+            .iter()
+            .map(|glob| PermissionLine::WritesInProfiles {
+                agent: agent.to_string(),
+                glob: glob.to_string(),
+            });
 
-    logins.chain(read).collect()
+    logins.chain(read).chain(write).collect()
 }
 
 fn key_lines(rule: &KeyRule) -> Vec<PermissionLine> {
@@ -272,6 +291,27 @@ mod tests {
                  gives it only as a handle)",
                 "Reads files in `sessions/**` in each Codex profile",
             ]
+        );
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: what a
+    /// provider part may write and delete inside each profile folder.
+    #[test]
+    fn a_provider_part_lists_what_it_writes_in_profiles() {
+        let text = crate::testing::edited(
+            &with_codex_logins(),
+            r#"read = ["sessions/**"]"#,
+            "read = [\"sessions/**\"]\nwrite = [\"probe/*.jsonl\"]",
+        );
+        let manifest = Manifest::parse(&text).expect("valid");
+
+        let lines = texts(manifest.providers()[0].permission_lines());
+
+        assert_eq!(
+            lines.last().map(String::as_str),
+            Some(
+                "Writes and deletes files in `probe/*.jsonl` in each Codex profile"
+            )
         );
     }
 }

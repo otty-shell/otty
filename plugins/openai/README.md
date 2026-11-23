@@ -27,7 +27,11 @@ limits Codex knows there, from `codex app-server` started with
 for the list of sessions, else from the last record of them in the
 session files; and the costs of an organization with an admin key, from
 `api.openai.com`. With no way that works it reads nothing, which is no
-failure. A token whose claims say it expired is not sent.
+failure. A token whose claims say it expired is not sent. OTTY's own
+login (Add account → "Log in with Codex") is read first with
+`codex app-server` in its folder, even past its time, so Codex keeps
+that login fresh itself; its session files are not read, and a login
+refused there needs "Log in again".
 
 What only the user can do, the parts ask for themselves, in OTTY's
 language, which they follow when the user picks another: `codex login`

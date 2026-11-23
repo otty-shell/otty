@@ -1,6 +1,6 @@
 # 09 OTTY's own login: Log in again, Remove, and kept fresh by the agent
 
-Status: ready
+Status: done
 Blocked by: 08
 
 ## Why
@@ -85,3 +85,84 @@ Prototype (website repo, read only):
 - 2026-11-23, owner answer: OTTY reads its own logins on the usual
   schedule while it runs, and runs nothing in the background when it is
   closed.
+
+- 2026-11-23, done. An account with OTTY's own login can log in again
+  and be removed, and the provider parts keep the own login fresh by
+  running the agent in its folder.
+
+  Screen: the account menu is Rename…, Log in again (own login only),
+  Open usage page, a line, Hide or Show again, and Remove (own login
+  only, danger), as the prototype orders it. The page header of such an
+  account has the mark "OTTY's own login" after the name and a small
+  Log in again button before Refresh (`overview::header_with`), and its
+  row in the left panel the tag "OTTY" (the kit `TreeRow` got `tag`).
+  Whether an account has an own login is `own_login_actions::has_own_login`:
+  an `own_logins` entry of `agents.json` made by the part that found the
+  account and named in its `found-in`. Log in again (menu or header,
+  `AccountAction::LogInAgain`, `AgentsIntent::LogInAgain`) asks the part
+  for its `log-in` command of that folder (`PrepareLogInAgain`, io
+  `log_in_again`, answered with `LogInAgainPrepared`) and runs it in a
+  watched tab titled "Log in with <agent>" (`OpenFixTab`), so its close
+  reads the accounts and their numbers again. Remove asks "Remove this
+  account?" with "OTTY deletes its private folder <folder>. Your agents
+  and their own logins stay as they are." (the remove dialog of profiles,
+  now for both). Confirm drops the own login entries of the account from
+  `agents.json` and removes their folders (`RemoveOwnLoginFolder`), and
+  nothing else: the account's name and Hide stay. The save reads again,
+  so an account still found in `~/.codex` stays with Source "Found in
+  ~/.codex" only, else it leaves the list. Four new texts in all ten
+  locales (`agents_log_in_again`, `agents_remove_account_title`,
+  `tpl_agents_remove_account_text`, `plugins_place_may_change`); the mark
+  reuses "OTTY's own login". The "Log in again" need of a part shows on
+  the account and in All accounts → Needs you, never on a profile, as
+  any need of an account did.
+
+  Manifest and host: a `[[agents.provider.logins]]` entry may declare
+  `write` globs inside the folder (`LoginRule::write`); in a call with
+  login folders the part may write and delete them in each folder, an own
+  login folder too, never a key file and never outside the call.
+  Plugins mode shows them in the group of those profiles noted "may write
+  and delete" (`PermissionLine::WritesInProfiles`).
+
+  Plugins: `openai` 0.2.11 -> 0.2.12: the numbers of an account with an
+  own login are read first with `codex app-server` started there with
+  `CODEX_HOME` set to it, even past the token's time, so Codex renews its
+  own login; the session files of an own folder are never read; an
+  expired token there is no need; a token the server refused there needs
+  "Log in again" (`codex login` in that folder). `anthropic` 0.2.11 ->
+  0.2.12: the own login is read first; a token past its `expiresAt` is
+  not sent and the `/usage` probe runs Claude Code there with
+  `CLAUDE_CONFIG_DIR`, as after a refused token; a need there, or a login
+  that can not be renewed, is "Log in again" (`claude auth login
+  --claudeai` in that folder). The probe's plain `write` permission of
+  `~/.claude*` and `CLAUDE_CONFIG_DIR` became `write` of its `logins`
+  entry, so it cleans up its session files inside the folders of the call
+  only, an own login folder too. Neither part renews a token itself. Both
+  rebuilt into `assets/plugins/`; the template and the host test plugins
+  did not change.
+
+  Schedule: an own login is read with the other accounts, as the owner
+  answered; nothing new runs in the background, and with Agents mode away
+  the parts start no program, as before.
+
+  Tests first, each seen failing: manifest (`write` inside login folders
+  only, refused outside the folder, the plain words), Plugins mode (the
+  place and its note), the kit tag of a tree row, OpenAI (own login read
+  by `codex app-server` with `CODEX_HOME`, nothing sent, no need for an
+  expired own token, no session files read there, a refused own login
+  needs "Log in again", the need in ten languages), Anthropic (own login
+  first, past its time nothing sent, the probe in the own folder and its
+  session file removed there, a refused own login and a lapsed one need
+  "Log in again", the need in ten languages), the core (menu of an own
+  login has Log in again and Remove, a found account has neither, the
+  header mark and button, the row tag, Log in again asks for the command
+  and opens a watched tab that reads again on close, a part with no
+  command is told, Remove asks first, Cancel keeps all, Confirm removes
+  only the own folder and entry, an account also in `~/.codex` stays
+  with "Found in ~/.codex"). These passed at once, since the code was
+  there: the "Log in again" need on the account only, and the own login
+  read on the usual schedule. The app dispatch test of `PrepareLogInAgain`
+  was written with the wiring.
+
+  Left: the public docs are issue 10. The macOS Keychain question stays
+  open.

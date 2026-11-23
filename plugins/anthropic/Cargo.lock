@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "otty-plugin-anthropic"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "jiff",
  "mockall",

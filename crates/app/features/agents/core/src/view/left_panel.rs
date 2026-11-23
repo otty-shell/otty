@@ -30,6 +30,10 @@ use super::super::model::{
 };
 use super::{entry_icon, projects_section};
 
+/// The tag of the row of an account with OTTY's own login, as the owner's
+/// prototype shows it: OTTY's name, the same in every language.
+const OWN_LOGIN_TAG: &str = "OTTY";
+
 /// Props for the left panel.
 pub(crate) struct LeftPanelProps<'a> {
     pub(crate) vm: LeftPanelViewModel<'a>,
@@ -276,6 +280,9 @@ fn account_row<'a>(
     if let Some(number) = &vm.number {
         row = row.count_tone(number.tone()).state(number.text());
     }
+    if vm.has_own_login {
+        row = row.tag(OWN_LOGIN_TAG);
+    }
 
     mouse_area(row).on_right_press(menu).into()
 }
@@ -340,6 +347,7 @@ mod tests {
                     String::from("42 % used"),
                     SessionTone::Muted,
                 )),
+                has_own_login: false,
             }],
             can_add: true,
             note: None,
@@ -497,6 +505,22 @@ mod tests {
         ui.find("42 % used").expect("the number should show");
         assert_eq!(all, vec![AgentsIntent::SelectAllAccounts]);
         assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt())]);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the row
+    /// of an account with OTTY's own login has the tag "OTTY", as the
+    /// prototype shows; a found account has none.
+    #[test]
+    fn the_row_of_an_own_login_has_the_otty_tag() {
+        let mut own = panel(agents());
+        own.accounts.accounts[0].has_own_login = true;
+        let themes = ThemeManager::new();
+
+        let mut tagged = simulator(panel_view(own, &themes));
+        let mut plain = simulator(panel_view(panel(agents()), &themes));
+
+        tagged.find("OTTY").expect("the tag shows");
+        assert!(plain.find("OTTY").is_err());
     }
 
     #[test]

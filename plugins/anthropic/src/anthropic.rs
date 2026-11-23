@@ -10,6 +10,12 @@
 //! server fails, from the `/usage` panel of `claude` in that folder; else
 //! nothing. A token Anthropic refuses is the need that runs `claude` in
 //! its folder, which renews the login or asks to log in again.
+//!
+//! OTTY's own login is read first (spec
+//! 2026-11-23-accounts-apart-from-profiles, Decision 7): with its token
+//! past its time nothing is sent, and the `/usage` panel of `claude` in
+//! that folder makes Claude Code renew its own login. The part never
+//! renews a token. A need there is "Log in again" (Decision 9).
 
 use otty_plugin_sdk::agents::{
     Account, AccountKind, AccountNumbers, Bill, DayRange, Found, LoginFolder,
@@ -56,12 +62,19 @@ impl Provider for Anthropic {
         let Some((folder, access)) = account_access(account) else {
             return Ok(no_numbers());
         };
+        let Some(path) = claude_folder(&folder) else {
+            return Ok(no_numbers());
+        };
 
-        match access {
-            Access::Claude(token) => {
-                claude_numbers(account.kind, &folder, token.as_ref())
+        match (access, &folder) {
+            (Access::Claude { token, is_past }, LoginFolder::OwnLogin(_)) => {
+                let token = token.filter(|_| !is_past);
+                own_login_numbers(account.kind, path, token.as_ref())
             },
-            Access::Key(_) => Ok(no_numbers()),
+            (Access::Claude { token, .. }, _) => {
+                claude_numbers(account.kind, path, token.as_ref())
+            },
+            (Access::Key(_), _) => Ok(no_numbers()),
         }
     }
 
@@ -125,14 +138,18 @@ fn add_account(accounts: &mut Vec<Account>, account: Account) {
 
 /// The folder to read `account` in and how: the first of its folders
 /// whose login holds a key or a token, else the first that still holds
-/// its login. `None` when none of its folders holds it now.
-fn account_access(account: &Account) -> Option<(String, Access)> {
-    let mut without_token: Option<(String, Access)> = None;
+/// its login, OTTY's own logins before the profile folders, so reading
+/// the numbers keeps OTTY's own login fresh (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 7). `None` when none
+/// of its folders holds it now.
+fn account_access(account: &Account) -> Option<(LoginFolder, Access)> {
+    let is_own =
+        |folder: &&LoginFolder| matches!(folder, LoginFolder::OwnLogin(_));
+    let own = account.found_in.iter().filter(is_own);
+    let profiles = account.found_in.iter().filter(|folder| !is_own(folder));
+    let mut without_token: Option<(LoginFolder, Access)> = None;
 
-    for folder in &account.found_in {
-        let Some(path) = claude_folder(folder) else {
-            continue;
-        };
+    for folder in own.chain(profiles) {
         let Some(login) = logins(folder)
             .into_iter()
             .find(|login| login.account().id == account.id)
@@ -142,14 +159,33 @@ fn account_access(account: &Account) -> Option<(String, Access)> {
 
         let (_, access) = login.into_parts();
         match access {
-            Access::Claude(None) => {
-                without_token.get_or_insert((path.to_string(), access));
+            Access::Claude { token: None, .. } => {
+                without_token.get_or_insert((folder.clone(), access));
             },
-            _ => return Some((path.to_string(), access)),
+            _ => return Some((folder.clone(), access)),
         }
     }
 
     without_token
+}
+
+/// The numbers of OTTY's own Claude login in its folder `folder`, as
+/// [`claude_numbers`] reads them with `token`, the login token while it
+/// is not past its time. With no such token nothing is sent: the
+/// `/usage` probe runs Claude Code there, which renews its own login, as
+/// it does after the server refused the token. A need is "Log in again",
+/// Claude Code's login in that folder (Decision 9).
+fn own_login_numbers(
+    kind: AccountKind,
+    folder: &str,
+    token: Option<&Key>,
+) -> Result<AccountNumbers, ReadError> {
+    claude_numbers(kind, folder, token).map_err(|error| match error {
+        ReadError::NeedsUser(_) => {
+            ReadError::NeedsUser(needs::log_in_again(claude_login_in(folder)))
+        },
+        other => other,
+    })
 }
 
 /// The numbers of a Claude login of the kind `kind` in the profile folder
@@ -231,7 +267,17 @@ mod tests {
 
     use super::*;
     use crate::profiles::CONFIG_VARIABLE;
-    use crate::testing::{PROVIDER, as_provider_in, host, login_folder, path};
+    use crate::testing::{
+        OWN_FOLDER, PROVIDER, as_provider_in, host, login_folder,
+        own_login_folder, path,
+    };
+
+    /// A time after the token of OTTY's own login of the fixtures, which
+    /// expired on 2025-11-16, and before the other made-up tokens expire.
+    const AFTER_OWN_EXPIRY_MS: i64 = 1_800_000_000_000;
+    /// The session file a `/usage` probe left in OTTY's own login.
+    const OWN_PROBE_SESSION: &str =
+        "projects/-home-dev--cache-otty-agent-probe/p1.jsonl";
 
     const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
     /// The address of the cost report of 2026-11-16, the one day of
@@ -497,6 +543,70 @@ mod tests {
             command.env,
             [(CONFIG_VARIABLE.to_string(), path(&host, ".claude-work"))]
         );
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles, Decision
+    /// 7: OTTY's own login is read first, and with its token past its
+    /// time the part sends nothing and never renews it: the `/usage` probe
+    /// runs Claude Code in the own folder, which renews its own login, and
+    /// the session files the probe left there are removed.
+    #[test]
+    fn an_own_login_past_its_time_is_kept_fresh_by_claude_code_itself() {
+        let host = host()
+            .with_now_ms(AFTER_OWN_EXPIRY_MS)
+            .with_terminal_folder(PROBE_FOLDER);
+        usage_screens(&host);
+        let folders = [
+            login_folder(&host, ".claude-renewed"),
+            own_login_folder(&host),
+        ];
+        let account = as_provider_in(&host, &folders, || {
+            Anthropic::accounts(PROVIDER, &folders)
+        })
+        .accounts
+        .remove(0);
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
+        assert_eq!(account.found_in, folders);
+        assert_eq!(numbers.windows[0].percent_used, 29.0);
+        assert!(host.requests().is_empty(), "nothing is sent");
+        assert_eq!(config_folder_of(&host), Some(path(&host, OWN_FOLDER)));
+        assert_eq!(
+            host.removed(),
+            [std::path::PathBuf::from(path(
+                &host,
+                &format!("{OWN_FOLDER}/{OWN_PROBE_SESSION}")
+            ))]
+        );
+    }
+
+    /// Issue 09, Decision 9: Anthropic refused the token of OTTY's own
+    /// login and the probe could not get past it either: the account needs
+    /// "Log in again", which runs Claude Code's login in that folder.
+    #[test]
+    fn a_refused_own_login_needs_log_in_again() {
+        let host = host();
+        host.answer("GET", USAGE_URL, 401, b"{}");
+        let folder = path(&host, ".claude-renewed");
+        let own = LoginFolder::OwnLogin(("a1".to_string(), folder.clone()));
+        let account = as_provider_in(&host, std::slice::from_ref(&own), || {
+            Anthropic::accounts(PROVIDER, std::slice::from_ref(&own))
+        })
+        .accounts
+        .remove(0);
+
+        let numbers = numbers_of(&host, &account);
+
+        let Err(ReadError::NeedsUser(need)) = numbers else {
+            panic!("a need: {numbers:?}");
+        };
+        assert_eq!(need.id, "log-in-again");
+        let NeedAction::Run(command) = need.action else {
+            panic!("a command: {need:?}");
+        };
+        assert_eq!(command.args, ["auth", "login", "--claudeai"]);
+        assert_eq!(command.env, [(CONFIG_VARIABLE.to_string(), folder)]);
     }
 
     /// Issue 29: an account none of whose folders is given reads nothing,

@@ -178,8 +178,8 @@ pub(crate) struct RawProviderPermissions {
 }
 
 /// One `[[agents.provider.logins]]`: the profiles of an agent part of the
-/// same plugin whose logins the provider part reads, and what it reads
-/// inside each profile folder. `log_in` offers Add account → "Log in with"
+/// same plugin whose logins the provider part reads, and what it reads,
+/// writes and deletes inside each profile folder. `log_in` offers Add account → "Log in with"
 /// that agent part, OTTY's own login.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,6 +190,8 @@ pub(crate) struct RawLogins {
     pub(crate) log_in: bool,
     #[serde(default)]
     pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) write: Vec<String>,
     #[serde(default)]
     pub(crate) keys: Vec<RawLoginKeys>,
 }

@@ -40,6 +40,18 @@ pub(crate) fn read_codex_limits(
     now.or_else(|error| session_limits::read_limits(folder).map_err(|_| error))
 }
 
+/// The limits `codex app-server` tells in OTTY's own login folder
+/// `folder` (spec 2026-11-23-accounts-apart-from-profiles, Decision 7).
+/// It starts there even with the token past its time: the folder is
+/// OTTY's alone, and Codex renews its own login as it always does, so no
+/// agent the user works with is logged out. The part never renews a token
+/// itself, and the session files there are not read.
+pub(crate) fn read_own_login_limits(folder: &str) -> Result<Limits, ReadError> {
+    let env = [(CONFIG_VARIABLE.to_string(), folder.to_string())];
+
+    app_server::read_limits(&env)
+}
+
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::test_host::TestHost;

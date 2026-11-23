@@ -1856,6 +1856,9 @@ pub enum Key {
     PluginsPlaceGivenAsHandles,
     /// Muted words after a file read in profiles: read only.
     PluginsPlaceReadOnly,
+    /// Muted words after a file a provider part writes and deletes in
+    /// profiles: may write and delete.
+    PluginsPlaceMayChange,
     /// Mark of a permission an update asks for.
     PluginsMarkNew,
     /// Mark of a permission an update no longer asks for.
@@ -2002,12 +2005,21 @@ pub enum Key {
     AgentsPluginReadNumbers,
     /// Second button of the need of a format a plugin saw change.
     AgentsOpenPluginRepository,
+    /// Item of the menu and button of the page of an account with OTTY's
+    /// own login: run its login again in its folder.
+    AgentsLogInAgain,
+    /// Title of the dialog that asks before OTTY's own login of an account
+    /// is removed.
+    AgentsRemoveAccountTitle,
+    /// Line of the dialog that asks before OTTY's own login of an account is
+    /// removed: `{path}` is its private folder, the only one deleted.
+    TplAgentsRemoveAccountText,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 938] = [
+    pub(super) const ALL: [Self; 942] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2873,6 +2885,7 @@ impl Key {
         Self::PluginsGroupProfileLoginsMeaning,
         Self::PluginsPlaceGivenAsHandles,
         Self::PluginsPlaceReadOnly,
+        Self::PluginsPlaceMayChange,
         Self::PluginsMarkNew,
         Self::PluginsMarkNoLonger,
         Self::PluginsInstall,
@@ -2946,5 +2959,8 @@ impl Key {
         Self::AgentsPluginReadTokens,
         Self::AgentsPluginReadNumbers,
         Self::AgentsOpenPluginRepository,
+        Self::AgentsLogInAgain,
+        Self::AgentsRemoveAccountTitle,
+        Self::TplAgentsRemoveAccountText,
     ];
 }

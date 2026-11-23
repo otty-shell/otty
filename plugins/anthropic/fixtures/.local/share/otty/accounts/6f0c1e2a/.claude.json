@@ -1,0 +1,11 @@
+{
+  "numStartups": 2,
+  "installMethod": "native",
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-00000000000c",
+    "emailAddress": "own@example.com",
+    "organizationUuid": "00000000-0000-4000-8000-0000000000cc",
+    "organizationName": "Example Org",
+    "billingType": "stripe_subscription"
+  }
+}

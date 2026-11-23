@@ -8,6 +8,7 @@ use super::ellipsis_text::EllipsisText;
 use super::glyph;
 use super::letter_icon::letter_icon;
 use super::session_row::SessionTone;
+use super::tag::tag;
 use super::target_dot::{TargetKind, target_dot};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
@@ -31,8 +32,9 @@ const PADDING_X: f32 = spacing::SPACE_3;
 /// right of the caret of its folder.
 ///
 /// The label comes first: it keeps its width and ends with "…" only when it
-/// does not fit. The state word and count on the right give way first, ending
-/// with "…" or nothing when little room is left.
+/// does not fit. A tag, such as `OTTY`, follows the label. The state word and
+/// count on the right give way first, ending with "…" or nothing when little
+/// room is left.
 ///
 /// # Example
 ///
@@ -67,6 +69,7 @@ pub struct TreeRow<Message> {
     icon: Option<(svg::Handle, Option<Color>)>,
     letter: Option<String>,
     dot: Option<TargetKind>,
+    tag: Option<String>,
     state: Option<String>,
     on_press: Option<Message>,
 }
@@ -87,6 +90,7 @@ impl<Message> TreeRow<Message> {
             icon: None,
             letter: None,
             dot: None,
+            tag: None,
             state: None,
             on_press: None,
         }
@@ -160,6 +164,12 @@ impl<Message> TreeRow<Message> {
     /// without a caret the dot stands where the caret would.
     pub fn dot(mut self, kind: TargetKind) -> Self {
         self.dot = Some(kind);
+        self
+    }
+
+    /// Shows a short muted tag right after the label, such as `OTTY`.
+    pub fn tag(mut self, label: impl Into<String>) -> Self {
+        self.tag = Some(label.into());
         self
     }
 
@@ -246,6 +256,9 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
             EllipsisText::new(value.label, body.size(), fonts::UI, label_color)
                 .shrink(0.0),
         );
+        if let Some(label) = value.tag {
+            content = content.push(tag(label, size::ROW, &palette));
+        }
         let note = match (value.state, value.count) {
             (Some(word), Some(count)) => Some(format!("{word} {count}")),
             (Some(word), None) => Some(word),
@@ -419,6 +432,24 @@ mod tests {
             "{label} against {full_label}"
         );
         assert!(note < full_note, "{note} against {full_note}");
+    }
+
+    /// A tag stands right after the label, before the note on the right,
+    /// and the label keeps its width.
+    #[test]
+    fn given_a_tag_then_it_follows_the_label_before_the_note() {
+        let palette = UiPalette::otty_dark();
+        let row = TreeRow::<Message>::new("you@example.com", &palette)
+            .tag("OTTY")
+            .state("42 % used");
+        let mut ui = simulator(container(row).width(400));
+
+        let label = ui.find("you@example.com").expect("label").bounds();
+        let tag = ui.find("OTTY").expect("the tag shows").bounds();
+        let note = ui.find("42 % used").expect("note").bounds();
+
+        assert!(tag.x >= label.x + label.width, "{tag:?} after {label:?}");
+        assert!(note.x >= tag.x + tag.width, "{note:?} after {tag:?}");
     }
 
     /// A "Containers" row with the note "running" and a count of 2, in a

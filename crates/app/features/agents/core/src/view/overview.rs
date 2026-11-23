@@ -18,6 +18,7 @@ use otty_ui_kit::components::heading_row::HeadingRow;
 use otty_ui_kit::components::icon_button::IconButton;
 use otty_ui_kit::components::session_row::SessionTone;
 use otty_ui_kit::components::status_badge::StatusTone;
+use otty_ui_kit::components::tag::{tag, tag_width};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{fonts, size, spacing, typography};
 
@@ -102,15 +103,37 @@ pub(super) fn header<'a>(
     menu: AgentsIntent,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
+    header_with(icon, title, None, None, menu, palette)
+}
+
+/// The header of a page as [`header`] draws it, with `mark`, a short tag
+/// right after the title, and `extra`, a button before Refresh, when they
+/// are given. The title gives way first, the tag stays whole.
+pub(super) fn header_with<'a>(
+    icon: EntryIcon,
+    title: impl Into<String>,
+    mark: Option<String>,
+    extra: Option<Element<'a, AgentsIntent>>,
+    menu: AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
     let strong = palette.text_strong();
     let logo = entry_icon::view(icon, LOGO_SIZE, strong, palette);
+    let reserved = mark
+        .as_deref()
+        .map_or(0.0, |mark| tag_width(mark) + BUTTON_GAP);
     let name = EllipsisText::new(
         title,
         typography::TITLE.size(),
         fonts::UI_SEMIBOLD,
         strong,
     )
-    .shrink(0.0);
+    .shrink(reserved);
+    let mut heading = row![name].spacing(BUTTON_GAP).align_y(Alignment::Center);
+    if let Some(mark) = mark {
+        heading = heading.push(tag(mark, size::CONTROL_MD, palette));
+    }
+
     let refresh = IconButton::new(
         svg::Handle::from_memory(icons::REFRESH),
         i18n::t(Key::AgentsRefreshAll),
@@ -120,11 +143,13 @@ pub(super) fn header<'a>(
     let more =
         IconButton::new(glyph::dots(), i18n::t(Key::MoreActions), palette)
             .on_press(menu);
-    let buttons = row![refresh, more]
-        .spacing(BUTTON_GAP)
-        .align_y(Alignment::Center);
+    let mut buttons = row![].spacing(BUTTON_GAP).align_y(Alignment::Center);
+    if let Some(extra) = extra {
+        buttons = buttons.push(extra);
+    }
+    let buttons = buttons.push(refresh).push(more);
 
-    HeadingRow::new(name, buttons)
+    HeadingRow::new(heading, buttons)
         .lead(logo)
         .spacing(HEADER_GAP)
         .into()

@@ -166,6 +166,83 @@ const LOGIN_EXPIRED_TEXT: &[(&str, &str)] = &[
     ),
 ];
 
+/// The title of [`log_in_again`].
+const LOG_IN_AGAIN_TITLE: &[(&str, &str)] = &[
+    ("en", "Log in again"),
+    ("zh-CN", "重新登录"),
+    ("zh-TW", "重新登入"),
+    ("ja", "もう一度ログイン"),
+    ("ko", "다시 로그인"),
+    ("fr", "Se reconnecter"),
+    ("de", "Erneut anmelden"),
+    ("es", "Volver a iniciar sesión"),
+    ("pt-BR", "Fazer login novamente"),
+    ("ru", "Войти снова"),
+];
+
+/// The text of [`log_in_again`]; `{agent}` is the agent's name and
+/// `{provider}` the provider's.
+const LOG_IN_AGAIN_TEXT: &[(&str, &str)] = &[
+    (
+        "en",
+        "{provider} refused OTTY's own login of this account. {agent} logs \
+         in again in a terminal tab, in OTTY's private folder, and your \
+         agents stay as they are.",
+    ),
+    (
+        "zh-CN",
+        "{provider} 拒绝了 OTTY 为此账户保存的登录。{agent} 会在终端标签页中、\
+         在 OTTY 的私有文件夹里重新登录，你的代理保持不变。",
+    ),
+    (
+        "zh-TW",
+        "{provider} 拒絕了 OTTY 為此帳戶保存的登入。{agent} 會在終端機分頁中、\
+         在 OTTY 的私人資料夾裡重新登入，你的代理維持不變。",
+    ),
+    (
+        "ja",
+        "{provider} が、このアカウントの OTTY 独自のログインを拒否しました。\
+         {agent} がターミナルタブで OTTY の非公開フォルダーに再ログインします。\
+         お使いのエージェントはそのままです。",
+    ),
+    (
+        "ko",
+        "{provider}이(가) 이 계정의 OTTY 전용 로그인을 거부했습니다. \
+         {agent}이(가) 터미널 탭에서 OTTY 비공개 폴더에 다시 로그인하며, \
+         사용 중인 에이전트는 그대로 유지됩니다.",
+    ),
+    (
+        "fr",
+        "{provider} a refusé la connexion propre à OTTY pour ce compte. \
+         {agent} se reconnecte dans un onglet de terminal, dans le dossier \
+         privé d’OTTY, et vos agents restent tels quels.",
+    ),
+    (
+        "de",
+        "{provider} hat OTTYs eigene Anmeldung für dieses Konto abgelehnt. \
+         {agent} meldet sich in einem Terminal-Tab neu an, im privaten Ordner \
+         von OTTY, und deine Agenten bleiben, wie sie sind.",
+    ),
+    (
+        "es",
+        "{provider} rechazó el inicio de sesión propio de OTTY para esta \
+         cuenta. {agent} inicia sesión de nuevo en una pestaña de terminal, \
+         en la carpeta privada de OTTY, y tus agentes quedan como están.",
+    ),
+    (
+        "pt-BR",
+        "{provider} recusou o login próprio do OTTY para esta conta. O \
+         {agent} entra de novo em uma aba de terminal, na pasta privada do \
+         OTTY, e seus agentes ficam como estão.",
+    ),
+    (
+        "ru",
+        "{provider} отклонил собственный вход OTTY для этого аккаунта. \
+         {agent} выполнит вход заново во вкладке терминала, в личной папке \
+         OTTY, а ваши агенты останутся как есть.",
+    ),
+];
+
 /// The title of [`bill_key`].
 const BILL_KEY_TITLE: &[(&str, &str)] = &[
     ("en", "The real bill needs an admin key"),
@@ -400,6 +477,21 @@ pub(crate) fn login_expired(claude: Command) -> Need {
     }
 }
 
+/// Anthropic refused OTTY's own login, or Claude Code can not renew it
+/// there (spec 2026-11-23-accounts-apart-from-profiles, Decision 9): the
+/// button runs `login`, Claude Code's login in OTTY's own folder, in a
+/// terminal tab. Only the account shows it, there is no profile.
+pub(crate) fn log_in_again(login: Command) -> Need {
+    Need {
+        id: "log-in-again".to_string(),
+        title: in_language(LOG_IN_AGAIN_TITLE).to_string(),
+        text: in_language(LOG_IN_AGAIN_TEXT)
+            .replace("{agent}", AGENT_NAME)
+            .replace("{provider}", PROVIDER_NAME),
+        action: NeedAction::Run(login),
+    }
+}
+
 /// The bill of the organization needs an admin key, which the user gives
 /// once: OTTY keeps where they keep it and gives it back under
 /// [`ADMIN_SLOT`].
@@ -466,6 +558,7 @@ mod tests {
                 login_expired(claude()),
                 bill_key(),
                 new_bill_key(),
+                log_in_again(claude()),
             ]
         })
     }
@@ -483,6 +576,8 @@ mod tests {
             NEW_BILL_KEY_TEXT,
             BILL_KEY_LABEL,
             BILL_KEY_HINT,
+            LOG_IN_AGAIN_TITLE,
+            LOG_IN_AGAIN_TEXT,
         ] {
             let tags: Vec<&str> = texts.iter().map(|(tag, _)| *tag).collect();
 
@@ -505,6 +600,8 @@ mod tests {
             NEW_BILL_KEY_TEXT,
             BILL_KEY_LABEL,
             BILL_KEY_HINT,
+            LOG_IN_AGAIN_TITLE,
+            LOG_IN_AGAIN_TEXT,
         ] {
             for (tag, text) in texts {
                 assert!(!text.contains([';', '\u{ff1b}']), "{tag}: {text}");
@@ -521,6 +618,9 @@ mod tests {
             }
             let refused = pick_language(language, NEW_BILL_KEY_TEXT);
             assert!(refused.contains("{provider}"), "{language}: {refused}");
+            let again = pick_language(language, LOG_IN_AGAIN_TEXT);
+            assert!(again.contains("{agent}"), "{language}: {again}");
+            assert!(again.contains("{provider}"), "{language}: {again}");
         }
     }
 
@@ -531,7 +631,13 @@ mod tests {
 
         assert_eq!(
             ids,
-            ["not-logged-in", "login-expired", "bill-key", "new-bill-key"]
+            [
+                "not-logged-in",
+                "login-expired",
+                "bill-key",
+                "new-bill-key",
+                "log-in-again"
+            ]
         );
     }
 
@@ -562,6 +668,17 @@ mod tests {
         assert_eq!(needs[1].title, "The login expired");
         assert!(needs[1].text.contains("Open Claude Code"));
         assert_eq!(needs[3].title, "The admin key was refused");
+        assert_eq!(needs[4].title, "Log in again");
+        assert!(needs[4].text.contains("Anthropic refused OTTY's own login"));
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the need
+    /// of a refused own login runs the login it is given.
+    #[test]
+    fn log_in_again_runs_the_login_it_is_given() {
+        let needs = needs_in("en");
+
+        assert_eq!(needs[4].action, NeedAction::Run(claude()));
     }
 
     #[test]

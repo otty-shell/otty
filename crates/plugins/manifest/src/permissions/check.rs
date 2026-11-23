@@ -37,6 +37,7 @@ pub struct Permissions {
     http: Vec<String>,
     logins: Vec<LoginRule>,
     folder_read: GlobSet,
+    folder_write: GlobSet,
     folder_key_files: GlobSet,
     folder_vars: Vec<(String, PathBuf)>,
 }
@@ -91,6 +92,7 @@ impl Permissions {
             http: declared.http().to_vec(),
             logins: declared.logins().to_vec(),
             folder_read: GlobSet::empty(),
+            folder_write: GlobSet::empty(),
             folder_key_files: GlobSet::empty(),
             folder_vars: Vec::new(),
         }
@@ -99,12 +101,13 @@ impl Permissions {
     /// The same permissions for one call with the login folders
     /// `folders`: inside each folder of an agent part its [`LoginRule`]s
     /// name, the part also reads their files and their key files, keys
-    /// as handles, and a program it starts may get the rule's
-    /// `folder_env` set to that folder. OTTY's own login folder is read by
+    /// as handles, writes and deletes their `write` files, and a program
+    /// it starts may get the rule's `folder_env` set to that folder. OTTY's own login folder is read by
     /// the rule that offers "Log in with". A folder of another agent part
     /// or one that is not an absolute path with no `..` adds nothing.
     pub fn in_login_folders(&self, folders: &[LoginFolder]) -> Self {
         let mut read = Vec::new();
+        let mut write = Vec::new();
         let mut key_files = Vec::new();
         let mut keys = self.keys.clone();
         let mut vars = Vec::new();
@@ -121,6 +124,9 @@ impl Permissions {
             for rule in rules {
                 read.extend(
                     rule.read().iter().filter_map(|glob| glob.resolve(path)),
+                );
+                write.extend(
+                    rule.write().iter().filter_map(|glob| glob.resolve(path)),
                 );
                 for login_keys in rule.keys() {
                     let files: Vec<String> = login_keys
@@ -143,6 +149,7 @@ impl Permissions {
         Self {
             keys,
             folder_read: pattern_set(&read),
+            folder_write: pattern_set(&write),
             folder_key_files: pattern_set(&key_files),
             folder_vars: vars,
             ..self.clone()
@@ -161,7 +168,7 @@ impl Permissions {
     /// never written.
     pub fn may_write(&self, path: &Path) -> bool {
         is_plain_absolute(path)
-            && self.write.is_match(path)
+            && (self.write.is_match(path) || self.folder_write.is_match(path))
             && !self.is_key_file(path)
     }
 
@@ -687,6 +694,35 @@ mod tests {
         assert!(called.may_pass_var("CODEX_HOME", own));
         assert!(!not_offered.may_read_with_keys(auth));
         assert!(!not_offered.may_pass_var("CODEX_HOME", own));
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// `write` globs of a `logins` entry let the part write and delete
+    /// inside each login folder of the call only, an own login folder
+    /// too, so a probe cleans up the files it left there. A key file is
+    /// never written, and outside the call nothing is.
+    #[test]
+    fn a_login_folder_is_written_only_where_its_logins_declare() {
+        let writing = edited(
+            &with_codex_logins(),
+            r#"read = ["sessions/**"]"#,
+            "read = [\"sessions/**\"]\nlog_in = true\n\
+             write = [\"probe/*.jsonl\", \"auth.json\"]",
+        );
+        let base = permissions_of(&writing, &PartRef::provider("openai"));
+        let own = "/data/otty/accounts/6f0c1e2a";
+
+        let called = base.in_login_folders(&[
+            LoginFolder::new("codex", "/work/codex-a"),
+            LoginFolder::own(own),
+        ]);
+
+        assert!(called.may_write(Path::new("/work/codex-a/probe/a.jsonl")));
+        assert!(called.may_write(Path::new(&format!("{own}/probe/b.jsonl"))));
+        assert!(!called.may_write(Path::new("/work/codex-a/probe/a.txt")));
+        assert!(!called.may_write(Path::new("/work/codex-b/probe/a.jsonl")));
+        assert!(!called.may_write(Path::new("/work/codex-a/auth.json")));
+        assert!(!base.may_write(Path::new("/work/codex-a/probe/a.jsonl")));
     }
 
     /// Nothing of the login rules applies outside a call with folders.

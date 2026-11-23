@@ -41,6 +41,16 @@ pub(crate) fn login_folder(host: &TestHost, name: &str) -> LoginFolder {
     LoginFolder::Profile((AGENT.to_string(), path(host, name)))
 }
 
+/// The folder of OTTY's own login of the fixtures, in the home folder of
+/// the host: `<data dir>/accounts/<id>`, outside every `~/.claude*`.
+pub(crate) const OWN_FOLDER: &str = ".local/share/otty/accounts/6f0c1e2a";
+
+/// [`OWN_FOLDER`] of `host` as OTTY gives it to the provider part: its
+/// own login `6f0c1e2a`, where `claude auth login` ran.
+pub(crate) fn own_login_folder(host: &TestHost) -> LoginFolder {
+    LoginFolder::OwnLogin(("6f0c1e2a".to_string(), path(host, OWN_FOLDER)))
+}
+
 /// Runs `run` as the part `claude-code` of `host`.
 pub(crate) fn as_part<R>(host: &TestHost, run: impl FnOnce() -> R) -> R {
     host.as_agent(AGENT, run)

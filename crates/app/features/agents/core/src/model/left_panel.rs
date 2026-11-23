@@ -4,6 +4,7 @@ use otty_agents::{Account, Profile};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
+use super::super::own_login_actions::has_own_login;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
 use super::account_name::short_account_name;
@@ -112,6 +113,9 @@ pub(crate) struct AccountRowViewModel {
     /// Its number with its word and color, such as "42 % used", which
     /// draws itself in the tight form; `None` while nothing is known.
     pub(crate) number: Option<AccountNumber>,
+    /// Whether the account has OTTY's own login: the row has the tag
+    /// "OTTY" (issue 09 of spec 2026-11-23-accounts-apart-from-profiles).
+    pub(crate) has_own_login: bool,
 }
 
 impl AccountRowViewModel {
@@ -127,6 +131,7 @@ impl AccountRowViewModel {
             icon: state.account_icon(&account),
             name: short_account_name(state.profiles().saved(), &account),
             number: account_number(state, &account),
+            has_own_login: has_own_login(state, &account),
             account,
         }
     }
@@ -300,6 +305,7 @@ mod tests {
                     icon: crate::testing::provider_icon("anthropic"),
                     name: String::from("dev@example.com"),
                     number: None,
+                    has_own_login: false,
                 },
                 AccountRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
@@ -310,6 +316,7 @@ mod tests {
                         i18n::with_count(Key::TplAgentsPercentUsed, 42),
                         SessionTone::Muted
                     )),
+                    has_own_login: false,
                 },
             ]
         );
@@ -381,6 +388,23 @@ mod tests {
             .map(|row| row.name.as_str())
             .collect();
         assert_eq!(names, ["you@example.com", "you@example.com"]);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the row
+    /// of an account with OTTY's own login is marked so; a found one is
+    /// not.
+    #[test]
+    fn the_row_of_an_own_login_is_marked() {
+        let own = crate::testing::with_own_login(vec![
+            crate::testing::chatgpt_own_login(),
+        ]);
+        let found = two_accounts();
+
+        let own_rows = LeftPanelViewModel::from_state(&own, now()).accounts;
+        let found_rows = LeftPanelViewModel::from_state(&found, now()).accounts;
+
+        assert!(own_rows.accounts[0].has_own_login);
+        assert!(found_rows.accounts.iter().all(|row| !row.has_own_login));
     }
 
     #[test]

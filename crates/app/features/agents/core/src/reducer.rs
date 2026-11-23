@@ -11,9 +11,9 @@ use super::types::{FolderAsker, LoadedFolder};
 use super::usage::UsageList;
 use super::{
     add_account_dialog, found_report, key_dialog, keyring, login_tabs,
-    menu_actions, need, new_session_dialog, profile_actions, profile_dialog,
-    program_version, reads, real_failures, rename_dialog, session_actions,
-    stats_dialog,
+    menu_actions, need, new_session_dialog, own_login_actions, profile_actions,
+    profile_dialog, program_version, reads, real_failures, rename_dialog,
+    session_actions, stats_dialog,
 };
 
 /// Reduce an Agents intent into state changes and the outcomes the binary
@@ -273,10 +273,14 @@ pub(super) fn reduce(
             Vec::new()
         },
         AgentsIntent::RemoveConfirmed => {
+            if state.removing_own_login().is_some() {
+                return own_login_actions::confirm_removal(state);
+            }
             profile_actions::confirm_removal(state)
         },
         AgentsIntent::RemoveCancelled => {
             let _ = state.take_removing();
+            let _ = state.take_own_login_removal();
             Vec::new()
         },
         AgentsIntent::OpenAddProfile => profile_dialog::open_add(state),
@@ -335,6 +339,12 @@ pub(super) fn reduce(
         },
         AgentsIntent::OwnLoginFolderRemoved(result) => {
             login_tabs::folder_removed(result)
+        },
+        AgentsIntent::LogInAgain(account) => {
+            own_login_actions::log_in_again(state, &account)
+        },
+        AgentsIntent::LogInAgainPrepared(answer) => {
+            own_login_actions::log_in_again_prepared(state, answer)
         },
         AgentsIntent::ToggleAccountsSection => {
             state.toggle_accounts_section();

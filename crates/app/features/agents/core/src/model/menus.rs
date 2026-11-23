@@ -2,6 +2,7 @@ use otty_agents::{AgentId, Profile};
 use otty_ui_kit::components::context_menu::MenuPlace;
 
 use super::super::menus::AgentsMenu;
+use super::super::own_login_actions::has_own_login;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
 use super::super::state::AgentsState;
@@ -21,7 +22,7 @@ pub(crate) enum MenuViewModel {
     /// Show again, and Remove.
     Profile(ProfileMenuViewModel),
     /// The menu of an account: Rename…, Open usage page, Hide or Show
-    /// again.
+    /// again, and for OTTY's own login Log in again and Remove.
     Account(AccountMenuViewModel),
     /// The "⋯" of All accounts: the hidden accounts and the Found by OTTY
     /// report.
@@ -72,6 +73,7 @@ impl MenuViewModel {
                 Self::Account(AccountMenuViewModel {
                     place: open.place(),
                     is_hidden: state.profiles().is_account_hidden(account),
+                    has_own_login: has_own_login(state, account),
                 })
             },
             AgentsMenu::AllAccounts => {
@@ -218,13 +220,18 @@ pub(crate) struct ProfileMenuViewModel {
 
 /// The menu of an account (spec 2026-11-19, Decision 7): Rename…, Open
 /// usage page, and Hide or Show again. No account is added by hand, so
-/// none has Edit key… or Remove (spec 2026-11-23, Decision 10).
+/// none has Edit key… (spec 2026-11-23, Decision 10). An account with
+/// OTTY's own login also has Log in again and Remove (issue 09 of spec
+/// 2026-11-23-accounts-apart-from-profiles).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AccountMenuViewModel {
     /// Where the menu opens.
     pub(crate) place: MenuPlace,
     /// Whether the account is hidden: Show again in place of Hide.
     pub(crate) is_hidden: bool,
+    /// Whether the account has OTTY's own login: Log in again and Remove
+    /// show.
+    pub(crate) has_own_login: bool,
 }
 
 /// The "⋯" of All accounts or All profiles: Show hidden … (N), off while
@@ -554,6 +561,7 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 is_hidden: false,
+                has_own_login: false,
             })
         );
         assert_eq!(
@@ -561,6 +569,39 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 is_hidden: false,
+                has_own_login: false,
+            })
+        );
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the menu
+    /// of an account with OTTY's own login has Log in again and Remove,
+    /// the menu of an account only found in a profile has neither.
+    #[test]
+    fn only_the_menu_of_an_own_login_logs_in_again_and_removes() {
+        let mut own = crate::testing::with_own_login(vec![
+            crate::testing::chatgpt_own_login(),
+        ]);
+        let mut found = crate::testing::with_own_login(vec![chatgpt_login()]);
+
+        let own_menu =
+            account_menu(&mut own, crate::testing::chatgpt_own_login());
+        let found_menu = account_menu(&mut found, chatgpt_login());
+
+        assert_eq!(
+            own_menu,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                is_hidden: false,
+                has_own_login: true,
+            })
+        );
+        assert_eq!(
+            found_menu,
+            MenuViewModel::Account(AccountMenuViewModel {
+                place: place(),
+                is_hidden: false,
+                has_own_login: false,
             })
         );
     }
@@ -590,6 +631,7 @@ mod tests {
             MenuViewModel::Account(AccountMenuViewModel {
                 place: place(),
                 is_hidden: true,
+                has_own_login: false,
             })
         );
         assert_eq!(
