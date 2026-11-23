@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 use iced::widget::svg;
-use otty_agents::ProviderRef;
+use otty_agents::{ProviderRef, Registry};
 
 /// The second-level labels under which a country's domains are
 /// registered, such as `co` of `example.co.uk`.
@@ -31,6 +31,18 @@ impl EntryIcon {
         match icon {
             Some(icon) => Self::Svg(icon.clone()),
             None => Self::Letter(name.to_string()),
+        }
+    }
+
+    /// The icon of `provider` as `registry` gives it: the logo of its
+    /// entry, else a letter.
+    pub(crate) fn of_provider(
+        registry: &Registry,
+        provider: &ProviderRef,
+    ) -> Self {
+        match registry.provider_of(provider) {
+            Some(entry) => Self::of(entry.icon(), entry.name()),
+            None => Self::of_unserved(provider),
         }
     }
 

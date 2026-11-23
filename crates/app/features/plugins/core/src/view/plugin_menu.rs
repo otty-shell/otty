@@ -12,14 +12,15 @@ use crate::event::PluginsIntent;
 use crate::model::PluginMenuViewModel;
 
 /// Render the menu of a plugin at the pointer, kept inside the main area.
-/// A press away from it closes it.
+/// A press away from it reaches what lies under it, and the frame closes
+/// the menu.
 pub(crate) fn view<'a>(
     vm: PluginMenuViewModel,
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
     let place = vm.place;
 
-    context_menu(menu(vm, palette), place, PluginsIntent::CloseMenu)
+    context_menu(menu(vm, palette), place)
 }
 
 /// Reload for a local plugin or Check for updates for one from a
@@ -185,16 +186,16 @@ mod tests {
         assert!(matches!(sent_one(&log), PluginsIntent::ShowLog(_)));
     }
 
-    /// A press away from the menu closes it.
+    /// A press away from the menu sends nothing of the menu: it reaches
+    /// what lies under it, and the frame closes the menu.
     #[test]
-    fn a_press_outside_the_menu_closes_it() {
+    fn a_press_outside_the_menu_sends_nothing_of_it() {
         let palette = UiPalette::otty_dark();
         let mut ui = simulator(view(menu_of(false, false), &palette));
 
         ui.point_at(Point::new(900.0, 700.0));
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let intents: Vec<PluginsIntent> = ui.into_messages().collect();
-        assert!(matches!(intents.as_slice(), [PluginsIntent::CloseMenu]));
+        assert_eq!(ui.into_messages().count(), 0);
     }
 }

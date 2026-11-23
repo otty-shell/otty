@@ -11,6 +11,7 @@
 use iced::widget::{Column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
 use otty_app_i18n::{self as i18n, Key};
+use otty_app_theme::icons;
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
@@ -23,7 +24,8 @@ use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
+    AccountLabel, UsageBlockViewModel, UsageListsViewModel,
+    UsageTableRowViewModel,
 };
 use super::super::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
 use super::{blocks, money};
@@ -45,15 +47,6 @@ pub(super) fn view<'a>(
     let mut block = Column::new()
         .spacing(blocks::TITLE_GAP)
         .push(title_row(&vm, palette));
-    let money_reason = vm
-        .lists
-        .as_ref()
-        .and_then(|lists| lists.money_reason.as_deref());
-    if let Some(reason) = money_reason {
-        let line = i18n::filled(Key::TplAgentsMoneyOff, &[("reason", reason)]);
-        block = block.push(small_text(line, palette.text_muted()));
-    }
-
     if !vm.bars.is_empty() {
         block = block.push(bars(&vm, palette)).push(tabs(&vm, palette));
         if let Some(reason) = &vm.account_reason {
@@ -150,8 +143,8 @@ fn period_list<'a>(
 }
 
 /// The measure drop-down of a popup, whose list of the measures opens
-/// under it. Picking Money while it is off changes nothing: the reason
-/// shows under the title.
+/// under it. Money while it is off can not be picked and says why on
+/// hover.
 fn measure_list<'a>(
     vm: &UsageBlockViewModel,
     lists: &UsageListsViewModel,
@@ -159,7 +152,15 @@ fn measure_list<'a>(
 ) -> Element<'a, AgentsIntent> {
     let options = UsageMeasure::ALL
         .iter()
-        .map(|measure| NoteSelectOption::new(measure.label()))
+        .map(|measure| {
+            let option = NoteSelectOption::new(measure.label());
+            match (*measure, &lists.money_reason) {
+                (UsageMeasure::Money, Some(reason)) => {
+                    option.disabled_reason(reason.as_str())
+                },
+                _ => option,
+            }
+        })
         .collect();
     let picked = UsageMeasure::ALL
         .iter()
@@ -288,8 +289,9 @@ fn cells(
     tab: UsageTab,
     is_stale: bool,
 ) -> Vec<TableCell> {
-    let name = match tab {
-        UsageTab::ByModel => TableCell::mono(row.name.clone()),
+    let name = match (tab, &row.account) {
+        (UsageTab::ByModel, _) => TableCell::mono(row.name.clone()),
+        (_, Some(account)) => account_cell(account),
         _ => TableCell::plain(row.name.clone()),
     };
     let number = |value: &str| {
@@ -301,6 +303,18 @@ fn cells(
     };
 
     vec![name, number(&row.value), number(&row.share)]
+}
+
+/// The name cell of a row of By account, as the chips of an account show
+/// it: the provider's logo and the short name, the whole name in the
+/// tooltip. The table draws only SVG icons, so a provider with none shows
+/// the icon of Agents mode.
+fn account_cell(account: &AccountLabel) -> TableCell {
+    TableCell::icon_text(
+        account.icon.svg_or(icons::MODE_AGENTS),
+        account.name.clone(),
+    )
+    .with_tooltip(account.full_name.clone())
 }
 
 /// The index of the row of the table at `point`, measured from the top of
@@ -354,6 +368,33 @@ mod tests {
             (mark.x + mark.width - WIDTH).abs() < 1.0,
             "the mark ends the row: {mark:?}"
         );
+    }
+
+    /// Owner, 2026-11-23: a row of By account names its account by the
+    /// login alone, as its chips do; the whole name is its tooltip.
+    #[test]
+    fn a_row_by_account_shows_the_login_and_the_whole_name_on_hover() {
+        let themes = ThemeManager::new();
+        let row = UsageTableRowViewModel {
+            name: String::from("Anthropic · dev@example.com"),
+            account: Some(crate::model::AccountLabel {
+                icon: crate::testing::provider_icon("anthropic"),
+                name: String::from("dev@example.com"),
+                full_name: String::from("Anthropic · dev@example.com"),
+            }),
+            value: String::from("50"),
+            share: String::from("100 %"),
+        };
+        let vm = UsageBlockViewModel {
+            tab: UsageTab::ByAccount,
+            rows: vec![row],
+            ..usage_block()
+        };
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        ui.find("dev@example.com").expect("the login shows");
+        assert!(ui.find("Anthropic · dev@example.com").is_err());
     }
 
     #[test]

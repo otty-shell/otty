@@ -1005,11 +1005,13 @@ mod tests {
             [
                 UsageTableRowViewModel {
                     name: String::from("Claude Code"),
+                    account: None,
                     value: String::from("1M"),
                     share: String::from("100 %"),
                 },
                 UsageTableRowViewModel {
                     name: String::from("Codex"),
+                    account: None,
                     value: String::from("2K"),
                     share: String::from("0 %"),
                 },

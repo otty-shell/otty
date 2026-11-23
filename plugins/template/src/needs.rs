@@ -25,15 +25,15 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "en",
         "Nobody is logged in with this config folder. The agent logs in in \
-         a terminal tab; refresh once it is done.",
+         a terminal tab. Refresh once it is done.",
     ),
     (
         "zh-CN",
-        "没有人使用此配置文件夹登录。智能体会在终端标签页中登录；完成后请刷新。",
+        "没有人使用此配置文件夹登录。智能体会在终端标签页中登录。完成后请刷新。",
     ),
     (
         "zh-TW",
-        "沒有人以此設定資料夾登入。代理會在終端機分頁中登入；完成後請重新整理。",
+        "沒有人以此設定資料夾登入。代理會在終端機分頁中登入。完成後請重新整理。",
     ),
     (
         "ja",
@@ -48,27 +48,27 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "fr",
         "Personne n’est connecté avec ce dossier de configuration. L’agent \
-         se connecte dans un onglet de terminal ; actualisez ensuite.",
+         se connecte dans un onglet de terminal. Actualisez ensuite.",
     ),
     (
         "de",
         "Mit diesem Konfigurationsordner ist niemand angemeldet. Der Agent \
-         meldet sich in einem Terminal-Tab an; danach aktualisieren.",
+         meldet sich in einem Terminal-Tab an. Danach aktualisieren.",
     ),
     (
         "es",
         "Nadie ha iniciado sesión con esta carpeta de configuración. El \
-         agente inicia sesión en una pestaña de terminal; después, actualiza.",
+         agente inicia sesión en una pestaña de terminal. Después, actualiza.",
     ),
     (
         "pt-BR",
         "Ninguém entrou com esta pasta de configuração. O agente faz login \
-         em uma aba de terminal; depois, atualize.",
+         em uma aba de terminal. Depois, atualize.",
     ),
     (
         "ru",
         "С этой папкой настроек никто не вошёл. Агент выполнит вход во \
-         вкладке терминала; после этого обновите.",
+         вкладке терминала. После этого обновите.",
     ),
 ];
 
@@ -91,16 +91,16 @@ const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
     (
         "en",
         "The provider refused the login of this config folder, or it \
-         expired. The agent logs in again in a terminal tab; refresh once \
+         expired. The agent logs in again in a terminal tab. Refresh once \
          it is done.",
     ),
     (
         "zh-CN",
-        "提供方拒绝了此配置文件夹的登录，或登录已过期。智能体会在终端标签页中重新登录；完成后请刷新。",
+        "提供方拒绝了此配置文件夹的登录，或登录已过期。智能体会在终端标签页中重新登录。完成后请刷新。",
     ),
     (
         "zh-TW",
-        "提供者拒絕了此設定資料夾的登入，或登入已過期。代理會在終端機分頁中重新登入；完成後請重新整理。",
+        "提供者拒絕了此設定資料夾的登入，或登入已過期。代理會在終端機分頁中重新登入。完成後請重新整理。",
     ),
     (
         "ja",
@@ -115,31 +115,31 @@ const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
     (
         "fr",
         "Le fournisseur a refusé la connexion de ce dossier de configuration, \
-         ou elle a expiré. L’agent se reconnecte dans un onglet de terminal ; \
-         actualisez ensuite.",
+         ou elle a expiré. L’agent se reconnecte dans un onglet de terminal. \
+         Actualisez ensuite.",
     ),
     (
         "de",
         "Der Anbieter hat die Anmeldung dieses Konfigurationsordners \
          abgelehnt, oder sie ist abgelaufen. Der Agent meldet sich in einem \
-         Terminal-Tab erneut an; danach aktualisieren.",
+         Terminal-Tab erneut an. Danach aktualisieren.",
     ),
     (
         "es",
         "El proveedor rechazó el inicio de sesión de esta carpeta de \
          configuración, o caducó. El agente vuelve a iniciar sesión en una \
-         pestaña de terminal; después, actualiza.",
+         pestaña de terminal. Después, actualiza.",
     ),
     (
         "pt-BR",
         "O provedor recusou o login desta pasta de configuração, ou ele \
-         expirou. O agente entra novamente em uma aba de terminal; depois, \
+         expirou. O agente entra novamente em uma aba de terminal. Depois, \
          atualize.",
     ),
     (
         "ru",
         "Провайдер отклонил вход этой папки настроек, или срок входа истёк. \
-         Агент войдёт снова во вкладке терминала; после этого обновите.",
+         Агент войдёт снова во вкладке терминала. После этого обновите.",
     ),
 ];
 
@@ -578,6 +578,31 @@ mod tests {
             let tags: Vec<&str> = texts.iter().map(|(tag, _)| *tag).collect();
 
             assert_eq!(tags, LANGUAGES);
+        }
+    }
+
+    /// Owner, 2026-11-22: the words of the plugin take commas or a new
+    /// sentence, never a semicolon.
+    #[test]
+    fn no_text_holds_a_semicolon() {
+        for texts in [
+            NOT_LOGGED_IN_TITLE,
+            NOT_LOGGED_IN_TEXT,
+            LOGIN_REFUSED_TITLE,
+            LOGIN_REFUSED_TEXT,
+            NEW_KEY_TITLE,
+            NEW_KEY_TEXT,
+            REPLACE_KEY_TEXT,
+            KEY_LABEL,
+            KEY_HINT,
+            BILL_KEY_TITLE,
+            BILL_KEY_TEXT,
+            BILL_KEY_LABEL,
+            BILL_KEY_HINT,
+        ] {
+            for (tag, text) in texts {
+                assert!(!text.contains([';', '\u{ff1b}']), "{tag}: {text}");
+            }
         }
     }
 

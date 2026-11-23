@@ -95,4 +95,28 @@ pub(crate) enum AppEvent {
     /// The system resizes the window on macOS, so it has no grips.
     #[cfg(not(target_os = "macos"))]
     ResizeWindow(Direction),
+    /// An event sent from inside an open menu: one of its items, or a
+    /// hover or a scroll on it. The view marks every message of a menu
+    /// so, and the input checks let it reach the menu without knowing
+    /// its items.
+    FromMenu(Box<AppEvent>),
+    /// A press of any mouse button that no widget took, such as one on an
+    /// empty part of the window: it closes the open menus.
+    PressedAway,
+}
+
+impl AppEvent {
+    /// Marks `event` as sent from inside an open menu.
+    pub(crate) fn from_menu(event: AppEvent) -> Self {
+        Self::FromMenu(Box::new(event))
+    }
+
+    /// The event without the mark of a menu, as its feature gets it.
+    #[cfg(test)]
+    pub(crate) fn unmarked(self) -> AppEvent {
+        match self {
+            Self::FromMenu(event) => *event,
+            event => event,
+        }
+    }
 }

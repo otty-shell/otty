@@ -16,6 +16,7 @@ use iced::{Element, Length};
 use otty_app_domain::mode::Mode;
 use otty_app_i18n as i18n;
 use otty_app_modes::ModesIntent;
+use otty_app_slots::{Overlay, OverlayKind};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
@@ -27,6 +28,23 @@ use crate::frame::sidebar::SidebarIntent;
 use crate::frame::sidebar::types::{HeaderMenu, OpenHeaderMenu};
 use crate::layout;
 use crate::message::AppEvent;
+
+/// The element of `overlay`, its messages turned into app events by
+/// `to_event`. Every message of a menu is marked as sent from inside the
+/// open menu ([`AppEvent::FromMenu`]), so the input checks let it reach the
+/// menu without listing its items.
+pub(crate) fn overlay_layer<'a, Message: 'a>(
+    overlay: Overlay<'a, Message>,
+    to_event: impl Fn(Message) -> AppEvent + 'a,
+) -> Element<'a, AppEvent> {
+    let kind = overlay.kind();
+    let content = overlay.into_content().map(to_event);
+
+    match kind {
+        OverlayKind::Menu => content.map(AppEvent::from_menu),
+        _ => content,
+    }
+}
 
 /// Lay `overlay` out in the main area of a layer over the whole window:
 /// under the header and over the status bar. It gets the size of the main
@@ -44,7 +62,7 @@ pub(crate) fn over_main_area(
 /// The open menu of a section header, at the point where it was opened
 /// and kept inside the main area: the New session and Launches menus of
 /// Terminal mode, or the Add plugin menu of Plugins mode. A press away
-/// from it closes it.
+/// from it closes it (see [`AppEvent::PressedAway`]).
 pub(crate) fn header_menu<'a>(
     app: &'a App,
     open: OpenHeaderMenu,
@@ -56,11 +74,11 @@ pub(crate) fn header_menu<'a>(
         HeaderMenu::AddPlugin => plugins::add_menu(app, theme),
     };
 
-    let layer = context_menu(
+    let layer = Element::from(context_menu(
         items,
         MenuPlace::new(open.cursor(), app.screen_size),
-        AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
-    );
+    ))
+    .map(AppEvent::from_menu);
 
     // The layer covers the main area, so it reports where the pointer is
     // in place of the main area: the next menu opens at the right spot.

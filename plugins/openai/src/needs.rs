@@ -10,7 +10,7 @@ use otty_plugin_sdk::{Command, KeyAsk, Need, NeedAction};
 /// The slot the admin key is given under: the part's own name for it.
 pub(crate) const ADMIN_SLOT: &str = "admin";
 
-/// What an OpenAI admin key starts with; a project or user key does not.
+/// What an OpenAI admin key starts with. A project or user key does not.
 pub(crate) const ADMIN_PREFIX: &str = "sk-admin-";
 
 /// The page where the owner of an OpenAI organization makes an admin key.
@@ -42,15 +42,15 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "en",
         "Nobody is logged in with this config folder. {agent} logs in in a \
-         terminal tab; refresh once it is done.",
+         terminal tab. Refresh once it is done.",
     ),
     (
         "zh-CN",
-        "没有人使用此配置文件夹登录。{agent} 会在终端标签页中登录；完成后请刷新。",
+        "没有人使用此配置文件夹登录。{agent} 会在终端标签页中登录。完成后请刷新。",
     ),
     (
         "zh-TW",
-        "沒有人以此設定資料夾登入。{agent} 會在終端機分頁中登入；完成後請重新整理。",
+        "沒有人以此設定資料夾登入。{agent} 會在終端機分頁中登入。完成後請重新整理。",
     ),
     (
         "ja",
@@ -65,27 +65,27 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "fr",
         "Personne n’est connecté avec ce dossier de configuration. {agent} \
-         se connecte dans un onglet de terminal ; actualisez ensuite.",
+         se connecte dans un onglet de terminal. Actualisez ensuite.",
     ),
     (
         "de",
         "Mit diesem Konfigurationsordner ist niemand angemeldet. {agent} \
-         meldet sich in einem Terminal-Tab an; danach aktualisieren.",
+         meldet sich in einem Terminal-Tab an. Danach aktualisieren.",
     ),
     (
         "es",
         "Nadie ha iniciado sesión con esta carpeta de configuración. {agent} \
-         inicia sesión en una pestaña de terminal; después, actualiza.",
+         inicia sesión en una pestaña de terminal. Después, actualiza.",
     ),
     (
         "pt-BR",
         "Ninguém entrou com esta pasta de configuração. O {agent} faz login \
-         em uma aba de terminal; depois, atualize.",
+         em uma aba de terminal. Depois, atualize.",
     ),
     (
         "ru",
         "С этой папкой настроек никто не вошёл. {agent} выполнит вход во \
-         вкладке терминала; после этого обновите.",
+         вкладке терминала. После этого обновите.",
     ),
 ];
 
@@ -491,6 +491,28 @@ mod tests {
             let tags: Vec<&str> = texts.iter().map(|(tag, _)| *tag).collect();
 
             assert_eq!(tags, LANGUAGES);
+        }
+    }
+
+    /// Owner, 2026-11-22: the words of the plugin take commas or a new
+    /// sentence, never a semicolon.
+    #[test]
+    fn no_text_holds_a_semicolon() {
+        for texts in [
+            NOT_LOGGED_IN_TITLE,
+            NOT_LOGGED_IN_TEXT,
+            LOGIN_EXPIRED_TITLE,
+            LOGIN_EXPIRED_TEXT,
+            BILL_KEY_TITLE,
+            BILL_KEY_TEXT,
+            NEW_BILL_KEY_TITLE,
+            NEW_BILL_KEY_TEXT,
+            BILL_KEY_LABEL,
+            BILL_KEY_HINT,
+        ] {
+            for (tag, text) in texts {
+                assert!(!text.contains([';', '\u{ff1b}']), "{tag}: {text}");
+            }
         }
     }
 

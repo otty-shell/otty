@@ -5,19 +5,21 @@ use iced::widget::{button, row, svg, text};
 use iced::{Alignment, Border, Element, Length, Padding};
 
 use super::floating_list::{FloatingList, open_list};
-use super::{field_chrome, glyph, menu};
+use super::tooltip::tooltip;
+use super::{faded, field_chrome, glyph, menu};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
 /// Edge of the caret after the picked option.
 const CARET_SIZE: f32 = 12.0;
 
-/// One option of a [`NoteSelect`]: its label and an optional note shown
-/// after it, muted.
+/// One option of a [`NoteSelect`]: its label, an optional note shown
+/// after it, muted, and why it can not be picked, if it can not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteSelectOption {
     label: String,
     note: Option<String>,
+    disabled_reason: Option<String>,
 }
 
 impl NoteSelectOption {
@@ -26,12 +28,28 @@ impl NoteSelectOption {
         Self {
             label: label.into(),
             note: None,
+            disabled_reason: None,
         }
     }
 
     /// The same option with `note` after its label.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
+        self
+    }
+
+    /// The same option off: it is drawn faded, a press on it sends
+    /// nothing, and `reason` shows as the kit's tooltip while the pointer
+    /// is over it.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::note_select::NoteSelectOption;
+    ///
+    /// let money =
+    ///     NoteSelectOption::new("Money").disabled_reason("No price per request");
+    /// ```
+    pub fn disabled_reason(mut self, reason: impl Into<String>) -> Self {
+        self.disabled_reason = Some(reason.into());
         self
     }
 }
@@ -200,26 +218,30 @@ fn field_view<'a, Message: Clone + 'a>(
 }
 
 /// The rows of the open list: each option with its note, and what a press
-/// on it sends.
+/// on it sends. An option that is off sends nothing and says why on
+/// hover.
 fn option_rows<'a, Message: 'a>(
     options: Vec<NoteSelectOption>,
     on_pick: Option<&(dyn Fn(usize) -> Message + 'a)>,
     palette: &UiPalette,
 ) -> Vec<(Element<'a, Message>, Option<Message>)> {
     let muted = palette.text_muted();
+    let off = faded(palette.text_body());
 
     options
         .into_iter()
         .enumerate()
         .map(|(index, option)| {
-            let mut content = row![
-                text(option.label)
-                    .size(menu::ITEM_TEXT_SIZE)
-                    .font(fonts::UI)
-                    .width(Length::Fill)
-            ]
-            .spacing(spacing::SPACE_3)
-            .align_y(Alignment::Center);
+            let mut label = text(option.label)
+                .size(menu::ITEM_TEXT_SIZE)
+                .font(fonts::UI)
+                .width(Length::Fill);
+            if option.disabled_reason.is_some() {
+                label = label.color(off);
+            }
+            let mut content = row![label]
+                .spacing(spacing::SPACE_3)
+                .align_y(Alignment::Center);
             if let Some(note) = option.note {
                 content = content.push(
                     text(note)
@@ -229,7 +251,10 @@ fn option_rows<'a, Message: 'a>(
                 );
             }
 
-            (content.into(), on_pick.map(|on_pick| on_pick(index)))
+            match option.disabled_reason {
+                Some(reason) => (tooltip(content, reason, palette), None),
+                None => (content.into(), on_pick.map(|on_pick| on_pick(index))),
+            }
         })
         .collect()
 }
@@ -262,6 +287,8 @@ mod tests {
     use iced_test::simulator;
 
     use super::*;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -330,6 +357,53 @@ mod tests {
 
         let sent: Vec<Message> = ui.into_messages().collect();
         assert_eq!(sent, vec![Message::Picked(1)]);
+    }
+
+    /// An open list of Tokens and Money, Money off for `reason`.
+    fn money_off(reason: &'static str) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let palette = UiPalette::otty_dark();
+            let options = vec![
+                NoteSelectOption::new("Tokens"),
+                NoteSelectOption::new("Money").disabled_reason(reason),
+            ];
+
+            let field = NoteSelect::new(options, Some(0), &palette)
+                .open(true)
+                .on_toggle(())
+                .on_pick(|_| ());
+
+            iced::widget::container(field).width(160.0).into()
+        }
+    }
+
+    /// Issue 42: an option that can not be picked sends nothing and says
+    /// why in the kit's tooltip while the pointer is over it.
+    #[test]
+    fn an_option_that_is_off_sends_nothing_and_says_why_on_hover() {
+        let folder = TempDir::new("note-select-off");
+        let hovered = folder.path().join("hovered");
+        let window = iced::Size::new(400.0, 300.0);
+        let mut ui = simulator(money_off("No prices")());
+        let money = ui.find("Money").expect("Money should be listed").bounds();
+        let over = Some(money.center());
+
+        ui.click("Money").expect("Money should be listed");
+        let sent: Vec<()> = ui.into_messages().collect();
+        assert!(
+            draws(&money_off("No prices"), window, over, &hovered),
+            "save"
+        );
+
+        assert!(sent.is_empty(), "{sent:?}");
+        assert!(
+            !draws(&money_off("Paid by a plan"), window, over, &hovered),
+            "the reason shows under the pointer"
+        );
+        assert!(
+            !draws(&money_off("No prices"), window, None, &hovered),
+            "the reason shows only under the pointer"
+        );
     }
 
     /// A list of `count` options, `Option 00` and on, the one at

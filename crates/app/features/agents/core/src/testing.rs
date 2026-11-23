@@ -1064,11 +1064,13 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
         rows: vec![
             UsageTableRowViewModel {
                 name: String::from("gpt-5.5-codex"),
+                account: None,
                 value: String::from("100"),
                 share: String::from("52 %"),
             },
             UsageTableRowViewModel {
                 name: String::from("gpt-5.4"),
+                account: None,
                 value: String::from("91"),
                 share: String::from("48 %"),
             },

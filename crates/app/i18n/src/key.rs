@@ -1570,8 +1570,6 @@ pub enum Key {
     AgentsMoneySubscription,
     /// Why the usage can not be shown in money before the list prices are read.
     AgentsMoneyNoPrices,
-    /// Under the measure menu: why Money is off. Placeholder: `{reason}`.
-    TplAgentsMoneyOff,
     /// Under the tabs of the usage block: why By account is off. Placeholder: `{reason}`.
     TplAgentsByAccountOff,
     /// Why the usage can not be split by account. Placeholders: `{agent}`, `{count}`, `{provider}`.
@@ -2046,7 +2044,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 957] = [
+    pub(super) const ALL: [Self; 956] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2772,7 +2770,6 @@ impl Key {
         Self::AgentsColumnShare,
         Self::AgentsMoneySubscription,
         Self::AgentsMoneyNoPrices,
-        Self::TplAgentsMoneyOff,
         Self::TplAgentsByAccountOff,
         Self::TplAgentsAccountsNotTold,
         Self::TplAgentsNoSessionsYet,

@@ -699,6 +699,24 @@ mod tests {
         }
     }
 
+    /// Owner, 2026-11-22: sentences of the UI words take commas or a new
+    /// sentence, never a semicolon, also not the full-width one of Chinese
+    /// and Japanese.
+    #[test]
+    fn no_text_of_any_locale_holds_a_semicolon() {
+        for locale in Locale::ALL {
+            for key in Key::ALL {
+                let text = text_in(locale, key);
+
+                assert!(
+                    !text.contains([';', '；']),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
     #[test]
     fn given_chinese_tags_when_parsed_then_script_selects_the_variant() {
         assert_eq!(Locale::from_tag("zh_CN.UTF-8"), Locale::ZhCn);

@@ -394,6 +394,24 @@ impl<Message: Clone> overlay::Overlay<Message, Theme, Renderer>
         }
     }
 
+    /// The overlays of the rows, such as the tooltip of an option that is
+    /// off.
+    fn overlay<'c>(
+        &'c mut self,
+        layout: Layout<'c>,
+        renderer: &Renderer,
+    ) -> Option<overlay::Element<'c, Message, Theme, Renderer>> {
+        let bounds = layout.bounds();
+
+        self.list.as_widget_mut().overlay(
+            self.tree,
+            layout,
+            renderer,
+            &bounds,
+            Vector::ZERO,
+        )
+    }
+
     fn mouse_interaction(
         &self,
         layout: Layout<'_>,

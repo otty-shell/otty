@@ -28,6 +28,9 @@ const THIRTY_DAYS: usize = 30;
 pub(crate) struct UsageGroup {
     /// The name of the row, such as "otty" or "example-large".
     pub(crate) name: String,
+    /// The account of a row of By account; `None` for the tokens no
+    /// account paid and on the other tabs.
+    pub(crate) account: Option<Account>,
     /// Its value at each point, oldest first: tokens, or micro-dollars.
     pub(crate) values: Vec<u64>,
 }
@@ -144,8 +147,8 @@ pub(crate) fn group_usage(
                     continue;
                 }
 
-                let name = name_of(part, tab, source, &accounts, input);
-                add_to(&mut groups, name, offset + index, value, count);
+                let row = row_of(part, tab, source, &accounts, input);
+                add_to(&mut groups, row, offset + index, value, count);
             }
         }
     }
@@ -177,20 +180,22 @@ pub(crate) fn money_is_estimate(
         })
 }
 
-/// Adds `value` at the point `index` to the row `name` of `groups`, a new
-/// row of `count` points when there is none yet.
+/// Adds `value` at the point `index` to the row named as `row` of
+/// `groups`, a new row of `count` points when there is none yet.
 fn add_to(
     groups: &mut Vec<UsageGroup>,
-    name: String,
+    row: (String, Option<Account>),
     index: usize,
     value: u64,
     count: usize,
 ) {
+    let (name, account) = row;
     let position = match groups.iter().position(|group| group.name == name) {
         Some(found) => found,
         None => {
             groups.push(UsageGroup {
                 name,
+                account,
                 values: vec![0; count],
             });
             groups.len() - 1
@@ -222,18 +227,19 @@ fn shown_accounts(
         .collect()
 }
 
-/// The name of the row of `tab` that `part` of `source` counts in: its
-/// project folder, its profile, its model, or the account of `accounts`,
-/// those of the source the user did not hide, that paid for it, else "no
-/// account". A project or a model the files did not name is "—".
-fn name_of(
+/// The name of the row of `tab` that `part` of `source` counts in, with
+/// its account on By account: its project folder, its profile, its
+/// model, or the account of `accounts`, those of the source the user did
+/// not hide, that paid for it, else "no account". A project or a model
+/// the files did not name is "—".
+fn row_of(
     part: &ProjectModelTokens,
     tab: UsageTab,
     source: &UsageSource<'_>,
     accounts: &[Account],
     input: &UsageInput<'_>,
-) -> String {
-    match tab {
+) -> (String, Option<Account>) {
+    let name = match tab {
         UsageTab::ByProject => part.project().map_or_else(
             || String::from(UNKNOWN),
             |folder| folder_name(folder, Some(input.home)),
@@ -242,16 +248,22 @@ fn name_of(
         UsageTab::ByModel => {
             part.tokens().model().unwrap_or(UNKNOWN).to_string()
         },
-        UsageTab::ByAccount => accounts
-            .iter()
-            .find(|account| {
+        _ => {
+            let paid = accounts.iter().find(|account| {
                 account.pays_for(part.tokens(), accounts, input.registry)
-            })
-            .map_or_else(
-                || i18n::t(Key::AgentsNoAccount).to_string(),
-                |account| account_name(input.registry, input.saved, account),
-            ),
-    }
+            });
+
+            return match paid {
+                Some(account) => (
+                    account_name(input.registry, input.saved, account),
+                    Some(account.clone()),
+                ),
+                None => (i18n::t(Key::AgentsNoAccount).to_string(), None),
+            };
+        },
+    };
+
+    (name, None)
 }
 
 /// The value of `tokens` in `measure`: all its tokens, or what they cost
@@ -413,6 +425,7 @@ mod tests {
     fn group(name: &str, values: &[u64]) -> UsageGroup {
         UsageGroup {
             name: String::from(name),
+            account: None,
             values: values.to_vec(),
         }
     }
@@ -536,8 +549,10 @@ mod tests {
         );
 
         assert_eq!(groups[0].name, "Anthropic · you@example.com");
+        assert_eq!(groups[0].account, Some(claude_max()));
         assert_eq!(groups[0].values[9], 16);
         assert_eq!(groups[1].name, i18n::t(Key::AgentsNoAccount));
+        assert_eq!(groups[1].account, None);
         assert_eq!(groups[1].values[10], 3);
     }
 

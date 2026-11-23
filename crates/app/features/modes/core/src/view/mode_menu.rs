@@ -1,7 +1,7 @@
 //! The All modes menu, opened by the "⋯" button of the mode switcher.
 
-use iced::widget::{Space, container, mouse_area, opaque, stack, svg};
-use iced::{Element, Length, Padding, alignment, mouse};
+use iced::widget::{container, opaque, svg};
+use iced::{Element, Length, Padding, alignment};
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons::mode_icon;
@@ -72,17 +72,9 @@ pub(crate) fn view<'a>(props: ModeMenuProps<'a>) -> Element<'a, ModesIntent> {
         .align_x(alignment::Horizontal::Left)
         .align_y(alignment::Vertical::Top);
 
-    let dismiss_layer =
-        mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(ModesIntent::CloseMenu)
-            .on_right_press(ModesIntent::CloseMenu)
-            .on_middle_press(ModesIntent::CloseMenu)
-            .interaction(mouse::Interaction::Idle);
-
-    stack![dismiss_layer, positioned]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    // A press away from the menu reaches what lies under it; the frame
+    // closes the menu then.
+    positioned.into()
 }
 
 /// One menu row: pressing the name selects the mode.
@@ -221,25 +213,21 @@ mod tests {
         });
     }
 
+    /// A press away from the menu sends nothing of the menu: it reaches
+    /// what lies under it, and the frame closes the menu.
     #[test]
-    fn a_click_outside_the_menu_closes_it() {
-        let intents = drive(&ModesState::default(), |ui| {
+    fn a_press_outside_the_menu_sends_nothing_of_it() {
+        let left = drive(&ModesState::default(), |ui| {
             ui.point_at(Point::new(700.0, 600.0));
             let _ = ui.simulate(iced_test::simulator::click());
         });
-
-        assert!(matches!(intents.as_slice(), [ModesIntent::CloseMenu]));
-    }
-
-    /// A middle press away from the menu closes it, as a left press does.
-    #[test]
-    fn a_middle_press_outside_the_menu_closes_it() {
-        let intents = drive(&ModesState::default(), |ui| {
+        let middle = drive(&ModesState::default(), |ui| {
             ui.point_at(Point::new(700.0, 600.0));
             let _ = ui.simulate(middle_click());
         });
 
-        assert!(matches!(intents.as_slice(), [ModesIntent::CloseMenu]));
+        assert!(left.is_empty(), "{left:?}");
+        assert!(middle.is_empty(), "{middle:?}");
     }
 
     #[test]

@@ -421,7 +421,9 @@ mod tests {
         ] {
             let _ = crate::update::update_input(
                 app,
-                AppEvent::Palette(PaletteIntent::Action(action)),
+                AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
+                    action,
+                ))),
             );
         }
     }

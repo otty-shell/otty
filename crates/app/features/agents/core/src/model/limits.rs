@@ -545,7 +545,7 @@ mod tests {
             Some(i18n::with_error(
                 Key::TplAgentsLimitsNotAvailable,
                 &format!(
-                    "{}: The login expired; {}: not available: claude is not found",
+                    "{}: The login expired · {}: not available: claude is not found",
                     i18n::t(Key::AgentsSourcePlugin),
                     i18n::t(Key::AgentsSourcePlugin)
                 )

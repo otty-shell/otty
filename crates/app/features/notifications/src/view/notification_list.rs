@@ -1,7 +1,7 @@
 //! The notifications list, opened by the bell in the header.
 
-use iced::widget::{Space, container, mouse_area, opaque, stack, svg};
-use iced::{Element, Length, Padding, alignment, mouse};
+use iced::widget::{container, opaque, svg};
+use iced::{Element, Length, Padding, alignment};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
@@ -68,17 +68,9 @@ pub(crate) fn view<'a>(
         .align_x(alignment::Horizontal::Right)
         .align_y(alignment::Vertical::Top);
 
-    let dismiss_layer =
-        mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(NotificationsIntent::CloseList)
-            .on_right_press(NotificationsIntent::CloseList)
-            .on_middle_press(NotificationsIntent::CloseList)
-            .interaction(mouse::Interaction::Idle);
-
-    stack![dismiss_layer, positioned]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    // A press away from the list reaches what lies under it; the frame
+    // closes the list then.
+    positioned.into()
 }
 
 #[cfg(test)]
@@ -243,36 +235,29 @@ mod tests {
         assert!(intents.is_empty());
     }
 
+    /// A press of any button away from the list sends nothing of the
+    /// list: it reaches what lies under it, and the frame closes the list.
     #[test]
-    fn a_click_outside_the_list_closes_it() {
-        let intents = drive(list(&[(0, "disk full", "just now")]), |ui| {
-            ui.point_at(Point::new(200.0, 600.0));
-            let _ = ui.simulate(iced_test::simulator::click());
-        });
+    fn a_press_outside_the_list_sends_nothing_of_it() {
+        let presses: [fn(&mut Simulator<'_, NotificationsIntent>); 3] = [
+            |ui| {
+                let _ = ui.simulate(iced_test::simulator::click());
+            },
+            |ui| {
+                let _ = ui.simulate(middle_click());
+            },
+            |ui| {
+                let _ = ui.simulate(right_click());
+            },
+        ];
 
-        assert!(matches!(
-            intents.as_slice(),
-            [NotificationsIntent::CloseList]
-        ));
-    }
+        for press in presses {
+            let intents = drive(list(&[(0, "disk full", "just now")]), |ui| {
+                ui.point_at(Point::new(200.0, 600.0));
+                press(ui);
+            });
 
-    /// A middle or right press away from the list closes it, as a left
-    /// press does.
-    #[test]
-    fn a_middle_or_right_press_outside_the_list_closes_it() {
-        let middle = drive(list(&[]), |ui| {
-            ui.point_at(Point::new(200.0, 600.0));
-            let _ = ui.simulate(middle_click());
-        });
-        let right = drive(list(&[]), |ui| {
-            ui.point_at(Point::new(200.0, 600.0));
-            let _ = ui.simulate(right_click());
-        });
-
-        assert!(matches!(
-            middle.as_slice(),
-            [NotificationsIntent::CloseList]
-        ));
-        assert!(matches!(right.as_slice(), [NotificationsIntent::CloseList]));
+            assert!(intents.is_empty(), "{intents:?}");
+        }
     }
 }

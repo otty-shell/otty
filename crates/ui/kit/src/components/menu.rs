@@ -3,6 +3,7 @@
 use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Border, Element, Length, Padding, Size, Theme};
 
+use super::tooltip::tooltip;
 use super::{faded, kbd};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
@@ -45,12 +46,15 @@ const SEPARATOR_HEIGHT: f32 =
 
 /// One row of a [`Menu`] that the user can press.
 ///
-/// An item without a message is shown disabled.
+/// An item without a message is shown disabled. A disabled item may say
+/// why in a tooltip while the pointer is over it; a menu has no notes of
+/// its own for that.
 pub struct MenuItem<Message> {
     label: String,
     shortcut: Option<String>,
     active: bool,
     danger: bool,
+    disabled_reason: Option<String>,
     on_press: Option<Message>,
 }
 
@@ -62,6 +66,7 @@ impl<Message> MenuItem<Message> {
             shortcut: None,
             active: false,
             danger: false,
+            disabled_reason: None,
             on_press: None,
         }
     }
@@ -84,6 +89,23 @@ impl<Message> MenuItem<Message> {
         self
     }
 
+    /// Says why the item can not be used now, such as "A key can not be
+    /// renamed yet". The reason shows as the kit's tooltip while the
+    /// pointer is over the item, and only while the item has no message.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::menu::{Menu, MenuItem};
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let menu: Menu<()> = Menu::new(&UiPalette::otty_dark()).item(
+    ///     MenuItem::new("Rename…").disabled_reason("A key can not be renamed"),
+    /// );
+    /// ```
+    pub fn disabled_reason(mut self, reason: impl Into<String>) -> Self {
+        self.disabled_reason = Some(reason.into());
+        self
+    }
+
     /// Sets the message sent on press.
     pub fn on_press(mut self, message: Message) -> Self {
         self.on_press = Some(message);
@@ -100,6 +122,7 @@ impl<Message> MenuItem<Message> {
             shortcut: self.shortcut,
             active: self.active,
             danger: self.danger,
+            disabled_reason: self.disabled_reason,
             on_press: self.on_press.map(to_other),
         }
     }
@@ -285,11 +308,18 @@ pub(super) fn heading_view<'a, Message: 'a>(
     .into()
 }
 
-/// Builds one pressable row.
+/// Builds one pressable row. A disabled row with a reason shows it as a
+/// tooltip under the pointer.
 fn item_view<'a, Message: Clone + 'a>(
     item: MenuItem<Message>,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
+    let reason = if item.on_press.is_none() {
+        item.disabled_reason
+    } else {
+        None
+    };
+
     let mut content = row![
         text(item.label)
             .size(ITEM_TEXT_SIZE)
@@ -303,13 +333,17 @@ fn item_view<'a, Message: Clone + 'a>(
         content = content.push(kbd::kbd(shortcut, palette));
     }
 
-    button(content)
+    let row = button(content)
         .width(Length::Fill)
         .height(size::ROW)
         .padding(Padding::from([0.0, ITEM_PADDING_X]))
         .on_press_maybe(item.on_press)
-        .style(item_style_with(palette, item.active, item.danger))
-        .into()
+        .style(item_style_with(palette, item.active, item.danger));
+
+    match reason {
+        Some(reason) => tooltip(row, reason, palette),
+        None => row.into(),
+    }
 }
 
 /// Like [`item_style`]; a `danger` item uses `text-danger` on
@@ -378,11 +412,14 @@ fn separator_view<'a, Message: 'a>(
 
 #[cfg(test)]
 mod tests {
+    use iced::Point;
     use iced::widget::column;
     use iced_test::simulator;
 
     use super::*;
     use crate::contrast::contrast_ratio;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -465,6 +502,108 @@ mod tests {
         ui.click("Paste").expect("item should be visible");
         let messages: Vec<Option<Message>> = ui.into_messages().collect();
         assert_eq!(messages, [Some(Message::Paste)]);
+    }
+
+    /// A window for a menu and the tooltip of its first item, as
+    /// [`draws`] places them.
+    const MENU_WINDOW: Size = Size::new(400.0, 240.0);
+
+    /// A point on the first item of a menu, from the menu's top left
+    /// corner.
+    const ON_FIRST_ITEM: Point =
+        Point::new(MENU_PADDING + 20.0, MENU_PADDING + size::ROW / 2.0);
+
+    /// A menu of one item, Rename, that sends a message when `is_on`,
+    /// with `reason` as why it is off, if any.
+    fn rename_menu(
+        reason: Option<&'static str>,
+        is_on: bool,
+    ) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let mut item = MenuItem::new("Rename");
+            if let Some(reason) = reason {
+                item = item.disabled_reason(reason);
+            }
+            if is_on {
+                item = item.on_press(());
+            }
+
+            Menu::new(&UiPalette::otty_dark()).item(item).into()
+        }
+    }
+
+    /// Issue 42: a disabled item says why in the kit's tooltip while the
+    /// pointer is over it. iced draws tooltips as overlays that widget
+    /// queries do not reach, so the reason is checked on the drawing.
+    #[test]
+    fn given_disabled_item_with_reason_when_hovered_then_reason_shows() {
+        let folder = TempDir::new("menu-reason");
+        let hovered = folder.path().join("hovered");
+        let over = Some(ON_FIRST_ITEM);
+
+        assert!(
+            draws(
+                &rename_menu(Some("A key"), false),
+                MENU_WINDOW,
+                over,
+                &hovered
+            ),
+            "save"
+        );
+
+        assert!(
+            !draws(
+                &rename_menu(Some("Another reason"), false),
+                MENU_WINDOW,
+                over,
+                &hovered
+            ),
+            "the reason shows under the pointer"
+        );
+        assert!(
+            !draws(
+                &rename_menu(Some("A key"), false),
+                MENU_WINDOW,
+                None,
+                &hovered
+            ),
+            "the tooltip shows only under the pointer"
+        );
+    }
+
+    /// A disabled item with no reason, and an item that can be pressed,
+    /// show no tooltip.
+    #[test]
+    fn given_no_reason_or_item_on_when_hovered_then_no_tooltip_shows() {
+        let folder = TempDir::new("menu-no-reason");
+        let idle = folder.path().join("idle");
+        let lit = folder.path().join("lit");
+        let over = Some(ON_FIRST_ITEM);
+
+        assert!(draws(&rename_menu(None, false), MENU_WINDOW, None, &idle));
+        assert!(draws(&rename_menu(None, true), MENU_WINDOW, over, &lit));
+
+        assert!(
+            draws(&rename_menu(None, false), MENU_WINDOW, over, &idle),
+            "a disabled item with no reason does not change under the pointer"
+        );
+        assert!(
+            draws(&rename_menu(Some("A key"), true), MENU_WINDOW, over, &lit),
+            "an item that can be pressed shows no reason"
+        );
+    }
+
+    #[test]
+    fn given_disabled_item_with_reason_when_pressed_then_nothing_is_sent() {
+        let menu = Menu::new(&UiPalette::otty_dark())
+            .item(MenuItem::new("Rename").disabled_reason("A key"))
+            .item(MenuItem::new("Paste").on_press(Message::Paste));
+        let mut ui = simulator(Element::from(menu));
+
+        ui.click("Rename").expect("item should be visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert!(messages.is_empty(), "{messages:?}");
     }
 
     #[test]

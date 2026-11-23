@@ -18,7 +18,7 @@ use otty_app_terminal::TerminalIntent;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::menu::Menu;
 
-use super::{over_main_area, start_card};
+use super::{over_main_area, overlay_layer, start_card};
 use crate::app::App;
 use crate::frame::sidebar::types::HeaderMenu;
 use crate::frame::sidebar::view::{left_panel, new_session_menu};
@@ -143,19 +143,20 @@ pub(crate) fn overlays<'a>(
     let mut layers = Vec::new();
 
     if let Some(launch_menu) = app.quick_launch.overlay(theme) {
-        layers.push(over_main_area(
-            launch_menu.into_content().map(AppEvent::QuickLaunch),
-        ));
+        layers.push(over_main_area(overlay_layer(
+            launch_menu,
+            AppEvent::QuickLaunch,
+        )));
     }
     if let Some(files_overlay) = app.explorer.overlay(theme) {
-        layers.push(over_main_area(
-            files_overlay.into_content().map(AppEvent::Explorer),
-        ));
+        layers.push(over_main_area(overlay_layer(
+            files_overlay,
+            AppEvent::Explorer,
+        )));
     }
     if let Some(pane_menu) = app.terminal.overlay(theme) {
-        layers.push(over_main_area(
-            pane_menu.into_content().map(AppEvent::Terminal),
-        ));
+        layers
+            .push(over_main_area(overlay_layer(pane_menu, AppEvent::Terminal)));
     }
 
     layers
@@ -310,10 +311,12 @@ mod tests {
             .expect("the menu should show its items");
         let mut dialog = simulator(view(&dialog_app));
 
-        assert!(menu.into_messages().any(|event| matches!(
-            event,
-            AppEvent::Explorer(ExplorerIntent::ContextMenuAction(_))
-        )));
+        assert!(menu.into_messages().map(AppEvent::unmarked).any(|event| {
+            matches!(
+                event,
+                AppEvent::Explorer(ExplorerIntent::ContextMenuAction(_))
+            )
+        }));
         assert!(
             dialog
                 .find(i18n::filled(
@@ -606,26 +609,18 @@ mod tests {
         open_sessions_menu_at(&mut app, Point::new(300.0, 200.0));
 
         let mut ui = simulator(view(&app));
-        ui.point_at(Point::new(900.0, 600.0));
+        let away = Point::new(600.0, 600.0);
+        ui.point_at(away);
+        let _ = ui.simulate([iced::Event::Mouse(
+            iced::mouse::Event::CursorMoved { position: away },
+        )]);
         let _ = ui.simulate(middle_click());
+        let events: Vec<AppEvent> = ui.into_messages().collect();
+        for event in events {
+            let _ = app.update(Message::Input(event));
+        }
 
-        // The layer also reports where the pointer is, and so does the
-        // Files tree under it, which follows the pointer for a drag.
-        let events: Vec<AppEvent> = ui
-            .into_messages()
-            .filter(|event| {
-                !matches!(
-                    event,
-                    AppEvent::Sidebar(
-                        SidebarIntent::WorkspaceCursorMoved { .. }
-                    ) | AppEvent::Explorer(ExplorerIntent::CursorMoved { .. })
-                )
-            })
-            .collect();
-        assert!(matches!(
-            events.as_slice(),
-            [AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss)]
-        ));
+        assert!(!app.sidebar.has_header_menu_open());
     }
 
     /// A middle press on a Sessions row under an open header menu only
@@ -1111,7 +1106,8 @@ mod tests {
         ui.click(i18n::t(Key::CreateFolder))
             .expect("the menu should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuAction(

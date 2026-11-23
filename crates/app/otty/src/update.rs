@@ -18,8 +18,8 @@ use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    files_inline_edit_guard, inline_edit_guard, is_header_menu_choice,
-    is_terminal_input_kept_out, top_overlay,
+    files_inline_edit_guard, inline_edit_guard, is_terminal_input_kept_out,
+    top_overlay,
 };
 use crate::keys::{is_escape_press, shortcut_for_key_press};
 use crate::message::AppEvent;
@@ -66,6 +66,10 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
 /// cancelled an inline edit like any other shortcut.
 fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let top = top_overlay(app);
+    let (event, is_from_menu) = match event {
+        AppEvent::FromMenu(event) => (*event, true),
+        event => (event, false),
+    };
 
     // Keys typed under a menu or a dialog belong to it, even if a terminal
     // still had keyboard focus.
@@ -127,21 +131,26 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         ));
     }
 
-    // A choice in the open header menu closes it and runs.
-    if app.sidebar.has_header_menu_open() && is_header_menu_choice(&event) {
-        pre_dispatch_tasks.push(dispatch::dispatch(
-            app,
-            AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
-        ));
-    } else if top.and_then(Overlay::kind) == Some(OverlayKind::Menu) {
-        match context_menu_guard(&event) {
+    // What the open menu sends reaches it. A choice in a header menu,
+    // which belongs to another feature, closes the header menu and runs.
+    // Input outside the open menu goes through its check.
+    let menu = top.filter(|top| top.kind() == Some(OverlayKind::Menu));
+    match menu {
+        Some(Overlay::HeaderMenu) if is_from_menu => {
+            pre_dispatch_tasks.push(dispatch::dispatch(
+                app,
+                AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
+            ));
+        },
+        Some(menu) if !is_from_menu => match context_menu_guard(menu, &event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
             MenuGuard::Dismiss => return close_all_menus(app),
             MenuGuard::DismissAndRun => {
                 pre_dispatch_tasks.push(close_all_menus(app));
             },
-        }
+        },
+        _ => {},
     }
 
     // A shortcut whose command can not run now (for example Close session
@@ -297,9 +306,9 @@ mod tests {
         open_palette(&mut app);
         let _ = update_input(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(
+            AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
                 PaletteAction::QueryChanged(query.to_string()),
-            )),
+            ))),
         );
         assert!(app.palette.is_open());
         app
@@ -465,7 +474,9 @@ mod tests {
 
         let _save = update_input(
             &mut app,
-            AppEvent::Modes(ModesIntent::Unpin(Mode::Containers)),
+            AppEvent::from_menu(AppEvent::Modes(ModesIntent::Unpin(
+                Mode::Containers,
+            ))),
         );
 
         assert!(app.modes.is_menu_open());
@@ -612,21 +623,21 @@ mod tests {
         assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
     }
 
-    /// The bell is a header button like the panel toggles: under any open
-    /// menu, the list too, it only closes the menus.
+    /// The bell under its open list closes it. Owner, 2026-11-23: under
+    /// another menu it closes that menu and opens the list, with the one
+    /// press.
     #[test]
-    fn the_bell_under_an_open_menu_only_closes_it() {
-        for mut app in [
-            app_with_open_notification_list(),
-            app_with_open_modes_menu(),
-        ] {
-            let _ = update_input(
-                &mut app,
-                AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
-            );
+    fn the_bell_closes_its_list_and_opens_it_under_another_menu() {
+        let mut list = app_with_open_notification_list();
+        let mut modes = app_with_open_modes_menu();
+        let bell = AppEvent::TitleBar(TitleBarIntent::OpenNotifications);
 
-            assert_eq!(top_overlay(&app), None);
-        }
+        let _ = update_input(&mut list, bell.clone());
+        let _ = update_input(&mut modes, bell);
+
+        assert_eq!(top_overlay(&list), None);
+        assert!(!modes.modes.is_menu_open());
+        assert_eq!(top_overlay(&modes), Some(Overlay::NotificationsList));
     }
 
     #[test]
@@ -651,7 +662,9 @@ mod tests {
         // The first notification gets the first id.
         let _ = update_input(
             &mut app,
-            AppEvent::Notifications(NotificationsIntent::Remove(0)),
+            AppEvent::from_menu(AppEvent::Notifications(
+                NotificationsIntent::Remove(0),
+            )),
         );
 
         let mut ui = iced_test::simulator(crate::view::view(&app));
@@ -732,8 +745,10 @@ mod tests {
         assert_eq!(top_overlay(&app), Some(Overlay::Palette));
     }
 
+    /// Owner, 2026-11-23: the palette button under another menu closes it
+    /// and opens the palette, with the one press.
     #[test]
-    fn the_palette_button_under_an_open_menu_only_closes_the_menu() {
+    fn the_palette_button_under_an_open_menu_closes_it_and_opens_the_palette() {
         let mut app = app_with_open_modes_menu();
 
         let _ = update_input(
@@ -742,7 +757,7 @@ mod tests {
         );
 
         assert!(!app.modes.is_menu_open());
-        assert!(!app.palette.is_open());
+        assert!(app.palette.is_open());
     }
 
     /// The palette is a menu, so a press on a header button closes it
@@ -1051,7 +1066,9 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunFirst)),
+            AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
+                PaletteAction::RunFirst,
+            ))),
         );
 
         assert!(!app.palette.is_open());
@@ -1330,11 +1347,13 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Terminal(TerminalIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: iced::widget::pane_grid::Axis::Vertical,
-            }),
+            AppEvent::from_menu(AppEvent::Terminal(
+                TerminalIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: iced::widget::pane_grid::Axis::Vertical,
+                },
+            )),
         );
 
         assert!(!app.sidebar.has_header_menu_open());

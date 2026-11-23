@@ -7,7 +7,7 @@ use iced::Element;
 use otty_app_slots::{MainArea, Overlays, RightPanel, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 
-use super::bar_with_sessions;
+use super::{bar_with_sessions, overlay_layer};
 use crate::app::App;
 use crate::message::AppEvent;
 
@@ -73,7 +73,7 @@ pub(crate) fn overlays<'a>(
 ) -> Vec<Element<'a, AppEvent>> {
     app.containers
         .overlay(theme)
-        .map(|overlay| overlay.into_content().map(AppEvent::Containers))
+        .map(|overlay| overlay_layer(overlay, AppEvent::Containers))
         .into_iter()
         .collect()
 }
@@ -267,8 +267,8 @@ mod tests {
             (),
         );
 
-        // The inspector shows a Start button too, under the menu's dismiss
-        // layer; press the first menu item where the menu opened instead.
+        // The inspector shows a Start button too, under the menu; press
+        // the first menu item where the menu opened instead.
         let first_item = Point::new(
             400.0 + spacing::SPACE_2 + 40.0,
             200.0
@@ -282,7 +282,8 @@ mod tests {
             .expect("menu item should show");
         menu_ui.point_at(first_item);
         let _ = menu_ui.simulate(iced_test::simulator::click());
-        let events: Vec<AppEvent> = menu_ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            menu_ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Containers(ContainersIntent::Actions(

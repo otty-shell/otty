@@ -38,7 +38,8 @@ const MENU_ICON: f32 = 16.0;
 /// Edge of the sort arrow. 12 keeps it on whole pixels at common display
 /// scales and inside the 12px title line.
 const SORT_ARROW: f32 = 12.0;
-/// Edge of the icon of a [`TableCell::IconLink`] (`size={14}`).
+/// Edge of the icon of a [`TableCell::IconLink`] and a
+/// [`TableCell::IconText`] (`size={14}`).
 const CELL_ICON: f32 = 14.0;
 
 /// Message builder for a row press: row index.
@@ -293,6 +294,10 @@ pub enum TableCell {
     /// A small icon in the body color, then a [`TableCell::Link`]: such as
     /// a profile with the icon of its agent. Only the text is pressable.
     IconLink(svg::Handle, String),
+    /// A small icon in the body color, then plain text: such as an
+    /// account with the logo of its provider in a row that is pressed
+    /// whole.
+    IconText(svg::Handle, String),
     /// Another cell with a tooltip, made by [`TableCell::with_tooltip`].
     Tipped(Box<TableCell>, String),
 }
@@ -343,6 +348,18 @@ impl TableCell {
     /// ```
     pub fn icon_link(icon: svg::Handle, label: impl Into<String>) -> Self {
         Self::IconLink(icon, label.into())
+    }
+
+    /// Creates a plain cell with `icon` before its `text`.
+    ///
+    /// ```
+    /// use otty_ui_kit::components::data_table::TableCell;
+    /// use otty_ui_kit::components::glyph;
+    ///
+    /// let account = TableCell::icon_text(glyph::dots(), "you@example.com");
+    /// ```
+    pub fn icon_text(icon: svg::Handle, text: impl Into<String>) -> Self {
+        Self::IconText(icon, text.into())
     }
 
     /// Creates a cell of text and links.
@@ -967,6 +984,19 @@ fn cell_view<'a, Message: Clone + 'a>(
                     .height(CELL_ICON)
                     .style(move |_, _| svg::Style { color: Some(body) });
                 let content = row![icon, link]
+                    .spacing(spacing::SPACE_2)
+                    .align_y(Alignment::Center);
+                return (content.into(), align);
+            },
+            TableCell::IconText(icon, value) => {
+                let icon = svg(icon)
+                    .width(CELL_ICON)
+                    .height(CELL_ICON)
+                    .style(move |_, _| svg::Style { color: Some(body) });
+                let value =
+                    EllipsisText::new(value, TEXT_SIZE, fonts::UI, body)
+                        .align_x(align.text_alignment());
+                let content = row![icon, value]
                     .spacing(spacing::SPACE_2)
                     .align_y(Alignment::Center);
                 return (content.into(), align);
@@ -1780,6 +1810,32 @@ mod tests {
         }
 
         container(table).width(WIDTH).height(120).into()
+    }
+
+    /// A cell with an icon and plain text shows the text, and a press on
+    /// it presses the row.
+    #[test]
+    fn given_icon_text_cell_when_its_text_is_pressed_then_the_row_is_pressed() {
+        let palette = UiPalette::otty_dark();
+        let table = DataTable::new(
+            vec![
+                TableColumn::new("Account", 1),
+                TableColumn::new("Tokens", 1),
+            ],
+            &palette,
+        )
+        .on_row_press(Message::Pressed)
+        .on_link_press(Message::Linked)
+        .row_without_menu(vec![
+            TableCell::icon_text(glyph::dots(), "you@example.com"),
+            TableCell::number("1.2M"),
+        ]);
+        let mut ui = simulator(container(table).width(WIDTH).height(120));
+
+        ui.click("you@example.com").expect("the text is visible");
+
+        let messages: Vec<Message> = ui.into_messages().collect();
+        assert_eq!(messages, vec![Message::Pressed(0)]);
     }
 
     #[test]

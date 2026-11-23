@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "otty-plugin-opencode"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "base64",
  "otty-plugin-sdk",

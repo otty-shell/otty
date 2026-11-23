@@ -25,15 +25,15 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "en",
         "Nobody is logged in with this config folder. OpenCode logs in in a \
-         terminal tab; refresh once it is done.",
+         terminal tab. Refresh once it is done.",
     ),
     (
         "zh-CN",
-        "没有人使用此配置文件夹登录。OpenCode 会在终端标签页中登录；完成后请刷新。",
+        "没有人使用此配置文件夹登录。OpenCode 会在终端标签页中登录。完成后请刷新。",
     ),
     (
         "zh-TW",
-        "沒有人以此設定資料夾登入。OpenCode 會在終端機分頁中登入；完成後請重新整理。",
+        "沒有人以此設定資料夾登入。OpenCode 會在終端機分頁中登入。完成後請重新整理。",
     ),
     (
         "ja",
@@ -48,28 +48,28 @@ const NOT_LOGGED_IN_TEXT: &[(&str, &str)] = &[
     (
         "fr",
         "Personne n’est connecté avec ce dossier de configuration. OpenCode \
-         se connecte dans un onglet de terminal ; actualisez ensuite.",
+         se connecte dans un onglet de terminal. Actualisez ensuite.",
     ),
     (
         "de",
         "Mit diesem Konfigurationsordner ist niemand angemeldet. OpenCode \
-         meldet sich in einem Terminal-Tab an; danach aktualisieren.",
+         meldet sich in einem Terminal-Tab an. Danach aktualisieren.",
     ),
     (
         "es",
         "Nadie ha iniciado sesión con esta carpeta de configuración. \
-         OpenCode inicia sesión en una pestaña de terminal; después, \
+         OpenCode inicia sesión en una pestaña de terminal. Después, \
          actualiza.",
     ),
     (
         "pt-BR",
         "Ninguém entrou com esta pasta de configuração. O OpenCode faz login \
-         em uma aba de terminal; depois, atualize.",
+         em uma aba de terminal. Depois, atualize.",
     ),
     (
         "ru",
         "С этой папкой настроек никто не вошёл. OpenCode выполнит вход во \
-         вкладке терминала; после этого обновите.",
+         вкладке терминала. После этого обновите.",
     ),
 ];
 
@@ -92,15 +92,15 @@ const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
     (
         "en",
         "A provider refused a login OpenCode keeps, or it expired. OpenCode \
-         logs in again in a terminal tab; refresh once it is done.",
+         logs in again in a terminal tab. Refresh once it is done.",
     ),
     (
         "zh-CN",
-        "提供方拒绝了 OpenCode 保存的登录，或登录已过期。OpenCode 会在终端标签页中重新登录；完成后请刷新。",
+        "提供方拒绝了 OpenCode 保存的登录，或登录已过期。OpenCode 会在终端标签页中重新登录。完成后请刷新。",
     ),
     (
         "zh-TW",
-        "提供者拒絕了 OpenCode 保存的登入，或登入已過期。OpenCode 會在終端機分頁中重新登入；完成後請重新整理。",
+        "提供者拒絕了 OpenCode 保存的登入，或登入已過期。OpenCode 會在終端機分頁中重新登入。完成後請重新整理。",
     ),
     (
         "ja",
@@ -115,30 +115,30 @@ const LOGIN_REFUSED_TEXT: &[(&str, &str)] = &[
     (
         "fr",
         "Un fournisseur a refusé une connexion qu’OpenCode garde, ou elle a \
-         expiré. OpenCode se reconnecte dans un onglet de terminal ; \
-         actualisez ensuite.",
+         expiré. OpenCode se reconnecte dans un onglet de terminal. \
+         Actualisez ensuite.",
     ),
     (
         "de",
         "Ein Anbieter hat eine Anmeldung abgelehnt, die OpenCode aufbewahrt, \
          oder sie ist abgelaufen. OpenCode meldet sich in einem Terminal-Tab \
-         erneut an; danach aktualisieren.",
+         erneut an. Danach aktualisieren.",
     ),
     (
         "es",
         "Un proveedor rechazó un inicio de sesión que guarda OpenCode, o \
          caducó. OpenCode vuelve a iniciar sesión en una pestaña de \
-         terminal; después, actualiza.",
+         terminal. Después, actualiza.",
     ),
     (
         "pt-BR",
         "Um provedor recusou um login que o OpenCode guarda, ou ele expirou. \
-         O OpenCode entra novamente em uma aba de terminal; depois, atualize.",
+         O OpenCode entra novamente em uma aba de terminal. Depois, atualize.",
     ),
     (
         "ru",
         "Провайдер отклонил вход, который хранит OpenCode, или срок входа \
-         истёк. OpenCode войдёт снова во вкладке терминала; после этого \
+         истёк. OpenCode войдёт снова во вкладке терминала. После этого \
          обновите.",
     ),
 ];
@@ -195,6 +195,22 @@ mod tests {
             let tags: Vec<&str> = texts.iter().map(|(tag, _)| *tag).collect();
 
             assert_eq!(tags, LANGUAGES);
+        }
+    }
+
+    /// Owner, 2026-11-22: the words of the plugin take commas or a new
+    /// sentence, never a semicolon.
+    #[test]
+    fn no_text_holds_a_semicolon() {
+        for texts in [
+            NOT_LOGGED_IN_TITLE,
+            NOT_LOGGED_IN_TEXT,
+            LOGIN_REFUSED_TITLE,
+            LOGIN_REFUSED_TEXT,
+        ] {
+            for (tag, text) in texts {
+                assert!(!text.contains([';', '\u{ff1b}']), "{tag}: {text}");
+            }
         }
     }
 

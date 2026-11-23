@@ -35,7 +35,7 @@ mod used_by;
 mod user_need;
 mod window_name;
 
-pub(crate) use account_chip::AccountChipViewModel;
+pub(crate) use account_chip::{AccountChipViewModel, AccountLabel};
 pub(crate) use account_name::own_account_name;
 pub(crate) use account_numbers::AccountNumbersViewModel;
 pub(crate) use account_page::AccountPageViewModel;

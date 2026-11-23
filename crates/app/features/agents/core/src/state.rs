@@ -447,10 +447,7 @@ impl AgentsState {
     /// that serves it, else the first letter of its id or of the
     /// registrable domain of its host.
     pub(crate) fn provider_icon(&self, provider: &ProviderRef) -> EntryIcon {
-        match self.registry.provider_of(provider) {
-            Some(entry) => EntryIcon::of(entry.icon(), entry.name()),
-            None => EntryIcon::of_unserved(provider),
-        }
+        EntryIcon::of_provider(&self.registry, provider)
     }
 
     /// The sessions of the selected project as its table shows them: the
@@ -589,8 +586,14 @@ impl AgentsState {
         self.local_folder = folder;
     }
 
-    /// Open `menu` at the pointer, in place of the menu that was open.
+    /// Open `menu` at the pointer, in place of the menu that was open. The
+    /// same menu, open already, closes: its trigger was pressed again.
     pub(crate) fn open_menu(&mut self, menu: AgentsMenu) {
+        if self.menu.as_ref().is_some_and(|open| open.menu() == &menu) {
+            self.menu = None;
+            return;
+        }
+
         self.menu = Some(OpenMenu::new(menu, self.pointer));
     }
 

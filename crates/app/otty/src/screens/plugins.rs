@@ -14,7 +14,7 @@ use otty_app_slots::{
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::menu::Menu;
 
-use super::{bar_with_sessions, over_main_area};
+use super::{bar_with_sessions, over_main_area, overlay_layer};
 use crate::app::App;
 use crate::frame::sidebar::types::HeaderMenu;
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
@@ -72,7 +72,7 @@ pub(crate) fn overlays<'a>(
     };
 
     let kind = overlay.kind();
-    let content = overlay.into_content().map(AppEvent::Plugins);
+    let content = overlay_layer(overlay, AppEvent::Plugins);
     if kind == OverlayKind::Dialog {
         return vec![content];
     }
@@ -240,7 +240,10 @@ mod tests {
         ] {
             let mut app = app_with_add_menu();
 
-            let _ = update_input(&mut app, AppEvent::Plugins(choice));
+            let _ = update_input(
+                &mut app,
+                AppEvent::from_menu(AppEvent::Plugins(choice)),
+            );
 
             assert!(!app.sidebar.has_header_menu_open(), "{title:?}");
             assert!(app.plugins.has_dialog(), "{title:?}");

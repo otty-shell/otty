@@ -112,8 +112,10 @@ found and what needs you. All accounts → "⋯" → **Show Found by OTTY** open
 | **Project** | The folder name as the title, then **Project info** with the path, profiles and accounts, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab; the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
 The **usage block** has a period (Today, 7 days, 30 days), a measure (Tokens or Money) and the tabs
-**By project**, **By model** and **By account**. A choice that makes no sense is off and says why,
-such as Money for a subscription ("Paid by a subscription: there is no price per request").
+**By project**, **By model** and **By account**. A choice that makes no sense is off and says why
+when the pointer is over it, such as Money for a subscription ("Paid by a subscription: there is no
+price per request"). **By account** names each account as its chips do: the logo of its provider and
+its login, with the whole name in the tooltip.
 
 ## Needs
 
@@ -174,13 +176,16 @@ change without a restart.
 
 ## Your choices
 
-"⋯" on a page and a right click on a row open the same menu.
+"⋯" on a page and a right click on a row open the same menu. An item that can not be used now is
+greyed and says why when the pointer is over it. While a menu is open, one press on the "⋯" or the
+drop-down of another menu opens that one, and a press on the one that opened it closes it.
 
 - **Rename…** gives an account or a profile a name of your own. **Hide** stops OTTY from reading it
   and takes it out of the lists and of every total; "⋯" on All accounts or All profiles → **Show
   hidden** brings it back. When two plugins read one login or key, also one you added, it is two
   accounts, each named with its plugin: hide the one you do not want, and the other stays.
-  An account that is only a key found in an agent can not be renamed or hidden yet.
+  An account that is only a key found in an agent can not be renamed or hidden yet: the two items
+  are greyed and say why on hover.
 - **Open usage page** opens the provider's own usage page of the account.
 - **Add account** is the last resort: a key no agent uses, for the money left (DeepSeek, OpenRouter),
   or an admin key for the bill of an Anthropic or OpenAI organization. OTTY saves only the path of

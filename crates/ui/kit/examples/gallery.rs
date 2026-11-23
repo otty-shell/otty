@@ -727,7 +727,10 @@ fn view(state: &Gallery) -> Element<'_, Message> {
                 .on_press(Message::Clicked),
         )
         .separator()
-        .item(MenuItem::new("Disabled item"))
+        .item(
+            MenuItem::new("Disabled item")
+                .disabled_reason("Says why it is off on hover"),
+        )
         .item(
             MenuItem::new("Close tab")
                 .shortcut("Ctrl W")

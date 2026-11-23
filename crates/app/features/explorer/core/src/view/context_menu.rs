@@ -10,16 +10,13 @@ use crate::interaction::MenuTarget;
 use crate::model::ContextMenuViewModel;
 
 /// Render the Files context menu at the pointer, kept inside the main area
-/// it opened in. A press away from it closes it.
+/// it opened in. A press away from it reaches what lies under it, and the
+/// frame closes the menu.
 pub(crate) fn view<'a>(
     vm: ContextMenuViewModel<'_>,
     theme: ThemeProps<'a>,
 ) -> Element<'a, ExplorerIntent> {
-    context_menu(
-        menu(vm.target, theme.theme.ui()),
-        vm.place,
-        ExplorerIntent::ContextMenuDismiss,
-    )
+    context_menu(menu(vm.target, theme.theme.ui()), vm.place)
 }
 
 /// The menu of `target`: a file opens, is renamed or deleted; a folder also
@@ -179,10 +176,10 @@ mod tests {
         }
     }
 
-    /// A press away from the menu closes it instead of reaching the tree
-    /// or the terminal under it.
+    /// A press away from the menu sends nothing of the menu: it reaches
+    /// what lies under it, and the frame closes the menu.
     #[test]
-    fn a_press_outside_the_menu_closes_it() {
+    fn a_press_outside_the_menu_sends_nothing_of_it() {
         let themes = ThemeManager::new();
         let target = file();
         let mut ui = simulator(view(
@@ -200,10 +197,6 @@ mod tests {
             )),
         ]);
 
-        let intents: Vec<ExplorerIntent> = ui.into_messages().collect();
-        assert!(matches!(
-            intents.as_slice(),
-            [ExplorerIntent::ContextMenuDismiss]
-        ));
+        assert_eq!(ui.into_messages().count(), 0);
     }
 }

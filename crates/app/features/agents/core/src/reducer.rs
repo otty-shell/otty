@@ -1459,6 +1459,22 @@ mod tests {
         assert!(state.search().filter().is_sorted_by_name());
     }
 
+    /// Owner, 2026-11-23: with the period menu open, a press on the
+    /// measure drop-down opens its menu in place of it, and a press on the
+    /// drop-down of the open menu closes it.
+    #[test]
+    fn another_drop_down_opens_its_menu_and_the_same_one_closes_it() {
+        let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
+
+        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
+        let switched = open_menu(&state);
+        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
+
+        assert_eq!(switched, Some(AgentsMenu::UsageMeasure));
+        assert_eq!(open_menu(&state), None);
+    }
+
     #[test]
     fn the_funnel_menu_opens_at_the_pointer_and_a_choice_closes_it() {
         let mut state = two_agents_with_sessions();

@@ -134,7 +134,7 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
 }
 
 /// Each source by its name and why it failed, such as "Plugin: not
-/// available: no session files; LiteLLM prices: network error: timed out".
+/// available: no session files · LiteLLM prices: network error: timed out".
 pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()

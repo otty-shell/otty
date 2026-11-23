@@ -1,14 +1,30 @@
 //! The chip of an account (issue 38 of spec 2026-11-19-agent-plugins):
 //! the logo of its provider, its name by the login alone and its number.
 //! Every chip of an account, on a profile page and on a project page, is
-//! built here, so they all look the same and change in one place.
+//! built here, and so is the label of an account in a row of By account,
+//! so they all look the same and change in one place.
 
-use otty_agents::Account;
+use otty_agents::{Account, Registry, SavedProfiles};
 
 use super::super::state::AgentsState;
 use super::account_name::{own_account_name, short_account_name};
 use super::entry_icon::EntryIcon;
 use super::short_number::{AccountNumber, account_number};
+
+/// How an account is named wherever it stands with the logo of its
+/// provider: a chip, or a row of the usage block By account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AccountLabel {
+    /// The logo of its provider.
+    pub(crate) icon: EntryIcon,
+    /// The login without the provider its logo shows, such as
+    /// "you@example.com", or the name the user gave the account.
+    pub(crate) name: String,
+    /// The whole name in the tooltip, which says the provider too, such
+    /// as "OpenAI · you@example.com": after the name the user gave, on a
+    /// line of its own, when they gave one.
+    pub(crate) full_name: String,
+}
 
 /// One chip of an account; a press opens the account.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,21 +51,35 @@ pub(crate) fn account_chip(
     state: &AgentsState,
     account: &Account,
 ) -> AccountChipViewModel {
-    let registry = state.registry();
-    let saved = state.profiles().saved();
+    let label =
+        account_label(state.registry(), state.profiles().saved(), account);
 
+    AccountChipViewModel {
+        account: account.clone(),
+        icon: label.icon,
+        name: label.name,
+        full_name: label.full_name,
+        number: account_number(state, account),
+    }
+}
+
+/// The logo, the short name and the whole name of `account`, its
+/// provider named by `registry` and its own name, if any, by `saved`.
+pub(crate) fn account_label(
+    registry: &Registry,
+    saved: Option<&SavedProfiles>,
+    account: &Account,
+) -> AccountLabel {
     let own = own_account_name(registry, account);
     let full_name = match saved.and_then(|saved| saved.account_name(account)) {
         Some(given) => format!("{given}\n{own}"),
         None => own,
     };
 
-    AccountChipViewModel {
-        account: account.clone(),
-        icon: state.provider_icon(account.provider()),
+    AccountLabel {
+        icon: EntryIcon::of_provider(registry, account.provider()),
         name: short_account_name(registry, saved, account),
         full_name,
-        number: account_number(state, account),
     }
 }
 

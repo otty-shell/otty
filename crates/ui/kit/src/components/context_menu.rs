@@ -1,7 +1,7 @@
 //! `context_menu`: a [`Menu`] opened at the pointer, and [`MenuPlace`],
 //! where it opens.
 
-use iced::widget::{Space, Stack, container, mouse_area, opaque};
+use iced::widget::{container, opaque};
 use iced::{Element, Length, Padding, Point, Size};
 
 use super::menu::Menu;
@@ -54,13 +54,14 @@ impl MenuPlace {
     }
 }
 
-/// Places `menu` next to the pointer of `place` and inside its area, over a
-/// layer that fills the area and sends `on_dismiss` on a press of any mouse
-/// button away from the menu.
+/// Places `menu` next to the pointer of `place` and inside its area.
 ///
-/// A press on the menu itself, between its items or on a disabled item, does
-/// not close it. Draw the result over the whole area, for example as a layer
-/// of a `stack`.
+/// A press on the menu itself, between its items or on a disabled item,
+/// stays on it. The menu has no layer of its own that takes a press away
+/// from it: such a press reaches what lies under it, the trigger of
+/// another menu too, and the app closes the menu (in OTTY the frame does,
+/// for every menu). Draw the result over the whole area, for example as a
+/// layer of a `stack`.
 ///
 /// # Example
 ///
@@ -73,7 +74,6 @@ impl MenuPlace {
 /// #[derive(Clone)]
 /// enum Message {
 ///     Rename,
-///     CloseMenu,
 /// }
 ///
 /// let palette = UiPalette::otty_dark();
@@ -82,13 +82,11 @@ impl MenuPlace {
 /// let layer: Element<'_, Message> = context_menu(
 ///     menu,
 ///     MenuPlace::new(Point::new(120.0, 80.0), Size::new(800.0, 600.0)),
-///     Message::CloseMenu,
 /// );
 /// ```
 pub fn context_menu<'a, Message: Clone + 'a>(
     menu: Menu<Message>,
     place: MenuPlace,
-    on_dismiss: Message,
 ) -> Element<'a, Message> {
     let menu_size = menu.size();
     let anchor = anchor_position(
@@ -100,22 +98,13 @@ pub fn context_menu<'a, Message: Clone + 'a>(
     );
 
     // `opaque` keeps a press on the menu that no item takes from reaching
-    // the dismiss layer under it.
-    let placed_menu = container(opaque(menu)).padding(Padding {
-        top: anchor.y,
-        left: anchor.x,
-        ..Padding::ZERO
-    });
-    let dismiss_layer = mouse_area(
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill),
-    )
-    .on_press(on_dismiss.clone())
-    .on_right_press(on_dismiss.clone())
-    .on_middle_press(on_dismiss);
-
-    Stack::with_children(vec![dismiss_layer.into(), placed_menu.into()])
+    // what lies under it.
+    container(opaque(menu))
+        .padding(Padding {
+            top: anchor.y,
+            left: anchor.x,
+            ..Padding::ZERO
+        })
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -124,7 +113,8 @@ pub fn context_menu<'a, Message: Clone + 'a>(
 #[cfg(test)]
 mod tests {
     use iced::mouse::{self, Button};
-    use iced::{Event, Rectangle};
+    use iced::widget::mouse_area;
+    use iced::{Event, Length, Rectangle};
     use iced_test::simulator;
 
     use super::*;
@@ -141,24 +131,35 @@ mod tests {
     enum Message {
         Open,
         Delete,
-        Dismiss,
+        Under,
     }
 
-    /// Open, a separator, a disabled Rename and Delete.
+    /// Open, a separator, a disabled Rename that says why and Delete.
     fn sample_menu() -> Menu<Message> {
         Menu::new(&UiPalette::otty_dark())
             .item(MenuItem::new("Open").on_press(Message::Open))
             .separator()
-            .item(MenuItem::new("Rename"))
+            .item(MenuItem::new("Rename").disabled_reason("Not yet"))
             .item(MenuItem::new("Delete").on_press(Message::Delete))
     }
 
+    /// The menu at `cursor` over a layer that sends `Under` on a press of
+    /// any button, as a widget under the menu does.
     fn layer<'a>(cursor: Point) -> Element<'a, Message> {
-        context_menu(
-            sample_menu(),
-            MenuPlace::new(cursor, AREA),
-            Message::Dismiss,
+        let under = mouse_area(
+            container(iced::widget::Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill),
         )
+        .on_press(Message::Under)
+        .on_right_press(Message::Under)
+        .on_middle_press(Message::Under);
+        let menu = context_menu(sample_menu(), MenuPlace::new(cursor, AREA));
+
+        iced::widget::stack![under, menu]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Press and release `button` at `position` and return what was sent.
@@ -184,12 +185,14 @@ mod tests {
         assert_eq!(messages, [Message::Delete]);
     }
 
+    /// Issue 42: a press away from the menu reaches what lies under it,
+    /// such as the trigger of another menu.
     #[test]
-    fn given_open_menu_when_any_button_pressed_away_then_it_is_dismissed() {
+    fn given_open_menu_when_any_button_pressed_away_then_it_reaches_under() {
         let away = Point::new(900.0, 700.0);
 
         for button in [Button::Left, Button::Right, Button::Middle] {
-            assert_eq!(press_at(away, button), [Message::Dismiss]);
+            assert_eq!(press_at(away, button), [Message::Under]);
         }
     }
 
@@ -211,6 +214,25 @@ mod tests {
         let mut ui = simulator(layer(CURSOR));
 
         ui.click("Rename").expect("item should be visible");
+
+        assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    /// Issue 42: the pointer moving over a disabled item, which shows its
+    /// reason, and a press on it send nothing: the menu stays open.
+    #[test]
+    fn given_open_menu_when_disabled_item_hovered_and_pressed_then_it_stays() {
+        let mut ui = simulator(layer(CURSOR));
+        let item = ui.find("Rename").expect("item should be visible").bounds();
+
+        for position in [item.center(), Point::new(item.x + 2.0, item.y + 2.0)]
+        {
+            ui.point_at(position);
+            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
+                position,
+            })]);
+        }
+        let _ = ui.simulate(iced_test::simulator::click());
 
         assert_eq!(ui.into_messages().count(), 0);
     }

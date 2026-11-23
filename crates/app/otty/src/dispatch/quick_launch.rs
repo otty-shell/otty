@@ -343,10 +343,11 @@ mod tests {
             QuickLaunchIntent::NodeRightClicked { path: laptop() },
         );
 
-        let _tab = input(
-            &mut app,
-            QuickLaunchIntent::ContextMenuAction(ContextMenuAction::Edit),
-        );
+        let _tab = app.update(Message::Input(AppEvent::from_menu(
+            AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuAction(
+                ContextMenuAction::Edit,
+            )),
+        )));
 
         let theme = app.theme_manager.current().clone();
         let MainContent::Screen { id, content } =

@@ -4,6 +4,7 @@ use otty_app_domain::mode::Mode;
 use otty_app_slots::Overlays;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::press_away::press_away;
 #[cfg(not(target_os = "macos"))]
 use otty_ui_kit::components::resize_grips::resize_grips;
 
@@ -14,11 +15,15 @@ use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
 use crate::screens::{
-    agents, containers, header_menu, over_main_area, plugins, terminal,
+    agents, containers, header_menu, over_main_area, overlay_layer, plugins,
+    terminal,
 };
 
 /// Render the window: the window content and the overlays over it, in one
-/// order for every mode.
+/// order for every mode. A click on the window content that sends nothing
+/// is a press away from the open menus, which closes them
+/// ([`AppEvent::PressedAway`]): menus have no dismiss layer of their own,
+/// so a press on the trigger of another menu reaches it.
 ///
 /// The layers from bottom to top:
 ///
@@ -144,10 +149,11 @@ fn view_window_content<'a>(
         Mode::Plugins => plugins::status_bar(app, theme),
     };
 
-    column![header, main_area, status_bar]
+    let content = column![header, main_area, status_bar]
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+    press_away(content, AppEvent::PressedAway)
 }
 
 /// Render the header: title bar + separator.
@@ -223,7 +229,7 @@ fn view_modes_menu<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let menu = app.modes.overlay(theme)?;
 
-    Some(menu.into_content().map(AppEvent::Modes))
+    Some(overlay_layer(menu, AppEvent::Modes))
 }
 
 /// The command palette, while it is open, in either mode.
@@ -233,7 +239,7 @@ fn view_palette<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let palette = app.palette.overlay(theme)?;
 
-    Some(palette.into_content().map(AppEvent::Palette))
+    Some(overlay_layer(palette, AppEvent::Palette))
 }
 
 /// The notifications list under the bell, while it is open, in either mode.
@@ -243,7 +249,7 @@ fn view_notification_list<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let list = app.notifications.overlay(theme)?;
 
-    Some(list.into_content().map(AppEvent::Notifications))
+    Some(overlay_layer(list, AppEvent::Notifications))
 }
 
 /// The Settings dialog, while it is open, in either mode. A press on the
@@ -423,7 +429,8 @@ mod tests {
         ui.click(i18n::t(Key::ModeContainers))
             .expect("containers row should be visible");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesIntent::Select(Mode::Containers))]
@@ -475,7 +482,8 @@ mod tests {
         assert!(ui.find(i18n::t(Key::MenuNewLaunch)).is_ok());
         ui.click(i18n::t(Key::ModeContainers))
             .expect("the modes menu should take the press");
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesIntent::Select(Mode::Containers))]
@@ -571,7 +579,8 @@ mod tests {
             ui.point_at(cross);
             let _ = ui.simulate(iced_test::simulator::click());
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(line.y > size::TITLEBAR + size::LINE, "{line:?}");
             assert!(line.y < size::TITLEBAR + 40.0, "{line:?}");
             assert!(
@@ -603,19 +612,21 @@ mod tests {
                 .bounds();
             ui.find("Could not save the pinned modes")
                 .expect("the row should show");
-            ui.point_at(Point::new(200.0, 600.0));
+            let away = Point::new(600.0, 600.0);
+            ui.point_at(away);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position: away },
+            )]);
             let _ = ui.simulate(iced_test::simulator::click());
 
             let events: Vec<AppEvent> = ui.into_messages().collect();
+            for event in events {
+                let _ = app.update(Message::Input(event));
+            }
+
             assert!(title.y > size::TITLEBAR, "{title:?}");
             assert!(title.x > 1024.0 / 2.0, "{title:?}");
-            assert!(
-                events.iter().any(|event| matches!(
-                    event,
-                    AppEvent::Notifications(NotificationsIntent::CloseList)
-                )),
-                "{mode:?}"
-            );
+            assert!(!app.notifications.is_list_open(), "{mode:?}");
         }
     }
 
@@ -636,7 +647,8 @@ mod tests {
             ui.click("Esc")
                 .expect("the palette should show its Esc key");
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(input.y > size::TITLEBAR + size::LINE, "{input:?}");
             assert!(
                 events.iter().any(|event| matches!(
@@ -662,7 +674,8 @@ mod tests {
 
         ui.click("disk full").expect("the list row should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(
             !events
                 .iter()
@@ -720,7 +733,8 @@ mod tests {
 
             ui.click("OTTY Light").expect("the dialog should show");
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(
                 matches!(
                     events.as_slice(),
@@ -849,7 +863,8 @@ mod tests {
         ui.click(i18n::t(Key::ButtonConnect))
             .expect("the prompt should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptSubmit)
@@ -870,7 +885,8 @@ mod tests {
         ui.click(i18n::t(Key::ModeTerminal))
             .expect("the modes menu should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Modes(ModesIntent::Select(Mode::Terminal))
@@ -942,7 +958,8 @@ mod tests {
         ui.point_at(cross);
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(
             !events.iter().any(|event| matches!(
                 event,
@@ -981,7 +998,8 @@ mod tests {
             .expect("Settings should stay under the prompt");
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 
@@ -1003,7 +1021,8 @@ mod tests {
             .expect("the New session menu should show");
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 
@@ -1018,7 +1037,8 @@ mod tests {
         let mut ui = simulator(view(&app));
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 

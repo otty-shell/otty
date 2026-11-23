@@ -31,7 +31,8 @@ pub(crate) struct MenuProps<'a> {
 }
 
 /// Render the open menu at the pointer, kept inside the main area. A press
-/// of any button away from it closes it.
+/// of any button away from it reaches what lies under it, and the frame
+/// closes the menu.
 pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
 
@@ -74,7 +75,7 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         },
     };
 
-    context_menu(menu, place, AgentsIntent::CloseMenu)
+    context_menu(menu, place)
 }
 
 /// The funnel menu: all agents or one, the projects of the last 30 days,
@@ -244,14 +245,15 @@ fn profile_menu(
 
 /// The menu of an account: Rename…, Open usage page, then after a line
 /// Hide (or Show again for a hidden account). A key can not be renamed
-/// or hidden yet: those items are off, with why under a line.
+/// or hidden yet: those items are off and say why on hover.
 fn account_menu(
     vm: &AccountMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let act = AgentsIntent::AccountMenu;
 
-    let mut rename = MenuItem::new(i18n::t(Key::AgentsRename));
+    let mut rename = MenuItem::new(i18n::t(Key::AgentsRename))
+        .disabled_reason(i18n::t(Key::AgentsKeyNotSaved));
     if vm.can_save {
         rename = rename.on_press(act(AccountAction::Rename));
     }
@@ -266,21 +268,21 @@ fn account_menu(
         );
     }
 
-    menu = menu.separator().item(hide_item(
+    let hide = hide_item(
         vm.is_hidden,
         vm.can_save,
         act(AccountAction::Hide),
         act(AccountAction::ShowAgain),
-    ));
+    );
+    menu = menu
+        .separator()
+        .item(hide.disabled_reason(i18n::t(Key::AgentsKeyNotSaved)));
     if vm.is_added {
         menu = menu.item(
             MenuItem::new(i18n::t(Key::ButtonRemove))
                 .danger(true)
                 .on_press(act(AccountAction::Remove)),
         );
-    }
-    if !vm.can_save {
-        menu = menu.separator().heading(i18n::t(Key::AgentsKeyNotSaved));
     }
 
     menu
@@ -377,39 +379,35 @@ fn period_menu(
 }
 
 /// The measures of the usage block, the shown one lit. Money is off while
-/// the profile can not show it, with the reason under a line.
+/// the profile can not show it, and then says why on hover.
 fn measure_menu(
     vm: UsageMeasureMenuViewModel,
     palette: &UiPalette,
 ) -> Menu<AgentsIntent> {
     let mut menu = Menu::new(palette);
     for measure in UsageMeasure::ALL {
-        let is_off =
-            measure == UsageMeasure::Money && vm.money_reason.is_some();
         let mut item =
             MenuItem::new(measure.label()).active(measure == vm.picked);
-        if !is_off {
-            item = item.on_press(AgentsIntent::PickMeasure(measure));
+        match (&vm.money_reason, measure) {
+            (Some(reason), UsageMeasure::Money) => {
+                item = item.disabled_reason(reason.as_str());
+            },
+            _ => item = item.on_press(AgentsIntent::PickMeasure(measure)),
         }
         menu = menu.item(item);
     }
 
-    match vm.money_reason {
-        Some(reason) => menu.separator().heading(i18n::filled(
-            Key::TplAgentsMoneyOff,
-            &[("reason", &reason)],
-        )),
-        None => menu,
-    }
+    menu
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use iced::{Point, Size};
-    use iced_test::simulator;
+    use iced_test::{Simulator, simulator};
     use otty_agents::{AgentId, Profile};
+    use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::context_menu::MenuPlace;
 
@@ -738,26 +736,71 @@ mod tests {
         );
     }
 
-    /// A key can not be renamed or hidden yet: the items are off, and the
-    /// menu says why.
+    /// Whether the menu of `vm`, drawn with the pointer on the item
+    /// `hovered` or with no pointer, gives the picture saved at
+    /// `reference`; the first call saves it. iced draws tooltips as
+    /// overlays that widget queries do not reach, so a reason on hover is
+    /// checked on the drawing.
+    fn draws(
+        vm: MenuViewModel,
+        hovered: Option<&str>,
+        reference: &Path,
+    ) -> bool {
+        let themes = ThemeManager::new();
+        let mut ui = Simulator::with_size(
+            iced::Settings::default(),
+            Size::new(800.0, 600.0),
+            view(MenuProps {
+                vm,
+                theme: ThemeProps::new(themes.current()),
+            }),
+        );
+
+        if let Some(label) = hovered {
+            let position = ui
+                .find(label)
+                .expect("the item should show")
+                .bounds()
+                .center();
+            ui.point_at(position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position },
+            )]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the menu should draw")
+            .matches_hash(reference)
+            .expect("reference should be readable")
+    }
+
+    /// Issue 42: a key can not be renamed or hidden yet. Rename… and Hide
+    /// are off and send nothing, the menu has no note, and each item says
+    /// why on hover.
     #[test]
-    fn rename_and_hide_of_a_key_send_nothing_and_say_why() {
+    fn rename_and_hide_of_a_key_send_nothing_and_say_why_on_hover() {
+        let folder = TempDir::new("agents-key-menu");
+        let idle = folder.path().join("idle");
         let themes = ThemeManager::new();
         let mut ui = simulator(view(MenuProps {
             vm: account_menu(false, false),
             theme: ThemeProps::new(themes.current()),
         }));
+        let rename = i18n::t(Key::AgentsRename);
+        let hide = i18n::t(Key::AgentsHide);
 
-        ui.find(i18n::t(Key::AgentsKeyNotSaved))
-            .expect("the reason shows");
-        assert!(
-            pressed(account_menu(false, false), i18n::t(Key::AgentsRename))
-                .is_empty()
-        );
-        assert!(
-            pressed(account_menu(false, false), i18n::t(Key::AgentsHide))
-                .is_empty()
-        );
+        let has_note = ui.find(i18n::t(Key::AgentsKeyNotSaved)).is_ok();
+        assert!(draws(account_menu(false, false), None, &idle), "save");
+
+        assert!(!has_note, "the menu has no note");
+        assert!(pressed(account_menu(false, false), rename).is_empty());
+        assert!(pressed(account_menu(false, false), hide).is_empty());
+        for label in [rename, hide] {
+            assert!(
+                !draws(account_menu(false, false), Some(label), &idle),
+                "{label} says why on hover"
+            );
+        }
     }
 
     #[test]
@@ -845,28 +888,40 @@ mod tests {
         }
     }
 
-    #[test]
-    fn money_off_sends_nothing_and_shows_its_reason() {
-        let vm = MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
+    /// The measure menu with Tokens picked and Money off for `reason`.
+    fn measure_menu_off_for(reason: &str) -> MenuViewModel {
+        MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
             place: place(),
             picked: UsageMeasure::Tokens,
-            money_reason: Some(String::from("no price per request")),
-        });
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(MenuProps {
-            vm: vm.clone(),
-            theme: ThemeProps::new(themes.current()),
-        }));
+            money_reason: Some(String::from(reason)),
+        })
+    }
 
-        ui.find(i18n::filled(
-            Key::TplAgentsMoneyOff,
-            &[("reason", "no price per request")],
-        ))
-        .expect("the reason shows");
+    /// Issue 42: Money off sends nothing and says why only on hover: the
+    /// menu has no heading with the reason.
+    #[test]
+    fn money_off_sends_nothing_and_says_why_on_hover() {
+        let folder = TempDir::new("agents-measure-menu");
+        let idle = folder.path().join("idle");
+        let hovered = folder.path().join("hovered");
+        let money = i18n::t(Key::AgentsNumberMoney);
+        let no_price = measure_menu_off_for("no price per request");
+        let no_list = measure_menu_off_for("the list prices are not read");
 
-        assert_eq!(pressed(vm.clone(), i18n::t(Key::AgentsNumberMoney)), []);
+        assert!(draws(no_price.clone(), None, &idle), "save");
+        assert!(draws(no_price.clone(), Some(money), &hovered), "save");
+
+        assert!(
+            draws(no_list.clone(), None, &idle),
+            "the menu shows no reason of its own"
+        );
+        assert!(
+            !draws(no_list, Some(money), &hovered),
+            "Money says its reason on hover"
+        );
+        assert_eq!(pressed(no_price.clone(), money), []);
         assert_eq!(
-            pressed(vm, i18n::t(Key::AgentsTokens)),
+            pressed(no_price, i18n::t(Key::AgentsTokens)),
             [AgentsIntent::PickMeasure(UsageMeasure::Tokens)]
         );
     }

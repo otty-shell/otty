@@ -11,7 +11,7 @@ use iced::{Element, Length};
 use otty_app_slots::{MainArea, OverlayKind, Overlays, StatusBar as _};
 use otty_app_theme::theme::ThemeProps;
 
-use super::{bar_with_sessions, over_main_area};
+use super::{bar_with_sessions, over_main_area, overlay_layer};
 use crate::app::App;
 use crate::frame::sidebar::SidebarIntent;
 use crate::message::AppEvent;
@@ -80,7 +80,7 @@ pub(crate) fn overlays<'a>(
     };
 
     let kind = overlay.kind();
-    let content = overlay.into_content().map(AppEvent::Agents);
+    let content = overlay_layer(overlay, AppEvent::Agents);
     if kind == OverlayKind::Dialog {
         return vec![content];
     }
@@ -179,7 +179,8 @@ mod tests {
         assert!(has_overlay(&app));
         ui.click(i18n::t(Key::AgentsCopySessionId))
             .expect("the menu should show");
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Agents(AgentsIntent::SessionMenu(
@@ -423,7 +424,8 @@ mod tests {
         ui.click(i18n::t(Key::AgentsFilterSortByName))
             .expect("the menu should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Agents(AgentsIntent::ProjectFilter(

@@ -21,6 +21,7 @@ use super::super::usage::{
     UsageChoice, UsageList, UsageMeasure, UsagePeriod, UsageTab,
 };
 use super::UNKNOWN;
+use super::account_chip::{AccountLabel, account_label};
 use super::money::MoneyKind;
 use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
@@ -148,6 +149,9 @@ impl UsageBlockViewModel {
             .iter()
             .map(|group| UsageTableRowViewModel {
                 name: group.name.clone(),
+                account: group.account.as_ref().map(|account| {
+                    account_label(subject.registry, subject.saved, account)
+                }),
                 value: amount_text(group.total(), amount),
                 share: share_text(group.total(), total),
             })
@@ -250,6 +254,10 @@ pub(crate) struct UsageBarViewModel {
 pub(crate) struct UsageTableRowViewModel {
     /// The project, the profile, the model or the account.
     pub(crate) name: String,
+    /// How a row of By account shows its account: the provider's logo,
+    /// the short name and the whole name in the tooltip; `None` on the
+    /// other tabs and for the tokens no account paid.
+    pub(crate) account: Option<AccountLabel>,
     /// Its value, such as "1.2M" or "$3.40".
     pub(crate) value: String,
     /// Its share of the period, such as "62 %".
@@ -536,6 +544,7 @@ mod tests {
     fn row(name: &str, value: &str, share: &str) -> UsageTableRowViewModel {
         UsageTableRowViewModel {
             name: String::from(name),
+            account: None,
             value: String::from(value),
             share: String::from(share),
         }
@@ -757,6 +766,37 @@ mod tests {
             .only_failure(&down);
 
         assert_eq!(vm.money_kind, None);
+    }
+
+    /// Owner, 2026-11-23: a row of By account shows its account as the
+    /// chips of an account do: the provider's logo, the login alone, and
+    /// the whole name with the provider in the tooltip.
+    #[test]
+    fn a_row_by_account_shows_the_account_as_its_chips_do() {
+        let paid = ProjectModelTokens::new(
+            Some(PathBuf::from("/home/user/otty")),
+            ModelTokens::new(Some("opus"), TokenCount::new(50, 0, 0), 1)
+                .with_provider(Some(otty_agents::ProviderRef::of_id(
+                    "anthropic",
+                ))),
+        );
+        let today = DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
+            .with_parts(vec![paid]);
+        let spend = Spend::new(vec![today], Vec::new());
+        let accounts = [crate::testing::organization()];
+        let sources = [UsageSource {
+            accounts: &accounts,
+            ..source(&spend)
+        }];
+        let mut choice = UsageChoice::default();
+        choice.show_tab(UsageTab::ByAccount);
+
+        let vm = block(&subject(&sources, None), &choice);
+
+        let label = vm.rows[0].account.clone().expect("the row's account");
+        assert_eq!(label.icon, crate::testing::provider_icon("anthropic"));
+        assert_eq!(label.name, "dev@example.com");
+        assert_eq!(label.full_name, "Anthropic · dev@example.com");
     }
 
     #[test]

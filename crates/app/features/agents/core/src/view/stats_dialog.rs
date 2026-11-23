@@ -293,15 +293,29 @@ mod tests {
         assert_eq!(picked, [AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays)]);
     }
 
+    /// Issue 42: Money off in the popup puts no note in the block. Its
+    /// option in the open list sends nothing (its reason shows on hover,
+    /// as the kit's tests of `NoteSelect` check).
     #[test]
-    fn money_off_in_the_popup_shows_its_reason_under_the_title() {
+    fn money_off_in_the_popup_has_no_note_and_its_option_sends_nothing() {
         let reason = "Paid by a subscription";
-        let vm =
+        let closed =
             session(popup_usage(&UsageTab::SESSION_POPUP, None, Some(reason)));
+        let open = session(popup_usage(
+            &UsageTab::SESSION_POPUP,
+            Some(UsageList::Measure),
+            Some(reason),
+        ));
+        let themes = ThemeManager::new();
+        let mut open_ui = ui(open, &themes);
 
-        let line = i18n::filled(Key::TplAgentsMoneyOff, &[("reason", reason)]);
-        let found = shown(vm, &[&line]);
+        let notes = shown(closed, &[reason]);
+        open_ui
+            .click(i18n::t(Key::AgentsNumberMoney))
+            .expect("the list shows Money");
+        let picked: Vec<AgentsIntent> = open_ui.into_messages().collect();
 
-        assert_eq!(found, [line]);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert!(picked.is_empty(), "{picked:?}");
     }
 }

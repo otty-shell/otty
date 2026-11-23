@@ -119,9 +119,15 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         {
             deliver(app, AgentsIntent::ContinueSelected)
         },
+        // The input checks take the mark of a menu off; an event that
+        // skips them still reaches its feature.
+        AppEvent::FromMenu(event) => dispatch(app, *event),
         // A shortcut key arrives as its command (see `update_input`); other
-        // keys no widget took and other window events do nothing.
-        AppEvent::Keyboard(_) | AppEvent::Window(_) => Task::none(),
+        // keys no widget took, other window events and a press away with
+        // no menu open do nothing.
+        AppEvent::Keyboard(_) | AppEvent::Window(_) | AppEvent::PressedAway => {
+            Task::none()
+        },
     }
 }
 
