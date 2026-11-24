@@ -245,13 +245,19 @@ fn rows_view<'a, Message: 'a>(
         numbers = numbers.push(small_text(number.clone(), color));
     }
 
+    // The gap between the names and the numbers is `SPACE_3` at the own
+    // width and at least that when filling: the filling space takes the
+    // place of the gap, so both are as wide when nothing is left over.
     if fills {
-        row![names, Space::new().width(Length::Fill), numbers]
-            .spacing(spacing::SPACE_3)
-            .width(Length::Fill)
-            .into()
+        row![
+            names,
+            Space::new().width(Length::Fill).height(Length::Shrink),
+            numbers
+        ]
+        .width(Length::Fill)
+        .into()
     } else {
-        row![names, numbers].spacing(spacing::SPACE_3).into()
+        row![names, Space::new().width(spacing::SPACE_3), numbers].into()
     }
 }
 
@@ -408,6 +414,36 @@ mod tests {
         assert!(
             !draws(&with_line("Dec 24"), SMALL_WINDOW, Some(over), &picture),
             "the line must show in the bubble"
+        );
+    }
+
+    /// Rows with no line over them, as the tooltip of a table cell, are as
+    /// wide as their own width: the numbers end together, a gap after the
+    /// widest name, and nothing runs past the bubble's padding.
+    #[test]
+    fn rows_alone_keep_their_gap_and_their_width() {
+        let label = TooltipText::default().rows(vec![
+            (String::from("cache write"), String::from("8K")),
+            (String::from("cached"), String::from("90K")),
+        ]);
+        let shown: Element<'_, ()> = said(&label, &UiPalette::otty_dark());
+        let mut ui = simulator(shown);
+        let mut at =
+            |text: &str| ui.find(text).expect("the text should show").bounds();
+
+        let written = at("cache write");
+        let few = at("8K");
+        let many = at("90K");
+        let own_width =
+            written.x + written.width + spacing::SPACE_3 + many.width;
+
+        assert!(
+            (few.x + few.width - many.x - many.width).abs() < 1.0,
+            "the numbers end together: {few:?} {many:?}"
+        );
+        assert!(
+            (many.x + many.width - own_width).abs() < 1.0,
+            "the rows keep their own width: {written:?} {many:?}"
         );
     }
 
