@@ -685,6 +685,8 @@
     "agents_field_key": "Chave",
     "agents_spent_this_month": "Gasto este mês",
     "agents_your_spend_this_month": "Seu gasto neste mês",
+    "agents_organization_bill": "Fatura da organização",
+    "agents_organization_bill_waits": "Aparece quando o OTTY tiver uma chave de administrador",
     "tpl_agents_spent_from_sessions": "Das suas sessões do {agent} neste computador",
     "agents_source_format_changed": "formato alterado",
     "tpl_agents_failure_format_changed": "o formato dos arquivos de sessão mudou: {understood} de {seen} registros entendidos",

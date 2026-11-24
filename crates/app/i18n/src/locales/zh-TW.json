@@ -685,6 +685,8 @@
     "agents_field_key": "金鑰",
     "agents_spent_this_month": "本月花費",
     "agents_your_spend_this_month": "你本月的花費",
+    "agents_organization_bill": "組織帳單",
+    "agents_organization_bill_waits": "OTTY 有管理員金鑰後顯示",
     "tpl_agents_spent_from_sessions": "來自你在這台電腦上的 {agent} 工作階段",
     "agents_source_format_changed": "格式已變更",
     "tpl_agents_failure_format_changed": "工作階段檔案的格式已變更：{seen} 筆記錄中讀懂 {understood} 筆",

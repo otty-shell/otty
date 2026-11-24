@@ -685,6 +685,8 @@
     "agents_field_key": "Schlüssel",
     "agents_spent_this_month": "Diesen Monat ausgegeben",
     "agents_your_spend_this_month": "Deine Ausgaben diesen Monat",
+    "agents_organization_bill": "Rechnung der Organisation",
+    "agents_organization_bill_waits": "Erscheint, sobald OTTY einen Admin-Schlüssel hat",
     "tpl_agents_spent_from_sessions": "Aus deinen {agent}-Sitzungen auf diesem Computer",
     "agents_source_format_changed": "Format geändert",
     "tpl_agents_failure_format_changed": "das Format der Sitzungsdateien hat sich geändert: {understood} von {seen} Einträgen verstanden",

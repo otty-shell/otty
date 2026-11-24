@@ -1,6 +1,6 @@
 # 24 The parts of a page are cards, from one kit component
 
-Status: ready
+Status: done
 Blocked by: 23
 
 ## Why
@@ -77,3 +77,88 @@ parameters, to be reused everywhere.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-25, done. Every part of the Agents pages is a kit card now.
+
+  The kit `Card` (`crates/ui/kit/src/components/card.rs`) is a builder:
+  `Card::new(body, palette)` with `.title(..)`, `.line(..)` (a muted
+  line under the title, such as "Updated 2 min ago"), `.trailing(..)`
+  (an element at the right end of the title row, at its top) and
+  `.tone(CardTone::Default | CardTone::Warning)`. `card::rule(tone,
+  palette)` draws the thin line between rows inside a card.
+  - Default: the surface is `surface-canvas` raised 40 % toward
+    `surface-overlay`, so about `surface-header` in OTTY Dark and nearly
+    white in OTTY Light, as the prototype draws it. The border is
+    `text-muted` at 24 %, `size::LINE` wide, with `radius::RADIUS_LG`.
+  - Warning: `status-warn` at 8 % over the page, a `status-warn` border
+    at 45 %, a 7 px dot before the title. Its rules are `status-warn`
+    at 28 %.
+  - Padding 12 px at the top and 16 px at the sides and bottom, 12 px
+    between the title row and the body, 16 px between cards on a page.
+
+  Why not build on an existing kit piece: `Surface` fills its parent
+  and clips with no border, `FormSection` and `PanelSection` have no
+  surface or border and `PanelSection` opens and closes, `EmptyCard` is
+  the fixed 460 px start card, and `Notice` is a one-line message with an
+  icon and a dismiss cross. None is a bordered part with a title row, so
+  the card is a new component. No new palette token: the raised surface
+  is a mix of two tokens, as the prototype mixes them.
+
+  Where it is used:
+  - Account page: Needs from you (warning), Limits, Credits, Money,
+    Account info. A subscription with windows and credits shows two
+    cards, Limits and then Credits.
+  - Profile page: Needs from you, the usage block (`usage_block::card`,
+    the period picker in its title row), Profile info.
+  - All accounts and All profiles: the table in a card titled Accounts
+    or Profiles, Needs you as a warning card.
+  - The Found by OTTY report: the Profiles and Accounts tables as cards
+    and the needs as warning cards.
+  - Plugins: the part cards of a plugin page (`details.rs`) and of the
+    install and update dialogs and the Can access dialog
+    (`can_access.rs`) are kit cards in place of their own bordered
+    containers.
+  - Left alone: the add account dialog's options are radio tiles, the
+    chips are chips. The project page and the statistics popups stay as
+    they are: this issue does not name them.
+
+  Needs (`view/needs.rs`): every need is its heading, its text across the
+  whole width, then one line with the plugin label as a muted kit tag at
+  the left and the buttons at the right edge, at every width. Issue 21's
+  side-by-side layout is gone. When the line is too short even for the
+  tag and the buttons, the label is cut with "…" with a tooltip, as
+  before.
+
+  Data cards: each figure is a row, its name and its muted lines at the
+  left, its value at the right, the bar under it, thin rules between
+  rows. "at API prices" is a kit tag before the amount, with its tooltip,
+  and the amount keeps its money by kind on hover. Money of an
+  organization has the new row "Organization bill": the bill read with
+  the admin key, or "—" with "Shows once OTTY has an admin key"
+  (`MoneyViewModel::organization_bill`, `OrganizationBillViewModel`). The
+  bill read with an admin key now shows in that row, not as "Spent this
+  month". With a bill that failed to read, only the failure line shows,
+  as before. Two new words in all ten languages:
+  `agents_organization_bill` and `agents_organization_bill_waits`.
+
+  Tests first (`wip: issue 24 tests`), and they failed to build: there
+  was no `Card`, `CardTone`, `organization_bill` or new key yet. They
+  cover the kit card (title, line, trailing element and body inside the
+  padding, no title, the warning dot, both tones' colours and rules in
+  both themes), the needs layout at wide, narrow and tiny widths, the
+  needs and money rows inside their cards on the account page, Limits
+  and Credits as two cards, the usage card with its period in the title
+  row, All accounts' cards, the plugin part cards as kit cards, and the
+  organization bill in the model. Two older tests changed after the
+  code, for the card padding: the value of a money row ends 16 px inside
+  the card, and the label of a small button sits 10 px inside the
+  button's edge.
+
+  Pictures before and after, dark and light, at 1000 and 600 px:
+  throwaway, not committed. One difference from the prototype is left:
+  the kit table keeps its canvas background inside a card, so it shows
+  as a slightly darker box. Making it transparent would need a new
+  `DataTable` option.
+
+  Docs: Agents Overview says what the cards are, the rows of the data
+  cards, the two rows of an organization and the new layout of a need.

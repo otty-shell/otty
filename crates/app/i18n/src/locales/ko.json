@@ -685,6 +685,8 @@
     "agents_field_key": "키",
     "agents_spent_this_month": "이번 달 사용액",
     "agents_your_spend_this_month": "이번 달 내 사용액",
+    "agents_organization_bill": "조직 청구액",
+    "agents_organization_bill_waits": "OTTY에 관리자 키가 있으면 표시됩니다",
     "tpl_agents_spent_from_sessions": "이 컴퓨터의 {agent} 세션 기준",
     "agents_source_format_changed": "형식 변경됨",
     "tpl_agents_failure_format_changed": "세션 파일 형식이 바뀌었습니다: {seen}개 중 {understood}개 레코드를 읽음",

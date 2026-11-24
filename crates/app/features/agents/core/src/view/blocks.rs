@@ -1,10 +1,13 @@
 //! The pieces the blocks of the pages and of the statistics dialog share:
-//! a block title, alone, with a muted line under it or over its content,
+//! a block title, alone or over its content, the data cards of the pages,
 //! the lists of facts and a keyed row in their look, the tables as tall as
-//! their rows, the rows of the Limits and Money blocks and small lines.
+//! their rows, the figures of the Limits, Credits and Money cards and
+//! small lines.
 
-use iced::widget::{Column, Space, column, container, row, text};
-use iced::{Element, Length};
+use iced::widget::text::Wrapping;
+use iced::widget::{Column, column, container, row, text};
+use iced::{Alignment, Element, Length};
+use otty_ui_kit::components::card::{self, Card, CardTone};
 use otty_ui_kit::components::data_table;
 use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
 use otty_ui_kit::components::progress_bar::ProgressBar;
@@ -15,10 +18,8 @@ use otty_ui_kit::{fonts, size, spacing, typography};
 use super::super::event::AgentsIntent;
 use super::super::model::{FactViewModel, UsageRowViewModel};
 
-/// Gap between the rows of the Usage block (`gap: 14px`).
-pub(super) const USAGE_ROW_GAP: f32 = 14.0;
-/// Gap between the blocks (`gap: 28px`).
-pub(super) const BLOCK_GAP: f32 = 28.0;
+/// Gap between the cards of a page (`gap: 16px`).
+pub(super) const BLOCK_GAP: f32 = spacing::SPACE_5;
 /// Gap between a block title and its list or table (`gap: 10px`).
 pub(super) const TITLE_GAP: f32 = 10.0;
 /// Size of the key of a keyed row, as the keys of the kit `KeyValueList`
@@ -40,21 +41,6 @@ pub(super) fn title<'a>(
         .font(fonts::UI_SEMIBOLD)
         .color(palette.text_strong())
         .into()
-}
-
-/// A block title, such as "Usage", with a muted line under it, such as
-/// when its numbers were read.
-pub(super) fn title_over_line<'a>(
-    heading: &'a str,
-    line: Option<String>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut lines = column![title(heading, palette)].spacing(spacing::SPACE_1);
-    if let Some(line) = line {
-        lines = lines.push(small_text(line, palette.text_muted()));
-    }
-
-    lines.into()
 }
 
 /// `content` under the block title `heading`.
@@ -136,31 +122,52 @@ pub(super) fn notes<'a>(
     lines
 }
 
-/// One row of the Usage block, the same for every billing: its name and
-/// how much is used, the bar when it has a limit, and when it resets.
-pub(super) fn usage_row<'a>(
+/// A data card (issue 24 of spec 2026-11-23-accounts-apart-from-profiles):
+/// the kit card titled `title`, with the muted `line` under the title,
+/// such as when its numbers were read, and `body`.
+pub(super) fn card<'a>(
+    title: &'a str,
+    line: Option<String>,
+    body: impl Into<Element<'a, AgentsIntent>>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut card = Card::new(body, palette).title(title);
+    if let Some(line) = line {
+        card = card.line(small_text(line, palette.text_muted()));
+    }
+
+    card.into()
+}
+
+/// One figure of a usage window or of money, the same for every billing:
+/// its name and when it resets, how much is used, and the bar when it has
+/// a limit.
+pub(super) fn usage_figure<'a>(
     row: UsageRowViewModel,
     is_stale: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut rows =
-        column![name_and_value(row.name, row.used, is_stale, palette)]
-            .spacing(spacing::SPACE_2);
-    if let Some(percent) = row.percent {
-        rows = rows.push(bar(percent, is_stale, palette));
-    }
-    if let Some(resets) = row.resets {
-        rows = rows.push(small_text(resets, palette.text_muted()));
-    }
+    let value = figure_value(row.used, is_stale, palette);
 
-    rows.into()
+    figure(
+        row.name,
+        row.resets.into_iter().collect(),
+        value,
+        row.percent,
+        is_stale,
+        palette,
+    )
 }
 
-/// A name on the left, such as a window, and its value on the right; muted
-/// while the answer is old.
-pub(super) fn name_and_value<'a>(
+/// One figure of a data card (issue 24): its name with its own muted
+/// lines under it at the left, `value` at the right, and a bar `percent`
+/// full under them when it has a limit; the name muted while the answer
+/// is old.
+pub(super) fn figure<'a>(
     name: String,
-    value: String,
+    explain: Vec<String>,
+    value: impl Into<Element<'a, AgentsIntent>>,
+    percent: Option<u8>,
     is_stale: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
@@ -171,21 +178,65 @@ pub(super) fn name_and_value<'a>(
         palette.text_strong()
     };
 
-    row![
+    let mut label = column![
         text(name)
             .size(body.size())
             .line_height(iced::Pixels(body.line_height()))
             .font(fonts::UI_MEDIUM)
-            .color(color),
-        Space::new().width(Length::Fill),
-        text(value)
-            .size(body.size())
-            .line_height(iced::Pixels(body.line_height()))
-            .font(fonts::UI)
-            .color(color),
-    ]
-    .spacing(spacing::SPACE_3)
-    .into()
+            .color(color)
+    ];
+    for line in explain {
+        label = label.push(small_text(line, palette.text_muted()));
+    }
+    let line = row![container(label).width(Length::Fill), value.into()]
+        .spacing(spacing::SPACE_5)
+        .align_y(Alignment::Start);
+
+    let mut figure = column![line].spacing(spacing::SPACE_3);
+    if let Some(percent) = percent {
+        figure = figure.push(bar(percent, is_stale, palette));
+    }
+
+    figure.into()
+}
+
+/// The value of a figure, such as "42 % used", on one line; muted while
+/// the answer is old or the value is not known.
+pub(super) fn figure_value<'a>(
+    value: String,
+    is_muted: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let body = typography::BODY;
+    let color = if is_muted {
+        palette.text_muted()
+    } else {
+        palette.text_strong()
+    };
+
+    text(value)
+        .size(body.size())
+        .line_height(iced::Pixels(body.line_height()))
+        .font(fonts::UI_MEDIUM)
+        .color(color)
+        .wrapping(Wrapping::None)
+        .into()
+}
+
+/// The figures of a data card, one under the other, split by thin rules.
+pub(super) fn figures<'a>(
+    figures: Vec<Element<'a, AgentsIntent>>,
+    palette: &UiPalette,
+) -> Column<'a, AgentsIntent> {
+    let mut rows = Column::new().spacing(spacing::SPACE_4);
+    for (index, figure) in figures.into_iter().enumerate() {
+        if index > 0 {
+            rows = rows.push(card::rule(CardTone::Default, palette));
+        }
+        rows = rows.push(figure);
+    }
+
+    rows
 }
 
 /// A bar `percent` full, as wide as the block; muted while the answer is

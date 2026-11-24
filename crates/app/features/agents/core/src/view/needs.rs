@@ -1,55 +1,72 @@
 //! What the accounts or the profiles need from the user as a plain to-do
-//! list (spec 2026-11-19, Decision 6): each need its place and title, its
-//! line under them, then a small label naming the plugin that asks when a
-//! plugin part gives it and its button (two for a format a plugin saw
-//! change: Open plugin repository too), the rows split by rules and no
-//! boxes. The Found by OTTY report, the All accounts and All profiles
-//! pages and the page of an account show it.
+//! list (spec 2026-11-19, Decision 6) in a warning card: each need its
+//! place and title, its line under them, then one line with a small tag
+//! naming the plugin that asks when a plugin part gives it, at the left,
+//! and its button at the right edge (two for a format a plugin saw
+//! change: Open plugin repository too), the needs split by thin rules.
+//! The Found by OTTY report, the All accounts and All profiles pages and
+//! the pages of an account and of a profile show it.
 //!
-//! A need fits any width (issue 21 of spec
-//! 2026-11-23-accounts-apart-from-profiles): the text takes the width and
-//! wraps, the label stays on one line and the buttons stay whole. When the
-//! text would keep less than [`TEXT_MIN_WIDTH`] beside them, the label and
-//! the buttons go to their own line under the text, at the right. There
-//! the label is cut with "…" if even that line is too short, and its
-//! tooltip names it whole.
+//! A need is laid out the same at every width (issue 24 of spec
+//! 2026-11-23-accounts-apart-from-profiles, in place of issue 21's label
+//! and buttons beside the text): the text takes the whole width and
+//! wraps, the tag stays on one line and the buttons stay whole. When even
+//! the line under the text is too short for both, the label is cut with
+//! "…", and its tooltip names it whole.
 
-use iced::alignment::Horizontal;
-use iced::widget::{Column, Row, column, container, responsive, row};
+use iced::widget::{Column, Row, Space, column, responsive, text};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
-use otty_ui_kit::components::divider;
-use otty_ui_kit::components::ellipsis_text::{EllipsisText, text_width};
+use otty_ui_kit::components::card::{self, Card, CardTone};
+use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tag::{tag, tag_width};
 use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::NeedViewModel;
 use super::super::need::NeedAction;
 
-/// Least width the heading and the line of a need keep beside its label
-/// and buttons. In less, the label and the buttons go under the text.
-const TEXT_MIN_WIDTH: f32 = 320.0;
-/// Gap between the text, the label and the buttons.
+/// Gap between the label and the buttons.
 const SIDE_GAP: f32 = spacing::SPACE_4;
 /// Gap between two buttons of a need.
 const BUTTON_GAP: f32 = spacing::SPACE_3;
+/// Gap between the text of a need and the line of its label and buttons.
+const TEXT_GAP: f32 = spacing::SPACE_3;
+/// Gap between a need and the rule after it.
+const RULE_GAP: f32 = spacing::SPACE_4;
+/// Height of the line of the label and the buttons: a small button.
+const FOOT_HEIGHT: f32 = size::CONTROL_MD;
 
-/// Render `needs` as a to-do list; the button of a need sends `on_fix`
-/// with what the need asks.
+/// Render `needs` as the warning card titled `title`; the button of a
+/// need sends `on_fix` with what the need asks.
+pub(super) fn card<'a>(
+    title: &str,
+    needs: Vec<NeedViewModel>,
+    on_fix: fn(NeedAction) -> AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    Card::new(view(needs, on_fix, palette), palette)
+        .title(title)
+        .tone(CardTone::Warning)
+        .into()
+}
+
+/// Render `needs` as a to-do list split by the rules of a warning card;
+/// the button of a need sends `on_fix` with what the need asks.
 pub(super) fn view<'a>(
     needs: Vec<NeedViewModel>,
     on_fix: fn(NeedAction) -> AgentsIntent,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut list = Column::new().spacing(spacing::SPACE_3);
+    let mut list = Column::new().spacing(RULE_GAP);
 
     for (index, need) in needs.into_iter().enumerate() {
         if index > 0 {
-            list = list.push(divider::horizontal(palette));
+            list = list.push(card::rule(CardTone::Warning, palette));
         }
         list = list.push(need_row(need, on_fix, palette));
     }
@@ -57,9 +74,28 @@ pub(super) fn view<'a>(
     list.into()
 }
 
-/// One need, laid out for the width it gets: its label and buttons beside
-/// its text when the text keeps [`TEXT_MIN_WIDTH`], else under it.
+/// One need: its text across the whole width, then its label and buttons
+/// on their own line.
 fn need_row<'a>(
+    need: NeedViewModel,
+    on_fix: fn(NeedAction) -> AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let text = text_of(&need, palette);
+    let has_foot = need.plugin.is_some() || need.fix.is_some();
+
+    let mut row = column![text].spacing(TEXT_GAP);
+    if has_foot {
+        row = row.push(foot(need, on_fix, palette));
+    }
+
+    row.into()
+}
+
+/// The line under the text: the label of the plugin at the left, as a
+/// tag, and the buttons at the right edge. A label too long for the width
+/// the buttons leave is cut, and its tooltip names it whole.
+fn foot<'a>(
     need: NeedViewModel,
     on_fix: fn(NeedAction) -> AgentsIntent,
     palette: &UiPalette,
@@ -67,92 +103,48 @@ fn need_row<'a>(
     let palette = palette.clone();
 
     responsive(move |size| {
-        let plugin = need.plugin.as_deref();
         let (actions, actions_width) = actions(&need, on_fix, &palette);
-        let text = text(&need, &palette);
+        let reserved = match actions {
+            Some(_) => actions_width + SIDE_GAP,
+            None => 0.0,
+        };
 
-        match fits_beside(size.width, side_width(plugin, actions_width)) {
-            true => beside(text, plugin, actions, &palette),
-            false => under(
-                text,
-                plugin,
-                actions,
-                actions_width,
-                size.width,
-                &palette,
-            ),
+        let mut line = Row::new()
+            .spacing(SIDE_GAP)
+            .height(FOOT_HEIGHT)
+            .align_y(Alignment::Center);
+        if let Some(plugin) = need.plugin.as_deref() {
+            line = line.push(label(plugin, reserved, size.width, &palette));
         }
+        line = line.push(Space::new().width(Length::Fill));
+        if let Some(actions) = actions {
+            line = line.push(actions);
+        }
+
+        line.into()
     })
     .height(Length::Shrink)
     .into()
 }
 
-/// The text, then the label and the buttons at its right, on its line.
-fn beside<'a>(
-    text: Element<'a, AgentsIntent>,
-    plugin: Option<&str>,
-    actions: Option<Element<'a, AgentsIntent>>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut line = row![text].spacing(SIDE_GAP).align_y(Alignment::Center);
-
-    if let Some(plugin) = plugin {
-        line = line.push(label(plugin, 0.0, palette));
-    }
-    if let Some(actions) = actions {
-        line = line.push(actions);
-    }
-
-    line.into()
-}
-
-/// The text, then the label and the buttons, `actions_width` wide, on
-/// their own line under it, at the right. A label too long for that line,
-/// `width` wide, is cut, and its tooltip names it whole.
-fn under<'a>(
-    text: Element<'a, AgentsIntent>,
-    plugin: Option<&str>,
-    actions: Option<Element<'a, AgentsIntent>>,
-    actions_width: f32,
-    width: f32,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut line = row![].spacing(SIDE_GAP).align_y(Alignment::Center);
-
-    if let Some(plugin) = plugin {
-        let reserved = match actions {
-            Some(_) => actions_width + SIDE_GAP,
-            None => 0.0,
-        };
-        let shown = label(plugin, reserved, palette);
-        line = match label_width(plugin) + reserved > width {
-            true => line.push(tooltip(shown, plugin.to_string(), palette)),
-            false => line.push(shown),
-        };
-    }
-    if let Some(actions) = actions {
-        line = line.push(actions);
-    }
-
-    let line = container(line)
-        .width(Length::Fill)
-        .align_x(Horizontal::Right);
-    column![text, line].spacing(spacing::SPACE_2).into()
-}
-
 /// The heading, the place and the title of the need, and its line under
 /// it, wrapping in all the width they get.
-fn text<'a>(
+fn text_of<'a>(
     need: &NeedViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
+    let body = typography::BODY;
     let heading = i18n::filled(
         Key::TplAgentsNeedHeading,
         &[("place", &need.place), ("title", &need.title)],
     );
 
     column![
-        small_text(heading, palette.text_strong()),
+        text(heading)
+            .size(body.size())
+            .line_height(iced::Pixels(body.line_height()))
+            .font(fonts::UI)
+            .color(palette.text_strong()),
         small_text(need.line.clone(), palette.text_muted()),
     ]
     .spacing(spacing::SPACE_1)
@@ -160,18 +152,28 @@ fn text<'a>(
     .into()
 }
 
-/// The label of the plugin that asks, on one line, cut with "…" to leave
-/// `reserved` width free for the buttons after it.
+/// The label of the plugin that asks: a tag when it fits beside
+/// `reserved` width for the buttons in a line `width` wide, else muted
+/// text cut with "…", whose tooltip names it whole.
 fn label<'a>(
     plugin: &str,
     reserved: f32,
+    width: f32,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let small = typography::SMALL;
+    if tag_width(plugin) + reserved <= width {
+        return tag(plugin.to_string(), FOOT_HEIGHT, palette);
+    }
 
-    EllipsisText::new(plugin, small.size(), fonts::UI, palette.text_muted())
-        .shrink(reserved)
-        .into()
+    let small = typography::SMALL;
+    let cut = EllipsisText::new(
+        plugin,
+        small.size(),
+        fonts::UI,
+        palette.text_muted(),
+    )
+    .shrink(reserved);
+    tooltip(cut, plugin.to_string(), palette)
 }
 
 /// The buttons of the need side by side, the second one first, each
@@ -206,30 +208,6 @@ fn actions<'a>(
     }
 }
 
-/// Width of the label of `plugin` on one line.
-fn label_width(plugin: &str) -> f32 {
-    text_width(plugin, typography::SMALL.size(), fonts::UI)
-}
-
-/// Width the label of `plugin` and buttons `actions_width` wide take at
-/// the right of the text, with the gaps before them; 0 when there is
-/// neither.
-fn side_width(plugin: Option<&str>, actions_width: f32) -> f32 {
-    let label = plugin.map_or(0.0, |plugin| label_width(plugin) + SIDE_GAP);
-    let actions = match actions_width > 0.0 {
-        true => actions_width + SIDE_GAP,
-        false => 0.0,
-    };
-
-    label + actions
-}
-
-/// Whether the text keeps [`TEXT_MIN_WIDTH`] of `width` beside a label
-/// and buttons `side` wide, or there is nothing beside it.
-fn fits_beside(width: f32, side: f32) -> bool {
-    side == 0.0 || width - side >= TEXT_MIN_WIDTH
-}
-
 #[cfg(test)]
 mod tests {
     use iced::Rectangle;
@@ -242,12 +220,11 @@ mod tests {
     use super::*;
     use crate::model::NeedFixViewModel;
 
-    /// A page wide enough for the text, the label and the button side by
-    /// side.
+    /// A wide card.
     const WIDE: f32 = 900.0;
-    /// A page too narrow for the text beside the label and the button.
+    /// A narrow card.
     const NARROW: f32 = 360.0;
-    /// A page narrower than the label and the button side by side.
+    /// A card narrower than the label and the button side by side.
     const TINY: f32 = 200.0;
     /// The place of the need, an organization of the Anthropic plugin.
     const PLACE: &str = "Anthropic (Example Org, Claude API Platform)";
@@ -280,14 +257,13 @@ mod tests {
         }
     }
 
-    /// The needs view of `need` in a page `width` wide.
+    /// The needs view of `needs` in a card `width` wide.
     fn needs_in(
         width: f32,
-        need: NeedViewModel,
+        needs: Vec<NeedViewModel>,
     ) -> Simulator<'static, AgentsIntent> {
         let themes = ThemeManager::new();
-        let list =
-            view(vec![need], AgentsIntent::FixNeed, themes.current().ui());
+        let list = view(needs, AgentsIntent::FixNeed, themes.current().ui());
 
         simulator(container(list).width(width))
     }
@@ -296,70 +272,68 @@ mod tests {
         ui.find(text).expect("the text should show").bounds()
     }
 
-    fn heading() -> String {
+    fn heading_of(title: &str) -> String {
         i18n::filled(
             Key::TplAgentsNeedHeading,
-            &[("place", PLACE), ("title", TITLE)],
+            &[("place", PLACE), ("title", title)],
         )
     }
 
-    /// Whether `part` sits within the height of the text, from the top of
-    /// `heading` to the bottom of `line`.
-    fn beside(part: Rectangle, heading: Rectangle, line: Rectangle) -> bool {
-        part.y < line.y + line.height && part.y + part.height > heading.y
+    /// Owner's choices of issue 24 of spec
+    /// 2026-11-23-accounts-apart-from-profiles: at every width the text
+    /// takes the whole width, then one line under it holds the label of
+    /// the plugin at the left and the button at the right edge.
+    #[test]
+    fn at_every_width_the_label_and_the_button_go_on_a_line_under_the_text() {
+        for width in [WIDE, NARROW] {
+            let mut ui = needs_in(width, vec![need_of(PLUGIN)]);
+
+            let heading = bounds(&mut ui, &heading_of(TITLE));
+            let line = bounds(&mut ui, LINE);
+            let label = bounds(&mut ui, PLUGIN);
+            let button = bounds(&mut ui, BUTTON);
+
+            let text_end = line.y + line.height;
+            assert!(label.y >= text_end, "at {width}: {label:?} {line:?}");
+            assert!(button.y >= text_end, "at {width}: {button:?} {line:?}");
+            assert!(
+                label.x - heading.x < spacing::SPACE_3,
+                "at {width}: the label starts the line: {label:?}"
+            );
+            // The label of a small button sits 10 px inside its edge.
+            assert!(
+                (button.x + button.width - width).abs() < spacing::SPACE_4,
+                "at {width}: the button ends the line: {button:?}"
+            );
+            assert!(
+                (label.center_y() - button.center_y()).abs() < 1.0,
+                "at {width}: one line: {label:?} {button:?}"
+            );
+        }
     }
 
-    /// Issue 21 of spec 2026-11-23-accounts-apart-from-profiles: in a wide
-    /// page the label and the button sit at the right of the text, on its
-    /// line, the label before the button.
+    /// Issue 24: the text wraps across the whole width of the card, not
+    /// beside the label and the button.
     #[test]
-    fn at_a_wide_width_the_label_and_the_button_sit_beside_the_text() {
-        let mut ui = needs_in(WIDE, need_of(PLUGIN));
-
-        let heading = bounds(&mut ui, &heading());
-        let line = bounds(&mut ui, LINE);
-        let label = bounds(&mut ui, PLUGIN);
-        let button = bounds(&mut ui, BUTTON);
-
-        let text_end = (heading.x + heading.width).max(line.x + line.width);
-        assert!(label.x >= text_end, "{label:?} after the text {line:?}");
-        assert!(beside(label, heading, line), "{label:?} beside {line:?}");
-        assert!(beside(button, heading, line), "{button:?} beside {line:?}");
-        assert!(label.x + label.width <= button.x, "{label:?} {button:?}");
-        assert!(button.x + button.width <= WIDE, "inside: {button:?}");
-    }
-
-    /// Issue 21: in a narrow page the label and the button go to their own
-    /// line under the text, whole, the label on one line and apart from
-    /// the button.
-    #[test]
-    fn at_a_narrow_width_the_label_and_the_button_go_under_the_text() {
-        let small = typography::SMALL;
-        let mut ui = needs_in(NARROW, need_of(PLUGIN));
+    fn the_text_of_a_need_takes_the_whole_width() {
+        let mut ui = needs_in(NARROW, vec![need_of(PLUGIN)]);
 
         let line = bounds(&mut ui, LINE);
-        let label = bounds(&mut ui, PLUGIN);
-        let button = bounds(&mut ui, BUTTON);
 
-        assert!(label.y >= line.y + line.height, "{label:?} under {line:?}");
         assert!(
-            button.y >= line.y + line.height,
-            "{button:?} under {line:?}"
+            line.width > NARROW - 2.0 * spacing::SPACE_6,
+            "{line:?} wraps across the card"
         );
-        assert!(label.height <= small.line_height(), "one line: {label:?}");
-        let whole = text_width(PLUGIN, small.size(), fonts::UI);
-        assert!((label.width - whole).abs() < 1.0, "whole: {label:?}");
-        assert!(label.x + label.width <= button.x, "{label:?} {button:?}");
-        assert!(button.x + button.width <= NARROW, "inside: {button:?}");
     }
 
-    /// Issue 21: in a page too narrow even for the label and the button,
-    /// the label is cut on one line and the button stays whole.
+    /// Issue 21, kept by issue 24: in a card too narrow even for the
+    /// label and the button, the label is cut on one line and the button
+    /// stays whole.
     #[test]
     fn a_label_with_no_room_is_cut_on_one_line_and_the_button_stays_whole() {
         let small = typography::SMALL;
         let long = "A plugin with a rather long name plugin";
-        let mut ui = needs_in(TINY, need_of(long));
+        let mut ui = needs_in(TINY, vec![need_of(long)]);
 
         let label = bounds(&mut ui, long);
         let button = bounds(&mut ui, BUTTON);
@@ -374,5 +348,27 @@ mod tests {
             "whole: {button:?}"
         );
         assert!(button.x + button.width <= TINY, "inside: {button:?}");
+    }
+
+    /// Issue 24: the next need starts under the line of the buttons of
+    /// the one before, a rule between them.
+    #[test]
+    fn needs_follow_one_another_under_their_buttons() {
+        let second = NeedViewModel {
+            title: String::from("asks for new permissions"),
+            ..need_of(PLUGIN)
+        };
+        let mut ui = needs_in(WIDE, vec![need_of(PLUGIN), second]);
+
+        let button = ui
+            .find(BUTTON)
+            .expect("the first button should show")
+            .bounds();
+        let next = bounds(&mut ui, &heading_of("asks for new permissions"));
+
+        assert!(
+            next.y >= button.y + button.height + spacing::SPACE_4,
+            "{next:?} under {button:?} and the rule"
+        );
     }
 }

@@ -4,13 +4,15 @@
 //! from you" as a to-do list when there is anything; a line with a plain
 //! fact; the usage block; and "Profile info" with the plugin that reads
 //! the profile. No account: nothing links a profile to an account (spec
-//! 2026-11-23-accounts-apart-from-profiles, Decision 1).
+//! 2026-11-23-accounts-apart-from-profiles, Decision 1). Each part is a
+//! kit card, the needs a warning card (issue 24).
 
 use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
 use otty_agents::Profile;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::glyph;
 use otty_ui_kit::components::heading_row::HeadingRow;
@@ -64,9 +66,10 @@ fn page_blocks<'a>(
     let mut body = Column::new().spacing(blocks::BLOCK_GAP);
 
     if !vm.needs.is_empty() {
-        body = body.push(blocks::titled(
+        body = body.push(needs::card(
             i18n::t(Key::AgentsNeedsFromYou),
-            needs::view(vm.needs, AgentsIntent::FixNeed, palette),
+            vm.needs,
+            AgentsIntent::FixNeed,
             palette,
         ));
     }
@@ -74,13 +77,10 @@ fn page_blocks<'a>(
         body = body.push(blocks::notes(vm.info, vm.failure, palette));
     }
     if let Some(usage) = vm.usage {
-        body = body.push(usage_block::view(usage, palette));
+        body = body.push(usage_block::card(usage, palette));
     }
-    body.push(blocks::titled(
-        i18n::t(Key::AgentsProfileInfo),
-        blocks::facts(vm.facts, palette),
-        palette,
-    ))
+    let facts = blocks::facts(vm.facts, palette);
+    body.push(Card::new(facts, palette).title(i18n::t(Key::AgentsProfileInfo)))
 }
 
 /// The header: the logo and the name, then Refresh and "⋯" at the right
@@ -301,6 +301,40 @@ mod tests {
             share.x + share.width <= right_end + 0.5,
             "the Share column ends at {}, inside {right_end}",
             share.x + share.width
+        );
+    }
+
+    /// Issue 24 of spec 2026-11-23: the usage block is one card, its title
+    /// inside its padding and its period drop-down at the right end of
+    /// the title row, the table inside it too.
+    #[test]
+    fn the_usage_block_is_one_card_with_its_period_in_its_title_row() {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(page(), WIDE, &themes);
+        let left = (WIDE - size::FORM) / 2.0;
+        let right = (WIDE + size::FORM) / 2.0;
+
+        let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
+        let period = at(&mut ui, i18n::t(Key::AgentsSevenDays));
+        let row = at(&mut ui, "gpt-5.4");
+        let info = at(&mut ui, i18n::t(Key::AgentsProfileInfo));
+
+        assert!(
+            (usage.x - (left + spacing::SPACE_5)).abs() < 0.5,
+            "{usage:?}"
+        );
+        assert!(
+            (period.center_y() - usage.center_y()).abs() < spacing::SPACE_3,
+            "{period:?} on the row of {usage:?}"
+        );
+        assert!(
+            period.x + period.width <= right - spacing::SPACE_5,
+            "{period:?} inside the card"
+        );
+        assert!(row.x >= left + spacing::SPACE_5, "{row:?} inside the card");
+        assert!(
+            row.y + row.height + spacing::SPACE_5 <= info.y,
+            "{row:?} inside the card, over {info:?}"
         );
     }
 

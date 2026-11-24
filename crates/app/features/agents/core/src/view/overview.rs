@@ -2,13 +2,16 @@
 //! 2026-11-19, Decisions 6 and 7): one column like the profile page, its
 //! header with the icon, the title, Refresh and "⋯", a table as tall as its
 //! rows, whose row opens the account or the profile and whose right press
-//! opens its menu, and the "Needs you" to-do list.
+//! opens its menu, and the "Needs you" to-do list. The table is a kit card
+//! titled Accounts or Profiles, the needs a warning card (issue 24 of spec
+//! 2026-11-23-accounts-apart-from-profiles).
 
 use iced::widget::{Column, column, container, row, svg};
 use iced::{Alignment, Element, Length};
 use otty_agents::{Account, Profile};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
@@ -44,8 +47,10 @@ pub(crate) fn all_accounts<'a>(
         palette,
     );
     let table = accounts_table(vm.rows, palette);
+    let table =
+        Card::new(table, palette).title(i18n::t(Key::AgentsSectionAccounts));
 
-    page(header, table, vm.needs, palette)
+    page(header, table.into(), vm.needs, palette)
 }
 
 /// Render the All profiles page.
@@ -60,13 +65,15 @@ pub(crate) fn all_profiles<'a>(
         palette,
     );
     let table = profiles_table(vm.rows, palette);
+    let table =
+        Card::new(table, palette).title(i18n::t(Key::AgentsSectionProfiles));
 
-    page(header, table, vm.needs, palette)
+    page(header, table.into(), vm.needs, palette)
 }
 
-/// The page: the header over the table and the needs, as wide as the room
-/// and at most a form's width, centred across the main area and starting
-/// at its top.
+/// The page: the header over the card of the table and the warning card
+/// of the needs, as wide as the room and at most a form's width, centred
+/// across the main area and starting at its top.
 fn page<'a>(
     header: Element<'a, AgentsIntent>,
     table: Element<'a, AgentsIntent>,
@@ -75,9 +82,10 @@ fn page<'a>(
 ) -> Element<'a, AgentsIntent> {
     let mut body = Column::new().spacing(blocks::BLOCK_GAP).push(table);
     if !needs.is_empty() {
-        body = body.push(blocks::titled(
+        body = body.push(needs::card(
             i18n::t(Key::AgentsNeedsYou),
-            needs::view(needs, AgentsIntent::FixNeed, palette),
+            needs,
+            AgentsIntent::FixNeed,
             palette,
         ));
     }
@@ -398,6 +406,43 @@ mod tests {
                 "https://example.com/login"
             )))]
         );
+    }
+
+    /// Issue 24 of spec 2026-11-23: the table is a card titled Accounts,
+    /// the table inside its padding, and the needs a card under it.
+    #[test]
+    fn all_accounts_draws_its_table_and_its_needs_as_cards() {
+        const WIDTH: f32 = 1000.0;
+        let themes = ThemeManager::new();
+        let palette = themes.current().ui();
+        let vm = AllAccountsViewModel {
+            needs: vec![log_in_need()],
+            ..accounts_page()
+        };
+        let mut ui =
+            simulator(container(all_accounts(vm, palette)).width(WIDTH));
+        let left = (WIDTH - size::FORM) / 2.0;
+        let right = (WIDTH + size::FORM) / 2.0;
+        let at = |ui: &mut iced_test::Simulator<'_, AgentsIntent>,
+                  label: &str| {
+            ui.find(label).expect("the text should show").bounds()
+        };
+
+        let title = at(&mut ui, i18n::t(Key::AgentsSectionAccounts));
+        let column = at(&mut ui, i18n::t(Key::AgentsFieldAccount));
+        let now = at(&mut ui, "42 % used");
+        let needs = at(&mut ui, i18n::t(Key::AgentsNeedsYou));
+        let button = at(&mut ui, "Log in");
+
+        assert!((title.x - (left + spacing::SPACE_5)).abs() < 0.5);
+        assert!(column.x >= left + spacing::SPACE_5, "{column:?}");
+        assert!(column.y >= title.y + title.height, "{column:?}");
+        assert!(now.x + now.width <= right - spacing::SPACE_5, "{now:?}");
+        assert!(
+            now.y + now.height + spacing::SPACE_5 <= needs.y,
+            "{now:?} over {needs:?}"
+        );
+        assert!(button.x + button.width <= right - spacing::SPACE_5);
     }
 
     #[test]

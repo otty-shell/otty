@@ -1,60 +1,77 @@
-//! Money on screen. The Money block of an account page: when the money
-//! was read, then what the key told and the money spent this month as
-//! rows, drawn as the usage windows of a subscription are, all as the
-//! provider told them. And the mark "at API prices" under the sums of the
-//! tokens of a profile (`mark`; spec
+//! Money on screen. The Money card of an account page: when the money
+//! was read, then what the key told, the money spent this month and the
+//! bill of an organization as figures, drawn as the usage windows of a
+//! subscription are, all as the provider told them. And the mark "at API
+//! prices" under the sums of the tokens of a profile (`mark`; spec
 //! 2026-11-23-accounts-apart-from-profiles, Decision 3).
 
 use iced::widget::{Column, Space, row};
-use iced::{Element, Length};
+use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tag::tag;
 use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::spacing;
+use otty_ui_kit::{spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    MoneyKind, MoneyViewModel, SpentAtApiPricesViewModel, UsageRowViewModel,
+    MoneyKind, MoneyViewModel, OrganizationBillViewModel,
+    SpentAtApiPricesViewModel,
 };
 use super::blocks;
 
-/// Render the block of money named `title`, "Money" on the page of an
-/// account.
+/// The value of a figure OTTY does not know yet.
+const NOT_KNOWN: &str = "—";
+
+/// Render the card of money named `title`, "Money" on the page of an
+/// account: a figure for each row the key told, the money spent this
+/// month, the spend at API prices and the bill of an organization, split
+/// by thin rules, then what failed.
 pub(super) fn view<'a>(
     vm: MoneyViewModel,
     title: &'static str,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut block = Column::new()
-        .spacing(blocks::USAGE_ROW_GAP)
-        .push(blocks::title_over_line(title, vm.updated, palette));
-    for row in vm.rows {
-        block = block.push(blocks::usage_row(row, vm.is_stale, palette));
-    }
+    let is_stale = vm.is_stale;
+
+    let mut figures: Vec<Element<'a, AgentsIntent>> = vm
+        .rows
+        .into_iter()
+        .map(|row| blocks::usage_figure(row, is_stale, palette))
+        .collect();
     if let Some(spent) = vm.spent {
-        let row = UsageRowViewModel {
-            name: i18n::t(Key::AgentsSpentThisMonth).to_string(),
-            used: spent,
-            percent: None,
-            resets: None,
-        };
-        block = block.push(blocks::usage_row(row, vm.is_stale, palette));
+        let name = i18n::t(Key::AgentsSpentThisMonth).to_string();
+        let value = blocks::figure_value(spent, is_stale, palette);
+        figures.push(blocks::figure(
+            name,
+            Vec::new(),
+            value,
+            None,
+            is_stale,
+            palette,
+        ));
     }
     if let Some(spent) = vm.spent_at_api_prices {
-        block = block.push(spent_at_api_prices(spent, vm.is_stale, palette));
+        figures.push(spent_at_api_prices(spent, is_stale, palette));
+    }
+    if let Some(bill) = vm.organization_bill {
+        figures.push(organization_bill(bill, is_stale, palette));
     }
 
-    block
-        .push(blocks::notes(None, vm.failure, palette))
-        .width(Length::Fill)
-        .into()
+    let mut body = Column::new()
+        .spacing(spacing::SPACE_4)
+        .push(blocks::figures(figures, palette));
+    if vm.failure.is_some() {
+        body = body.push(blocks::notes(None, vm.failure, palette));
+    }
+    blocks::card(title, vm.updated, body, palette)
 }
 
-/// "Your spend this month ~$42.10" of the agent's sessions at API prices
-/// (issue 22 of spec 2026-11-23-accounts-apart-from-profiles): the row
-/// with its kinds on hover, under it the mark "at API prices" with its
-/// tooltip at the right end, then where it was counted.
+/// "Your spend this month" of the agent's sessions at API prices (issues
+/// 22 and 24 of spec 2026-11-23-accounts-apart-from-profiles): where it
+/// was counted under the name, the mark "at API prices" with its tooltip
+/// next to the amount, and the amount with its kinds on hover.
 fn spent_at_api_prices<'a>(
     spent: SpentAtApiPricesViewModel,
     is_stale: bool,
@@ -62,21 +79,46 @@ fn spent_at_api_prices<'a>(
 ) -> Element<'a, AgentsIntent> {
     let tip = kinds_tooltip(&spent);
     let name = i18n::t(Key::AgentsYourSpendThisMonth).to_string();
-    let line = blocks::name_and_value(name, spent.amount, is_stale, palette);
-    let mark = small_text(spent.mark.label, palette.text_muted());
+    let mark = tag(spent.mark.label, typography::BODY.line_height(), palette);
+    let amount = blocks::figure_value(spent.amount, is_stale, palette);
 
-    let mut lines = Column::new()
-        .spacing(spacing::SPACE_1)
-        .push(tooltip(line, tip, palette))
-        .push(row![
-            Space::new().width(Length::Fill),
-            tooltip(mark, spent.mark.tip, palette)
-        ]);
-    if let Some(source) = spent.source {
-        lines = lines.push(small_text(source, palette.text_muted()));
-    }
+    let value = row![
+        tooltip(mark, spent.mark.tip, palette),
+        tooltip(amount, tip, palette),
+    ]
+    .spacing(spacing::SPACE_3)
+    .align_y(Alignment::Center);
 
-    lines.into()
+    blocks::figure(
+        name,
+        spent.source.into_iter().collect(),
+        value,
+        None,
+        is_stale,
+        palette,
+    )
+}
+
+/// "Organization bill": the bill read with the admin key, or "—" with
+/// the line that it shows once OTTY has an admin key.
+fn organization_bill<'a>(
+    bill: OrganizationBillViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let name = i18n::t(Key::AgentsOrganizationBill).to_string();
+    let (value, explain, is_muted) = match bill {
+        OrganizationBillViewModel::Read(amount) => {
+            (amount, Vec::new(), is_stale)
+        },
+        OrganizationBillViewModel::WaitsForAdminKey => {
+            let waits = i18n::t(Key::AgentsOrganizationBillWaits).to_string();
+            (String::from(NOT_KNOWN), vec![waits], true)
+        },
+    };
+
+    let value = blocks::figure_value(value, is_muted, palette);
+    blocks::figure(name, explain, value, None, is_stale, palette)
 }
 
 /// The tooltip of the spend at API prices: each kind at the left and its
@@ -118,7 +160,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
 
     use super::*;
-    use crate::model::LimitsViewModel;
+    use crate::model::{LimitsViewModel, UsageRowViewModel};
     use crate::testing::estimated_money;
 
     /// Width of the block in the tests.
@@ -139,6 +181,7 @@ mod tests {
             rows: vec![row(i18n::t(Key::AgentsLeft), "$110.00", None)],
             spent: Some(String::from("$184.75")),
             spent_at_api_prices: None,
+            organization_bill: None,
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
         }
@@ -263,8 +306,9 @@ mod tests {
             assert_eq!(at(&mut money_ui, text), at(&mut limits_ui, text));
         }
         let value = at(&mut money_ui, "$12.40");
+        // Issue 24: the row ends at the padding of its card.
         assert!(
-            (value.x + value.width - WIDTH).abs() < 1.0,
+            (value.x + value.width - (WIDTH - spacing::SPACE_5)).abs() < 1.0,
             "the value ends the row: {value:?}"
         );
     }

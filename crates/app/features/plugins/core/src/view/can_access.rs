@@ -9,16 +9,17 @@
 //! line in the monospace font.
 
 use iced::widget::text::Wrapping;
-use iced::widget::{Column, Row, column, container, row, text};
-use iced::{Alignment, Border, Element, Length};
+use iced::widget::{Column, Row, column, row, text};
+use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::tag::tag;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, radius, size, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use crate::event::PluginsIntent;
 use crate::model::permissions::{
@@ -66,14 +67,14 @@ pub(super) fn dialog<'a>(
         .into()
 }
 
-/// A part in the install or update dialog as a compact card: its name,
+/// A part in the install or update dialog as a kit card: its name,
 /// the tag of its kind, its mark in the update dialog and its
 /// description; then, unless the new version no longer has it, a thin
 /// rule, "Can access" when the part asks for something, and its groups.
 pub(super) fn part_card<'a>(
     part: PartPermissionsViewModel,
     palette: &UiPalette,
-) -> Element<'a, PluginsIntent> {
+) -> Card<'a, PluginsIntent> {
     let mut title = row![
         text(part.name)
             .font(fonts::UI_SEMIBOLD)
@@ -118,27 +119,12 @@ pub(super) fn kind_tag<'a>(
     tag(kind.to_string(), TAG_LINE, palette)
 }
 
-/// `content` on a compact card of the panel surface with a thin border.
+/// `content` on the kit card, with no title.
 fn card<'a>(
     content: impl Into<Element<'a, PluginsIntent>>,
     palette: &UiPalette,
-) -> Element<'a, PluginsIntent> {
-    let background = palette.surface_panel();
-    let line = palette.line();
-
-    container(content)
-        .width(Length::Fill)
-        .padding(spacing::SPACE_4)
-        .style(move |_| container::Style {
-            background: Some(background.into()),
-            border: Border {
-                radius: radius::RADIUS_MD.into(),
-                width: size::LINE,
-                color: line,
-            },
-            ..container::Style::default()
-        })
-        .into()
+) -> Card<'a, PluginsIntent> {
+    Card::new(content, palette)
 }
 
 /// The groups of a part, each label with what it means under it, or "Asks
@@ -332,6 +318,19 @@ mod tests {
         let _ = ui.click(i18n::t(Key::ButtonClose));
         let sent: Vec<PluginsIntent> = ui.into_messages().collect();
         assert!(matches!(sent.as_slice(), [PluginsIntent::Back]));
+    }
+
+    /// Issue 24 of spec 2026-11-23-accounts-apart-from-profiles: a part in
+    /// the install and update dialogs is the kit card.
+    #[test]
+    fn the_card_of_a_part_in_a_dialog_is_a_kit_card() {
+        let palette = UiPalette::otty_dark();
+
+        let card: Card<'_, PluginsIntent> = part_card(part(vec![]), &palette);
+        let mut ui = simulator(iced::widget::container(card).width(500));
+
+        let name = ui.find("Example Cloud").expect("the name").bounds();
+        assert!((name.x - spacing::SPACE_5).abs() < 0.5, "{name:?}");
     }
 
     /// Issue 35, 36: in the install and update dialogs a part shows its

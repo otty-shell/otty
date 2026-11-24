@@ -1,7 +1,9 @@
 //! The Found by OTTY report (spec Decision 2): a wide dialog with what OTTY
 //! found, the group of the profiles over the group of the accounts, with no
 //! link between them, then what the accounts and the profiles need from
-//! the user, each need with its one button. Done closes it; the frame
+//! the user, each need with its one button. Each group is a kit card, the
+//! needs warning cards (issue 24 of spec
+//! 2026-11-23-accounts-apart-from-profiles). Done closes it; the frame
 //! closes it on Esc.
 
 use iced::widget::Column;
@@ -9,6 +11,7 @@ use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::data_table::{DataTable, TableCell, TableColumn};
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::small_text::small_text;
@@ -35,39 +38,30 @@ pub(crate) fn view(props: FoundReportProps<'_>) -> Element<'_, AgentsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
 
+    let profiles = Card::new(profiles_table(vm.profiles, palette), palette)
+        .title(i18n::t(Key::AgentsSectionProfiles));
+    let accounts = Card::new(accounts_table(vm.accounts, palette), palette)
+        .title(i18n::t(Key::AgentsSectionAccounts));
+
     let mut body = Column::new()
         .push(small_text(vm.intro, palette.text_muted()))
-        .push(blocks::titled(
-            i18n::t(Key::AgentsSectionProfiles),
-            profiles_table(vm.profiles, palette),
-            palette,
-        ))
-        .push(blocks::titled(
-            i18n::t(Key::AgentsSectionAccounts),
-            accounts_table(vm.accounts, palette),
-            palette,
-        ))
+        .push(profiles)
+        .push(accounts)
         .spacing(spacing::SPACE_4)
         .width(Length::Fill);
     if !vm.account_needs.is_empty() {
-        body = body.push(blocks::titled(
+        body = body.push(needs::card(
             i18n::t(Key::AgentsAccountsNeedYou),
-            needs::view(
-                vm.account_needs,
-                AgentsIntent::FoundReportNeed,
-                palette,
-            ),
+            vm.account_needs,
+            AgentsIntent::FoundReportNeed,
             palette,
         ));
     }
     if !vm.profile_needs.is_empty() {
-        body = body.push(blocks::titled(
+        body = body.push(needs::card(
             i18n::t(Key::AgentsProfilesNeedYou),
-            needs::view(
-                vm.profile_needs,
-                AgentsIntent::FoundReportNeed,
-                palette,
-            ),
+            vm.profile_needs,
+            AgentsIntent::FoundReportNeed,
             palette,
         ));
     }

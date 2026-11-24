@@ -102,15 +102,22 @@ page scrolls sideways, and a project's sessions table still scrolls up and down 
 | **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
 | **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
-**All accounts** and **All profiles** are tables with their **Needs you** list. The **Now** of an
-account is only what its provider part read: the percent used, the money left or spent this month,
-else "—".
+**All accounts** and **All profiles** are tables, in a card titled **Accounts** or **Profiles**,
+with their **Needs you** list under them. The **Now** of an account is only what its provider part
+read: the percent used, the money left or spent this month, else "—".
 
 ## The pages
 
+Each part of a page is a card with its title inside, so you see what belongs to what. **Needs from
+you** is a card tinted in the warning colour. In **Limits**, **Credits** and **Money** each number is
+its own row: its name with a short line about it at the left, the number at the right, and a bar
+under a number with a limit. The money of your sessions has the tag **at API prices** next to the
+amount. An organization shows two rows: **Your spend this month**, from your sessions on this
+computer, and **Organization bill**, "—" until OTTY has an admin key that reads the bill.
+
 | Page        | Shows                                                                                                                       |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit, or **Your spend this month** at API prices) and the bill of an organization, as the provider tells them; **Account info**: Provider, Name, Kind (Subscription, Key or Organization), Plan, **Source** ("Found in ~/.codex", one line per folder, and "OTTY's own login"), **Read by** (the plugin and its version). An account with OTTY's own login has the mark "OTTY's own login" after its name and a **Log in again** button in its header. |
+| **Account** | Needs from you; **Limits** and **Credits**, or **Money** (Left, Spent this month, Key limit, or **Your spend this month** at API prices, and **Organization bill** of an organization), as the provider tells them; **Account info**: Provider, Name, Kind (Subscription, Key or Organization), Plan, **Source** ("Found in ~/.codex", one line per folder, and "OTTY's own login"), **Read by** (the plugin and its version). An account with OTTY's own login has the mark "OTTY's own login" after its name and a **Log in again** button in its header. |
 | **Profile** | Needs from you; the usage block; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
 | **Project** | The folder name as the title, then **Project info** with the path and the profiles, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab, and the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
@@ -142,10 +149,11 @@ the account or profile, and in the **Needs you** list. Two kinds of needs come f
   kind to read a bill. OTTY shows the need as the plugin wrote it, with a small label naming the
   plugin, such as "OpenAI plugin", so you see who asks.
 
-A need reads as one line of the list: the place and the title, such as "Anthropic (Example Org,
-Claude API Platform), the real bill needs an admin key", and the text under them, wrapping in the
-width they get. The plugin's label and the button sit at the right of the text. On a narrow page
-they go to their own line under the text, at the right. The label always stays on one line and the
+The needs are a card tinted in the warning colour, with a dot before its title. A need reads as one
+row of the card: the place and the title, such as "Anthropic (Example Org, Claude API Platform),
+the real bill needs an admin key", and the text under them, across the whole width of the card.
+Under the text one line holds the plugin's label at the left and the button at the right edge, the
+same at every width. A thin line splits the needs. The label always stays on one line and the
 button stays whole: a label that still does not fit ends with "…" and shows whole on hover.
 
 ### What OTTY asks

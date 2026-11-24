@@ -14,6 +14,7 @@
 use iced::widget::{Column, column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::data_table::{
     ColumnAlign, DataTable, TableCell, TableColumn,
 };
@@ -44,14 +45,46 @@ const MONEY_MIN_WIDTH: u16 = 88;
 /// Least width of the share column.
 const SHARE_MIN_WIDTH: u16 = 56;
 
-/// Render the usage block.
+/// Render the usage block of a popup: its title row over its body.
 pub(super) fn view<'a>(
     vm: UsageBlockViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut block = Column::new()
+    let title = title_row(&vm, palette);
+
+    column![title, body(vm, palette)]
         .spacing(blocks::TITLE_GAP)
-        .push(title_row(&vm, palette));
+        .into()
+}
+
+/// Render the usage block of a profile page as a kit card (issue 24 of
+/// spec 2026-11-23-accounts-apart-from-profiles): the title "Usage" with
+/// the total under it and the period drop-down at the right end of its
+/// row, then the body.
+pub(super) fn card<'a>(
+    vm: UsageBlockViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let total = total(&vm, palette);
+    let period = period(&vm, palette);
+
+    let mut card = Card::new(body(vm, palette), palette)
+        .title(i18n::t(Key::AgentsUsage))
+        .trailing(period);
+    if let Some(total) = total {
+        card = card.line(total);
+    }
+
+    card.into()
+}
+
+/// The bars, the tabs and the table of the rows, the mark "at API prices"
+/// and what failed, one under the other.
+fn body<'a>(
+    vm: UsageBlockViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let mut block = Column::new().spacing(blocks::TITLE_GAP);
     if !vm.bars.is_empty() {
         block = block
             .push(bars(&vm, palette))
@@ -71,38 +104,58 @@ pub(super) fn view<'a>(
         block = block.push(mark);
     }
 
-    block.push(blocks::notes(None, vm.failure, palette)).into()
+    if vm.failure.is_some() {
+        block = block.push(blocks::notes(None, vm.failure, palette));
+    }
+
+    block.into()
 }
 
 /// The title with the total of the period, or the time of the last good
-/// numbers, under it, and the period drop-down at its right. The total
-/// lists what its tokens and money are made of on hover.
+/// numbers, under it, and the period drop-down at its right.
 fn title_row<'a>(
     vm: &UsageBlockViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let mut lines = column![blocks::title(i18n::t(Key::AgentsUsage), palette)]
         .spacing(spacing::SPACE_1);
-    if let Some(line) = vm.line.clone() {
-        let line = small_text(line, palette.text_muted());
-        lines = match breakdown_tooltip(&vm.breakdown) {
-            Some(tip) => lines.push(tooltip(line, tip, palette)),
-            None => lines.push(line),
-        };
+    if let Some(total) = total(vm, palette) {
+        lines = lines.push(total);
     }
     let title = container(lines).width(Length::Fill);
 
-    let period = match vm.period_picker {
+    row![title, period(vm, palette)]
+        .spacing(spacing::SPACE_3)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// The total of the period, or the time of the last good numbers, muted;
+/// it lists what its tokens and money are made of on hover.
+fn total<'a>(
+    vm: &UsageBlockViewModel,
+    palette: &UiPalette,
+) -> Option<Element<'a, AgentsIntent>> {
+    let line = small_text(vm.line.clone()?, palette.text_muted());
+
+    Some(match breakdown_tooltip(&vm.breakdown) {
+        Some(tip) => tooltip(line, tip, palette),
+        None => line.into(),
+    })
+}
+
+/// The period drop-down: the menu of the mode on a page, its own list in
+/// a popup.
+fn period<'a>(
+    vm: &UsageBlockViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    match vm.period_picker {
         PeriodPicker::List { is_open } => {
             period_list(vm.period, is_open, palette)
         },
         PeriodPicker::Menu => period_dropdown(vm.period, palette),
-    };
-
-    row![title, period]
-        .spacing(spacing::SPACE_3)
-        .align_y(Alignment::Center)
-        .into()
+    }
 }
 
 /// A compact drop-down showing `period`; a press opens its menu at the

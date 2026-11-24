@@ -1459,6 +1459,10 @@ pub enum Key {
     AgentsSpentThisMonth,
     /// Row of what the agent's sessions on this computer spent through an account this month, at API prices.
     AgentsYourSpendThisMonth,
+    /// Row of the money an organization spent this month, as its bill tells.
+    AgentsOrganizationBill,
+    /// The line under the Organization bill row while OTTY has no admin key to read it.
+    AgentsOrganizationBillWaits,
     /// Where "Your spend this month" was counted. Placeholder: `{agent}`, the agent's name.
     TplAgentsSpentFromSessions,
     /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
@@ -2058,7 +2062,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 958] = [
+    pub(super) const ALL: [Self; 960] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2729,6 +2733,8 @@ impl Key {
         Self::AgentsFieldKey,
         Self::AgentsSpentThisMonth,
         Self::AgentsYourSpendThisMonth,
+        Self::AgentsOrganizationBill,
+        Self::AgentsOrganizationBillWaits,
         Self::TplAgentsSpentFromSessions,
         Self::AgentsSourceFormatChanged,
         Self::TplAgentsFailureFormatChanged,

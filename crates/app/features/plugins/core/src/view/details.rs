@@ -6,10 +6,11 @@
 //! plugin.
 
 use iced::widget::{Column, Row, Space, column, container, row, svg, text};
-use iced::{Alignment, Border, Element, Length};
+use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::empty_card::EmptyCard;
 use otty_ui_kit::components::key_value_list::{KeyValueList, ValuePart};
@@ -20,7 +21,7 @@ use otty_ui_kit::components::switch::Switch;
 use otty_ui_kit::components::tag::{tag, warn_tag};
 use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, radius, size, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::can_access::kind_tag;
 use crate::event::PluginsIntent;
@@ -307,7 +308,7 @@ fn parts<'a>(
         .parts
         .iter()
         .cloned()
-        .map(|part| part_card(page, part, palette))
+        .map(|part| part_card(page, part, palette).into())
         .collect();
 
     Column::with_children(parts)
@@ -315,16 +316,17 @@ fn parts<'a>(
         .into()
 }
 
-/// One part of `page` as a card: a header with its name, the tag of its
-/// kind, its health badge, Try again while it is paused and its switch at
-/// the right end; its description with Can access (5) at the right end, or
-/// "Asks for no permissions"; its last failed call with Copy report. A
-/// part that is on of a broken plugin has the badge in the error colour.
+/// One part of `page` as a kit card: a header with its name, the tag of
+/// its kind, its health badge, Try again while it is paused and its switch
+/// at the right end; its description with Can access (5) at the right
+/// end, or "Asks for no permissions"; its last failed call with Copy
+/// report. A part that is on of a broken plugin has the badge in the error
+/// colour.
 fn part_card<'a>(
     page: &PluginPageViewModel,
     part: PartRowViewModel,
     palette: &UiPalette,
-) -> Element<'a, PluginsIntent> {
+) -> Card<'a, PluginsIntent> {
     let plugin = page.id.as_str();
     let is_busy = page.is_busy;
 
@@ -393,21 +395,7 @@ fn part_card<'a>(
         );
     }
 
-    let background = palette.surface_panel();
-    let line = palette.line();
-    container(card)
-        .width(Length::Fill)
-        .padding([spacing::SPACE_4, spacing::SPACE_5])
-        .style(move |_| container::Style {
-            background: Some(background.into()),
-            border: Border {
-                radius: radius::RADIUS_MD.into(),
-                width: size::LINE,
-                color: line,
-            },
-            ..container::Style::default()
-        })
-        .into()
+    Card::new(card, palette)
 }
 
 /// The line under the header of a part card: its description, muted,
@@ -670,6 +658,21 @@ mod tests {
             [PluginsIntent::ShowCanAccess { plugin, part }]
                 if plugin == "example" && *part == PartRef::agent("example-agent")
         ));
+    }
+
+    /// Issue 24 of spec 2026-11-23-accounts-apart-from-profiles: the card
+    /// of a part is the kit card, its header inside the card's padding.
+    #[test]
+    fn a_part_card_is_a_kit_card() {
+        let palette = UiPalette::otty_dark();
+        let page = example();
+        let part = page.parts[0].clone();
+
+        let card: Card<'_, PluginsIntent> = part_card(&page, part, &palette);
+        let mut ui = simulator(iced::widget::container(card).width(600));
+
+        let name = ui.find("Example Agent").expect("the name").bounds();
+        assert!((name.x - spacing::SPACE_5).abs() < 0.5, "{name:?}");
     }
 
     /// Issue 36: a part with no permission and no description shows only

@@ -295,7 +295,9 @@ mod tests {
     fn in_a_wide_window_the_profile_page_has_one_column() {
         let [needs, hint, log_in, info] = profile_page_parts(1280.0, 800.0);
 
-        assert!((info.x - needs.x).abs() < 1.0, "{info:?} {needs:?}");
+        // The title of the needs comes after the dot of its warning card,
+        // so the line of the need marks the left edge of the column.
+        assert!((info.x - hint.x).abs() < 1.0, "{info:?} {hint:?}");
         assert!(hint.y > needs.y, "{hint:?} under {needs:?}");
         assert!(info.y > log_in.y, "{info:?} under {log_in:?}");
         assert!(info.y > hint.y, "{info:?} under {hint:?}");
@@ -305,9 +307,9 @@ mod tests {
     fn in_the_smallest_window_the_profile_page_has_one_column_and_log_in() {
         let (width, height) = (crate::app::MIN_WINDOW_WIDTH, 600.0);
 
-        let [needs, _, log_in, info] = profile_page_parts(width, height);
+        let [needs, hint, log_in, info] = profile_page_parts(width, height);
 
-        assert!((info.x - needs.x).abs() < 1.0, "{info:?} {needs:?}");
+        assert!((info.x - hint.x).abs() < 1.0, "{info:?} {hint:?}");
         assert!(info.y > needs.y, "{info:?} under {needs:?}");
         assert!(log_in.x + log_in.width <= width, "{log_in:?} in reach");
     }

@@ -62,7 +62,10 @@ pub(crate) use menus::{
 };
 #[cfg(test)]
 pub(crate) use money::{ApiPricesMarkViewModel, ShownMoney};
-pub(crate) use money::{MoneyKind, MoneyViewModel, SpentAtApiPricesViewModel};
+pub(crate) use money::{
+    MoneyKind, MoneyViewModel, OrganizationBillViewModel,
+    SpentAtApiPricesViewModel,
+};
 pub(crate) use needs::NeedViewModel;
 #[cfg(test)]
 pub(crate) use needs::{NeedFixViewModel, account_needs, profile_needs};

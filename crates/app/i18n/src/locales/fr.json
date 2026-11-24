@@ -685,6 +685,8 @@
     "agents_field_key": "Clé",
     "agents_spent_this_month": "Dépensé ce mois-ci",
     "agents_your_spend_this_month": "Vos dépenses ce mois-ci",
+    "agents_organization_bill": "Facture de l'organisation",
+    "agents_organization_bill_waits": "S'affiche dès qu'OTTY a une clé d'administration",
     "tpl_agents_spent_from_sessions": "D'après vos sessions {agent} sur cet ordinateur",
     "agents_source_format_changed": "format modifié",
     "tpl_agents_failure_format_changed": "le format des fichiers de session a changé : {understood} enregistrements compris sur {seen}",

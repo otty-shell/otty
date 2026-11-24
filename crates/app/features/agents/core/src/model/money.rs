@@ -35,11 +35,24 @@ pub(crate) struct MoneyViewModel {
     /// bill and no count of its provider (issue 22 of spec
     /// 2026-11-23-accounts-apart-from-profiles).
     pub(crate) spent_at_api_prices: Option<SpentAtApiPricesViewModel>,
+    /// The row "Organization bill" of an organization (issue 24 of spec
+    /// 2026-11-23-accounts-apart-from-profiles); `None` for an account that
+    /// is not one, or whose bill could not be read, which `failure` tells.
+    pub(crate) organization_bill: Option<OrganizationBillViewModel>,
     /// Whether the money is older, drawn greyed, because the latest read
     /// failed.
     pub(crate) is_stale: bool,
     /// Why the latest read failed, or why the bill could not be read.
     pub(crate) failure: Option<String>,
+}
+
+/// The bill of an organization this month, as its row shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OrganizationBillViewModel {
+    /// The bill read with the admin key, such as "$42.00".
+    Read(String),
+    /// No bill yet: "—", it shows once OTTY has an admin key.
+    WaitsForAdminKey,
 }
 
 /// "Your spend this month" of an account: what the agent's own sessions

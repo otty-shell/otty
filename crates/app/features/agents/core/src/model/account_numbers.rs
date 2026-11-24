@@ -22,7 +22,9 @@ use super::super::state::AgentsState;
 use super::limits::{
     LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
 };
-use super::money::{MoneyViewModel, SpentAtApiPricesViewModel};
+use super::money::{
+    MoneyViewModel, OrganizationBillViewModel, SpentAtApiPricesViewModel,
+};
 use super::numbers::{dollars_text, money_text};
 
 /// The numbers block of an account page.
@@ -116,6 +118,7 @@ fn money(
         rows: Vec::new(),
         spent: None,
         spent_at_api_prices: None,
+        organization_bill: None,
         is_stale: false,
         failure: None,
     });
@@ -209,7 +212,8 @@ fn own_failure_text(
 /// sessions spent through it at API prices, as its part counted them
 /// (issue 22 of spec 2026-11-23-accounts-apart-from-profiles); with none,
 /// only why the bill could not be read with the admin key, if it could
-/// not.
+/// not. The bill is the row "Organization bill", which waits for an
+/// admin key on an organization whose bill was not read (issue 24).
 fn spent_money(
     state: &AgentsState,
     account: &Account,
@@ -237,12 +241,15 @@ fn spent_money(
         rows: Vec::new(),
         spent: None,
         spent_at_api_prices: None,
+        organization_bill: None,
         is_stale: false,
         failure: None,
     };
     let read_at = match (bill, counted) {
         (Some((bill, read_at)), _) => {
-            vm.spent = Some(dollars_text(bill.this_month()));
+            let amount = dollars_text(bill.this_month());
+            vm.organization_bill =
+                Some(OrganizationBillViewModel::Read(amount));
             read_at
         },
         (None, Some((balance, spent, read_at))) => {
@@ -262,6 +269,12 @@ fn spent_money(
         },
     };
 
+    if vm.organization_bill.is_none()
+        && account.kind() == AccountKind::Organization
+    {
+        vm.organization_bill =
+            Some(OrganizationBillViewModel::WaitsForAdminKey);
+    }
     vm.updated = Some(updated_text(now, read_at));
     Some(vm)
 }
@@ -438,8 +451,11 @@ mod tests {
             Some(AccountNumbersViewModel::Money(MoneyViewModel {
                 updated: Some(updated_text(now(), now())),
                 rows: Vec::new(),
-                spent: exact("$42.00"),
+                spent: None,
                 spent_at_api_prices: None,
+                organization_bill: Some(OrganizationBillViewModel::Read(
+                    String::from("$42.00")
+                )),
                 is_stale: false,
                 failure: None,
             }))
@@ -481,6 +497,7 @@ mod tests {
             panic!("the money of the key: {numbers:?}");
         };
         assert_eq!(money.spent, None, "no exact money");
+        assert_eq!(money.organization_bill, None, "a key has no bill");
         let spent = money.spent_at_api_prices.expect("the spend at API prices");
         assert_eq!(spent.amount, "~$42.10");
         assert_eq!(
@@ -526,8 +543,43 @@ mod tests {
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the money of the organization: {numbers:?}");
         };
-        assert_eq!(money.spent, exact("$42.00"));
+        assert_eq!(money.spent, None);
+        assert_eq!(
+            money.organization_bill,
+            Some(OrganizationBillViewModel::Read(String::from("$42.00")))
+        );
         assert_eq!(money.spent_at_api_prices, None);
+    }
+
+    /// Issue 24 of spec 2026-11-23: an organization with no admin key
+    /// shows what its sessions spent and the row of its bill, which waits
+    /// for an admin key.
+    #[test]
+    fn an_organization_with_no_admin_key_shows_its_spend_and_waits_for_its_bill()
+     {
+        let mut state = with_accounts(
+            &[(claude(), connected(), vec![organization()])],
+            SavedProfiles::default(),
+        );
+        let numbers =
+            otty_agents::AccountNumbers::Balance(spent_at_api_prices());
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(&organization(), Ok(numbers), at(10)),
+        );
+        set_prices(&mut state, price_table());
+
+        let numbers =
+            AccountNumbersViewModel::of(&state, &organization(), now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the money of the organization: {numbers:?}");
+        };
+        assert!(money.spent_at_api_prices.is_some(), "{money:?}");
+        assert_eq!(
+            money.organization_bill,
+            Some(OrganizationBillViewModel::WaitsForAdminKey)
+        );
     }
 
     /// Spec 2026-11-23, Decision 1: with no bill, the tokens of the
@@ -643,6 +695,7 @@ mod tests {
                 rows: vec![row(Key::AgentsLeft, "¥110.00", None)],
                 spent: None,
                 spent_at_api_prices: None,
+                organization_bill: None,
                 is_stale: false,
                 failure: None,
             }))

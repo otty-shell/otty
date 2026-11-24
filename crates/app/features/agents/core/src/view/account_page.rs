@@ -4,17 +4,21 @@
 //! says so, "Needs from you" as a to-do list when there is anything, the
 //! Limits, Credits or Money block, and "Account info" with the plugin that
 //! reads the account. No profiles: nothing links an account to a profile
-//! (spec 2026-11-23-accounts-apart-from-profiles, Decision 1).
+//! (spec 2026-11-23-accounts-apart-from-profiles, Decision 1). Each part
+//! is a kit card, the needs a warning card (issue 24).
 
 use iced::widget::{Column, column, container};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
-use super::super::model::{AccountNumbersViewModel, AccountPageViewModel};
+use super::super::model::{
+    AccountNumbersViewModel, AccountPageViewModel, LimitsViewModel,
+};
 use super::profile_page::{PAGE_GAP, PAGE_PADDING_X};
 use super::{blocks, limits, money, needs, overview};
 
@@ -85,23 +89,22 @@ fn page_blocks<'a>(
         body = body.push(blocks::notes(vm.hidden_note, None, palette));
     }
     if !vm.needs.is_empty() {
-        body = body.push(blocks::titled(
+        body = body.push(needs::card(
             i18n::t(Key::AgentsNeedsFromYou),
-            needs::view(vm.needs, AgentsIntent::FixNeed, palette),
+            vm.needs,
+            AgentsIntent::FixNeed,
             palette,
         ));
     }
     if let Some(numbers) = vm.numbers {
         body = body.push(numbers_block(numbers, palette));
     }
-    body.push(blocks::titled(
-        i18n::t(Key::AgentsAccountInfo),
-        blocks::facts(vm.info, palette),
-        palette,
-    ))
+    let info = blocks::facts(vm.info, palette);
+    body.push(Card::new(info, palette).title(i18n::t(Key::AgentsAccountInfo)))
 }
 
-/// The Limits, Credits or Money block, named after what it shows.
+/// The Limits, Credits or Money card, named after what it shows. A
+/// subscription with credits and windows has two: Limits, then Credits.
 fn numbers_block<'a>(
     numbers: AccountNumbersViewModel,
     palette: &UiPalette,
@@ -110,6 +113,9 @@ fn numbers_block<'a>(
 
     match numbers {
         AccountNumbersViewModel::Money(vm) => money::view(vm, title, palette),
+        AccountNumbersViewModel::Credits(vm) if !vm.windows.is_empty() => {
+            limits_and_credits(vm, palette)
+        },
         AccountNumbersViewModel::Limits(vm)
         | AccountNumbersViewModel::Credits(vm) => {
             limits::view(vm, title, palette)
@@ -117,8 +123,40 @@ fn numbers_block<'a>(
     }
 }
 
+/// The windows of `vm` in the Limits card and its credits in the Credits
+/// card under it, with what is old and what failed.
+fn limits_and_credits<'a>(
+    vm: LimitsViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let windows = LimitsViewModel {
+        updated: vm.updated.clone(),
+        windows: vm.windows,
+        credits: None,
+        is_stale: vm.is_stale,
+        recorded: None,
+        failure: None,
+    };
+    let credits = LimitsViewModel {
+        updated: vm.updated,
+        windows: Vec::new(),
+        credits: vm.credits,
+        is_stale: vm.is_stale,
+        recorded: vm.recorded,
+        failure: vm.failure,
+    };
+
+    column![
+        limits::view(windows, i18n::t(Key::AgentsNumberLimits), palette),
+        limits::view(credits, i18n::t(Key::AgentsFieldCredits), palette),
+    ]
+    .spacing(blocks::BLOCK_GAP)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
+    use iced::Rectangle;
     use iced::widget::container;
     use iced_test::simulator;
     use otty_agents::Account;
@@ -128,7 +166,8 @@ mod tests {
     use super::*;
     use crate::model::{
         AccountNumbersViewModel, FactViewModel, LimitsViewModel,
-        MoneyViewModel, NeedFixViewModel, NeedViewModel, UsageRowViewModel,
+        MoneyViewModel, NeedFixViewModel, NeedViewModel,
+        OrganizationBillViewModel, UsageRowViewModel,
     };
     use crate::need::NeedAction;
 
@@ -252,6 +291,7 @@ mod tests {
                 rows: Vec::new(),
                 spent: Some(String::from("$42.00")),
                 spent_at_api_prices: None,
+                organization_bill: None,
                 is_stale: false,
                 failure: None,
             })),
@@ -283,6 +323,7 @@ mod tests {
                 rows: Vec::new(),
                 spent: None,
                 spent_at_api_prices: Some(crate::testing::spent_at_api_prices()),
+                organization_bill: None,
                 is_stale: false,
                 failure: None,
             })),
@@ -370,5 +411,206 @@ mod tests {
 
         ui.find("Hidden: OTTY does not read it.")
             .expect("the note shows");
+    }
+
+    /// The left and the right edge of the column of the page in the main
+    /// area [`WIDTH`] wide: a form's width in the middle.
+    fn page_edges() -> (f32, f32) {
+        let form = otty_ui_kit::size::FORM;
+
+        ((WIDTH - form) / 2.0, (WIDTH + form) / 2.0)
+    }
+
+    fn at(
+        ui: &mut iced_test::Simulator<'_, AgentsIntent>,
+        label: &str,
+    ) -> Rectangle {
+        ui.find(label).expect("the text should show").bounds()
+    }
+
+    /// Whether `part` lies inside a card that spans the column of the page
+    /// from under its title `title` to over `next`, the title of the card
+    /// after it, with the padding of a card around.
+    fn inside_card(part: Rectangle, title: Rectangle, next: Rectangle) -> bool {
+        let (left, right) = page_edges();
+        let padding = spacing::SPACE_5;
+
+        part.x >= left + padding - 0.5
+            && part.x + part.width <= right - padding + 0.5
+            && part.y >= title.y + title.height
+            && part.y + part.height + padding <= next.y + 0.5
+    }
+
+    fn need_of(title: &str, buttons: &[&str]) -> NeedViewModel {
+        let fix = |label: &str| NeedFixViewModel {
+            label: label.to_string(),
+            action: Some(NeedAction::OpenPage(String::from(
+                "https://example.com",
+            ))),
+        };
+
+        NeedViewModel {
+            place: String::from("Example Org"),
+            plugin: Some(String::from("Anthropic plugin")),
+            title: title.to_string(),
+            line: String::from(
+                "OTTY shows no money until it has an admin key.",
+            ),
+            fix: buttons.last().map(|label| fix(label)),
+            extra: (buttons.len() > 1).then(|| fix(buttons[0])),
+        }
+    }
+
+    /// The page of an organization with no admin key: two needs and the
+    /// money of its sessions, its bill waiting.
+    fn organization_page() -> AccountPageViewModel {
+        AccountPageViewModel {
+            account: crate::testing::organization(),
+            name: String::from("Example Org"),
+            needs: vec![
+                need_of("the real bill needs an admin key", &["Admin key…"]),
+                need_of("asks for new permissions", &["Review", "Later"]),
+            ],
+            numbers: Some(AccountNumbersViewModel::Money(MoneyViewModel {
+                updated: Some(String::from("Updated 2 min ago")),
+                rows: Vec::new(),
+                spent: None,
+                spent_at_api_prices: Some(crate::testing::spent_at_api_prices()),
+                organization_bill: Some(
+                    OrganizationBillViewModel::WaitsForAdminKey,
+                ),
+                is_stale: false,
+                failure: None,
+            })),
+            ..page()
+        }
+    }
+
+    /// Issue 24 of spec 2026-11-23: every need, its label and its buttons
+    /// lie inside the Needs card.
+    #[test]
+    fn the_need_rows_and_their_buttons_lie_inside_the_needs_card() {
+        let themes = ThemeManager::new();
+        let page = view(organization_page(), themes.current().ui());
+        let mut ui = simulator(container(page).width(WIDTH));
+        let title = at(&mut ui, i18n::t(Key::AgentsNeedsFromYou));
+        let next = at(&mut ui, i18n::t(Key::AgentsNumberMoney));
+        let heading = i18n::filled(
+            Key::TplAgentsNeedHeading,
+            &[
+                ("place", "Example Org"),
+                ("title", "asks for new permissions"),
+            ],
+        );
+
+        for part in [
+            heading.as_str(),
+            "Anthropic plugin",
+            "Admin key…",
+            "Review",
+            "Later",
+        ] {
+            let bounds = at(&mut ui, part);
+            assert!(
+                inside_card(bounds, title, next),
+                "{part} at {bounds:?} inside the card from {title:?} to {next:?}"
+            );
+        }
+    }
+
+    /// Issue 24: Money of an organization has a row for the spend of its
+    /// sessions, its source under its name and the mark next to the
+    /// amount, and a row for its bill, which waits for an admin key; all
+    /// inside the Money card.
+    #[test]
+    fn the_spend_and_the_bill_of_an_organization_lie_inside_the_money_card() {
+        let themes = ThemeManager::new();
+        let page = view(organization_page(), themes.current().ui());
+        let mut ui = simulator(container(page).width(WIDTH));
+        let (left, right) = page_edges();
+        let title = at(&mut ui, i18n::t(Key::AgentsNumberMoney));
+        let next = at(&mut ui, i18n::t(Key::AgentsAccountInfo));
+        let source = "From your Claude Code sessions on this computer";
+
+        let spend = at(&mut ui, i18n::t(Key::AgentsYourSpendThisMonth));
+        let amount = at(&mut ui, "~$42.10");
+        let mark = at(&mut ui, i18n::t(Key::AgentsApiPricesMark));
+        let from = at(&mut ui, source);
+        let bill = at(&mut ui, i18n::t(Key::AgentsOrganizationBill));
+        let dash = at(&mut ui, "—");
+        let waits = at(&mut ui, i18n::t(Key::AgentsOrganizationBillWaits));
+
+        for part in [spend, amount, mark, from, bill, dash, waits] {
+            assert!(inside_card(part, title, next), "{part:?} inside");
+        }
+        assert!((spend.x - (left + spacing::SPACE_5)).abs() < 0.5);
+        assert!(
+            (amount.x + amount.width - (right - spacing::SPACE_5)).abs() < 0.5
+        );
+        assert!(
+            mark.x + mark.width <= amount.x,
+            "{mark:?} before {amount:?}"
+        );
+        assert!((mark.center_y() - amount.center_y()).abs() < 1.0);
+        assert_eq!(from.x, spend.x, "the source under its name");
+        assert!(from.y >= spend.y + spend.height);
+        assert!(bill.y >= from.y + from.height, "{bill:?} under {from:?}");
+        assert!((dash.x + dash.width - (right - spacing::SPACE_5)).abs() < 0.5);
+        assert_eq!(waits.x, bill.x);
+        assert!(waits.y >= bill.y + bill.height);
+    }
+
+    /// Issue 24: the windows of a subscription with credits are one card,
+    /// Limits, and its credits another, Credits; each figure a row with
+    /// its value at the right and its line under its name.
+    #[test]
+    fn limits_and_credits_are_two_cards_with_a_row_per_figure() {
+        let vm = AccountPageViewModel {
+            numbers: Some(AccountNumbersViewModel::Credits(LimitsViewModel {
+                updated: Some(String::from("Updated just now")),
+                windows: vec![UsageRowViewModel {
+                    name: String::from("5 hours"),
+                    used: String::from("12 % used"),
+                    percent: Some(12),
+                    resets: Some(String::from("Resets at 15:30")),
+                }],
+                credits: Some(crate::model::CreditsViewModel {
+                    value: String::from("1 240 of 5 000 used"),
+                    percent: Some(25),
+                    line: Some(String::from("3 760 left")),
+                    note: None,
+                }),
+                is_stale: false,
+                recorded: None,
+                failure: None,
+            })),
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+        let (left, right) = page_edges();
+
+        let limits = at(&mut ui, i18n::t(Key::AgentsNumberLimits));
+        let credits = at(&mut ui, i18n::t(Key::AgentsFieldCredits));
+        let info = at(&mut ui, i18n::t(Key::AgentsAccountInfo));
+        let window = at(&mut ui, "5 hours");
+        let used = at(&mut ui, "12 % used");
+        let resets = at(&mut ui, "Resets at 15:30");
+        let pool = at(&mut ui, "1 240 of 5 000 used");
+        let left_line = at(&mut ui, "3 760 left");
+
+        for part in [window, used, resets] {
+            assert!(inside_card(part, limits, credits), "{part:?} in Limits");
+        }
+        for part in [pool, left_line] {
+            assert!(inside_card(part, credits, info), "{part:?} in Credits");
+        }
+        assert!((window.x - (left + spacing::SPACE_5)).abs() < 0.5);
+        assert!((used.x + used.width - (right - spacing::SPACE_5)).abs() < 0.5);
+        assert!((window.center_y() - used.center_y()).abs() < 1.0);
+        assert_eq!(resets.x, window.x, "the line under the name");
+        assert!(resets.y >= window.y + window.height);
+        assert!((pool.x + pool.width - (right - spacing::SPACE_5)).abs() < 0.5);
     }
 }

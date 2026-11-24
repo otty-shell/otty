@@ -1,11 +1,12 @@
-//! The Usage block of a subscription or credits profile: each usage window
-//! with its bar, the extra usage, or the credits, with when they were read.
-//! An older answer is drawn greyed (spec Decisions 5 and 10).
+//! The Limits or Credits card of a subscription account: each usage
+//! window with its bar, the extra usage, or the credits, with when they
+//! were read. An older answer is drawn greyed (spec Decisions 5 and 10).
+//! Each figure is its own row (issue 24 of spec
+//! 2026-11-23-accounts-apart-from-profiles).
 
-use iced::widget::{Column, column};
-use iced::{Element, Length};
+use iced::Element;
+use iced::widget::Column;
 use otty_app_i18n::{self as i18n, Key};
-use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::spacing;
 
@@ -13,8 +14,9 @@ use super::super::event::AgentsIntent;
 use super::super::model::{CreditsViewModel, LimitsViewModel};
 use super::blocks;
 
-/// Render the block named `title`: "Usage" on a dashboard, "Limits" or
-/// "Credits" on the page of an account.
+/// Render the card named `title`, "Limits" or "Credits" on the page of an
+/// account: a figure for each window and for the credits, split by thin
+/// rules, then what is old and what failed.
 pub(super) fn view<'a>(
     vm: LimitsViewModel,
     title: &'static str,
@@ -22,49 +24,42 @@ pub(super) fn view<'a>(
 ) -> Element<'a, AgentsIntent> {
     let is_stale = vm.is_stale;
 
-    let mut block = Column::new()
-        .spacing(blocks::USAGE_ROW_GAP)
-        .push(blocks::title_over_line(title, vm.updated, palette));
-    for window in vm.windows {
-        block = block.push(blocks::usage_row(window, is_stale, palette));
-    }
+    let mut figures: Vec<Element<'a, AgentsIntent>> = vm
+        .windows
+        .into_iter()
+        .map(|window| blocks::usage_figure(window, is_stale, palette))
+        .collect();
     if let Some(credits) = vm.credits {
-        block = block.push(credits_rows(credits, is_stale, palette));
+        figures.push(credits_figure(credits, is_stale, palette));
     }
 
-    let muted = vm.recorded.into_iter();
-    block
-        .push(blocks::notes(muted, vm.failure, palette))
-        .width(Length::Fill)
-        .into()
+    let mut body = Column::new()
+        .spacing(spacing::SPACE_4)
+        .push(blocks::figures(figures, palette));
+    if vm.recorded.is_some() || vm.failure.is_some() {
+        let muted = vm.recorded.into_iter();
+        body = body.push(blocks::notes(muted, vm.failure, palette));
+    }
+    blocks::card(title, vm.updated, body, palette)
 }
 
-/// The credits: their value, the bar when the pool is known, the line of
-/// what is left and when the pool renews, then the note of credits with no
-/// number.
-fn credits_rows<'a>(
+/// The credits: their value, the line of what is left and when the pool
+/// renews and the note of credits with no number under the name, and the
+/// bar when the pool is known.
+fn credits_figure<'a>(
     credits: CreditsViewModel,
     is_stale: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut rows = column![blocks::name_and_value(
-        i18n::t(Key::AgentsFieldCredits).to_string(),
-        credits.value,
-        is_stale,
-        palette,
-    )]
-    .spacing(spacing::SPACE_2);
-    if let Some(percent) = credits.percent {
-        rows = rows.push(blocks::bar(percent, is_stale, palette));
-    }
-    if let Some(line) = credits.line {
-        rows = rows.push(small_text(line, palette.text_muted()));
-    }
-    if let Some(note) = credits.note {
-        rows = rows.push(small_text(note, palette.text_muted()));
-    }
+    let name = i18n::t(Key::AgentsFieldCredits).to_string();
+    let explain = credits
+        .line
+        .into_iter()
+        .chain(credits.note.map(String::from))
+        .collect();
+    let value = blocks::figure_value(credits.value, is_stale, palette);
 
-    rows.into()
+    blocks::figure(name, explain, value, credits.percent, is_stale, palette)
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ pub mod block_header;
 pub mod block_outcome;
 pub mod block_status_line;
 pub mod button;
+pub mod card;
 pub mod chip;
 pub mod command_box;
 pub mod command_palette;
