@@ -115,12 +115,15 @@ pub(crate) fn content_height(vm: &ProjectsSectionViewModel<'_>) -> f32 {
 }
 
 /// A project: its folder name and its sessions count, or that its folder
-/// is gone.
+/// is gone. The count stays whole, the name gives way and shows whole on
+/// hover.
 fn project_row<'a>(
     vm: ProjectRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let row = TreeRow::new(vm.name, palette)
+    let row = TreeRow::new(vm.name.clone(), palette)
+        .keep_note()
+        .whole_label(vm.name)
         .selected(vm.is_selected)
         .on_press(AgentsIntent::SelectProject(vm.folder));
 
@@ -446,6 +449,40 @@ mod tests {
                 + 3.0 * spacing::SPACE_2
                 + note_height()
         );
+    }
+
+    /// Issue 20 of spec 2026-11-23-accounts-apart-from-profiles: in a
+    /// narrow panel a project keeps its whole sessions count at the right
+    /// and its name gives way with "…".
+    #[test]
+    fn in_a_narrow_panel_a_project_keeps_its_count_and_cuts_its_name() {
+        let name = "a-very-long-project-folder-name";
+        let mut long = project(name, false);
+        long.sessions = 128;
+        let width = 200.0;
+        let bounds = |width: f32| {
+            let vm = ProjectsSectionViewModel {
+                projects: vec![long.clone()],
+                ..section()
+            };
+            let themes = ThemeManager::new();
+            let mut ui = simulator(
+                iced::widget::container(view(vm, themes.current().ui()))
+                    .width(width),
+            );
+            let mut at =
+                |text: &str| ui.find(text).expect("the text shows").bounds();
+
+            (at(name), at("128"))
+        };
+        let (full_name, full_count) = bounds(800.0);
+
+        let (cut, count) = bounds(width);
+
+        assert!(cut.width < full_name.width, "{cut:?} cut");
+        assert!((count.width - full_count.width).abs() < 0.5, "{count:?}");
+        assert!(count.x >= cut.x + cut.width, "{count:?} after {cut:?}");
+        assert!(count.x + count.width <= width, "{count:?}");
     }
 
     /// The least width of the left panel: 16 % of the least window, 800.

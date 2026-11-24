@@ -1,6 +1,6 @@
 # 20 In the Agents left panel the numbers always show, the name gives way
 
-Status: ready
+Status: done
 Blocked by: 19
 
 ## Why
@@ -41,3 +41,17 @@ what is left and ends with …").
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25, done. The kit `TreeRow` got `keep_note()`: the state word
+and the count keep their width at the right edge, the label takes what
+is left and ends with "…", and a tag such as "OTTY" stays whole after
+it. It also got `whole_label(..)`: while the pointer is over the row and
+its label is cut, the kit tooltip shows the whole label; a label that
+fits shows none. The row tells a cut label by the same room its layout
+gives the label, checked against the drawn row at many widths. Rows that
+do not ask keep the old rule, so the Files tree and Quick Launch are
+unchanged. The Agents left panel uses both for accounts, profiles and
+projects. An account's tooltip is its provider with its login, such as
+"OpenAI (you@example.com)", after the name the user gave it, if any. A
+row with a broken plugin icon keeps one tooltip: the whole name, then
+the plugin note under it. `TooltipText` got `line(..)` for that.

@@ -7,7 +7,7 @@ use otty_ui_kit::components::session_row::SessionTone;
 use super::super::own_login_actions::has_own_login;
 use super::super::profile_state::ProfileState;
 use super::super::state::AgentsState;
-use super::account_name::short_account_name;
+use super::account_name::{own_account_name, short_account_name};
 use super::entry_icon::EntryIcon;
 use super::projects_section::ProjectsSectionViewModel;
 use super::short_number::{
@@ -110,6 +110,10 @@ pub(crate) struct AccountRowViewModel {
     /// The login without the provider its logo shows, such as
     /// "you@example.com", or the name the user gave the account.
     pub(crate) name: String,
+    /// The whole name the tooltip of a cut name shows: the provider with
+    /// the login, such as "OpenAI (you@example.com)", after the name the
+    /// user gave the account, if any.
+    pub(crate) whole_name: String,
     /// Its number with its word and color, such as "42 % used", which
     /// draws itself in the tight form; `None` while nothing is known.
     pub(crate) number: Option<AccountNumber>,
@@ -126,10 +130,19 @@ impl AccountRowViewModel {
     ) -> Self {
         let is_selected =
             selected.is_some_and(|selected| selected.is_same_account(&account));
+        let name = short_account_name(state.profiles().saved(), &account);
+        let own_name = own_account_name(state.registry(), &account);
+        let whole_name = if name == account.name() {
+            own_name
+        } else {
+            format!("{name}, {own_name}")
+        };
+
         Self {
             is_selected,
             icon: state.account_icon(&account),
-            name: short_account_name(state.profiles().saved(), &account),
+            name,
+            whole_name,
             number: account_number(state, &account),
             has_own_login: has_own_login(state, &account),
             account,
@@ -301,6 +314,7 @@ mod tests {
                     is_selected: false,
                     icon: crate::testing::provider_icon("anthropic"),
                     name: String::from("dev@example.com"),
+                    whole_name: String::from("Anthropic (dev@example.com)"),
                     number: None,
                     has_own_login: false,
                 },
@@ -309,6 +323,7 @@ mod tests {
                     is_selected: false,
                     icon: crate::testing::provider_icon("openai"),
                     name: String::from("you@example.com"),
+                    whole_name: String::from("OpenAI (you@example.com)"),
                     number: Some(AccountNumber::word(
                         i18n::with_count(Key::TplAgentsPercentUsed, 42),
                         SessionTone::Muted
@@ -344,6 +359,38 @@ mod tests {
             .map(|row| row.name.as_str())
             .collect();
         assert_eq!(names, ["Work", "you@example.com"]);
+    }
+
+    /// Issue 20: a cut name shows the whole name of its account in the
+    /// tooltip: the provider with the login, after the name the user gave
+    /// it, if any.
+    #[test]
+    fn the_whole_name_of_an_account_row_has_its_provider() {
+        let saved = SavedProfiles::default()
+            .with_account_name(&organization(), Some(String::from("Work")));
+        let state = with_accounts(
+            &[
+                (claude(), connected(), vec![organization()]),
+                (codex(), connected(), vec![chatgpt_login()]),
+            ],
+            saved,
+        );
+
+        let vm = LeftPanelViewModel::from_state(&state, now());
+
+        let whole: Vec<&str> = vm
+            .accounts
+            .accounts
+            .iter()
+            .map(|row| row.whole_name.as_str())
+            .collect();
+        assert_eq!(
+            whole,
+            [
+                "Work, Anthropic (dev@example.com)",
+                "OpenAI (you@example.com)"
+            ]
+        );
     }
 
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 1: a login

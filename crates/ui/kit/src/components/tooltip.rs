@@ -53,6 +53,13 @@ impl TooltipText {
         }
     }
 
+    /// Adds `line` under the lines it has, such as a note after a whole
+    /// name.
+    pub fn line(mut self, line: impl Into<String>) -> Self {
+        self.lines.push(line.into());
+        self
+    }
+
     /// Adds a group of `rows` under what it says, one row per line: each a
     /// name and its number. No rows add nothing.
     pub fn rows(mut self, rows: Vec<(String, String)>) -> Self {
@@ -322,6 +329,21 @@ mod tests {
 
         assert!(words.width <= TOOLTIP_MAX_WIDTH, "{words:?}");
         assert!(words.height > 2.0 * typography::SMALL.size(), "{words:?}");
+    }
+
+    /// A line added to a tooltip stands under the lines before it.
+    #[test]
+    fn an_added_line_stands_under_the_first() {
+        let label =
+            TooltipText::new("Codex for work").line("Plugin OpenAI failed");
+        let hint: Element<'_, ()> = bubble(label, &UiPalette::otty_dark());
+        let mut ui = simulator(hint);
+
+        let first = ui.find("Codex for work").expect("first line").bounds();
+        let added = ui.find("Plugin OpenAI failed").expect("line").bounds();
+
+        assert!(added.y > first.y, "{added:?} under {first:?}");
+        assert!((added.x - first.x).abs() < 1.0, "{added:?} {first:?}");
     }
 
     /// The rows of a tooltip, such as the kinds of tokens of a total, are

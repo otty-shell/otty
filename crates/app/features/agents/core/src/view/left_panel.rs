@@ -18,7 +18,7 @@ use otty_ui_kit::components::panel_height::{
 };
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::small_text::small_text;
-use otty_ui_kit::components::tooltip::tooltip;
+use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
@@ -267,9 +267,10 @@ fn all_row<'a>(
         .into()
 }
 
-/// An account: the logo of its provider, its name and its number. A press
-/// shows it; a right press opens its menu at the pointer, the same as "⋯"
-/// of the account page.
+/// An account: the logo of its provider, its name and its number. The
+/// number and the tag stay whole, the name gives way and shows its whole
+/// name with the provider on hover. A press shows it; a right press opens
+/// its menu at the pointer, the same as "⋯" of the account page.
 fn account_row<'a>(
     vm: AccountRowViewModel,
     palette: &UiPalette,
@@ -278,6 +279,7 @@ fn account_row<'a>(
     let note = vm.icon.note();
     let mut row =
         entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .keep_note()
             .selected(vm.is_selected)
             .on_press(AgentsIntent::SelectAccount(vm.account));
     if let Some(number) = &vm.number {
@@ -287,20 +289,23 @@ fn account_row<'a>(
         row = row.tag(OWN_LOGIN_TAG);
     }
 
-    with_note(mouse_area(row).on_right_press(menu).into(), note, palette)
+    with_whole_name(row, vm.whole_name, note, menu, palette)
 }
 
-/// A profile: the logo of its agent, its name and its number. A press
-/// shows its page; a right press opens its menu at the pointer, the
-/// same as "⋯" of the profile page.
+/// A profile: the logo of its agent, its name and its number. The number
+/// stays whole, the name gives way and shows whole on hover. A press
+/// shows its page; a right press opens its menu at the pointer, the same
+/// as "⋯" of the profile page.
 fn profile_row<'a>(
     vm: ProfileRowViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let menu = AgentsIntent::OpenProfileMenu(vm.profile.clone());
     let note = vm.icon.note();
+    let whole_name = vm.name.clone();
     let mut row =
         entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .keep_note()
             .count_tone(vm.tone)
             .selected(vm.is_selected)
             .on_press(AgentsIntent::SelectProfile(vm.profile));
@@ -308,19 +313,28 @@ fn profile_row<'a>(
         row = row.state(number);
     }
 
-    with_note(mouse_area(row).on_right_press(menu).into(), note, palette)
+    with_whole_name(row, whole_name, note, menu, palette)
 }
 
-/// `row` with the tooltip `note` of its broken plugin icon, if any: "Plugin
-/// OpenAI failed, see Plugins".
-fn with_note<'a>(
-    row: Element<'a, AgentsIntent>,
+/// `row` that shows `whole_name` in its tooltip when its name is cut, and
+/// opens `menu` on a right press. A row with a broken plugin icon always
+/// has a tooltip, its `note` ("Plugin OpenAI failed, see Plugins"), under
+/// the whole name, so two bubbles never cover each other.
+fn with_whole_name<'a>(
+    row: TreeRow<AgentsIntent>,
+    whole_name: String,
     note: Option<String>,
+    menu: AgentsIntent,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     match note {
-        Some(note) => tooltip(row, note, palette),
-        None => row,
+        Some(note) => {
+            let row = mouse_area(row).on_right_press(menu);
+            tooltip(row, TooltipText::new(whole_name).line(note), palette)
+        },
+        None => mouse_area(row.whole_label(whole_name))
+            .on_right_press(menu)
+            .into(),
     }
 }
 
@@ -361,6 +375,7 @@ mod tests {
                 is_selected: false,
                 icon: crate::testing::provider_icon("openai"),
                 name: String::from("OpenAI (you@example.com)"),
+                whole_name: String::from("OpenAI (you@example.com)"),
                 number: Some(crate::model::AccountNumber::word(
                     String::from("42 % used"),
                     SessionTone::Muted,
@@ -664,6 +679,140 @@ mod tests {
         assert!(title.x + title.width <= buttons, "{title:?}");
         assert!(name.x + name.width <= number.x, "{name:?} {number:?}");
         assert!(number.x + number.width <= LEAST_WIDTH, "{number:?}");
+    }
+
+    /// A long email for the rows of a narrow panel.
+    const LONG_EMAIL: &str = "someone.with.a.long.name@example.com";
+    /// A width of the panel where [`LONG_EMAIL`] does not fit.
+    const NARROW: f32 = 220.0;
+
+    /// The panel with one account of OTTY's own login named `name`, its
+    /// whole name `whole_name`, and the Codex profile named `profile`.
+    fn narrow_panel(
+        name: &str,
+        whole_name: &str,
+        profile: &str,
+    ) -> LeftPanelViewModel<'static> {
+        let mut vm = panel(agents());
+        let account = &mut vm.accounts.accounts[0];
+        account.name = String::from(name);
+        account.whole_name = String::from(whole_name);
+        account.has_own_login = true;
+        vm.agents.profiles[0].name = String::from(profile);
+
+        vm
+    }
+
+    /// Bounds of the texts `texts` in the panel `vm` `width` wide.
+    fn bounds_in(
+        vm: LeftPanelViewModel<'_>,
+        width: f32,
+        texts: &[&str],
+    ) -> Vec<iced::Rectangle> {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(width);
+        let mut ui = simulator(panel);
+
+        texts
+            .iter()
+            .map(|text| ui.find(*text).expect("the text shows").bounds())
+            .collect()
+    }
+
+    /// Issue 20: in a narrow panel an account row shows its whole number
+    /// at the right and its tag whole; its email gives way with "…".
+    #[test]
+    fn in_a_narrow_panel_an_account_keeps_its_number_and_cuts_its_email() {
+        let texts = [LONG_EMAIL, "OTTY", "42 % used"];
+        let vm = || narrow_panel(LONG_EMAIL, "OpenAI", "Codex");
+        let full = bounds_in(vm(), 800.0, &texts);
+
+        let narrow = bounds_in(vm(), NARROW, &texts);
+
+        let (email, tag, number) = (narrow[0], narrow[1], narrow[2]);
+        assert!(email.width < full[0].width, "{email:?} cut");
+        assert!((tag.width - full[1].width).abs() < 0.5, "{tag:?} whole");
+        assert!((number.width - full[2].width).abs() < 0.5, "{number:?}");
+        assert!(tag.x >= email.x + email.width, "{tag:?} {email:?}");
+        assert!(number.x >= tag.x + tag.width, "{number:?} {tag:?}");
+        assert!(number.x + number.width <= NARROW, "{number:?}");
+    }
+
+    /// Issue 20: the same for a profile: its number stays whole, its name
+    /// gives way.
+    #[test]
+    fn in_a_narrow_panel_a_profile_keeps_its_number_and_cuts_its_name() {
+        let name = "Codex for the work laptop at the office";
+        let texts = [name, "3 760 left"];
+        let vm = || narrow_panel("you@example.com", "OpenAI", name);
+        let full = bounds_in(vm(), 800.0, &texts);
+
+        let narrow = bounds_in(vm(), NARROW, &texts);
+
+        let (profile, number) = (narrow[0], narrow[1]);
+        assert!(profile.width < full[0].width, "{profile:?} cut");
+        assert!((number.width - full[1].width).abs() < 0.5, "{number:?}");
+        assert!(number.x >= profile.x + profile.width, "{number:?}");
+        assert!(number.x + number.width <= NARROW, "{number:?}");
+    }
+
+    /// Draws the narrow panel with an account named [`LONG_EMAIL`] whose
+    /// whole name is `whole_name`, the pointer over its row or not, and
+    /// checks it against the picture saved in `reference`; the first call
+    /// saves the picture. Tooltips are overlays that widget queries do not
+    /// reach.
+    fn hovered_account_matches(
+        whole_name: &str,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm: narrow_panel(LONG_EMAIL, whole_name, "Codex"),
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(NARROW)
+        .height(400);
+        let mut ui = simulator(panel);
+        if is_hovered {
+            let row = ui.find(LONG_EMAIL).expect("the row shows").bounds();
+            let position = row.center();
+            ui.point_at(position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position },
+            )]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the panel draws")
+            .matches_hash(reference)
+            .expect("the reference reads")
+    }
+
+    /// Issue 20: the cut email of an account shows its whole name, with
+    /// the provider, in the tooltip while the pointer is over the row.
+    #[test]
+    fn a_cut_account_name_shows_its_whole_name_on_hover() {
+        let folder = otty_app_testing::temp_dir::TempDir::new("agents-whole");
+        let hovered = folder.path().join("hovered");
+        let idle = folder.path().join("idle");
+        let openai = format!("OpenAI ({LONG_EMAIL})");
+        let anthropic = format!("Anthropic ({LONG_EMAIL})");
+
+        assert!(hovered_account_matches(&openai, true, &hovered), "save");
+        assert!(
+            !hovered_account_matches(&anthropic, true, &hovered),
+            "the tooltip says the whole name"
+        );
+        assert!(hovered_account_matches(&openai, false, &idle), "save");
+        assert!(
+            hovered_account_matches(&anthropic, false, &idle),
+            "no tooltip while the pointer is away"
+        );
     }
 
     /// The built-in registry gives every known agent a logo of its own,

@@ -1,15 +1,16 @@
 //! `TreeRow`: one row of a folder or session tree.
 
 use iced::widget::text::Alignment as TextAlignment;
-use iced::widget::{Row, Space, button, container, row, svg};
+use iced::widget::{Row, Space, button, container, responsive, row, svg};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
-use super::ellipsis_text::EllipsisText;
+use super::ellipsis_text::{EllipsisText, text_width};
 use super::glyph;
 use super::letter_icon::letter_icon;
 use super::session_row::SessionTone;
-use super::tag::tag;
+use super::tag::{tag, tag_width};
 use super::target_dot::{TargetKind, target_dot};
+use super::tooltip::{TooltipText, tooltip};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing, typography};
 
@@ -34,7 +35,9 @@ const PADDING_X: f32 = spacing::SPACE_3;
 /// The label comes first: it keeps its width and ends with "…" only when it
 /// does not fit. A tag, such as `OTTY`, follows the label. The state word and
 /// count on the right give way first, ending with "…" or nothing when little
-/// room is left.
+/// room is left. A row that [keeps its note](TreeRow::keep_note) turns this
+/// around: the note stays whole at the right and the label gives way, with
+/// its [whole label](TreeRow::whole_label) in a tooltip when it is cut.
 ///
 /// # Example
 ///
@@ -56,6 +59,7 @@ const PADDING_X: f32 = spacing::SPACE_3;
 ///     .on_press(Message::Toggle)
 ///     .into();
 /// ```
+#[derive(Clone)]
 pub struct TreeRow<Message> {
     label: String,
     palette: UiPalette,
@@ -71,6 +75,8 @@ pub struct TreeRow<Message> {
     dot: Option<TargetKind>,
     tag: Option<String>,
     state: Option<String>,
+    keeps_note: bool,
+    whole_label: Option<TooltipText>,
     on_press: Option<Message>,
 }
 
@@ -92,6 +98,8 @@ impl<Message> TreeRow<Message> {
             dot: None,
             tag: None,
             state: None,
+            keeps_note: false,
+            whole_label: None,
             on_press: None,
         }
     }
@@ -179,15 +187,80 @@ impl<Message> TreeRow<Message> {
         self
     }
 
+    /// Keeps the note on the right whole: the state word and the count keep
+    /// their width at the right edge, and the label takes what is left,
+    /// ending with "…" when that is too little. A tag stays whole after the
+    /// label. For a row whose number matters more than its name, which can
+    /// still be found by a search or a press.
+    pub fn keep_note(mut self) -> Self {
+        self.keeps_note = true;
+        self
+    }
+
+    /// Shows `label` in the kit tooltip while the pointer is over the row
+    /// and its label is cut, such as the whole name of an account with its
+    /// provider. A label that fits shows no tooltip.
+    pub fn whole_label(mut self, label: impl Into<TooltipText>) -> Self {
+        self.whole_label = Some(label.into());
+        self
+    }
+
     /// Sets the message sent on press.
     pub fn on_press(mut self, message: Message) -> Self {
         self.on_press = Some(message);
         self
     }
-}
 
-impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
-    fn from(value: TreeRow<Message>) -> Self {
+    /// The note on the right: the state word, the count, or both.
+    fn note(&self) -> Option<String> {
+        match (&self.state, self.count) {
+            (Some(word), Some(count)) => Some(format!("{word} {count}")),
+            (Some(word), None) => Some(word.clone()),
+            (None, Some(count)) => Some(count.to_string()),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether the row, `width` wide, draws its label cut. It counts the
+    /// room the layout of [`TreeRow::row`] leaves the label: the padding,
+    /// the indent and the columns before it, one gap before each part
+    /// after it, and, when the row keeps its note, the tag and the note.
+    fn cuts_label(&self, width: f32) -> bool {
+        let marks = [
+            self.caret.is_some(),
+            self.icon.is_some(),
+            self.letter.is_some(),
+            self.dot.is_some(),
+        ]
+        .into_iter()
+        .filter(|has| *has)
+        .count() as f32;
+        let tag = self.tag.as_deref().map(tag_width);
+        let note = self.note().map(|note| {
+            text_width(&note, typography::CAPTION.size(), fonts::UI)
+        });
+
+        let mut room = width
+            - 2.0 * PADDING_X
+            - f32::from(self.depth) * size::TREE_INDENT
+            - marks * (MARK_WIDTH + GAP);
+        for part in [tag, note].into_iter().flatten() {
+            room -= GAP;
+            if self.keeps_note {
+                room -= part;
+            }
+        }
+
+        text_width(&self.label, typography::BODY.size(), fonts::UI) > room
+    }
+
+    /// The row itself, without the tooltip of its whole label.
+    fn row<'a>(self) -> Element<'a, Message>
+    where
+        Message: Clone + 'a,
+    {
+        let value = self;
+        let note = value.note();
         let palette = value.palette;
         let is_selected = value.is_selected;
         let is_hovered = value.is_hovered;
@@ -250,31 +323,48 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
         } else {
             palette.text_body()
         };
-        // The label takes the room it needs first; the note on the right
-        // takes what is left and ends with "…" when that is too little.
-        content = content.push(
-            EllipsisText::new(value.label, body.size(), fonts::UI, label_color)
-                .shrink(0.0),
-        );
-        if let Some(label) = value.tag {
-            content = content.push(tag(label, size::ROW, &palette));
-        }
-        let note = match (value.state, value.count) {
-            (Some(word), Some(count)) => Some(format!("{word} {count}")),
-            (Some(word), None) => Some(word),
-            (None, Some(count)) => Some(count.to_string()),
-            (None, None) => None,
-        };
-        if let Some(note) = note {
-            content = content.push(
-                EllipsisText::new(
-                    note,
-                    typography::CAPTION.size(),
-                    fonts::UI,
-                    value.count_tone.color(&palette),
-                )
-                .align_x(TextAlignment::Right),
-            );
+        let label =
+            EllipsisText::new(value.label, body.size(), fonts::UI, label_color);
+        let tag = value
+            .tag
+            .map(|label| (tag_width(&label), tag(label, size::ROW, &palette)));
+        let note = note.map(|note| {
+            EllipsisText::new(
+                note,
+                typography::CAPTION.size(),
+                fonts::UI,
+                value.count_tone.color(&palette),
+            )
+        });
+
+        if value.keeps_note {
+            // The note keeps its width at the right; the label and its tag
+            // take what is left, and the label leaves the tag its width.
+            let reserved = tag.as_ref().map_or(0.0, |(width, _)| *width);
+            let mut named = Row::new()
+                .spacing(GAP)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_y(Alignment::Center)
+                .push(label.shrink(reserved));
+            if let Some((_, tag)) = tag {
+                named = named.push(tag);
+            }
+            content = content.push(named);
+            if let Some(note) = note {
+                content = content.push(note.shrink(0.0));
+            }
+        } else {
+            // The label takes the room it needs first; the note on the
+            // right takes what is left and ends with "…" when that is too
+            // little.
+            content = content.push(label.shrink(0.0));
+            if let Some((_, tag)) = tag {
+                content = content.push(tag);
+            }
+            if let Some(note) = note {
+                content = content.push(note.align_x(TextAlignment::Right));
+            }
         }
 
         button(row![indent, content])
@@ -308,6 +398,28 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
                 }
             })
             .into()
+    }
+}
+
+impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
+    fn from(mut value: TreeRow<Message>) -> Self {
+        let Some(whole) = value.whole_label.take() else {
+            return value.row();
+        };
+        let palette = value.palette.clone();
+
+        // Whether the label is cut depends on the width of the row, known
+        // only during layout.
+        responsive(move |space| {
+            let row = value.clone();
+            if row.cuts_label(space.width) {
+                tooltip(row.row(), whole.clone(), &palette)
+            } else {
+                row.row()
+            }
+        })
+        .height(size::ROW)
+        .into()
     }
 }
 
@@ -505,6 +617,169 @@ mod tests {
             "the label should be cut: {label} against {full_label}"
         );
         assert!(note < 20.0, "the note should be nearly gone: {note}");
+    }
+
+    /// An account row that keeps its note: a logo, a long email, the tag
+    /// "OTTY" and the note "42 % used".
+    fn account_row(label: &str) -> TreeRow<Message> {
+        TreeRow::new(label, &UiPalette::otty_dark())
+            .icon(glyph::plus(), None)
+            .tag("OTTY")
+            .state("42 % used")
+            .keep_note()
+    }
+
+    /// Bounds of the label, the tag and the note of `row` in a space
+    /// `width` wide.
+    fn account_parts(
+        row: TreeRow<Message>,
+        label: &str,
+        width: f32,
+    ) -> (iced::Rectangle, iced::Rectangle, iced::Rectangle) {
+        let mut ui = simulator(container(row).width(width));
+        let mut at =
+            |text: &str| ui.find(text).expect("the text shows").bounds();
+
+        (at(label), at("OTTY"), at("42 % used"))
+    }
+
+    /// Issue 20 of spec 2026-11-23-accounts-apart-from-profiles: a row
+    /// that keeps its note draws the whole note at the right; the label
+    /// gives way and the tag stays whole after it.
+    #[test]
+    fn given_a_narrow_row_that_keeps_its_note_then_the_label_gives_way() {
+        let email = "someone.with.a.long.name@example.com";
+        let width = 220.0;
+        let (full_label, full_tag, full_note) =
+            account_parts(account_row(email), email, 600.0);
+
+        let (label, tag, note) =
+            account_parts(account_row(email), email, width);
+
+        assert!(label.width < full_label.width, "{label:?} {full_label:?}");
+        assert!((tag.width - full_tag.width).abs() < 0.5, "{tag:?}");
+        assert!((note.width - full_note.width).abs() < 0.5, "{note:?}");
+        assert!(tag.x >= label.x + label.width, "{tag:?} after {label:?}");
+        assert!(note.x >= tag.x + tag.width, "{note:?} after {tag:?}");
+        assert!(note.x + note.width <= width - PADDING_X + 0.5, "{note:?}");
+    }
+
+    #[test]
+    fn given_a_row_that_keeps_its_note_and_fits_then_both_are_whole() {
+        let email = "you@example.com";
+        let (full_label, _, full_note) =
+            account_parts(account_row(email), email, 600.0);
+
+        let (label, tag, note) =
+            account_parts(account_row(email), email, 320.0);
+
+        assert!((label.width - full_label.width).abs() < 0.5, "{label:?}");
+        assert!((note.width - full_note.width).abs() < 0.5, "{note:?}");
+        assert!(tag.x >= label.x + label.width, "the tag follows the label");
+        assert!(
+            note.x > tag.x + tag.width + GAP,
+            "the note stands at the right: {note:?} {tag:?}"
+        );
+    }
+
+    /// Whether the label of `row` is drawn cut in a space `width` wide.
+    fn drawn_cut(row: TreeRow<Message>, label: &str, width: f32) -> bool {
+        let full = simulator(container(TreeRow::<Message>::new(
+            label,
+            &UiPalette::otty_dark(),
+        )))
+        .find(label)
+        .expect("label")
+        .bounds()
+        .width;
+        let mut ui = simulator(container(row).width(width));
+
+        ui.find(label).expect("label").bounds().width < full - 0.5
+    }
+
+    /// The row tells a cut label, for its tooltip, by the same rule its
+    /// layout cuts it, whether it keeps its note or not.
+    #[test]
+    fn given_any_width_then_the_row_knows_whether_its_label_is_cut() {
+        let palette = UiPalette::otty_dark();
+        let email = "someone@example.com";
+        let rows = |keeps_note: bool| {
+            let row = TreeRow::<Message>::new(email, &palette)
+                .depth(1)
+                .caret(true)
+                .icon(glyph::plus(), None)
+                .tag("OTTY")
+                .state("42 % used")
+                .count(3);
+            if keeps_note { row.keep_note() } else { row }
+        };
+
+        for keeps_note in [false, true] {
+            for width in (120..=360).step_by(6).map(|width| width as f32) {
+                let is_cut = rows(keeps_note).cuts_label(width);
+
+                assert_eq!(
+                    is_cut,
+                    drawn_cut(rows(keeps_note), email, width),
+                    "keeps the note: {keeps_note}, width {width}"
+                );
+            }
+        }
+    }
+
+    /// Draws a row `width` wide with the label `label` and the whole label
+    /// `whole`, with the pointer over it or not, and checks it against the
+    /// picture saved in `reference`; the first call saves the picture.
+    fn drawn_whole_label_matches(
+        label: &'static str,
+        whole: &'static str,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let view = move || {
+            let palette = UiPalette::otty_dark();
+            let row = TreeRow::new(label, &palette)
+                .state("42 % used")
+                .keep_note()
+                .whole_label(whole);
+
+            container(row).width(160).into()
+        };
+        let pointer = is_hovered.then(|| iced::Point::new(20.0, 10.0));
+
+        draws(&view, WINDOW, pointer, reference)
+    }
+
+    /// A cut label shows its whole label in the kit tooltip while the
+    /// pointer is over the row; a label that fits shows none.
+    #[test]
+    fn given_a_cut_label_when_hovered_then_the_tooltip_shows_the_whole_label() {
+        let long = "someone.with.a.long.name@example.com";
+        let folder = TempDir::new("tree-row-whole-label");
+        let cut = folder.path().join("cut");
+        let cut_idle = folder.path().join("cut-idle");
+        let short = folder.path().join("short");
+
+        assert!(drawn_whole_label_matches(long, "OpenAI (a)", true, &cut));
+        assert!(
+            !drawn_whole_label_matches(long, "OpenAI (b)", true, &cut),
+            "the tooltip of a cut label shows"
+        );
+        assert!(drawn_whole_label_matches(
+            long,
+            "OpenAI (a)",
+            false,
+            &cut_idle
+        ));
+        assert!(
+            drawn_whole_label_matches(long, "OpenAI (b)", false, &cut_idle),
+            "no tooltip while the pointer is away"
+        );
+        assert!(drawn_whole_label_matches("you", "OpenAI (a)", true, &short));
+        assert!(
+            drawn_whole_label_matches("you", "OpenAI (b)", true, &short),
+            "a label that fits shows no tooltip"
+        );
     }
 
     /// Left edge of the label of `row`.
