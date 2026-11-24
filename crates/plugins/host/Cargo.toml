@@ -52,12 +52,15 @@ thiserror = { workspace = true }
 ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 # wasmtime 48 (LTS) with the compiler, the component model and nothing else
 # from its default features (spec Decision 8). The spike measured the
-# binary at +16.5 MB stripped with these features.
+# binary at +16.5 MB stripped with these features. `reexport-wasmparser`
+# adds no crate: it gives the parser wasmtime is built with, which reads
+# the contracts a release's `.wasm` exports without compiling it.
 wasmtime = { version = "48.0.10", default-features = false, features = [
     "runtime",
     "cranelift",
     "component-model",
     "std",
+    "reexport-wasmparser",
 ] }
 # WASI 0.2 linked with an empty context, so the standard library of a
 # `wasm32-wasip2` plugin works but sees no file, network or variable.

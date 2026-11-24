@@ -510,8 +510,6 @@ impl JsonPointer {
     /// # name = "Example"
     /// # version = "0.1.0"
     /// # wasm = "example.wasm"
-    /// # [api]
-    /// # agents.agent = "0.1"
     /// # [[agents.agent]]
     /// # id = "example-agent"
     /// # name = "Example agent"

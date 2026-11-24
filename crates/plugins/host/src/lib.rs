@@ -3,13 +3,16 @@
 //! 2026-11-19-agent-plugins).
 //!
 //! A plugin is described by its [`Manifest`], `otty-plugin.toml`, read and
-//! checked by `otty-plugin-manifest`: the plugin, the contract version of
-//! each kind of part in `[api]`, and its parts, each with its own
-//! [`PartPermissions`].
+//! checked by `otty-plugin-manifest`: the plugin and its parts, each with
+//! its own [`PartPermissions`]. The contract versions are not in it: the
+//! component exports them, as the SDK it was built with decides, and
+//! [`ExportedApi`] reads them.
 //!
 //! The one [`PluginEngine`] compiles a plugin, or reads it from the disk
 //! cache, refuses imports other than `wasi:cli`, `wasi:io` and `otty:*`,
-//! and checks that the component exports exactly the contracts of `[api]`.
+//! and checks that every part has its contract exported, that every
+//! exported contract of a kind of part has a part, and that this OTTY
+//! knows every exported version.
 //! A [`LoadedPlugin`] is then called part by part: a [`CallBatch`] holds a
 //! store with an empty WASI context, a 64 MiB memory cap and the
 //! [`Permissions`] of that part only, and each call gets the deadline of
@@ -75,11 +78,11 @@ mod terminal;
 mod testing;
 
 pub use otty_plugin_manifest::{
-    AgentPart, Api, Contract, ContractVersion, Domain, Environment,
-    GlobProblem, JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest,
-    ManifestError, PartKind, PartPermissions, PartRef, PathGlob,
-    PermissionLine, Permissions, PluginInfo, PluginVersion, ProgramInstall,
-    ProgramPlace, ProgramRule, ProviderPart,
+    AgentPart, Contract, ContractVersion, Domain, Environment, GlobProblem,
+    JsonPointer, KeyPlace, KeyRule, KeyringRule, Manifest, ManifestError,
+    PartKind, PartPermissions, PartRef, PathGlob, PermissionLine, Permissions,
+    PluginInfo, PluginVersion, ProgramInstall, ProgramPlace, ProgramRule,
+    ProviderPart,
 };
 /// The error wasmtime gives inside a call.
 pub use wasmtime::Error;
@@ -91,7 +94,7 @@ pub use crate::call_programs::TalkHandle;
 pub use crate::call_terminals::TerminalHandle;
 pub use crate::called_part::CalledPart;
 pub use crate::calls::{CallBatch, CallError, CallKind, CallState};
-pub use crate::contract::ExportedApi;
+pub use crate::contract::{ContractError, ExportedApi};
 pub use crate::engine::{EngineError, LoadError, PluginEngine, TICK};
 pub use crate::keys::{KeyHandle, KeySource, KeyText};
 pub use crate::memory_cap::MEMORY_CAP;

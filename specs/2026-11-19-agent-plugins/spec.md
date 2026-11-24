@@ -127,23 +127,24 @@ OTTY release.
   provider package imports. `otty:host` keeps only what any domain could
   use: the host operations and their errors, keys and key places, a
   command, a need and a key the user gave (`given-key`). There is no
-  combined contract: a component exports one or both, and the plugin's
-  manifest names the version of each one it exports in `[api]`
-  (`agents.agent = "0.1"`, `agents.provider = "0.1"`).
+  combined contract: a component exports one or both. The manifest
+  names no contract version: the version of the SDK a plugin is built
+  with decides them, and OTTY reads them from the exports of the `.wasm`
+  (owner, 2026-11-24).
 - One optional contract belongs to no part (owner, 2026-11-21, issue 20):
   the language receiver `otty:language@0.1.0`, at the root of the SDK
   and in no domain. It has one function,
   `language-changed(tag) -> bool`, true when the plugin's texts depend on
   the language. The SDK trait is `Language`, exported with
   `export!(T with agents::agent, agents::provider, language)`; the
-  manifest names it as `[api] language = "0.1"` and needs no part for it.
+  manifest says nothing about it, and it needs no part.
 - A plugin exports each trait once, so all its agent parts share one
   `agent` version and all its provider parts share one `provider`
   version. The parts are told apart by the id OTTY passes to each call.
 - OTTY keeps several versions of each contract working, as Zed does: each
   version stays in the host with converters from its types to the newest
-  ones. A plugin runs only if OTTY knows every contract version in its
-  `[api]`; otherwise the whole plugin shows "Needs a newer OTTY".
+  ones. A plugin runs only if OTTY knows every contract version its
+  `.wasm` exports; otherwise the whole plugin shows "Needs a newer OTTY".
 - The only macro is `export!`, which names the plugin type and the
   extension points it exports, each by its domain:
   `export!(OpenAi with agents::agent, agents::provider, language)`. It
@@ -573,11 +574,6 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "openai.wasm"
 
-[api]                             # one version per contract the .wasm exports
-agents.agent = "0.1"              # domain.point
-agents.provider = "0.1"
-language = "0.1"                  # the language receiver; belongs to no part and no domain
-
 [[agents.agent]]
 id = "codex"                      # saved in agents.json; never changes
 name = "Codex"
@@ -638,10 +634,6 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "opencode.wasm"
 
-[api]
-agents.agent = "0.1"
-language = "0.1"
-
 [[agents.agent]]
 id = "opencode"
 name = "OpenCode"
@@ -670,8 +662,7 @@ fields = ["/key", "/access", "/refresh"]
 ```
 
 A pack such as "OpenAI-compatible providers" has no `[[agents.agent]]`,
-only `[api] agents.provider = "0.1"` and many `[[agents.provider]]`
-parts, each with its own hosts and `http` permission. A part outside its
+only many `[[agents.provider]]` parts, each with its own hosts and `http` permission. A part outside its
 domain, such as a top-level `[[agent]]`, is an unknown field and refused.
 
 Paths start with `~` (home) or with a variable the part listed in `env`,
@@ -702,9 +693,10 @@ arguments, run in a terminal tab the user sees, never hidden) and/or an
 where OTTY looked, and shows **Install <agent>**, which runs the command
 and whose line shows it, and the page as a second button, or as the only
 one with no command; with no `install`, no button. Once the tab of a need
-closes, the install or a login, OTTY reads the profiles again. The manifest is checked as a whole: every part needs the
-contract of its kind in `[api]`, and `[api]` names no contract without a
-part, except `language`, which belongs to the whole plugin.
+closes, the install or a login, OTTY reads the profiles again. The manifest is checked as a whole. With the `.wasm`, every part
+needs the contract of its kind exported, and no contract of a kind of
+part is exported without a part, except `language`, which belongs to the
+whole plugin.
 
 ## SDK
 
@@ -886,7 +878,7 @@ part's translations for the language now, else English), `clock::now`,
 `request.header_with_key("authorization", "Bearer ", &key)`.
 
 A plugin ends with one line that names the extension points it exports,
-each by its domain; they must match its `[api]`:
+each by its domain, one per kind of part its manifest declares:
 
 ```rust
 otty_plugin_sdk::export!(OpenAi with agents::agent, agents::provider, language);
@@ -1168,8 +1160,10 @@ that joins them. A component exports `otty:agents-agent/agent@0.1.0`,
 `otty:agents-provider/provider@0.1.0` or both, and may also export
 `otty:language/language@0.1.0`, which imports nothing. The host reads which contracts and
 versions a component exports from its export names (wasmtime resolves
-semver-compatible imports itself), checks them against the manifest's
-`[api]`, and refuses a plugin that names a version it does not have. The
+semver-compatible imports itself), checks them against the parts of the
+manifest, and refuses a plugin that exports a version it does not have.
+It reads them from the compiled component at load, and from the bytes
+of the `.wasm` at install and at an update check. The
 host operations have their own version (`otty:host@0.1.0`); each contract
 version names the host version it imports, so the manifest does not list
 it.
@@ -1275,22 +1269,23 @@ reads each account once per refresh, not per profile.
    accepted at first.
 2. **Find the version.** OTTY lists the repository's releases (GitHub
    REST API, no login, `User-Agent: OTTY`), keeps tags that are semver,
-   and for the newest first downloads only `otty-plugin.toml`. It takes
-   the newest release whose contract versions in `[api]` this OTTY all
-   knows. No semver tag: "This repository has no release OTTY can
-   install". None compatible: "Needs a newer OTTY (agent contract 0.2)".
+   and for the newest first downloads `otty-plugin.toml` and the
+   `.wasm` it names, which is small. It takes the newest release whose
+   `.wasm` exports only contract versions this OTTY knows. No semver
+   tag: "This repository has no release OTTY can install". None
+   compatible: "Needs a newer OTTY (agents.agent contract 0.2)".
 3. **Check the manifest.** Its plugin id is not taken by another installed
    plugin (refused: "A plugin `opencode` is already installed from
    <repository>"); globs are valid and inside home or listed variables;
-   icons exist; every part has its contract in `[api]`. A part whose ids
+   icons exist; every part has its contract exported. A part whose ids
    or hosts another installed plugin serves too is no conflict (issue
    29).
 4. **Show.** A dialog with name, author, repository link, version,
    "Official" or "Community", and each part with its permissions in words.
    Buttons **Install** and **Cancel**.
-5. **Download.** The `.wasm` and the icons. OTTY computes SHA-256 of each
-   asset and checks the `.wasm`: it exports exactly the contracts and
-   versions of `[api]`, only allowed imports, at most 20 MiB; icons parse
+5. **Download.** The icons. OTTY computes SHA-256 of each asset and
+   checks the `.wasm`: it exports the contracts of the manifest's parts,
+   only allowed imports, at most 20 MiB; icons parse
    as SVG, have no scripts or external links, at most 16 KiB.
 6. **Compile and keep.** The files go to
    `~/.local/share/otty/plugins/<id>/<version>/`; the compiled copy to

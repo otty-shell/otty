@@ -2,8 +2,6 @@
 //! Unknown fields are refused, so a misspelt permission is never dropped
 //! silently.
 
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 
 /// The whole manifest.
@@ -12,19 +10,7 @@ use serde::Deserialize;
 pub(crate) struct RawManifest {
     pub(crate) plugin: RawPlugin,
     #[serde(default)]
-    pub(crate) api: BTreeMap<String, RawApiEntry>,
-    #[serde(default)]
     pub(crate) agents: RawAgentsDomain,
-}
-
-/// One entry of `[api]`: the version of a contract of no domain, such as
-/// `language = "0.1"`, or the versions of the points of one domain, such
-/// as `agents.agent = "0.1"`, which TOML reads as the table `agents`.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum RawApiEntry {
-    Version(String),
-    Domain(BTreeMap<String, String>),
 }
 
 /// The parts of the `agents` domain: `[[agents.agent]]` and

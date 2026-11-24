@@ -218,11 +218,10 @@ mod tests {
         let both = Manifest::parse(&template_manifest("0.1.0")).expect("valid");
         let agent_only_text = template_manifest("0.1.0");
         let agent_only = Manifest::parse(
-            &agent_only_text
+            agent_only_text
                 .split("[[agents.provider]]")
                 .next()
-                .expect("the agent half")
-                .replace("agents.provider = \"0.1\"\n", ""),
+                .expect("the agent half"),
         )
         .expect("valid");
 
@@ -272,11 +271,9 @@ mod tests {
         for (text, provider) in copies {
             let new = Manifest::parse(text).expect("valid");
             let agent_only = Manifest::parse(
-                &text
-                    .split("[[agents.provider]]")
+                text.split("[[agents.provider]]")
                     .next()
-                    .expect("the agent half")
-                    .replace("agents.provider = \"0.1\"\n", ""),
+                    .expect("the agent half"),
             )
             .expect("valid");
 

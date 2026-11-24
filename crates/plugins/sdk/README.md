@@ -66,8 +66,7 @@ The texts are in the language `env::language()` names, or in English;
 `env::in_language` picks one of the part's own translations.
 `env::language()` gives the language OTTY shows at that call, which may
 change while the plugin is loaded. A plugin with translations implements
-`Language`, names `language = "0.1"` in its manifest's `[api]` and
-exports it: OTTY calls `Language::language_changed(tag)` when the user
+`Language` and exports it, with nothing in its manifest: OTTY calls `Language::language_changed(tag)` when the user
 picks another language, and reads the plugin's parts again at once when
 it answers `true`, so its needs show in the new language. A plugin
 without it is never called. In tests, `TestHost::set_language` switches

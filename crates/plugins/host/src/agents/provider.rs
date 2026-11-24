@@ -28,8 +28,8 @@ use crate::operations::v0_1::otty::host::keys::GivenKey;
 use crate::operations::v0_1::otty::host::types::Command;
 use crate::pacing::PaceKey;
 
-/// The provider contract of one loaded plugin, in the version its `[api]`
-/// names.
+/// The provider contract of one loaded plugin, in the version its
+/// component exports.
 #[derive(Clone)]
 pub(crate) enum ProviderExports {
     V0_1(GuestIndices),

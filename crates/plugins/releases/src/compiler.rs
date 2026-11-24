@@ -15,8 +15,9 @@ use otty_plugin_host::{Environment, Manifest, PluginEngine};
 #[cfg_attr(test, mockall::automock)]
 pub trait PluginCompiler: Send {
     /// Checks that the component at `wasm` imports only what OTTY gives
-    /// and exports exactly the contracts of the manifest's `[api]`, and
-    /// compiles it into the cache. The error is a plain reason.
+    /// and exports the contracts of the manifest's parts, each in a
+    /// version this OTTY knows, and compiles it into the cache. The error
+    /// is a plain reason.
     fn compile(&self, manifest: &Manifest, wasm: &Path) -> Result<(), String>;
 
     /// Removes the compiled copy of the `.wasm` whose SHA-256 is

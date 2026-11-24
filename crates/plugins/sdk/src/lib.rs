@@ -19,7 +19,9 @@
 //! domain.
 //!
 //! The plugin ends with one line that names its type and the extension
-//! points it exports; they must match its `[api]`:
+//! points it exports, one per kind of part its manifest declares. The
+//! version of this SDK decides the version of each contract, and OTTY
+//! reads them from the built `.wasm`:
 //!
 //! ```ignore
 //! otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);
@@ -72,8 +74,8 @@ pub use crate::language::Language;
 #[doc(hidden)]
 pub use crate::language::LanguageExport;
 
-/// Exports the plugin type and the extension points it implements, the
-/// contracts its manifest's `[api]` names, in any order: a point of a
+/// Exports the plugin type and the extension points it implements, one
+/// per kind of part its manifest declares, in any order: a point of a
 /// domain by its domain and name, such as `agents::agent` and
 /// `agents::provider`, and `language` for a plugin with translations:
 /// `export!(Example with agents::agent)`,

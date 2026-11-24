@@ -1,15 +1,15 @@
-//! Which release to install: the newest one whose manifest names only
+//! Which release to install: the newest one whose `.wasm` exports only
 //! contract versions this OTTY knows (spec 2026-11-19-agent-plugins,
-//! "Install and update flow", step 2, and "Updates").
-
-use otty_plugin_manifest::ManifestError;
+//! "Install and update flow", step 2, and "Updates"). The manifest names
+//! no contract, so the `.wasm` of each release looked at is downloaded
+//! and read.
 
 use crate::error::InstallError;
 use crate::github::{Release, RepositoryUrl, releases_of};
 use crate::http::{HttpClient, HttpError};
 use crate::package::{
-    MANIFEST_FILE, MAX_MANIFEST_BYTES, Package, download, parse_manifest,
-    sha256_hex,
+    MANIFEST_FILE, MAX_MANIFEST_BYTES, MAX_WASM_BYTES, Package,
+    check_contracts, download, parse_manifest, sha256_hex,
 };
 use crate::plugins_file::{InstalledPlugin, Source};
 
@@ -62,11 +62,11 @@ pub(crate) fn list_releases(
     releases_of(&body)
 }
 
-/// The newest of `releases` (newest first) whose manifest this OTTY can
-/// run. Pre-releases count only with `include_prereleases`. With an
-/// `installed` plugin, only releases newer than it count, and reaching
-/// its own release ends the search; a release whose tag was installed
-/// before must still serve the same manifest.
+/// The newest of `releases` (newest first) whose `.wasm` this OTTY can
+/// run with its manifest. Pre-releases count only with
+/// `include_prereleases`. With an `installed` plugin, only releases newer
+/// than it count, and reaching its own release ends the search; a release
+/// whose tag was installed before must still serve the same manifest.
 pub(crate) fn pick_release(
     http: &dyn HttpClient,
     repository: &RepositoryUrl,
@@ -97,18 +97,7 @@ pub(crate) fn pick_release(
                 break;
             }
         }
-        let manifest = match parse_manifest(&bytes) {
-            Err(InstallError::Manifest(
-                error @ ManifestError::NeedsNewerOtty { .. },
-            )) => {
-                too_new.get_or_insert(SkippedRelease {
-                    tag: release.tag().to_string(),
-                    reason: error.to_string(),
-                });
-                continue;
-            },
-            other => other?,
-        };
+        let manifest = parse_manifest(&bytes)?;
         if manifest.plugin().version() != release.version() {
             return Err(InstallError::VersionIsNotTag {
                 tag: release.tag().to_string(),
@@ -116,10 +105,28 @@ pub(crate) fn pick_release(
             });
         }
 
+        let wasm_name = manifest.plugin().wasm();
+        let Some(wasm_asset) = release.asset(wasm_name) else {
+            return Err(InstallError::MissingFile(wasm_name.to_string()));
+        };
+        let wasm = download(http, wasm_asset, MAX_WASM_BYTES)?;
+
+        match check_contracts(&manifest, &wasm) {
+            Err(InstallError::NeedsNewerOtty(reason)) => {
+                too_new.get_or_insert(SkippedRelease {
+                    tag: release.tag().to_string(),
+                    reason,
+                });
+                continue;
+            },
+            other => other?,
+        }
+
         let source = Source::Release {
             url: repository.to_string(),
         };
-        let package = Package::of_release(manifest, bytes, release, source);
+        let package =
+            Package::of_release(manifest, bytes, wasm, release, source);
 
         return Ok(Picked {
             package: Some(package),
@@ -158,7 +165,9 @@ fn check_unchanged(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{FakeGithub, FakeRelease, needs_agent_0_2};
+    use crate::testing::{
+        FakeGithub, FakeRelease, agent_only_wasm, needs_agent_0_2,
+    };
 
     const REPO: &str = "someone/otty-plugin-example";
 
@@ -219,6 +228,51 @@ mod tests {
         assert_eq!(
             skipped.reason(),
             "Needs a newer OTTY (agents.agent contract 0.2)"
+        );
+    }
+
+    /// Issue 15 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// manifest names no contract, so the `.wasm` tells which ones the
+    /// release serves, and a part it does not serve refuses the release.
+    #[test]
+    fn a_release_whose_wasm_does_not_serve_a_part_is_refused() {
+        let github = FakeGithub::new();
+        github.publish(
+            REPO,
+            vec![
+                FakeRelease::example("v0.1.0", "0.1.0")
+                    .with_file("example.wasm", &agent_only_wasm()),
+            ],
+        );
+
+        let error = pick(&github, false).expect_err("refused");
+
+        assert_eq!(
+            error,
+            InstallError::Compile(
+                "The provider part `example-cloud` needs the \
+                 `agents.provider` contract, but the .wasm does not export it"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn a_release_without_its_wasm_is_refused() {
+        let github = FakeGithub::new();
+        github.publish(
+            REPO,
+            vec![
+                FakeRelease::example("v0.1.0", "0.1.0")
+                    .without_file("example.wasm"),
+            ],
+        );
+
+        let error = pick(&github, false).expect_err("refused");
+
+        assert_eq!(
+            error,
+            InstallError::MissingFile("example.wasm".to_string())
         );
     }
 

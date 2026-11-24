@@ -2,11 +2,12 @@
 //! part of a plugin (spec 2026-11-19-agent-plugins, "What a plugin is" and
 //! "Permissions").
 //!
-//! A [`Manifest`] names the plugin, the version of each [`Contract`] it
-//! exports in `[api]`, and its parts, [`AgentPart`] and [`ProviderPart`],
-//! each with its own [`PartPermissions`], which list themselves in plain
-//! words as [`PermissionLine`]s. A manifest that names a contract version
-//! this OTTY does not know is refused with "Needs a newer OTTY".
+//! A [`Manifest`] names the plugin and its parts, [`AgentPart`] and
+//! [`ProviderPart`], each with its own [`PartPermissions`], which list
+//! themselves in plain words as [`PermissionLine`]s. It names no
+//! [`Contract`]: the SDK a plugin is built with decides the version of
+//! each, and `otty-plugin-host` reads them from the `.wasm`, which is
+//! where "Needs a newer OTTY" comes from.
 //! [`Permissions`] are the permissions of one part made concrete for an
 //! [`Environment`]: they answer whether that part may read a path, run a
 //! program, call a host or open a key place. A provider part's
@@ -25,7 +26,7 @@ mod testing;
 mod version;
 
 pub use crate::agent_program::{ProgramInstall, ProgramPlace};
-pub use crate::contract::{Api, Contract, ContractVersion, known_versions};
+pub use crate::contract::{Contract, ContractVersion, known_versions};
 pub use crate::environment::Environment;
 pub use crate::manifest::{
     AgentPart, Manifest, ManifestError, PluginInfo, ProviderPart,

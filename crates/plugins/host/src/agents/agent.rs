@@ -33,8 +33,8 @@ pub use crate::operations::v0_1::otty::host::types::{
     Command, HostError, KeyAsk, Need, NeedAction,
 };
 
-/// The agent contract of one loaded plugin, in the version its `[api]`
-/// names.
+/// The agent contract of one loaded plugin, in the version its
+/// component exports.
 #[derive(Clone)]
 pub(crate) enum AgentExports {
     V0_1(GuestIndices),

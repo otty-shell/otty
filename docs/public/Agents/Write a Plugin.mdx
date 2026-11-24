@@ -86,17 +86,12 @@ otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY rel
 [plugin]
 id = "example"                  # stable; a new id is a new plugin
 name = "Example"
-version = "0.1.6"               # equals the release tag without "v"
+version = "0.1.8"               # equals the release tag without "v"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/you/otty-plugin-example"
 license = "Apache-2.0"
 authors = ["You"]
 wasm = "example.wasm"           # must be "<id>.wasm"
-
-[api]                           # one contract version per kind of part: domain.part
-agents.agent = "0.1"
-agents.provider = "0.1"
-language = "0.1"                # optional, of no domain: the plugin's texts come in several languages
 
 [[agents.agent]]
 id = "example-agent"            # saved by OTTY; never change it
@@ -146,8 +141,9 @@ fields = ["/api_key"]
 
 Each part belongs to a **domain** of OTTY, the place of the window it fills, and is written under the
 domain's name: the agents and providers of Agents mode are the `agents` domain, so each
-`[[agents.agent]]` and `[[agents.provider]]` is a **part** with its own id, icon and permissions, and
-`[api]` names its contract as `agents.agent` and `agents.provider`. The `description` of the plugin
+`[[agents.agent]]` and `[[agents.provider]]` is a **part** with its own id, icon and permissions. The
+manifest names no contract version: the version of the SDK you build with decides them, and OTTY reads
+them from the built `.wasm` ([below](#the-code)). The `description` of the plugin
 and of each part is optional, one short sentence with commas, not semicolons: Plugins mode shows the
 plugin's under its name and a part's on its card, next to **Can access**. A part at the top level, such as
 `[[agent]]`, is refused as an unknown field. A plugin may have any number of parts; a new part is a
@@ -172,10 +168,9 @@ OTTY calls that part: above, the provider part may not read `~/.example-agent` b
 Paths start with `~` or with a listed variable (`{XDG_DATA_HOME}/...`) and may not contain `..`.
 The paths of `logins` are the exception: they are written from inside the folder, with no `~`,
 no leading `/`, no variable and no `..`. Ids use lowercase letters, digits and dashes. Each part needs an icon: an SVG of at most 16 KiB with no scripts, links
-or embedded images, drawn in one color with `currentColor`. Every part needs its contract
-in `[api]`, and `[api]` may name no contract without a part, except `language`, which belongs to
-the whole plugin ([below](#the-language)). Unknown fields are refused, so a
-misspelt permission is never dropped silently.
+or embedded images, drawn in one color with `currentColor`. Unknown fields are refused, so a
+misspelt permission is never dropped silently, and so is an `[api]` table: the contracts are not
+named in the manifest.
 
 ### Logins of a provider part
 
@@ -223,8 +218,8 @@ One plugin type serves all its parts. All agent parts share one `impl Agent`, al
 `impl Provider`; OTTY passes the part's id with each call (`agent`, `profile.agent` or `provider`).
 The traits and every type of the domain are in `otty_plugin_sdk::agents`; the host operations
 (`files`, `http`, `keys`, `env` and the rest), `Need`, `Key` and `HostError` are at the root of the
-SDK, since every domain uses them. The last line names the domain's parts the plugin serves, and must
-match `[api]`:
+SDK, since every domain uses them. The last line names the domain's parts the plugin serves, one
+contract per kind of part in the manifest:
 
 ```rust
 // src/lib.rs
@@ -238,7 +233,11 @@ otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language)
 ```
 
 A plugin with only agent parts and texts only in English writes
-`export!(Example with agents::agent)` and has only `agents.agent` in `[api]`.
+`export!(Example with agents::agent)`. The version of the SDK decides the version of each contract,
+such as `agents.agent` 0.1, and the `.wasm` carries them. OTTY reads them when it installs your plugin,
+checks for an update and loads it: every part needs its contract exported, and no contract of a kind
+of part may be exported without a part, except `language`, which belongs to the whole plugin
+([below](#the-language)).
 
 | `Agent`                                   | Gives OTTY                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------- |
@@ -465,9 +464,9 @@ region (`pt` for `pt-BR`), else English. OTTY's own languages are `en`, `zh-CN`,
 `fr`, `de`, `es`, `pt-BR` and `ru`. The contract carries no translation tables: they live in your
 plugin.
 
-A plugin with translations also implements the optional `Language` trait, exports it
-(`export!(Example with agents::agent, agents::provider, language)`) and names it in the manifest as
-`[api] language = "0.1"`. It belongs to no part and no domain:
+A plugin with translations also implements the optional `Language` trait and exports it
+(`export!(Example with agents::agent, agents::provider, language)`); the manifest says nothing about
+it. It belongs to no part and no domain:
 
 ```rust
 impl otty_plugin_sdk::Language for Example {
@@ -615,8 +614,9 @@ shows what it wrote with `log::*` and to stderr.
   waits for each user's OK.
 - Never change the files of a published release: OTTY refuses a release whose files differ from what
   it installed. Ship a new version instead.
-- OTTY runs a plugin only when it knows every contract version in `[api]`, and installs the newest
-  release it can run. Keep `[api]` at the oldest contract you need.
+- OTTY runs a plugin only when it knows every contract version its `.wasm` exports, and installs the
+  newest release it can run; the others show "Needs a newer OTTY". A newer SDK may bring a newer
+  contract: build with the oldest SDK that has what you need.
 
 ## Advice from the official plugins
 

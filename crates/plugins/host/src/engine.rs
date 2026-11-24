@@ -13,7 +13,7 @@ use wasmtime::{Config, Engine};
 
 use crate::cache::CompiledCache;
 use crate::calls::CallState;
-use crate::contract::{ContractExports, ExportedApi};
+use crate::contract::{ContractError, ContractExports, ExportedApi};
 use crate::imports::refused_imports;
 use crate::operations::v0_1::Operations;
 use crate::outside::Outside;
@@ -111,7 +111,8 @@ impl PluginEngine {
     /// The plugin of `manifest` whose component is the file `wasm`, its
     /// permissions made concrete for `env`. The component comes from the
     /// cache when it was compiled before; it is refused when it imports
-    /// what OTTY does not give or exports other contracts than `[api]`.
+    /// what OTTY does not give, or when the contracts it exports do not
+    /// fit the manifest's parts or need a newer OTTY.
     pub fn load(
         &self,
         manifest: Manifest,
@@ -138,26 +139,15 @@ impl PluginEngine {
 
         let exported = ExportedApi::of_exports(
             component_type.exports(engine).map(|(name, _)| name),
-        );
-        let matches = exported
-            .as_ref()
-            .is_some_and(|exported| exported.matches(manifest.api()));
-        if !matches {
-            return Err(LoadError::ApiMismatch {
-                declared: manifest.api().to_string(),
-                exported: exported.map_or_else(
-                    || "one contract in two versions".to_string(),
-                    |exported| exported.to_string(),
-                ),
-            });
-        }
+        )?;
+        exported.check(&manifest)?;
 
         let instance_pre = self
             .shared
             .linker
             .instantiate_pre(&component)
             .map_err(|error| LoadError::Link(error.to_string()))?;
-        let exports = ContractExports::of_api(manifest.api(), &instance_pre)?;
+        let exports = ContractExports::of_exported(&exported, &instance_pre)?;
 
         LoadedPlugin::new(
             Arc::clone(&self.shared),
@@ -240,16 +230,10 @@ pub enum LoadError {
     /// The component imports what OTTY does not give, by name.
     #[error("The plugin uses what OTTY does not give: {}", .0.join(", "))]
     RefusedImports(Vec<String>),
-    /// The component exports other contracts than the manifest's `[api]`.
-    #[error(
-        "The manifest's [api] names {declared}, but the .wasm exports {exported}"
-    )]
-    ApiMismatch {
-        /// The contracts of `[api]`.
-        declared: String,
-        /// The contracts the component exports.
-        exported: String,
-    },
+    /// The contracts the component exports do not fit the manifest's
+    /// parts, or one needs a newer OTTY.
+    #[error("{0}")]
+    Contracts(#[from] ContractError),
     /// An allowed import is not one this OTTY gives.
     #[error("The plugin needs what this OTTY does not give: {0}")]
     Link(String),
@@ -277,10 +261,13 @@ fn start_ticker(shared: Weak<EngineShared>) -> Result<(), EngineError> {
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_manifest::PartRef;
+
     use super::*;
     use crate::cache::LoadKind;
     use crate::testing::{
-        TEST_PLUGIN_MANIFEST, TempDir, edited, fixture, load_fixture, test_env,
+        TEST_PLUGIN_MANIFEST, TempDir, fixture, fixture_with_agent_0_2,
+        load_fixture, test_env,
     };
 
     fn load(
@@ -329,19 +316,18 @@ mod tests {
         assert!(error.to_string().contains("wasi:filesystem/"));
     }
 
+    /// Issue 15 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// manifest names no contract, so a part whose contract the `.wasm`
+    /// does not export refuses the plugin.
     #[test]
-    fn api_that_does_not_match_the_exports_is_refused() {
+    fn a_part_whose_contract_the_wasm_does_not_export_is_refused() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
         let with_provider = format!(
-            "{}\n[[agents.provider]]\nid = \"test-provider\"\nname = \"Test \
-             provider\"\nicon = \"test.svg\"\nhosts = [\"example.com\"]\n",
-            edited(
-                TEST_PLUGIN_MANIFEST,
-                "agents.agent = \"0.1\"",
-                "agents.agent = \"0.1\"\nagents.provider = \"0.1\""
-            ),
+            "{TEST_PLUGIN_MANIFEST}\n[[agents.provider]]\nid = \
+             \"test-provider\"\nname = \"Test provider\"\nicon = \
+             \"test.svg\"\nhosts = [\"example.com\"]\n"
         );
 
         let error = load(&engine, &with_provider, "minimal")
@@ -350,10 +336,28 @@ mod tests {
 
         assert_eq!(
             error,
-            LoadError::ApiMismatch {
-                declared: "agents.agent 0.1, agents.provider 0.1".to_string(),
-                exported: "agents.agent 0.1.0".to_string(),
-            }
+            LoadError::Contracts(ContractError::PartWithoutContract(
+                PartRef::provider("test-provider")
+            ))
+        );
+    }
+
+    #[test]
+    fn a_wasm_that_exports_an_unknown_contract_version_needs_a_newer_otty() {
+        let cache = TempDir::new();
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("engine");
+        let wasm = fixture_with_agent_0_2("minimal", cache.path());
+        let manifest = Manifest::parse(TEST_PLUGIN_MANIFEST).expect("valid");
+
+        let error = engine
+            .load(manifest, &wasm, &test_env())
+            .err()
+            .expect("refused");
+
+        assert_eq!(
+            error.to_string(),
+            "Needs a newer OTTY (agents.agent contract 0.2)"
         );
     }
 

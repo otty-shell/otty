@@ -62,9 +62,9 @@ impl PartKind {
         }
     }
 
-    /// The name of the kind in the manifest, both as the table of its
-    /// parts (`[[agents.agent]]`) and as its key in `[api]`
-    /// (`agents.agent = "0.1"`).
+    /// The name of the kind in the manifest, as the table of its parts
+    /// (`[[agents.agent]]`), and the name of the contract its parts
+    /// serve.
     pub fn key(self) -> &'static str {
         match self {
             PartKind::Agent => "agents.agent",

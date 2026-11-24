@@ -3,19 +3,12 @@
 [plugin]
 id = "deepseek"
 name = "DeepSeek"
-version = "0.1.5"
+version = "0.1.6"
 description = "DeepSeek accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-deepseek"
 license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "deepseek.wasm"
-
-# One contract version per kind of part the .wasm exports, and the
-# language receiver: the texts of the needs come in every language of
-# OTTY.
-[api]
-agents.provider = "0.1"
-language = "0.1"
 
 [[agents.provider]]
 id = "deepseek"

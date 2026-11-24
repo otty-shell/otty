@@ -6,9 +6,8 @@
 //! Each trait maps to its own versioned WIT contract:
 //! `otty:agents-agent@0.1.0` and `otty:agents-provider@0.1.0`. The values
 //! both share, such as [`ReadError`], are `otty:agents-agent/types`. A part names them in the manifest as
-//! `[[agents.agent]]` and `[[agents.provider]]`, with
-//! `[api] agents.agent = "0.1"` and `agents.provider = "0.1"`, and the
-//! plugin exports them with
+//! `[[agents.agent]]` and `[[agents.provider]]`, and the plugin exports
+//! them with
 //! `export!(Example with agents::agent, agents::provider)`.
 //!
 //! An agent part prices the tokens of its answers itself (spec

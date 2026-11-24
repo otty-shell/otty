@@ -60,31 +60,6 @@ pub enum ManifestError {
         /// The shared id.
         id: String,
     },
-    /// A version in `[api]` is not `MAJOR.MINOR`.
-    #[error(
-        "`{version}` is not a contract version such as 0.1 (`{contract}` in \
-         [api])"
-    )]
-    BadContractVersion {
-        /// The contract key of `[api]`.
-        contract: String,
-        /// The version as written.
-        version: String,
-    },
-    /// `[api]` names a contract or a version this OTTY does not know.
-    #[error("Needs a newer OTTY ({contract} contract {version})")]
-    NeedsNewerOtty {
-        /// The contract key of `[api]`.
-        contract: String,
-        /// The version as written.
-        version: String,
-    },
-    /// A part's kind has no contract in `[api]`.
-    #[error("The {0} needs `{key}` in [api]", key = .0.kind().key())]
-    PartWithoutContract(PartRef),
-    /// `[api]` names a contract no part uses.
-    #[error("[api] names `{key}`, but the plugin has no {0} part", key = .0.key())]
-    ContractWithoutPart(PartKind),
     /// A permission glob is refused.
     #[error("The glob `{glob}` of the {part} {problem}")]
     BadGlob {

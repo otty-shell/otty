@@ -8,7 +8,7 @@ made-up agent that keeps its files in `~/.example-agent/`, and a provider
 part, `example-cloud`, that reads the balance of a made-up provider. Copy
 the folder into a new repository and replace what the parts read.
 
-## Parts, permissions and `[api]`
+## Parts, permissions and contracts
 
 - Each part belongs to a domain of OTTY. This plugin fills the `agents`
   domain, Agents mode: each `[[agents.agent]]` and `[[agents.provider]]`
@@ -25,15 +25,18 @@ the folder into a new repository and replace what the parts read.
   the types of the domain are in `otty_plugin_sdk::agents`; the host
   operations (`files`, `http`, `keys`, `env` and the rest), a `Need` and a
   `Key` are at the root of the SDK, since no domain owns them.
-- `[api]` names the version of each contract the plugin exports, one per
-  kind of part it has, by its domain and its name: `agents.agent = "0.1"`
-  for the `Agent` trait, `agents.provider = "0.1"` for the `Provider`
-  trait, and `language = "0.1"` for the optional `Language` trait, which
-  belongs to no part and no domain. The last line of `src/lib.rs`,
+- The last line of `src/lib.rs`,
   `otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);`,
-  must name the same contracts. A plugin with only agent parts and texts
-  in English only writes `export!(Example with agents::agent)` and only
-  `agents.agent` in `[api]`.
+  names the contracts the plugin exports, one per kind of part it has:
+  `agents::agent` for the `Agent` trait, `agents::provider` for the
+  `Provider` trait, and `language` for the optional `Language` trait,
+  which belongs to no part and no domain. A plugin with only agent parts
+  and texts in English only writes `export!(Example with agents::agent)`.
+  The manifest names no contract version: the version of the SDK the
+  plugin is built with decides them, and OTTY reads them from the built
+  `.wasm`. OTTY refuses a part whose contract is not exported and an
+  exported contract with no part, and a version it does not know shows
+  "Needs a newer OTTY".
 - An agent part knows nothing of accounts: `detect` says only found,
   or not logged in with its need. OTTY asks only about a folder that is
   there, so the part decides what an empty one needs. Each answer carries

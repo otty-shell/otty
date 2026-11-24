@@ -41,9 +41,12 @@ domain are a module of that domain, and each contract version has its own
 module in it: `agents::agent::v0_1` (`otty:agents-agent@0.1.0`, with the
 domain's shared values `otty:agents-agent/types`),
 `agents::provider::v0_1` (`otty:agents-provider@0.1.0`), and
-`language::v0_1` for the language receiver of no domain. `contract.rs` is
-the one place that maps a version of a manifest's `[api]`, keyed by the
-domain and the point such as `agents.agent`, to them. A new version, such
+`language::v0_1` for the language receiver of no domain. `contract.rs`
+reads the contracts a component exports and their versions, from the
+compiled component at load and from the bytes of the `.wasm` at install
+and at an update check, checks them against the manifest's parts, and is
+the one place that maps each exported version, named by the domain and
+the point such as `agents.agent`, to them. A new version, such
 as `agents.agent` 0.2, is added next to the old one: its WIT folder in
 the SDK, `agents::agent::v0_2` here, a line in that map and in the list
 of known versions of `otty-plugin-manifest`; the types of the

@@ -1,6 +1,7 @@
 //! The plugin manifest, `otty-plugin.toml` (spec 2026-11-19-agent-plugins,
-//! "What a plugin is"): the plugin, the contracts it uses, and its parts,
-//! each with its own permissions. It is checked as a whole when read.
+//! "What a plugin is"): the plugin and its parts, each with its own
+//! permissions. It is checked as a whole when read. The contracts the
+//! plugin serves are not in it: the `.wasm` exports them.
 
 mod error;
 pub(crate) mod raw;
@@ -8,7 +9,6 @@ pub(crate) mod raw;
 use std::collections::BTreeSet;
 
 use crate::agent_program::{ProgramInstall, ProgramPlace};
-use crate::contract::Api;
 pub use crate::manifest::error::ManifestError;
 use crate::manifest::raw::{RawAgent, RawManifest, RawPlugin, RawProvider};
 use crate::part::{PartKind, PartRef, is_valid_id};
@@ -21,7 +21,6 @@ use crate::version::PluginVersion;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
     plugin: PluginInfo,
-    api: Api,
     agents: Vec<AgentPart>,
     providers: Vec<ProviderPart>,
 }
@@ -30,11 +29,6 @@ impl Manifest {
     /// `[plugin]`.
     pub fn plugin(&self) -> &PluginInfo {
         &self.plugin
-    }
-
-    /// `[api]`: the version of each contract the plugin exports.
-    pub fn api(&self) -> &Api {
-        &self.api
     }
 
     /// The `[[agents.agent]]` parts.
@@ -87,9 +81,6 @@ impl Manifest {
     ///     version = "0.1.0"
     ///     wasm = "example.wasm"
     ///
-    ///     [api]
-    ///     agents.agent = "0.1"
-    ///
     ///     [[agents.agent]]
     ///     id = "example-agent"
     ///     name = "Example agent"
@@ -110,7 +101,6 @@ impl Manifest {
         })?;
 
         let plugin = PluginInfo::of_raw(&raw.plugin)?;
-        let api = Api::of_manifest(&raw.api)?;
         let agents = raw
             .agents
             .agent
@@ -126,7 +116,6 @@ impl Manifest {
 
         let manifest = Self {
             plugin,
-            api,
             agents,
             providers,
         };
@@ -135,7 +124,8 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// Checks the parts against each other and against `[api]`.
+    /// Checks the parts against each other: there is one at least, and no
+    /// two of one kind share an id.
     fn check_parts(&self) -> Result<(), ManifestError> {
         let parts = self.parts();
         if parts.is_empty() {
@@ -149,19 +139,6 @@ impl Manifest {
                     kind: part.kind(),
                     id: part.id().to_string(),
                 });
-            }
-            if self.api.version_of(part.kind().contract()).is_none() {
-                return Err(ManifestError::PartWithoutContract(part.clone()));
-            }
-        }
-
-        let part_kinds = self
-            .api
-            .iter()
-            .filter_map(|(contract, _)| contract.part_kind());
-        for kind in part_kinds {
-            if !parts.iter().any(|part| part.kind() == kind) {
-                return Err(ManifestError::ContractWithoutPart(kind));
             }
         }
 
@@ -1024,73 +1001,29 @@ sqlite = ["~/.codex/state.db"]"#,
         assert!(matches!(error, ManifestError::BadIconName { .. }));
     }
 
+    /// Issue 15 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// contract versions come from the `.wasm`, so a manifest that still
+    /// names them in `[api]` is refused like any unknown table.
     #[test]
-    fn a_part_with_no_contract_in_api_is_refused() {
-        let error = refusal(&edited(
-            OPENAI_MANIFEST,
-            "agents.provider = \"0.1\"\n",
-            "",
-        ));
+    fn a_manifest_with_api_is_refused() {
+        let text =
+            format!("{OPENAI_MANIFEST}\n[api]\nagents.agent = \"0.1\"\n");
 
-        assert_eq!(
-            error,
-            ManifestError::PartWithoutContract(PartRef::provider("openai"))
-        );
-        assert_eq!(
-            error.to_string(),
-            "The provider part `openai` needs `agents.provider` in [api]"
+        let error = refusal(&text);
+
+        assert!(
+            matches!(&error, ManifestError::Shape(reason) if reason.contains("unknown field `api`")),
+            "{error}"
         );
     }
 
+    /// A manifest says nothing about contracts: an agent part alone is a
+    /// whole plugin, whatever its `.wasm` exports besides.
     #[test]
-    fn a_contract_with_no_part_is_refused() {
-        let without_provider = OPENAI_MANIFEST
-            .split("[[agents.provider]]")
-            .next()
-            .expect("the agent half");
+    fn an_agent_part_alone_is_a_whole_plugin() {
+        let manifest = Manifest::parse(OPENCODE_MANIFEST).expect("valid");
 
-        let error = refusal(without_provider);
-
-        assert_eq!(
-            error,
-            ManifestError::ContractWithoutPart(PartKind::Provider)
-        );
-        assert_eq!(
-            error.to_string(),
-            "[api] names `agents.provider`, but the plugin has no provider part"
-        );
-    }
-
-    /// Issue 20: the language receiver belongs to no part, so a plugin
-    /// that exports it needs no part of its own for it.
-    #[test]
-    fn the_language_receiver_needs_no_part() {
-        let manifest = Manifest::parse(&edited(
-            OPENCODE_MANIFEST,
-            r#"agents.agent = "0.1""#,
-            "agents.agent = \"0.1\"\nlanguage = \"0.1\"",
-        ))
-        .expect("valid");
-
-        assert_eq!(
-            manifest.api().to_string(),
-            "agents.agent 0.1, language 0.1"
-        );
-        assert_eq!(manifest.parts().len(), 1);
-    }
-
-    #[test]
-    fn an_unknown_contract_version_needs_a_newer_otty() {
-        let error = refusal(&edited(
-            OPENAI_MANIFEST,
-            r#"agents.agent = "0.1""#,
-            r#"agents.agent = "0.2""#,
-        ));
-
-        assert_eq!(
-            error.to_string(),
-            "Needs a newer OTTY (agents.agent contract 0.2)"
-        );
+        assert_eq!(manifest.parts(), [PartRef::agent("opencode")]);
     }
 
     #[test]

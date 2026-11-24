@@ -92,9 +92,6 @@ name = "Made up"
 version = "0.1.0"
 wasm = "made-up.wasm"
 
-[api]
-agents.agent = "0.1"
-
 [[agents.agent]]
 id = "made-up-agent"
 name = "Made-up agent"

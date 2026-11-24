@@ -33,7 +33,8 @@ pub enum InstallError {
     /// No release has a semver tag and a manifest.
     #[error("This repository has no release OTTY can install")]
     NoRelease,
-    /// Every release asks for a contract version this OTTY does not know.
+    /// The `.wasm` exports a contract version this OTTY does not know:
+    /// that of every release, or that of a folder.
     #[error("{0}")]
     NeedsNewerOtty(String),
     /// The manifest is refused.

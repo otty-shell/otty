@@ -162,6 +162,13 @@ impl FakeRelease {
         self
     }
 
+    /// The same release without the file `name`.
+    pub(crate) fn without_file(mut self, name: &str) -> Self {
+        self.files.remove(name);
+
+        self
+    }
+
     /// The same release with `from` in its manifest replaced by `to`.
     pub(crate) fn with_manifest_edit(mut self, from: &str, to: &str) -> Self {
         let manifest = self.files.get(MANIFEST_FILE).expect("a manifest");
@@ -177,11 +184,59 @@ impl FakeRelease {
     }
 }
 
-/// The release `release` asking for the `agents.agent` contract 0.2, which this
-/// OTTY does not know.
+/// The release `release` whose `.wasm` exports the `agents.agent`
+/// contract 0.2, which this OTTY does not know.
 pub(crate) fn needs_agent_0_2(release: FakeRelease) -> FakeRelease {
-    release
-        .with_manifest_edit("agents.agent = \"0.1\"", "agents.agent = \"0.2\"")
+    release.with_file("example.wasm", &wasm_with_agent_0_2())
+}
+
+/// The template's `.wasm` with the agent contract 0.2 in place of 0.1: the
+/// version is part of each name of the contract's interface, so every
+/// name is changed, in bytes of the same length.
+pub(crate) fn wasm_with_agent_0_2() -> Vec<u8> {
+    let old = b"otty:agents-agent/agent@0.1.0";
+    let new = b"otty:agents-agent/agent@0.2.0";
+    let mut bytes = example_wasm();
+
+    let mut start = 0;
+    while let Some(found) = bytes[start..]
+        .windows(old.len())
+        .position(|window| window == old)
+    {
+        let at = start + found;
+        bytes[at..at + new.len()].copy_from_slice(new);
+        start = at + new.len();
+    }
+
+    bytes
+}
+
+/// The template's `.wasm` built again: the same component in other bytes,
+/// with an empty custom section `rebuilt` at its end.
+pub(crate) fn rebuilt_wasm() -> Vec<u8> {
+    let mut bytes = example_wasm();
+
+    // Section id 0 (custom), 8 bytes long: the name's length, then the name.
+    bytes.extend_from_slice(&[0, 8, 7]);
+    bytes.extend_from_slice(b"rebuilt");
+
+    bytes
+}
+
+/// The smallest test plugin of `otty-plugin-host`: its `.wasm` exports the
+/// agent contract only.
+pub(crate) fn agent_only_wasm() -> Vec<u8> {
+    std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../host/tests/fixtures/minimal.wasm"
+    ))
+    .expect("a test plugin")
+}
+
+/// The template's `.wasm`.
+pub(crate) fn example_wasm() -> Vec<u8> {
+    std::fs::read(Path::new(EXAMPLE_FOLDER).join("example.wasm"))
+        .expect("the template's .wasm")
 }
 
 /// The releases list body of `releases`: (tag, pre-release, file names).

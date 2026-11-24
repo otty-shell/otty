@@ -1,12 +1,14 @@
 //! One version of a plugin, found and with a checked manifest, and its
 //! files: downloaded from a release or read from a local folder, each
-//! within its size limit and each icon checked.
+//! within its size limit and each icon checked. The contracts its `.wasm`
+//! exports are checked against the manifest's parts when it is found.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use otty_plugin_host::{ContractError, ExportedApi};
 use otty_plugin_manifest::Manifest;
 use sha2::{Digest, Sha256};
 
@@ -54,10 +56,12 @@ impl Package {
     }
 
     /// The release `release` of the repository `source`, whose manifest
-    /// `manifest` was downloaded as `manifest_bytes`.
+    /// `manifest` was downloaded as `manifest_bytes` and whose `.wasm`,
+    /// checked against it, as `wasm`.
     pub(crate) fn of_release(
         manifest: Manifest,
         manifest_bytes: Vec<u8>,
+        wasm: Vec<u8>,
         release: &Release,
         source: Source,
     ) -> Self {
@@ -67,6 +71,7 @@ impl Package {
             source,
             files: PackageFiles::Release {
                 manifest: manifest_bytes,
+                wasm,
                 assets: release.assets().to_vec(),
             },
         }
@@ -92,8 +97,8 @@ impl Package {
         })
     }
 
-    /// The plugin in the local folder `folder`: its manifest, its `.wasm`
-    /// and its icons.
+    /// The plugin in the local folder `folder`: its manifest, its `.wasm`,
+    /// whose contracts fit the manifest's parts, and its icons.
     pub(crate) fn of_folder(folder: &Path) -> Result<Self, InstallError> {
         let folder = fs::canonicalize(folder)
             .map_err(|error| InstallError::disk("open the folder", &error))?;
@@ -111,6 +116,12 @@ impl Package {
                 read_limited(&folder, &name, limit_of(&manifest, &name))?;
             files.insert(name, bytes);
         }
+
+        let wasm_name = manifest.plugin().wasm();
+        let Some(wasm) = files.get(wasm_name) else {
+            return Err(InstallError::MissingFile(wasm_name.to_string()));
+        };
+        check_contracts(&manifest, wasm)?;
 
         Ok(Self {
             tag: manifest.plugin().version().to_string(),
@@ -132,9 +143,15 @@ impl Package {
         for name in needed_files(&self.manifest) {
             let limit = limit_of(&self.manifest, &name);
             let bytes = match &self.files {
-                PackageFiles::Release { manifest, assets } => {
+                PackageFiles::Release {
+                    manifest,
+                    wasm,
+                    assets,
+                } => {
                     if name == MANIFEST_FILE {
                         manifest.clone()
+                    } else if name == self.manifest.plugin().wasm() {
+                        wasm.clone()
                     } else {
                         let Some(asset) =
                             assets.iter().find(|asset| asset.name() == name)
@@ -177,9 +194,11 @@ impl Package {
 /// Where the files of a package are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PackageFiles {
-    /// The manifest is downloaded already; the rest are release assets.
+    /// The manifest and the `.wasm` are downloaded already; the rest are
+    /// release assets.
     Release {
         manifest: Vec<u8>,
+        wasm: Vec<u8>,
         assets: Vec<ReleaseAsset>,
     },
     /// Every file is here, by name.
@@ -211,6 +230,25 @@ pub(crate) fn parse_manifest(bytes: &[u8]) -> Result<Manifest, InstallError> {
     })?;
 
     Ok(Manifest::parse(text)?)
+}
+
+/// Refuses `wasm` when the contracts it exports do not fit the parts of
+/// `manifest`. A contract version this OTTY does not know is "Needs a
+/// newer OTTY"; any other misfit is a `.wasm` that does not run.
+pub(crate) fn check_contracts(
+    manifest: &Manifest,
+    wasm: &[u8],
+) -> Result<(), InstallError> {
+    let checked = ExportedApi::of_wasm(wasm)
+        .and_then(|exported| exported.check(manifest));
+
+    match checked {
+        Ok(()) => Ok(()),
+        Err(error @ ContractError::NeedsNewerOtty { .. }) => {
+            Err(InstallError::NeedsNewerOtty(error.to_string()))
+        },
+        Err(error) => Err(InstallError::Compile(error.to_string())),
+    }
 }
 
 /// The release file `asset`, at most `limit` bytes.
@@ -296,7 +334,10 @@ fn read_limited(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{TempDir, example_files, write_folder};
+    use crate::testing::{
+        TempDir, agent_only_wasm, example_files, wasm_with_agent_0_2,
+        write_folder,
+    };
 
     /// A local folder the made-up plugin of a test comes from.
     fn test_folder() -> Source {
@@ -343,6 +384,42 @@ mod tests {
         assert_eq!(
             error,
             InstallError::MissingFile("example-cloud.svg".to_string())
+        );
+    }
+
+    /// Issue 15 of spec 2026-11-23-accounts-apart-from-profiles: a folder
+    /// whose `.wasm` exports a contract version this OTTY does not know
+    /// needs a newer OTTY, as a release does.
+    #[test]
+    fn a_folder_whose_wasm_exports_an_unknown_contract_version_needs_a_newer_otty()
+     {
+        let folder = TempDir::new();
+        let mut files = example_files("0.1.0");
+        files.insert("example.wasm".to_string(), wasm_with_agent_0_2());
+        write_folder(folder.path(), &files);
+
+        let error = Package::of_folder(folder.path()).expect_err("refused");
+
+        assert_eq!(
+            error,
+            InstallError::NeedsNewerOtty(
+                "Needs a newer OTTY (agents.agent contract 0.2)".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn a_folder_whose_wasm_does_not_serve_a_part_is_refused() {
+        let folder = TempDir::new();
+        let mut files = example_files("0.1.0");
+        files.insert("example.wasm".to_string(), agent_only_wasm());
+        write_folder(folder.path(), &files);
+
+        let error = Package::of_folder(folder.path()).expect_err("refused");
+
+        assert!(
+            matches!(&error, InstallError::Compile(reason) if reason.contains("provider part `example-cloud`")),
+            "{error}"
         );
     }
 

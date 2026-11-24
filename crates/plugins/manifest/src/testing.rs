@@ -14,10 +14,6 @@ license = "Apache-2.0"
 authors = ["OTTY team"]
 wasm = "openai.wasm"
 
-[api]
-agents.agent = "0.1"
-agents.provider = "0.1"
-
 [[agents.agent]]
 id = "codex"
 name = "Codex"
@@ -60,9 +56,6 @@ id = "opencode"
 name = "OpenCode"
 version = "0.2.0"
 wasm = "opencode.wasm"
-
-[api]
-agents.agent = "0.1"
 
 [[agents.agent]]
 id = "opencode"

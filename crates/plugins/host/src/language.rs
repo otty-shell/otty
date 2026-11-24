@@ -10,8 +10,8 @@ use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::LanguageVersion;
 use crate::language::v0_1::exports::otty::language::language::GuestIndices;
 
-/// The language receiver of one loaded plugin, in the version its `[api]`
-/// names.
+/// The language receiver of one loaded plugin, in the version its
+/// component exports.
 #[derive(Clone)]
 pub(crate) enum LanguageExports {
     V0_1(GuestIndices),

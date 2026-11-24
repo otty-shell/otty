@@ -402,13 +402,13 @@ mod tests {
     #[test]
     fn a_new_part_of_an_update_is_marked_new() {
         let mut plugin = released_example();
-        let agent_only = example_manifest("0.1.0")
+        let manifest = example_manifest("0.1.0");
+        let agent_only = manifest
             .split("[[agents.provider]]")
             .next()
-            .expect("the agent half")
-            .replace("agents.provider = \"0.1\"\n", "");
+            .expect("the agent half");
         plugin.installed = otty_plugin_releases::fixtures::installed(
-            &agent_only,
+            agent_only,
             plugin.installed.source().clone(),
         );
         let state = PluginsState::new(vec![plugin.clone()]);

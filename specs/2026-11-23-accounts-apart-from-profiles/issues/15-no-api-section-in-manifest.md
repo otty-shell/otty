@@ -1,6 +1,6 @@
 # 15 The manifest has no `[api]`: OTTY reads the contract versions from the `.wasm`
 
-Status: ready
+Status: done
 Blocked by: 14
 
 ## Why
@@ -57,3 +57,28 @@ simpler. No backward compatibility: Agents mode is unreleased.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-24: Done. `otty-plugin-manifest` reads no `[api]` any more: a
+manifest that has it is refused as an unknown field, and `Api`, its
+errors and the part/contract checks are gone from it. `Contract`,
+`ContractVersion` (now made from an export's version with
+`ContractVersion::of_export`) and the list of known versions stay there.
+`ExportedApi` in `otty-plugin-host` holds the contract versions a
+component exports: `of_exports` reads them from export names (the engine
+gives them at load), `of_wasm` from the bytes of a `.wasm` without
+compiling it, and `check(manifest)` refuses a version this OTTY does not
+know ("Needs a newer OTTY (agents.agent contract 0.2)", told first), a
+part whose contract is not exported and an exported contract with no
+part, as `ContractError`. The bindings and the language receiver come
+from the exports, and `LoadError::ApiMismatch` became
+`LoadError::Contracts`. `of_wasm` uses the parser wasmtime is built with,
+through wasmtime's `reexport-wasmparser` feature, so no crate is added.
+The releases crate downloads the `.wasm` of each release it looks at,
+checks it, keeps it for the install, and skips a release that needs a
+newer OTTY, as before; a local folder is checked the same way. Other
+misfits show as "The plugin does not run in OTTY: ...". The official
+plugins and the template drop `[api]`: anthropic 0.2.14, deepseek 0.1.6,
+openai 0.2.14, opencode 0.1.10, openrouter 0.1.6, template 0.1.8, rebuilt
+into `assets/plugins/`, with the host test plugins and `template.wasm`.
+The spec of 2026-11-19-agent-plugins, Write a Plugin, the template README
+and the crate READMEs say the SDK version decides the contract versions.

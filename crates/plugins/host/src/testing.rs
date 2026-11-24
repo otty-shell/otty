@@ -19,17 +19,14 @@ use crate::outside::Outside;
 use crate::plugin::LoadedPlugin;
 use crate::system_keyring::MockKeyringRead;
 
-/// The manifest of a test plugin with one agent part, `[api] agent =
-/// "0.1"`, the contract every test plugin exports.
+/// The manifest of a test plugin with one agent part: every test plugin
+/// exports the agent contract.
 pub(crate) const TEST_PLUGIN_MANIFEST: &str = r#"
 [plugin]
 id = "test-plugin"
 name = "Test plugin"
 version = "1.0.0"
 wasm = "plugin.wasm"
-
-[api]
-agents.agent = "0.1"
 
 [[agents.agent]]
 id = "test-agent"
@@ -50,11 +47,6 @@ id = "test-plugin"
 name = "Test plugin"
 version = "1.0.0"
 wasm = "plugin.wasm"
-
-[api]
-agents.agent = "0.1"
-agents.provider = "0.1"
-language = "0.1"
 
 [[agents.agent]]
 id = "test-agent"
@@ -159,9 +151,6 @@ name = "Files test"
 version = "1.0.0"
 wasm = "plugin.wasm"
 
-[api]
-agents.agent = "0.1"
-
 [[agents.agent]]
 id = "alpha"
 name = "Alpha"
@@ -229,6 +218,30 @@ pub(crate) fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(format!("{name}.wasm"))
+}
+
+/// The built test plugin `name` with the agent contract 0.2 in place of
+/// 0.1, written into `folder`: the version is part of each name of the
+/// contract's interface, so every name is changed, in bytes of the same
+/// length.
+pub(crate) fn fixture_with_agent_0_2(name: &str, folder: &Path) -> PathBuf {
+    let old = b"otty:agents-agent/agent@0.1.0";
+    let new = b"otty:agents-agent/agent@0.2.0";
+    let mut bytes = std::fs::read(fixture(name)).expect("a test plugin");
+
+    let mut start = 0;
+    while let Some(found) = bytes[start..]
+        .windows(old.len())
+        .position(|window| window == old)
+    {
+        let at = start + found;
+        bytes[at..at + new.len()].copy_from_slice(new);
+        start = at + new.len();
+    }
+
+    let path = folder.join(format!("{name}-agent-0.2.wasm"));
+    std::fs::write(&path, bytes).expect("write the test plugin");
+    path
 }
 
 /// The folder of the template plugin, `plugins/template/`.
@@ -329,10 +342,6 @@ id = "test-plugin"
 name = "Test plugin"
 version = "1.0.0"
 wasm = "plugin.wasm"
-
-[api]
-agents.agent = "0.1"
-agents.provider = "0.1"
 
 [[agents.agent]]
 id = "test-agent"

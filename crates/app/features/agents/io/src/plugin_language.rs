@@ -83,7 +83,7 @@ mod tests {
             .join("../../../../plugins/host/tests/fixtures/minimal.wasm");
         let manifest = "[plugin]\nid = \"english-only\"\nname = \"English \
                         only\"\nversion = \"1.0.0\"\nwasm = \
-                        \"plugin.wasm\"\n\n[api]\nagents.agent = \"0.1\"\n\n\
+                        \"plugin.wasm\"\n\n\
                         [[agents.agent]]\nid = \"test-agent\"\nname = \"Test \
                         agent\"\nicon = \"test.svg\"\n";
 

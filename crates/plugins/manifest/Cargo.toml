@@ -15,8 +15,8 @@ rust-version = { workspace = true }
 # The permission globs of each plugin part (spec 2026-11-19-agent-plugins,
 # Decision 7), matched against the paths a plugin asks for.
 globset = { version = "0.4.21", default-features = false }
-# The plugin version of the manifest and the contract versions of [api],
-# semver (approved by the owner 2026-11-20).
+# The plugin version of the manifest and the contract versions a plugin
+# exports, semver (approved by the owner 2026-11-20).
 semver = "1.0.28"
 serde = { workspace = true }
 thiserror = { workspace = true }

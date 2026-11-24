@@ -11,8 +11,8 @@ use crate::package::{MANIFEST_FILE, sha256_hex};
 use crate::plan::{UpdateOutcome, UpdateReport};
 use crate::plugins_file::{Source, Trust};
 use crate::testing::{
-    FakeGithub, FakeRelease, TempDir, example_files, needs_agent_0_2,
-    places_in, test_installer, write_folder,
+    FakeGithub, FakeRelease, TempDir, agent_only_wasm, example_files,
+    needs_agent_0_2, places_in, rebuilt_wasm, test_installer, write_folder,
 };
 
 const REPO: &str = "someone/otty-plugin-example";
@@ -45,7 +45,8 @@ fn fork_release(tag: &str, version: &str) -> FakeRelease {
         .with_manifest_edit("id = \"example\"", "id = \"example-fork\"")
 }
 
-/// The template with its agent part only.
+/// The template with its agent part only, whose `.wasm` exports the agent
+/// contract only.
 fn agent_only(release: FakeRelease) -> FakeRelease {
     let text = String::from_utf8(example_files("0.1.0")[MANIFEST_FILE].clone())
         .expect("text");
@@ -57,7 +58,7 @@ fn agent_only(release: FakeRelease) -> FakeRelease {
     release
         .with_manifest_edit(provider_half, "")
         .with_manifest_edit("[[agents.provider]]", "")
-        .with_manifest_edit("agents.provider = \"0.1\"\n", "")
+        .with_file("example.wasm", &agent_only_wasm())
 }
 
 fn part_is_on(installer: &Installer, plugin: &str, part: &PartRef) -> bool {
@@ -324,7 +325,7 @@ fn an_update_keeps_the_own_logins_of_the_plugin() {
         vec![
             FakeRelease::example("v0.1.0", "0.1.0"),
             FakeRelease::example("v0.2.0", "0.2.0")
-                .with_file("example.wasm", b"rebuilt"),
+                .with_file("example.wasm", &rebuilt_wasm()),
         ],
     );
 
@@ -354,7 +355,7 @@ fn a_reload_keeps_the_own_logins_of_the_plugin() {
     installer.install(&plan).expect("installed");
     let own_login = own_login_file(folder.path(), "example");
     write_own_login(&own_login);
-    std::fs::write(local.path().join("example.wasm"), b"rebuilt")
+    std::fs::write(local.path().join("example.wasm"), rebuilt_wasm())
         .expect("rebuild");
 
     let reload = installer.reload_local("example");
@@ -447,7 +448,7 @@ fn an_update_with_no_new_permission_installs_on_its_own() {
         vec![
             FakeRelease::example("v0.1.0", "0.1.0"),
             FakeRelease::example("v0.2.0", "0.2.0")
-                .with_file("example.wasm", b"rebuilt"),
+                .with_file("example.wasm", &rebuilt_wasm()),
         ],
     );
 
@@ -623,7 +624,7 @@ fn a_changed_asset_of_a_recorded_tag_is_refused() {
         vec![
             FakeRelease::example("v0.1.0", "0.1.0"),
             FakeRelease::example("v0.2.0", "0.2.0")
-                .with_file("example.wasm", b"another build"),
+                .with_file("example.wasm", &rebuilt_wasm()),
         ],
     );
 
@@ -679,7 +680,7 @@ fn a_local_plugin_installs_from_a_folder_and_reload_picks_up_a_rebuilt_wasm() {
 
     let plan = installer.find_local(local.path()).expect("a plan");
     installer.install(&plan).expect("installed");
-    std::fs::write(local.path().join("example.wasm"), b"rebuilt")
+    std::fs::write(local.path().join("example.wasm"), rebuilt_wasm())
         .expect("rebuild");
     let reload = installer.reload_local("example");
 
@@ -687,11 +688,14 @@ fn a_local_plugin_installs_from_a_folder_and_reload_picks_up_a_rebuilt_wasm() {
     assert!(matches!(reload, Ok(UpdateOutcome::Updated { .. })));
     let plugin = installer.plugin("example").expect("installed");
     assert_eq!(plugin.trust(), Trust::Local);
-    assert_eq!(plugin.wasm_sha256(), Some(sha256_hex(b"rebuilt").as_str()));
+    assert_eq!(
+        plugin.wasm_sha256(),
+        Some(sha256_hex(&rebuilt_wasm()).as_str())
+    );
     let installed =
         std::fs::read(installer.folder_of(plugin).join("example.wasm"))
             .expect("wasm");
-    assert_eq!(installed, b"rebuilt");
+    assert_eq!(installed, rebuilt_wasm());
     assert!(!folder.path().join("data/plugins/example/.staging").exists());
 }
 
@@ -740,7 +744,7 @@ fn a_local_plugin_is_never_updated_on_its_own() {
 }
 
 #[test]
-fn the_real_engine_compiles_the_template_and_refuses_a_wasm_that_does_not_match()
+fn the_real_engine_compiles_the_template_and_a_wasm_that_does_not_serve_a_part_is_refused()
  {
     let folder = TempDir::new();
     let github = FakeGithub::new();
@@ -756,12 +760,7 @@ fn the_real_engine_compiles_the_template_and_refuses_a_wasm_that_does_not_match(
     write_folder(good.path(), &example_files("0.1.0"));
     let bad = TempDir::new();
     let mut files = example_files("0.1.0");
-    let minimal = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../host/tests/fixtures/minimal.wasm"
-    ))
-    .expect("a test plugin");
-    files.insert("example.wasm".to_string(), minimal);
+    files.insert("example.wasm".to_string(), agent_only_wasm());
     write_folder(bad.path(), &files);
 
     let refused = installer
@@ -773,7 +772,7 @@ fn the_real_engine_compiles_the_template_and_refuses_a_wasm_that_does_not_match(
     installer.remove("example").expect("removed");
 
     assert!(
-        matches!(&refused, Err(InstallError::Compile(reason)) if reason.contains("[api]")),
+        matches!(&refused, Err(InstallError::Compile(reason)) if reason.contains("`agents.provider` contract")),
         "{refused:?}"
     );
     assert_eq!(compiled, 1);
