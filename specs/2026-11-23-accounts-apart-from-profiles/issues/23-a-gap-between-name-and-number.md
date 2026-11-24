@@ -1,6 +1,6 @@
 # 23 A left panel row keeps a gap between its name and its number
 
-Status: ready
+Status: done
 Blocked by: 22
 
 ## Why
@@ -32,3 +32,13 @@ the cut label (and its tag) and the note.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25, done. The kit `TreeRow` keeps `SPACE_3` between the label,
+or the tag after it, and the note at any width, with and without
+`keep_note()`. The label is cut earlier to leave that gap. It also
+leaves the tag its whole width now, in rows that do not keep their note
+too, and there it leaves room for at least the "…" of the note. When a
+row is too narrow even for that, the label, the tag and the note are
+each cut at their own edge, so none draws over another. `cuts_label`
+counts the same room, checked against the drawn row from 40 to 400 px.
+Pictures at 90 to 280 px were checked before and after.

@@ -4,7 +4,7 @@ use iced::widget::text::Alignment as TextAlignment;
 use iced::widget::{Row, Space, button, container, responsive, row, svg};
 use iced::{Alignment, Border, Color, Element, Length, Padding};
 
-use super::ellipsis_text::{EllipsisText, text_width};
+use super::ellipsis_text::{ELLIPSIS, EllipsisText, text_width};
 use super::glyph;
 use super::letter_icon::letter_icon;
 use super::session_row::SessionTone;
@@ -18,8 +18,11 @@ use crate::{fonts, radius, size, spacing, typography};
 const CARET_SIZE: f32 = 12.0;
 /// Width of one column before the label: the caret, an icon or a dot.
 const MARK_WIDTH: f32 = 14.0;
-/// Gap between caret, label and count (`.ot-tree { gap: 7px }`).
+/// Gap between caret, label and tag (`.ot-tree { gap: 7px }`).
 const GAP: f32 = 7.0;
+/// The least room between the label, or the tag after it, and the note on
+/// the right, at any width.
+const NOTE_GAP: f32 = spacing::SPACE_3;
 /// Horizontal padding of the row (`padding: 0 8px`).
 const PADDING_X: f32 = spacing::SPACE_3;
 
@@ -38,6 +41,9 @@ const PADDING_X: f32 = spacing::SPACE_3;
 /// room is left. A row that [keeps its note](TreeRow::keep_note) turns this
 /// around: the note stays whole at the right and the label gives way, with
 /// its [whole label](TreeRow::whole_label) in a tooltip when it is cut.
+/// Either way the label, or its tag, ends at least `SPACE_3` before the
+/// note: the label is cut earlier to leave that gap, and nothing draws over
+/// its neighbor.
 ///
 /// # Example
 ///
@@ -221,10 +227,27 @@ impl<Message> TreeRow<Message> {
         }
     }
 
+    /// Width the tag takes after the label, with the gap before it.
+    fn tag_room(&self) -> f32 {
+        self.tag.as_deref().map_or(0.0, |tag| GAP + tag_width(tag))
+    }
+
+    /// Width the row keeps after the label: the tag with its gap, then the
+    /// gap before the note and the note, whole when the row keeps it, or
+    /// only its "…" when the note gives way.
+    fn room_after_label(&self) -> f32 {
+        let note = self.note().map_or(0.0, |note| {
+            let shown = if self.keeps_note { &note } else { ELLIPSIS };
+
+            NOTE_GAP + text_width(shown, typography::CAPTION.size(), fonts::UI)
+        });
+
+        self.tag_room() + note
+    }
+
     /// Whether the row, `width` wide, draws its label cut. It counts the
     /// room the layout of [`TreeRow::row`] leaves the label: the padding,
-    /// the indent and the columns before it, one gap before each part
-    /// after it, and, when the row keeps its note, the tag and the note.
+    /// the indent and the columns before it, and the room after it.
     fn cuts_label(&self, width: f32) -> bool {
         let marks = [
             self.caret.is_some(),
@@ -235,21 +258,12 @@ impl<Message> TreeRow<Message> {
         .into_iter()
         .filter(|has| *has)
         .count() as f32;
-        let tag = self.tag.as_deref().map(tag_width);
-        let note = self.note().map(|note| {
-            text_width(&note, typography::CAPTION.size(), fonts::UI)
-        });
 
-        let mut room = width
+        let room = width
             - 2.0 * PADDING_X
             - f32::from(self.depth) * size::TREE_INDENT
-            - marks * (MARK_WIDTH + GAP);
-        for part in [tag, note].into_iter().flatten() {
-            room -= GAP;
-            if self.keeps_note {
-                room -= part;
-            }
-        }
+            - marks * (MARK_WIDTH + GAP)
+            - self.room_after_label();
 
         text_width(&self.label, typography::BODY.size(), fonts::UI) > room
     }
@@ -261,6 +275,15 @@ impl<Message> TreeRow<Message> {
     {
         let value = self;
         let note = value.note();
+        let keeps_note = value.keeps_note;
+        // A row that keeps its note lays the note out first, so its label
+        // leaves only the tag free; otherwise the label leaves all the room
+        // after it.
+        let label_reserve = if keeps_note {
+            value.tag_room()
+        } else {
+            value.room_after_label()
+        };
         let palette = value.palette;
         let is_selected = value.is_selected;
         let is_hovered = value.is_hovered;
@@ -325,9 +348,6 @@ impl<Message> TreeRow<Message> {
         };
         let label =
             EllipsisText::new(value.label, body.size(), fonts::UI, label_color);
-        let tag = value
-            .tag
-            .map(|label| (tag_width(&label), tag(label, size::ROW, &palette)));
         let note = note.map(|note| {
             EllipsisText::new(
                 note,
@@ -337,35 +357,41 @@ impl<Message> TreeRow<Message> {
             )
         });
 
-        if value.keeps_note {
-            // The note keeps its width at the right; the label and its tag
-            // take what is left, and the label leaves the tag its width.
-            let reserved = tag.as_ref().map_or(0.0, |(width, _)| *width);
-            let mut named = Row::new()
-                .spacing(GAP)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_y(Alignment::Center)
-                .push(label.shrink(reserved));
-            if let Some((_, tag)) = tag {
-                named = named.push(tag);
-            }
-            content = content.push(named);
-            if let Some(note) = note {
-                content = content.push(note.shrink(0.0));
-            }
-        } else {
-            // The label takes the room it needs first; the note on the
-            // right takes what is left and ends with "…" when that is too
-            // little.
-            content = content.push(label.shrink(0.0));
-            if let Some((_, tag)) = tag {
-                content = content.push(tag);
-            }
-            if let Some(note) = note {
-                content = content.push(note.align_x(TextAlignment::Right));
-            }
+        // The label and its tag. The label leaves the room it reserves
+        // free, so the tag stays whole and the note keeps its gap.
+        let mut named = Row::new()
+            .height(Length::Fill)
+            .align_y(Alignment::Center)
+            .push(clipped(label.shrink(label_reserve)));
+        if let Some(label) = value.tag {
+            named = named.push(Space::new().width(GAP)).push(tag(
+                label,
+                size::ROW,
+                &palette,
+            ));
         }
+
+        // A kept note keeps its width at the right and the label and tag
+        // take what is left. Otherwise the label takes the room it needs
+        // first, and the note takes what is left, ending with "…".
+        let mut body = Row::new()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_y(Alignment::Center);
+        if keeps_note {
+            body = body.push(clipped(named.width(Length::Fill)));
+        } else {
+            body = body.push(clipped(named));
+        }
+        if let Some(note) = note {
+            let note = if keeps_note {
+                note.shrink(0.0)
+            } else {
+                note.align_x(TextAlignment::Right)
+            };
+            body = body.push(Space::new().width(NOTE_GAP)).push(clipped(note));
+        }
+        content = content.push(body);
 
         button(row![indent, content])
             .width(Length::Fill)
@@ -423,8 +449,17 @@ impl<'a, Message: Clone + 'a> From<TreeRow<Message>> for Element<'a, Message> {
     }
 }
 
+/// `content` drawn only inside its own bounds, so a "…" or a tag pressed
+/// into too little room never draws over its neighbor.
+fn clipped<'a, Message: 'a>(
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    container(content).clip(true).into()
+}
+
 #[cfg(test)]
 mod tests {
+    use iced::Rectangle;
     use iced_test::selector::Candidate;
     use iced_test::simulator;
 
@@ -682,6 +717,108 @@ mod tests {
         );
     }
 
+    /// The box of the tag whose text is drawn in `text`: the text with the
+    /// tag's own padding at its left and its right.
+    fn tag_box(text: Rectangle, label: &str) -> Rectangle {
+        let padding = (tag_width(label)
+            - text_width(label, typography::CAPTION.size(), fonts::UI))
+            / 2.0;
+
+        Rectangle {
+            x: text.x - padding,
+            width: text.width + 2.0 * padding,
+            ..text
+        }
+    }
+
+    /// Checks a row `width` wide: the label and the tag that show end at
+    /// least `SPACE_3` before the note that shows, the label ends before
+    /// the tag, and the note ends inside the row. A part with no width
+    /// shows nothing. `tag` is the drawn text of the tag `tag_label`.
+    fn assert_name_keeps_a_gap(
+        label: Rectangle,
+        tag: Option<(Rectangle, &str)>,
+        note: Rectangle,
+        width: f32,
+    ) {
+        let shows = |part: &Rectangle| part.width > 0.0;
+        let tag = tag
+            .filter(|(text, _)| shows(text))
+            .map(|(text, tag_label)| tag_box(text, tag_label));
+        let label_end = label.x + label.width;
+
+        if shows(&label)
+            && let Some(tag) = tag
+        {
+            assert!(
+                label_end <= tag.x + 0.01,
+                "width {width}: the label {label:?} runs into the tag {tag:?}"
+            );
+        }
+        if !shows(&note) {
+            return;
+        }
+        assert!(
+            note.x + note.width <= width - PADDING_X + 0.5,
+            "width {width}: the note {note:?} leaves the row"
+        );
+        if shows(&label) {
+            assert!(
+                label_end + spacing::SPACE_3 <= note.x + 0.01,
+                "width {width}: the label {label:?} is too close to the note {note:?}"
+            );
+        }
+        if let Some(tag) = tag {
+            assert!(
+                tag.x + tag.width + spacing::SPACE_3 <= note.x + 0.01,
+                "width {width}: the tag {tag:?} is too close to the note {note:?}"
+            );
+        }
+    }
+
+    /// Issue 23 of spec 2026-11-23-accounts-apart-from-profiles: at any
+    /// width, the label and the tag of a row that keeps its note end at
+    /// least `SPACE_3` before the note, and nothing overlaps.
+    #[test]
+    fn given_any_width_when_the_row_keeps_its_note_then_the_name_ends_a_gap_before_it()
+     {
+        let email = "someone.with.a.long.name@example.com";
+
+        for width in (40..=400).step_by(4).map(|width| width as f32) {
+            let (label, tag, note) =
+                account_parts(account_row(email), email, width);
+
+            assert_name_keeps_a_gap(label, Some((tag, "OTTY")), note, width);
+        }
+    }
+
+    /// Issue 23: a row whose note gives way, such as a folder of the Files
+    /// tree, keeps the same gap at any width, with a tag or without.
+    #[test]
+    fn given_any_width_when_the_note_gives_way_then_the_name_ends_a_gap_before_it()
+     {
+        let palette = UiPalette::otty_dark();
+        let email = "you@example.com";
+
+        for width in (40..=400).step_by(4).map(|width| width as f32) {
+            let mut ui = simulator(containers_row(width));
+            let label = ui.find("Containers").expect("label").bounds();
+            let note = ui.find("running 2").expect("note").bounds();
+
+            assert_name_keeps_a_gap(label, None, note, width);
+
+            let row = TreeRow::<Message>::new(email, &palette)
+                .tag("OTTY")
+                .state("42 % used");
+            let mut ui = simulator(container(row).width(width));
+            let label = ui.find(email).expect("label").bounds();
+            let tag = ui.find("OTTY").expect("tag").bounds();
+            let note = ui.find("42 % used").expect("note").bounds();
+
+            assert_name_keeps_a_gap(label, Some((tag, "OTTY")), note, width);
+        }
+    }
+
     /// Whether the label of `row` is drawn cut in a space `width` wide.
     fn drawn_cut(row: TreeRow<Message>, label: &str, width: f32) -> bool {
         let full = simulator(container(TreeRow::<Message>::new(
@@ -698,7 +835,8 @@ mod tests {
     }
 
     /// The row tells a cut label, for its tooltip, by the same rule its
-    /// layout cuts it, whether it keeps its note or not.
+    /// layout cuts it, whether it keeps its note or not, at any width: it
+    /// counts the gap before the note too (issue 23).
     #[test]
     fn given_any_width_then_the_row_knows_whether_its_label_is_cut() {
         let palette = UiPalette::otty_dark();
@@ -715,7 +853,7 @@ mod tests {
         };
 
         for keeps_note in [false, true] {
-            for width in (120..=360).step_by(6).map(|width| width as f32) {
+            for width in (40..=400).step_by(4).map(|width| width as f32) {
                 let is_cut = rows(keeps_note).cuts_label(width);
 
                 assert_eq!(
