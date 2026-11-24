@@ -11,7 +11,7 @@ use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{radius, spacing};
+use crate::{radius, size, spacing};
 
 /// Widest the bubble grows; a longer label wraps onto more lines.
 const TOOLTIP_MAX_WIDTH: f32 = 360.0;
@@ -142,10 +142,9 @@ fn bubble<'a, Message: 'a>(
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let background = palette.surface_overlay();
-    let color = palette.text_body();
     let shadow = palette.shadow_popover();
 
-    let said = said(label, color);
+    let said = said(&label, palette);
 
     container(said)
         .max_width(TOOLTIP_MAX_WIDTH)
@@ -162,74 +161,98 @@ fn bubble<'a, Message: 'a>(
         .into()
 }
 
-/// What `label` says in `color`: its lines, then its rows, whose names
-/// stick to the left edge of the bubble and whose numbers to its right
-/// edge, also under a line wider than the rows.
+/// What `label` says: its lines, then its groups of rows, a thin rule
+/// before each group. The names of the rows stick to the left edge of the
+/// bubble and their numbers to its right edge, also under a line wider
+/// than the rows.
 ///
 /// A row that fills its width would stretch the bubble to its widest, so
-/// the width comes from a layer that is never seen: the lines and the
-/// rows at their own width, the rows in no color. Under it, sized by it,
-/// lies what shows: the lines, and the rows filling that width.
+/// the width comes from a layer that is never seen: the same text at its
+/// own width, in no color. Under it, sized by it, lies what shows, with
+/// the rows filling that width. What shows is the first layer, which the
+/// stack draws with no layer of its own, so the bubble's background never
+/// covers it.
 fn said<'a, Message: 'a>(
-    label: TooltipText,
-    color: Color,
+    label: &TooltipText,
+    palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let lines = |color: Color| {
-        label
-            .lines
-            .iter()
-            .fold(Column::new().spacing(spacing::SPACE_1), |lines, line| {
-                lines.push(small_text(line.clone(), color))
-            })
-    };
+    let shown = text_of(label, Some(palette));
     if label.groups.is_empty() {
-        return lines(color).into();
+        return shown;
     }
 
-    let measure = lines(color).push(rows_view(
-        &label.groups,
-        Color::TRANSPARENT,
-        Length::Shrink,
-    ));
-    let shown = lines(Color::TRANSPARENT).push(rows_view(
-        &label.groups,
-        color,
-        Length::Fill,
-    ));
-
     Stack::new()
-        .push(measure)
+        .push(text_of(label, None))
         .push_under(shown)
         .width(Length::Shrink)
         .into()
 }
 
-/// The rows of every group in one grid `width` wide, one row per line: the
-/// names in a column at the left, the numbers in a column at the right, so
-/// every name starts and every number ends where the others of all groups
-/// do, and a little space between groups.
+/// The lines and the groups of `label`, in the body color of `palette` and
+/// filling the width with a rule before each group, or with no `palette`
+/// in no color at their own width, the size of what shows.
+fn text_of<'a, Message: 'a>(
+    label: &TooltipText,
+    palette: Option<&UiPalette>,
+) -> Element<'a, Message> {
+    let color = palette.map_or(Color::TRANSPARENT, UiPalette::text_body);
+
+    let mut said = Column::new().spacing(spacing::SPACE_1);
+    for line in &label.lines {
+        said = said.push(small_text(line.clone(), color));
+    }
+    for (index, rows) in label.groups.iter().enumerate() {
+        if index > 0 || !label.lines.is_empty() {
+            said = said.push(match palette {
+                Some(palette) => rule(palette),
+                None => Space::new().height(size::LINE).into(),
+            });
+        }
+        said = said.push(rows_view(rows, color, palette.is_some()));
+    }
+
+    said.into()
+}
+
+/// The thin rule before a group of rows. The `line` color of the kit's
+/// dividers hardly shows on the bubble, so the rule takes the faint text
+/// color.
+fn rule<'a, Message: 'a>(palette: &UiPalette) -> Element<'a, Message> {
+    let color = palette.text_faint();
+
+    container(Space::new())
+        .width(Length::Fill)
+        .height(size::LINE)
+        .style(move |_| container::Style {
+            background: Some(color.into()),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// `rows` one per line: the names in a column at the left, the numbers in
+/// a column at the right, each ending where the others do; `fills` puts
+/// the numbers at the right edge of the width it is given.
 fn rows_view<'a, Message: 'a>(
-    groups: &[Vec<(String, String)>],
+    rows: &[(String, String)],
     color: Color,
-    width: Length,
+    fills: bool,
 ) -> Element<'a, Message> {
     let mut names = Column::new();
     let mut numbers = Column::new().align_x(Alignment::End);
-    for (index, rows) in groups.iter().enumerate() {
-        if index > 0 {
-            names = names.push(Space::new().height(spacing::SPACE_1));
-            numbers = numbers.push(Space::new().height(spacing::SPACE_1));
-        }
-        for (name, number) in rows {
-            names = names.push(small_text(name.clone(), color));
-            numbers = numbers.push(small_text(number.clone(), color));
-        }
+    for (name, number) in rows {
+        names = names.push(small_text(name.clone(), color));
+        numbers = numbers.push(small_text(number.clone(), color));
     }
 
-    row![names, Space::new().width(Length::Fill), numbers]
-        .spacing(spacing::SPACE_3)
-        .width(width)
-        .into()
+    if fills {
+        row![names, Space::new().width(Length::Fill), numbers]
+            .spacing(spacing::SPACE_3)
+            .width(Length::Fill)
+            .into()
+    } else {
+        row![names, numbers].spacing(spacing::SPACE_3).into()
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +382,33 @@ mod tests {
         assert!((few.x + few.width - right).abs() < 1.0, "{few:?} {line:?}");
         assert!((some.x + some.width - right).abs() < 1.0, "{some:?}");
         assert!((money.x + money.width - right).abs() < 1.0, "{money:?}");
+    }
+
+    /// The line over the rows shows in the bubble: two tooltips that differ
+    /// only in that line draw two different pictures.
+    #[test]
+    fn the_line_over_the_rows_shows() {
+        let folder = TempDir::new("tooltip-line");
+        let picture = folder.path().join("line");
+        let over = iced::Point::new(5.0, 8.0);
+        let with_line = |line: &'static str| {
+            move || -> Element<'static, ()> {
+                let label = TooltipText::new(line)
+                    .rows(vec![(String::from("in"), String::from("20K"))])
+                    .rows(vec![(String::from("in"), String::from("~$0.40"))]);
+
+                tooltip(text("Path"), label, &UiPalette::otty_dark())
+            }
+        };
+
+        assert!(
+            draws(&with_line("Nov 13"), SMALL_WINDOW, Some(over), &picture),
+            "save"
+        );
+        assert!(
+            !draws(&with_line("Dec 24"), SMALL_WINDOW, Some(over), &picture),
+            "the line must show in the bubble"
+        );
     }
 
     /// Text alone is a tooltip of one line with no rows.
