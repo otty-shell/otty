@@ -561,7 +561,7 @@ mod tests {
 
     /// Issue 35, 36: the card of a part shows its name, the tag of its
     /// kind and its health badge, under them its description and Can
-    /// access · 5, which opens what it can access.
+    /// access (5), which opens what it can access.
     #[test]
     fn a_part_card_shows_its_description_and_can_access() {
         let palette = UiPalette::otty_dark();

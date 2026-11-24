@@ -65,11 +65,14 @@ pub(crate) struct PluginListRowViewModel {
 }
 
 impl PluginListRowViewModel {
-    /// The words on the right of the row: the mark and the sign, such as
-    /// "Official · failed".
+    /// The words on the right of the row: the mark and the sign side by
+    /// side, such as "Official, failed".
     pub(crate) fn note(&self) -> String {
         match self.sign {
-            Some(sign) => format!("{} · {}", self.trust, sign.word()),
+            Some(sign) => i18n::filled(
+                Key::TplPluginsTrustAndSign,
+                &[("trust", self.trust), ("sign", sign.word())],
+            ),
             None => self.trust.to_string(),
         }
     }
@@ -246,14 +249,19 @@ mod tests {
 
         assert_eq!(vm.rows[0].sign, None);
         assert_eq!(vm.rows[1].sign, Some(PluginSign::Off));
+        // Issue 16 of spec 2026-11-23-accounts-apart-from-profiles: the
+        // mark and the sign side by side take a comma, no middle dot.
         assert_eq!(
             vm.rows[1].note(),
-            format!(
-                "{} · {}",
-                i18n::t(Key::PluginsCommunity),
-                i18n::t(Key::PluginsSignOff)
+            i18n::filled(
+                Key::TplPluginsTrustAndSign,
+                &[
+                    ("trust", i18n::t(Key::PluginsCommunity)),
+                    ("sign", i18n::t(Key::PluginsSignOff)),
+                ]
             )
         );
+        assert!(!vm.rows[1].note().contains('·'));
     }
 
     #[test]

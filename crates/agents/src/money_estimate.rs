@@ -2,10 +2,10 @@
 //! 2026-11-23-accounts-apart-from-profiles, Decision 3). The agent part
 //! prices each answer itself: the cost the agent wrote, as it is, else the
 //! tokens at the API price of the model that OTTY's price list gave,
-//! marked "at API prices", on a subscription too. OTTY only adds the money
-//! of the answers up. Money at API prices is an estimate, not a bill: it is
-//! as old as the list's prices, and knows nothing of discounts or of the
-//! fast mode.
+//! marked "at API prices", on a subscription too, and kind by kind (issue
+//! 16). OTTY only adds the money of the answers up. Money at API prices is
+//! an estimate, not a bill: it is as old as the list's prices, and knows
+//! nothing of discounts or of the fast mode.
 
 use std::ops::Add;
 
@@ -16,26 +16,117 @@ use crate::token_count::TokenCount;
 /// What one answer cost, as its agent part priced it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AnswerCost {
-    /// The cost the agent wrote itself, exact.
+    /// The cost the agent wrote itself, exact, with no parts.
     Written(Dollars),
-    /// The tokens at the API price of the model, an estimate.
-    AtApiPrices(Dollars),
+    /// The tokens at the API price of the model, an estimate, kind by
+    /// kind.
+    AtApiPrices(MoneyByKind),
 }
 
-/// The money of a stretch of time: what the priced requests cost, how
-/// many requests had no price, and how many were priced at API prices
-/// instead of the cost the agent wrote.
+/// Money at API prices by the kind of token it paid for: the input not
+/// written to the cache, the input written to the cache, the tokens read
+/// from the cache and the output. The pages list it on hover, so a big
+/// count of cheap cached tokens tells what it costs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MoneyByKind {
+    input: Dollars,
+    cache_written: Dollars,
+    cached: Dollars,
+    output: Dollars,
+}
+
+impl MoneyByKind {
+    /// The money of the input not written to the cache.
+    pub fn input(&self) -> Dollars {
+        self.input
+    }
+
+    /// The money of the input written to the cache.
+    pub fn cache_written(&self) -> Dollars {
+        self.cache_written
+    }
+
+    /// The money of the tokens read from the cache.
+    pub fn cached(&self) -> Dollars {
+        self.cached
+    }
+
+    /// The money of the output.
+    pub fn output(&self) -> Dollars {
+        self.output
+    }
+
+    /// The four kinds added up.
+    ///
+    /// ```
+    /// use otty_agents::{Dollars, MoneyByKind};
+    ///
+    /// let micro = Dollars::from_micro_dollars;
+    /// let money = MoneyByKind::new(micro(10), micro(20), micro(3), micro(40));
+    ///
+    /// assert_eq!(money.total(), micro(73));
+    /// ```
+    pub fn total(&self) -> Dollars {
+        self.input + self.cache_written + self.cached + self.output
+    }
+
+    /// Money of each kind: `input`, `cache_written`, `cached` and
+    /// `output`.
+    pub fn new(
+        input: Dollars,
+        cache_written: Dollars,
+        cached: Dollars,
+        output: Dollars,
+    ) -> Self {
+        Self {
+            input,
+            cache_written,
+            cached,
+            output,
+        }
+    }
+}
+
+impl Add for MoneyByKind {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            input: self.input + other.input,
+            cache_written: self.cache_written + other.cache_written,
+            cached: self.cached + other.cached,
+            output: self.output + other.output,
+        }
+    }
+}
+
+/// The money of a stretch of time: the cost the agent wrote, the money at
+/// API prices by kind, how many requests had no price, and how many were
+/// priced at API prices instead of the cost the agent wrote.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MoneyTotal {
-    cost: Dollars,
+    written: Dollars,
+    priced: MoneyByKind,
     unpriced_requests: u64,
     requests_at_api_prices: u64,
 }
 
 impl MoneyTotal {
-    /// What the requests with a price cost.
+    /// What the requests with a price cost: the cost the agent wrote and
+    /// the money at API prices.
     pub fn cost(&self) -> Dollars {
-        self.cost
+        self.written + self.priced.total()
+    }
+
+    /// The share of [`cost`](Self::cost) the agent wrote, which has no
+    /// parts.
+    pub fn written_cost(&self) -> Dollars {
+        self.written
+    }
+
+    /// The share of [`cost`](Self::cost) at API prices, kind by kind.
+    pub fn priced_by_kind(&self) -> MoneyByKind {
+        self.priced
     }
 
     /// How many requests had no price: their money is not in
@@ -50,10 +141,14 @@ impl MoneyTotal {
     /// exact.
     ///
     /// ```
-    /// use otty_agents::{Dollars, MoneyTotal};
+    /// use otty_agents::{Dollars, MoneyByKind, MoneyTotal};
     ///
-    /// let written = MoneyTotal::written(Dollars::from_micro_dollars(12));
-    /// let listed = MoneyTotal::at_api_prices(Dollars::from_micro_dollars(5), 1);
+    /// let micro = Dollars::from_micro_dollars;
+    /// let written = MoneyTotal::written(micro(12));
+    /// let listed = MoneyTotal::at_api_prices(
+    ///     MoneyByKind::new(micro(5), micro(0), micro(0), micro(0)),
+    ///     1,
+    /// );
     ///
     /// assert!(!written.is_estimate());
     /// assert!((written + listed).is_estimate());
@@ -66,18 +161,18 @@ impl MoneyTotal {
     /// Requests whose cost the agent wrote, `cost` in all: exact money.
     pub fn written(cost: Dollars) -> Self {
         Self {
-            cost,
+            written: cost,
             ..Self::default()
         }
     }
 
-    /// `requests` requests the agent part priced at API prices, `cost` in
-    /// all.
-    pub fn at_api_prices(cost: Dollars, requests: u64) -> Self {
+    /// `requests` requests the agent part priced at API prices, `money`
+    /// in all, kind by kind.
+    pub fn at_api_prices(money: MoneyByKind, requests: u64) -> Self {
         Self {
-            cost,
-            unpriced_requests: 0,
+            priced: money,
             requests_at_api_prices: requests,
+            ..Self::default()
         }
     }
 
@@ -94,11 +189,14 @@ impl MoneyTotal {
     /// part gave ([`ModelTokens::money`]).
     ///
     /// ```
-    /// use otty_agents::{Dollars, ModelTokens, MoneyTotal, TokenCount};
+    /// use otty_agents::{
+    ///     Dollars, ModelTokens, MoneyByKind, MoneyTotal, TokenCount,
+    /// };
     ///
+    /// let micro = Dollars::from_micro_dollars;
     /// let priced = ModelTokens::new(Some("gpt-5"), TokenCount::new(10, 0, 0), 1)
     ///     .with_money(MoneyTotal::at_api_prices(
-    ///         Dollars::from_micro_dollars(40),
+    ///         MoneyByKind::new(micro(40), micro(0), micro(0), micro(0)),
     ///         1,
     ///     ));
     /// let unpriced =
@@ -126,7 +224,9 @@ impl MoneyTotal {
     ) -> Self {
         match cost {
             Some(AnswerCost::Written(cost)) => Self::written(cost),
-            Some(AnswerCost::AtApiPrices(cost)) => Self::at_api_prices(cost, 1),
+            Some(AnswerCost::AtApiPrices(money)) => {
+                Self::at_api_prices(money, 1)
+            },
             None if tokens.is_zero() => Self::default(),
             None => Self::unpriced(1),
         }
@@ -136,9 +236,12 @@ impl MoneyTotal {
 impl Add for MoneyTotal {
     type Output = Self;
 
+    /// The sum of two totals: the written costs added up, the money at
+    /// API prices kind by kind, and the requests.
     fn add(self, other: Self) -> Self {
         Self {
-            cost: self.cost + other.cost,
+            written: self.written + other.written,
+            priced: self.priced + other.priced,
             unpriced_requests: self
                 .unpriced_requests
                 .saturating_add(other.unpriced_requests),
@@ -161,6 +264,12 @@ mod tests {
         TokenCount::new(input, 0, 0)
     }
 
+    /// Money at API prices of `input` millionths of a dollar, all of it
+    /// for input tokens.
+    fn input_only(input: u64) -> MoneyByKind {
+        MoneyByKind::new(dollars(input), dollars(0), dollars(0), dollars(0))
+    }
+
     /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 3: the money
     /// of each answer is what its part gave, written or at API prices, and
     /// OTTY adds it up.
@@ -172,7 +281,7 @@ mod tests {
                 tokens(10),
             ),
             MoneyTotal::of_answer(
-                Some(AnswerCost::AtApiPrices(dollars(1_000))),
+                Some(AnswerCost::AtApiPrices(input_only(1_000))),
                 tokens(10),
             ),
             MoneyTotal::of_answer(None, tokens(10)),
@@ -185,6 +294,64 @@ mod tests {
         assert_eq!(total.cost(), dollars(1_250));
         assert_eq!(total.unpriced_requests(), 1);
         assert!(total.is_estimate());
+    }
+
+    /// Issue 16 of spec 2026-11-23: money at API prices keeps its money
+    /// by kind, the sum adds the kinds up one by one, and the kinds add
+    /// up to the money at API prices.
+    #[test]
+    fn money_at_api_prices_adds_up_kind_by_kind() {
+        let first = MoneyByKind::new(
+            dollars(10),
+            dollars(20),
+            dollars(30),
+            dollars(40),
+        );
+        let second =
+            MoneyByKind::new(dollars(1), dollars(0), dollars(3), dollars(0));
+
+        let total = MoneyTotal::of_answer(
+            Some(AnswerCost::AtApiPrices(first)),
+            tokens(10),
+        ) + MoneyTotal::of_answer(
+            Some(AnswerCost::AtApiPrices(second)),
+            tokens(10),
+        );
+
+        let by_kind = total.priced_by_kind();
+        assert_eq!(
+            by_kind,
+            MoneyByKind::new(
+                dollars(11),
+                dollars(20),
+                dollars(33),
+                dollars(40)
+            )
+        );
+        assert_eq!(by_kind.total(), dollars(104));
+        assert_eq!(total.cost(), dollars(104));
+        assert_eq!(total.written_cost(), Dollars::default());
+    }
+
+    /// Issue 16: the cost the agent wrote has no parts; next to money at
+    /// API prices it stays apart, and the cost adds both.
+    #[test]
+    fn the_cost_the_agent_wrote_has_no_parts() {
+        let written = MoneyTotal::of_answer(
+            Some(AnswerCost::Written(dollars(250))),
+            tokens(10),
+        );
+        let mix = written
+            + MoneyTotal::of_answer(
+                Some(AnswerCost::AtApiPrices(input_only(100))),
+                tokens(10),
+            );
+
+        assert_eq!(written.priced_by_kind(), MoneyByKind::default());
+        assert_eq!(written.written_cost(), dollars(250));
+        assert_eq!(mix.written_cost(), dollars(250));
+        assert_eq!(mix.priced_by_kind(), input_only(100));
+        assert_eq!(mix.cost(), dollars(350));
     }
 
     #[test]
@@ -204,7 +371,7 @@ mod tests {
     #[test]
     fn money_with_a_request_at_api_prices_or_with_no_price_is_an_estimate() {
         let listed = MoneyTotal::of_answer(
-            Some(AnswerCost::AtApiPrices(dollars(1))),
+            Some(AnswerCost::AtApiPrices(input_only(1))),
             tokens(10),
         );
         let unpriced = MoneyTotal::of_answer(None, tokens(10));
@@ -225,7 +392,7 @@ mod tests {
     fn the_money_of_models_is_the_sum_of_their_money() {
         let models = [
             ModelTokens::new(Some("a"), tokens(10), 2)
-                .with_money(MoneyTotal::at_api_prices(dollars(300), 2)),
+                .with_money(MoneyTotal::at_api_prices(input_only(300), 2)),
             ModelTokens::new(Some("b"), tokens(10), 1)
                 .with_money(MoneyTotal::written(dollars(200))),
             ModelTokens::new(Some("c"), tokens(10), 3)
@@ -235,6 +402,8 @@ mod tests {
         let total = MoneyTotal::of_models(&models);
 
         assert_eq!(total.cost(), dollars(500));
+        assert_eq!(total.priced_by_kind(), input_only(300));
+        assert_eq!(total.written_cost(), dollars(200));
         assert_eq!(total.unpriced_requests(), 3);
         assert!(total.is_estimate());
     }

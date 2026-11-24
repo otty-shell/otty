@@ -295,14 +295,14 @@ mod tests {
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
             DefaultProfileChanges::new(coder_id())
-                .with_name("Coder · Home")
+                .with_name("Coder (Home)")
                 .with_config_dir(moved_dir.clone()),
         );
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
 
         let expected =
-            Profile::default_for(coder_id(), "Coder · Home", moved_dir.clone())
+            Profile::default_for(coder_id(), "Coder (Home)", moved_dir.clone())
                 .with_agent_default_dir(&temp.path().join(".coder"));
         assert_eq!(list, [expected]);
         assert_eq!(
@@ -317,7 +317,7 @@ mod tests {
         let temp = TempDir::new();
         let env = env_in(temp.path());
         let saved = SavedProfiles::default().with_default_changes(
-            DefaultProfileChanges::new(coder_id()).with_name("Coder · Home"),
+            DefaultProfileChanges::new(coder_id()).with_name("Coder (Home)"),
         );
 
         let list = profiles(&test_agents(), &env, &saved, no_program);
@@ -332,12 +332,12 @@ mod tests {
         let env = env_in(temp.path());
         let coder_work = Profile::added(
             coder_id(),
-            "Coder · Work",
+            "Coder (Work)",
             temp.path().join(".coder-work"),
         );
         let coder_home = Profile::added(
             coder_id(),
-            "Coder · Home",
+            "Coder (Home)",
             temp.path().join(".coder-home"),
         );
         let future = Profile::added(
@@ -374,7 +374,7 @@ mod tests {
             )
             .with_added(Profile::added(
                 coder_id(),
-                "Coder · Old",
+                "Coder (Old)",
                 temp.path().join(".coder"),
             ));
 
@@ -440,7 +440,7 @@ mod tests {
         let work = temp.path().join(".coder-work");
         coder_session_and_login(&work);
         let env = env_in(temp.path());
-        let added = Profile::added(coder_id(), "Coder · Work", work.clone());
+        let added = Profile::added(coder_id(), "Coder (Work)", work.clone());
         let saved = SavedProfiles::default().with_added(added.clone());
 
         let list = profiles(&test_agents(), &env, &saved, no_program);

@@ -113,14 +113,14 @@ mod tests {
         let outcomes = reduce(
             &mut state,
             AgentsIntent::FixNeed(NeedAction::Run {
-                title: String::from("Codex · Work"),
+                title: String::from("Codex (Work)"),
                 command: login.clone(),
             }),
         );
 
         assert_eq!(
             outcomes,
-            vec![open_fix_tab("Codex · Work", "/home/user", login)]
+            vec![open_fix_tab("Codex (Work)", "/home/user", login)]
         );
     }
 

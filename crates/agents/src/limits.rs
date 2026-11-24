@@ -180,7 +180,7 @@ impl UsageWindows {
 
 /// Which usage window it is: its length and, for a window that counts one
 /// model alone, the model. It is data, not text: the app names the window
-/// on screen, such as "5 hours" or "7 days · Opus".
+/// on screen, such as "5 hours" or "7 days, Opus".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowId {
     length: Option<Duration>,

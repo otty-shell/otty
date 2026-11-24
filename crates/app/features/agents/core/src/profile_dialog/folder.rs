@@ -65,7 +65,7 @@ mod tests {
         let agent = AgentId::new("codex");
         let other = Profile::added(
             agent.clone(),
-            "Codex · Work",
+            "Codex (Work)",
             PathBuf::from("/home/user/.codex-work"),
         );
         let folder = Path::new("/home/user/.codex-work");

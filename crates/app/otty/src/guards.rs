@@ -1237,7 +1237,7 @@ mod tests {
         profile_dialog(ProfileDialogIntent::Folder(intent))
     }
 
-    /// An app in Agents mode with the added profile Codex · Work.
+    /// An app in Agents mode with the added profile Codex (Work).
     fn agents_app_with_a_profile() -> App {
         let mut app = app();
         let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
@@ -1255,7 +1255,7 @@ mod tests {
     fn work_profile() -> otty_agents::Profile {
         otty_agents::Profile::added(
             otty_agents::AgentId::new("codex"),
-            "Codex · Work",
+            "Codex (Work)",
             std::path::PathBuf::from("/home/user/.codex-work"),
         )
     }
@@ -1266,7 +1266,7 @@ mod tests {
             .reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
     }
 
-    /// Rename… of the menu of Codex · Work.
+    /// Rename… of the menu of Codex (Work).
     fn open_rename_dialog(app: &mut App) {
         for intent in [
             AgentsIntent::OpenProfileMenu(work_profile()),
@@ -1325,7 +1325,7 @@ mod tests {
         );
     }
 
-    /// The statistics of the project of a session of Codex · Work.
+    /// The statistics of the project of a session of Codex (Work).
     fn open_stats_dialog(app: &mut App) {
         for intent in [
             one_session_loaded(work_profile(), "w1"),
@@ -2061,7 +2061,7 @@ mod tests {
     }
 
     /// An app in Agents mode with the default Codex, logged in, with
-    /// one session in `/work/otty`, and the added Codex · Work, not
+    /// one session in `/work/otty`, and the added Codex (Work), not
     /// logged in; the project `/work/otty` is selected. So every item of
     /// every menu of the mode can be pressed.
     fn agents_app_with_a_session() -> App {
@@ -2225,7 +2225,7 @@ mod tests {
         let mut app = agents_app_with_a_session();
         open_agents_menu_with(&mut app, AgentsIntent::OpenNewSessionMenu);
 
-        assert_items_pass(&app, &["Codex", "Codex · Work"]);
+        assert_items_pass(&app, &["Codex", "Codex (Work)"]);
     }
 
     /// A choice that is on lets Clear all filters be pressed too.
@@ -2339,7 +2339,12 @@ mod tests {
             1,
         )
         .with_money(otty_agents::MoneyTotal::at_api_prices(
-            otty_agents::Dollars::from_micro_dollars(500_000),
+            otty_agents::MoneyByKind::new(
+                otty_agents::Dollars::from_micro_dollars(500_000),
+                otty_agents::Dollars::default(),
+                otty_agents::Dollars::default(),
+                otty_agents::Dollars::default(),
+            ),
             1,
         ));
         let parts = vec![otty_agents::ProjectModelTokens::new(

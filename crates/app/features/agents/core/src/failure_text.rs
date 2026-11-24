@@ -131,8 +131,9 @@ pub(crate) fn source_name(id: SourceId) -> &'static str {
     i18n::t(key)
 }
 
-/// Each source by its name and why it failed, such as "Plugin: not
-/// available: no session files · LiteLLM prices: network error: timed out".
+/// Each source by its name and why it failed, one source per line, such as
+/// "Plugin: not available: no session files" and "LiteLLM prices: network
+/// error: timed out".
 pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
     let reasons: Vec<String> = failures
         .iter()
@@ -142,7 +143,7 @@ pub(crate) fn failure_reasons(failures: &[SourceFailure]) -> String {
         })
         .collect();
 
-    reasons.join(i18n::t(Key::AgentsFailureSeparator))
+    reasons.join("\n")
 }
 
 /// Why `name`, a source or a profile, failed: "Work: not logged in".
@@ -247,6 +248,44 @@ mod tests {
             otty_plugin_host::PluginFailure::new(part, "read-answers", kind);
 
         SourceError::PluginFailed(Box::new(failure))
+    }
+
+    /// Issue 16 of spec 2026-11-23-accounts-apart-from-profiles: the
+    /// failures of several sources are a list, one source per line, with
+    /// no middle dot between them.
+    #[test]
+    fn the_failures_of_several_sources_are_one_per_line() {
+        let failures = [
+            SourceFailure::new(
+                SourceId::AgentPart,
+                not_available(Unavailable::NoSessionFiles),
+            ),
+            SourceFailure::new(
+                SourceId::LiteLlmPrices,
+                SourceError::Network(String::from("timed out")),
+            ),
+        ];
+
+        let reasons = failure_reasons(&failures);
+
+        let lines: Vec<&str> = reasons.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                named_failure(
+                    source_name(SourceId::AgentPart),
+                    &source_error_text(&not_available(
+                        Unavailable::NoSessionFiles
+                    ))
+                ),
+                named_failure(
+                    source_name(SourceId::LiteLlmPrices),
+                    &source_error_text(&SourceError::Network(String::from(
+                        "timed out"
+                    )))
+                ),
+            ]
+        );
     }
 
     /// The app writes every failure in English as `otty-agents` writes it

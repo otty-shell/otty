@@ -169,7 +169,7 @@ mod tests {
         i18n::filled(Key::TplAgentsSourceFoundIn, &[("folder", folder)])
     }
 
-    /// Codex and Codex · Work logged in to the [`chatgpt_login`] on the
+    /// Codex and Codex (Work) logged in to the [`chatgpt_login`] on the
     /// Plus plan, with 42 % used read through Codex.
     fn shared_chatgpt() -> AgentsState {
         let plus = |folder: &str| {
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(
             actions,
             vec![NeedAction::Run {
-                title: String::from("OpenAI · you@example.com"),
+                title: String::from("OpenAI (you@example.com)"),
                 command: otty_agents::AgentCommand::new("codex"),
             }]
         );

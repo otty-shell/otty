@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn the_dialog_says_the_folder_stays_and_sends_its_answers() {
         let vm = RemoveDialogViewModel {
-            title: String::from("Remove Claude Code · Work?"),
+            title: String::from("Remove Claude Code (Work)?"),
             text: String::from("The folder stays on disk."),
             confirm_label: i18n::t(Key::ButtonRemove),
         };
@@ -56,7 +56,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.find("Remove Claude Code · Work?")
+        ui.find("Remove Claude Code (Work)?")
             .expect("title should show");
         ui.find("The folder stays on disk.")
             .expect("text should show");
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn in_a_window_smaller_than_the_dialog_its_buttons_stay_in_reach() {
         let vm = RemoveDialogViewModel {
-            title: String::from("Remove Claude Code · Work?"),
+            title: String::from("Remove Claude Code (Work)?"),
             text: String::from("The folder stays on disk."),
             confirm_label: i18n::t(Key::ButtonRemove),
         };

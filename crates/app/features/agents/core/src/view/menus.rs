@@ -603,7 +603,7 @@ mod tests {
     fn the_profile_menu_edits_logs_in_and_removes_an_added_profile() {
         let work = Profile::added(
             AgentId::new("claude-code"),
-            "Claude Code · Work",
+            "Claude Code (Work)",
             PathBuf::from("/home/user/.claude-work"),
         );
         let menu = |can_log_in, can_remove| {
@@ -639,7 +639,7 @@ mod tests {
     fn the_profile_menu_renames_opens_the_folder_and_hides() {
         let work = Profile::added(
             AgentId::new("claude-code"),
-            "Claude Code · Work",
+            "Claude Code (Work)",
             PathBuf::from("/home/user/.claude-work"),
         );
         let menu = |is_hidden| {

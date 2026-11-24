@@ -207,8 +207,7 @@ mod tests {
             .expect("its source should show");
         ui.find(i18n::t(Key::AgentsProfilesNeedYou))
             .expect("the profile needs should show");
-        ui.find("Codex · needs login")
-            .expect("the need should show");
+        ui.find("Codex, needs login").expect("the need should show");
         ui.click("Log in").expect("the need's button should show");
         ui.click(i18n::t(Key::AgentsFoundDone))
             .expect("Done should show");

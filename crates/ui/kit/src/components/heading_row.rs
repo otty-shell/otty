@@ -48,7 +48,7 @@ const ACTIONS: usize = 2;
 /// let palette = UiPalette::otty_dark();
 /// let refresh = Button::new("Refresh", &palette).on_press(Message::Refresh);
 /// let line: Element<'_, Message> =
-///     HeadingRow::new(text("Build server · Work"), refresh)
+///     HeadingRow::new(text("Build server (Work)"), refresh)
 ///         .lead(text("*"))
 ///         .into();
 /// ```
@@ -285,7 +285,7 @@ mod tests {
     /// Gap between the parts in the tests.
     const GAP: f32 = 12.0;
     /// The name of the heading.
-    const NAME: &str = "Build server · Work";
+    const NAME: &str = "Build server (Work)";
     /// The lead before the name, such as a logo.
     const LEAD: &str = "Logo";
 

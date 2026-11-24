@@ -1,5 +1,5 @@
 //! The name of a usage window in the user's language, such as "5 hours" or
-//! "7 days · Opus".
+//! "7 days, Opus".
 
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use otty_app_i18n::{self as i18n, Key};
 use super::reset_time::{DAY, HOUR, MINUTE};
 
 /// The name of `window`: its length in whole days, else whole hours, else
-/// minutes, and the model it counts alone after a dot, such as "7 days ·
+/// minutes, and the model it counts alone after a comma, such as "7 days,
 /// Opus". A window of no length, or shorter than a minute, is "Limit".
 pub(crate) fn window_name(window: &WindowId) -> String {
     let length = length_text(window.length());
@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(window_name(&WindowId::days(7)), "7 days");
         assert_eq!(
             window_name(&WindowId::days(7).for_model("Opus")),
-            "7 days · Opus"
+            "7 days, Opus"
         );
         assert_eq!(window_name(&WindowId::hours(1)), "1 hour");
         assert_eq!(window_name(&WindowId::days(1)), "1 day");
@@ -91,7 +91,7 @@ mod tests {
         assert_eq!(window_name(&WindowId::hours(5)), "5 ч");
         assert_eq!(
             window_name(&WindowId::days(7).for_model("Opus")),
-            "7 дн · Opus"
+            "7 дн, Opus"
         );
         assert_eq!(window_name(&WindowId::new(None)), "Лимит");
     }

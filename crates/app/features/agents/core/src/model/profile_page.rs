@@ -400,7 +400,7 @@ mod tests {
         assert!(failed.failure.is_some());
     }
 
-    /// "{tokens} tokens · {money}".
+    /// "{tokens} tokens, {money}".
     fn both(tokens: &str, money: &str) -> String {
         i18n::filled(
             Key::TplAgentsTokensAndMoney,

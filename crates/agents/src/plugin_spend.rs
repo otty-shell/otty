@@ -27,7 +27,7 @@ use crate::dollars::Dollars;
 use crate::error::SourceError;
 use crate::file_memory::FileMemory;
 use crate::local_time::LocalNow;
-use crate::money_estimate::AnswerCost;
+use crate::money_estimate::{AnswerCost, MoneyByKind};
 use crate::plugin_places::place_items;
 use crate::plugin_sources::PluginSessions;
 use crate::plugin_values::{part_profile, provider_of, time_of, tokens_of};
@@ -309,14 +309,22 @@ impl StatsSource for Arc<PluginSpend> {
     }
 }
 
-/// The money of an answer as its part priced it.
+/// The money of an answer as its part priced it: the cost the agent
+/// wrote, or the money at API prices kind by kind. The total the part
+/// gives next to the kinds is their sum, which [`MoneyByKind::total`]
+/// makes again.
 fn cost_of(cost: PartCost) -> AnswerCost {
     match cost {
         PartCost::Written(micro_dollars) => {
             AnswerCost::Written(Dollars::from_micro_dollars(micro_dollars))
         },
-        PartCost::AtApiPrices(micro_dollars) => {
-            AnswerCost::AtApiPrices(Dollars::from_micro_dollars(micro_dollars))
+        PartCost::AtApiPrices(priced) => {
+            AnswerCost::AtApiPrices(MoneyByKind::new(
+                Dollars::from_micro_dollars(priced.input),
+                Dollars::from_micro_dollars(priced.cache_written),
+                Dollars::from_micro_dollars(priced.cached),
+                Dollars::from_micro_dollars(priced.output),
+            ))
         },
     }
 }
@@ -446,11 +454,16 @@ mod tests {
         let spend = spend_at(&agent(&home), &home, &large_at(1_000_000))
             .expect("the spend");
 
-        // 200 input tokens at $1 a million.
+        // 200 input tokens at $1 a million, all of it the money of the
+        // input (issue 16 of the spec).
         let money = spend.this_month_by_model()[0].money();
+        let micro = Dollars::from_micro_dollars;
         assert_eq!(
             money,
-            MoneyTotal::at_api_prices(Dollars::from_micro_dollars(200), 2)
+            MoneyTotal::at_api_prices(
+                MoneyByKind::new(micro(200), micro(0), micro(0), micro(0)),
+                2
+            )
         );
         assert!(money.is_estimate());
     }

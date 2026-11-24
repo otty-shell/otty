@@ -17,7 +17,7 @@ use super::small_text::small_text;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
-use super::tooltip::tooltip;
+use super::tooltip::{TooltipText, tooltip};
 use super::{glyph, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, size, spacing, typography};
@@ -299,7 +299,7 @@ pub enum TableCell {
     /// whole.
     IconText(svg::Handle, String),
     /// Another cell with a tooltip, made by [`TableCell::with_tooltip`].
-    Tipped(Box<TableCell>, String),
+    Tipped(Box<TableCell>, TooltipText),
 }
 
 impl TableCell {
@@ -344,7 +344,7 @@ impl TableCell {
     /// use otty_ui_kit::components::data_table::TableCell;
     /// use otty_ui_kit::components::glyph;
     ///
-    /// let owner = TableCell::icon_link(glyph::dots(), "Coder · Work");
+    /// let owner = TableCell::icon_link(glyph::dots(), "Coder (Work)");
     /// ```
     pub fn icon_link(icon: svg::Handle, label: impl Into<String>) -> Self {
         Self::IconLink(icon, label.into())
@@ -377,7 +377,7 @@ impl TableCell {
     /// let state = TableCell::badge("failed", StatusTone::Error)
     ///     .with_tooltip("network error: timed out");
     /// ```
-    pub fn with_tooltip(self, tip: impl Into<String>) -> Self {
+    pub fn with_tooltip(self, tip: impl Into<TooltipText>) -> Self {
         Self::Tipped(Box::new(self), tip.into())
     }
 }
@@ -1027,7 +1027,7 @@ fn cell_view<'a, Message: Clone + 'a>(
 /// content.
 fn tipped_view<'a, Message: Clone + 'a>(
     cell: TableCell,
-    tip: String,
+    tip: TooltipText,
     align: ColumnAlign,
     is_selected: bool,
     on_link: &dyn Fn(usize) -> Option<Message>,
@@ -1803,7 +1803,7 @@ mod tests {
         .on_row_press(Message::Pressed)
         .row(vec![
             TableCell::mono("web"),
-            TableCell::icon_link(glyph::dots(), "Codex · Work"),
+            TableCell::icon_link(glyph::dots(), "Codex (Work)"),
         ]);
         if on_link {
             table = table.on_link_press(Message::Linked);
@@ -1841,11 +1841,11 @@ mod tests {
     #[test]
     fn given_icon_link_cell_when_its_text_is_pressed_then_the_link_is_sent() {
         let mut linked = simulator(icon_link_table(true));
-        linked.click("Codex · Work").expect("the link is visible");
+        linked.click("Codex (Work)").expect("the link is visible");
         let linked: Vec<Message> = linked.into_messages().collect();
 
         let mut plain = simulator(icon_link_table(false));
-        plain.click("Codex · Work").expect("the text is visible");
+        plain.click("Codex (Work)").expect("the text is visible");
         let plain: Vec<Message> = plain.into_messages().collect();
 
         assert_eq!(linked, vec![Message::Linked(0, 1, 0)]);

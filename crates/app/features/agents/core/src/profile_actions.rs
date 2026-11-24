@@ -165,7 +165,7 @@ mod tests {
         assert_eq!(
             added,
             vec![open_fix_tab(
-                "Codex · Work",
+                "Codex (Work)",
                 "/home/user",
                 AgentCommand::new("codex")
                     .with_arg("login")

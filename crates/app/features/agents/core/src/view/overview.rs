@@ -329,7 +329,7 @@ mod tests {
         AllAccountsViewModel {
             rows: vec![AccountTableRowViewModel {
                 account: chatgpt(),
-                name: String::from("OpenAI · you@example.com"),
+                name: String::from("OpenAI (you@example.com)"),
                 provider: String::from("OpenAI"),
                 now: AccountNumber::word(
                     String::from("42 % used"),
@@ -388,8 +388,7 @@ mod tests {
         ui.find("0.169.0").expect("the version should show");
         ui.find(i18n::t(Key::AgentsNeedsYou))
             .expect("the to-do list should show");
-        ui.find("Codex · needs login")
-            .expect("the need should show");
+        ui.find("Codex, needs login").expect("the need should show");
         ui.click("Log in").expect("the need's button should show");
 
         let intents: Vec<AgentsIntent> = ui.into_messages().collect();

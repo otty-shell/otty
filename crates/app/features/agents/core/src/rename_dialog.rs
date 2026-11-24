@@ -275,7 +275,7 @@ mod tests {
         rename_account(&mut state, chatgpt_login());
 
         let dialog = state.rename().expect("the dialog is open");
-        assert_eq!(dialog.name(), "OpenAI · you@example.com");
+        assert_eq!(dialog.name(), "OpenAI (you@example.com)");
         assert!(state.menu().is_none());
     }
 
@@ -286,19 +286,19 @@ mod tests {
         let mut state = with_chatgpt(SavedProfiles::default());
         rename_account(&mut state, chatgpt_login());
 
-        let outcomes = type_name(&mut state, "  ChatGPT · Home ");
+        let outcomes = type_name(&mut state, "  ChatGPT (Home) ");
         let saved = reduce(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
 
         assert_eq!(
             outcomes,
             vec![save(SavedProfiles::default().with_account_name(
                 &chatgpt_login(),
-                Some(String::from("ChatGPT · Home"))
+                Some(String::from("ChatGPT (Home)"))
             ))]
         );
         assert!(state.rename().is_none());
         assert_eq!(saved, vec![AgentsOutcome::LoadProfiles]);
-        assert_eq!(account_names(&state), ["ChatGPT · Home"]);
+        assert_eq!(account_names(&state), ["ChatGPT (Home)"]);
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
         rename_profile(&mut state, codex());
         let renamed = Profile::default_for(
             codex_id(),
-            "Codex · Home",
+            "Codex (Home)",
             PathBuf::from("/home/user/.codex"),
         );
         let expected = SavedProfiles::default().with_default_edited(
@@ -345,7 +345,7 @@ mod tests {
             renamed.clone(),
         );
 
-        let outcomes = type_name(&mut state, "Codex · Home");
+        let outcomes = type_name(&mut state, "Codex (Home)");
         let _ = reduce(&mut state, AgentsIntent::ProfilesSaved(Ok(())));
         let _ = reduce(
             &mut state,

@@ -17,15 +17,15 @@
 //! {
 //!   "default_profiles": {
 //!     "writer": {
-//!       "name": "Writer · Home",
+//!       "name": "Writer (Home)",
 //!       "config_dir": "/data/writer"
 //!     },
-//!     "coder": { "name": "Coder · Home" }
+//!     "coder": { "name": "Coder (Home)" }
 //!   },
 //!   "added_profiles": [
 //!     {
 //!       "agent": "writer",
-//!       "name": "Writer · Semrush",
+//!       "name": "Writer (Semrush)",
 //!       "config_dir": "/home/user/.writer-semrush"
 //!     }
 //!   ],
@@ -103,7 +103,7 @@ use crate::profile::Profile;
 ///
 /// let saved = SavedProfiles::default().with_added(Profile::added(
 ///     AgentId::new("coder"),
-///     "Coder · Work",
+///     "Coder (Work)",
 ///     PathBuf::from("/home/user/.coder-work"),
 /// ));
 ///
@@ -249,7 +249,7 @@ impl SavedProfiles {
     /// );
     /// let renamed = Profile::default_for(
     ///     AgentId::new("coder"),
-    ///     "Coder · Home",
+    ///     "Coder (Home)",
     ///     PathBuf::from("/home/user/.coder"),
     /// );
     ///
@@ -259,7 +259,7 @@ impl SavedProfiles {
     ///
     /// assert_eq!(
     ///     changes.and_then(|changes| changes.name()),
-    ///     Some("Coder · Home")
+    ///     Some("Coder (Home)")
     /// );
     /// assert_eq!(changes.and_then(|changes| changes.config_dir()), None);
     /// ```
@@ -425,9 +425,9 @@ impl SavedProfiles {
     /// );
     ///
     /// let saved = SavedProfiles::default()
-    ///     .with_account_name(&login, Some("Login · Home".into()));
+    ///     .with_account_name(&login, Some("Login (Home)".into()));
     ///
-    /// assert_eq!(saved.account_name(&login), Some("Login · Home"));
+    /// assert_eq!(saved.account_name(&login), Some("Login (Home)"));
     /// ```
     pub fn with_account_name(
         self,
@@ -523,9 +523,9 @@ impl DefaultProfileChanges {
     /// use otty_agents::{AgentId, DefaultProfileChanges};
     ///
     /// let changes = DefaultProfileChanges::new(AgentId::new("coder"))
-    ///     .with_name("Coder · Home");
+    ///     .with_name("Coder (Home)");
     ///
-    /// assert_eq!(changes.name(), Some("Coder · Home"));
+    /// assert_eq!(changes.name(), Some("Coder (Home)"));
     /// assert_eq!(changes.config_dir(), None);
     /// ```
     pub fn new(agent: AgentId) -> Self {
@@ -581,21 +581,21 @@ mod tests {
         SavedProfiles::default()
             .with_default_changes(
                 DefaultProfileChanges::new(claude_id())
-                    .with_name("Claude Code · Home")
+                    .with_name("Claude Code (Home)")
                     .with_config_dir(PathBuf::from("/data/claude")),
             )
             .with_default_changes(
                 DefaultProfileChanges::new(codex_id())
-                    .with_name("Codex · Home"),
+                    .with_name("Codex (Home)"),
             )
             .with_added(Profile::added(
                 claude_id(),
-                "Claude Code · Work",
+                "Claude Code (Work)",
                 PathBuf::from("/home/user/.claude-work"),
             ))
             .with_added(Profile::added(
                 codex_id(),
-                "Codex · Work",
+                "Codex (Work)",
                 PathBuf::from("/home/user/.codex-work"),
             ))
             .with_given_key_of(
@@ -625,7 +625,7 @@ mod tests {
     fn an_edited_default_profile_keeps_only_what_differs_from_the_agent() {
         let renamed_and_moved = Profile::default_for(
             claude_id(),
-            "Claude Code · Home",
+            "Claude Code (Home)",
             PathBuf::from("/data/claude"),
         );
 
@@ -649,7 +649,7 @@ mod tests {
             changed,
             SavedProfiles::default().with_default_changes(
                 DefaultProfileChanges::new(claude_id())
-                    .with_name("Claude Code · Home")
+                    .with_name("Claude Code (Home)")
                     .with_config_dir(PathBuf::from("/data/claude"))
             )
         );
@@ -671,7 +671,7 @@ mod tests {
         );
         let renamed = Profile::default_for(
             claude_id(),
-            "Claude Code · Home",
+            "Claude Code (Home)",
             PathBuf::from("/data/claude"),
         );
 
@@ -681,7 +681,7 @@ mod tests {
             edited,
             SavedProfiles::default().with_default_changes(
                 DefaultProfileChanges::new(claude_id())
-                    .with_name("Claude Code · Home")
+                    .with_name("Claude Code (Home)")
                     .with_config_dir(PathBuf::from("/data/claude"))
             )
         );
@@ -701,20 +701,20 @@ mod tests {
         let text = r#"{
             "default_profiles": {
                 "claude-code": {
-                    "name": "Claude Code · Home",
+                    "name": "Claude Code (Home)",
                     "config_dir": "/data/claude"
                 },
-                "codex": { "name": "Codex · Home" }
+                "codex": { "name": "Codex (Home)" }
             },
             "added_profiles": [
                 {
                     "agent": "claude-code",
-                    "name": "Claude Code · Work",
+                    "name": "Claude Code (Work)",
                     "config_dir": "/home/user/.claude-work"
                 },
                 {
                     "agent": "codex",
-                    "name": "Codex · Work",
+                    "name": "Codex (Work)",
                     "config_dir": "/home/user/.codex-work"
                 }
             ],
@@ -829,17 +829,17 @@ mod tests {
         let text = r#"{
             "default_profiles": {
                 "future-agent": { "name": "Future" },
-                "codex": { "name": "Codex · Home", "colour": "blue" }
+                "codex": { "name": "Codex (Home)", "colour": "blue" }
             },
             "added_profiles": [
                 {
                     "agent": "future-agent",
-                    "name": "Future · Work",
+                    "name": "Future (Work)",
                     "config_dir": "/home/user/.future-work"
                 },
                 {
                     "agent": "claude-code",
-                    "name": "Claude Code · Work",
+                    "name": "Claude Code (Work)",
                     "config_dir": "/home/user/.claude-work",
                     "colour": "blue"
                 }
@@ -879,7 +879,7 @@ mod tests {
             .iter()
             .map(|profile| profile.name())
             .collect();
-        assert_eq!(added, ["Future · Work", "Claude Code · Work"]);
+        assert_eq!(added, ["Future (Work)", "Claude Code (Work)"]);
         assert!(loaded.is_account_hidden(&future_login));
         assert!(loaded.is_profile_hidden(&gone));
         let written = loaded.to_json().expect("the paths are text");
@@ -905,7 +905,7 @@ mod tests {
         let path = PathBuf::from(OsStr::from_bytes(b"/home/user/.claude-\xff"));
         let saved = SavedProfiles::default().with_added(Profile::added(
             claude_id(),
-            "Claude Code · Work",
+            "Claude Code (Work)",
             path,
         ));
 
@@ -916,18 +916,18 @@ mod tests {
     fn an_added_profile_is_replaced_in_its_place() {
         let edited = Profile::added(
             claude_id(),
-            "Claude Code · Office",
+            "Claude Code (Office)",
             PathBuf::from("/data/claude-office"),
         );
 
         let saved = content().with_added_replaced(
             &claude_id(),
-            "Claude Code · Work",
+            "Claude Code (Work)",
             edited.clone(),
         );
 
         let names: Vec<_> = saved.added().iter().map(Profile::name).collect();
-        assert_eq!(names, ["Claude Code · Office", "Codex · Work"]);
+        assert_eq!(names, ["Claude Code (Office)", "Codex (Work)"]);
         assert_eq!(saved.added()[0], edited);
     }
 
@@ -935,13 +935,13 @@ mod tests {
     fn replacing_a_profile_that_is_not_saved_adds_it() {
         let profile = Profile::added(
             codex_id(),
-            "Codex · New",
+            "Codex (New)",
             PathBuf::from("/data/codex"),
         );
 
         let saved = SavedProfiles::default().with_added_replaced(
             &codex_id(),
-            "Codex · Gone",
+            "Codex (Gone)",
             profile.clone(),
         );
 
@@ -951,11 +951,11 @@ mod tests {
     #[test]
     fn an_added_profile_is_removed_by_its_agent_and_name() {
         let saved = content()
-            .without_added(&codex_id(), "Claude Code · Work")
-            .without_added(&claude_id(), "Claude Code · Work");
+            .without_added(&codex_id(), "Claude Code (Work)")
+            .without_added(&claude_id(), "Claude Code (Work)");
 
         let names: Vec<_> = saved.added().iter().map(Profile::name).collect();
-        assert_eq!(names, ["Codex · Work"]);
+        assert_eq!(names, ["Codex (Work)"]);
         assert_eq!(
             saved.default_changes_of(&codex_id()),
             content().default_changes_of(&codex_id())
@@ -966,7 +966,7 @@ mod tests {
     fn new_changes_of_an_agent_replace_its_earlier_ones() {
         let saved = SavedProfiles::default()
             .with_default_changes(
-                DefaultProfileChanges::new(codex_id()).with_name("Codex · Old"),
+                DefaultProfileChanges::new(codex_id()).with_name("Codex (Old)"),
             )
             .with_default_changes(
                 DefaultProfileChanges::new(codex_id())

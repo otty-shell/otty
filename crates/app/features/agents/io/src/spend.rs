@@ -152,7 +152,7 @@ mod tests {
 
         Profile::added(
             AgentId::new("claude-code"),
-            "Claude Code · Test",
+            "Claude Code (Test)",
             config_dir,
         )
     }

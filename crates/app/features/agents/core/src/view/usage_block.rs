@@ -5,11 +5,13 @@
 //! their money side by side (issue 14 of spec
 //! 2026-11-23-accounts-apart-from-profiles). Pressing a row, or the pointer
 //! over it, lights its part of every bar. Money at API prices has the mark
-//! "at API prices" under the table. On a page the drop-down opens the
-//! menu of the mode at the pointer; in a popup, over which no menu shows,
-//! its list opens under it.
+//! "at API prices" under the table. The total, each bar and the Tokens
+//! and Money cells list on hover what they are made of, one kind per line
+//! (issue 16). On a page the drop-down opens the menu of the mode at the
+//! pointer; in a popup, over which no menu shows, its list opens under
+//! it.
 
-use iced::widget::{Column, container, mouse_area, row};
+use iced::widget::{Column, column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::data_table::{
@@ -18,12 +20,15 @@ use otty_ui_kit::components::data_table::{
 use otty_ui_kit::components::day_bars::DayBars;
 use otty_ui_kit::components::note_select::{NoteSelect, NoteSelectOption};
 use otty_ui_kit::components::segmented::segmented;
+use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
 use otty_ui_kit::palette::UiPalette;
 use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    PeriodPicker, UsageBlockViewModel, UsageTableRowViewModel,
+    Breakdown, BreakdownLine, PeriodPicker, UsageBarViewModel,
+    UsageBlockViewModel, UsageTableRowViewModel,
 };
 use super::super::usage::{UsagePeriod, UsageTab};
 use super::{blocks, money};
@@ -70,17 +75,22 @@ pub(super) fn view<'a>(
 }
 
 /// The title with the total of the period, or the time of the last good
-/// numbers, under it, and the period drop-down at its right.
+/// numbers, under it, and the period drop-down at its right. The total
+/// lists what its tokens and money are made of on hover.
 fn title_row<'a>(
     vm: &UsageBlockViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let title = container(blocks::title_over_line(
-        i18n::t(Key::AgentsUsage),
-        vm.line.clone(),
-        palette,
-    ))
-    .width(Length::Fill);
+    let mut lines = column![blocks::title(i18n::t(Key::AgentsUsage), palette)]
+        .spacing(spacing::SPACE_1);
+    if let Some(line) = vm.line.clone() {
+        let line = small_text(line, palette.text_muted());
+        lines = match breakdown_tooltip(&vm.breakdown) {
+            Some(tip) => lines.push(tooltip(line, tip, palette)),
+            None => lines.push(line),
+        };
+    }
+    let title = container(lines).width(Length::Fill);
 
     let period = match vm.period_picker {
         PeriodPicker::List { is_open } => {
@@ -142,13 +152,10 @@ fn bars<'a>(
 ) -> Element<'a, AgentsIntent> {
     let mut bars = DayBars::new(palette).muted(vm.is_stale);
     for bar in &vm.bars {
+        let tip = bar_tooltip(bar);
         bars = match bar.lit {
-            Some(lit) => bars.bar_with_part(
-                bar.value as f64,
-                lit as f64,
-                bar.tip.clone(),
-            ),
-            None => bars.bar(bar.value as f64, bar.tip.clone()),
+            Some(lit) => bars.bar_with_part(bar.value as f64, lit as f64, tip),
+            None => bars.bar(bar.value as f64, tip),
         };
     }
     if let Some(current) = vm.current {
@@ -223,7 +230,8 @@ fn columns(tab: UsageTab) -> Vec<TableColumn> {
 }
 
 /// The cells of one row: a model in the mono font, the numbers muted
-/// while they are the last good ones.
+/// while they are the last good ones. The Tokens and the Money cells list
+/// what they are made of on hover.
 fn cells(
     row: &UsageTableRowViewModel,
     tab: UsageTab,
@@ -240,13 +248,45 @@ fn cells(
             TableCell::number(value)
         }
     };
+    let listed = |cell: TableCell, lines: &[BreakdownLine]| {
+        if lines.is_empty() {
+            return cell;
+        }
+        cell.with_tooltip(TooltipText::default().rows(kind_rows(lines)))
+    };
 
     vec![
         name,
-        number(&row.tokens),
-        number(&row.money),
+        listed(number(&row.tokens), &row.breakdown.tokens),
+        listed(number(&row.money), &row.breakdown.money),
         number(&row.share),
     ]
+}
+
+/// The tooltip of a bar: its line, then the kinds of its tokens, then
+/// their money.
+fn bar_tooltip(bar: &UsageBarViewModel) -> TooltipText {
+    TooltipText::new(bar.tip.clone())
+        .rows(kind_rows(&bar.breakdown.tokens))
+        .rows(kind_rows(&bar.breakdown.money))
+}
+
+/// The tooltip that lists `breakdown`, the kinds of the tokens and then
+/// their money; `None` when there is nothing to list.
+fn breakdown_tooltip(breakdown: &Breakdown) -> Option<TooltipText> {
+    let tip = TooltipText::default()
+        .rows(kind_rows(&breakdown.tokens))
+        .rows(kind_rows(&breakdown.money));
+
+    (!tip.is_empty()).then_some(tip)
+}
+
+/// The rows of a tooltip for `lines`: each kind and its number.
+fn kind_rows(lines: &[BreakdownLine]) -> Vec<(String, String)> {
+    lines
+        .iter()
+        .map(|line| (line.name.to_string(), line.value.clone()))
+        .collect()
 }
 
 /// The index of the row of the table at `point`, measured from the top of
@@ -269,7 +309,7 @@ mod tests {
 
     use super::*;
     use crate::model::MoneyKind;
-    use crate::testing::{estimated_money, usage_block};
+    use crate::testing::{codex_kinds, estimated_money, usage_block};
 
     /// Width of the block in the tests.
     const WIDTH: f32 = 600.0;
@@ -355,6 +395,81 @@ mod tests {
             (mark.x + mark.width - WIDTH).abs() < 1.0,
             "the mark ends the row: {mark:?}"
         );
+    }
+
+    /// The tooltip rows of `lines`: each kind and its number.
+    fn rows_of(lines: &[BreakdownLine]) -> Vec<(String, String)> {
+        lines
+            .iter()
+            .map(|line| (line.name.to_string(), line.value.clone()))
+            .collect()
+    }
+
+    /// Issue 16 of spec 2026-11-23: the Tokens cell and the Money cell of
+    /// a row list what they are made of in their tooltips, one kind per
+    /// line; a cell with nothing to list, such as money with no price,
+    /// has no tooltip.
+    #[test]
+    fn the_tokens_and_the_money_cells_list_their_kinds_on_hover() {
+        let vm = usage_block();
+        let kinds = codex_kinds();
+
+        let priced = cells(&vm.rows[0], vm.tab, false);
+        let unpriced = cells(&vm.rows[1], vm.tab, false);
+
+        assert_eq!(
+            priced[1],
+            TableCell::number("100").with_tooltip(
+                TooltipText::default().rows(rows_of(&kinds.tokens))
+            )
+        );
+        assert_eq!(
+            priced[2],
+            TableCell::number("$1.25").with_tooltip(
+                TooltipText::default().rows(rows_of(&kinds.money))
+            )
+        );
+        assert_eq!(
+            unpriced[1],
+            TableCell::number("91").with_tooltip(TooltipText::default().rows(
+                vec![(i18n::t(Key::AgentsKindInput).to_string(), "91".into())]
+            ))
+        );
+        assert_eq!(unpriced[2], TableCell::number("—"), "no tooltip");
+        assert_eq!(unpriced[3], TableCell::number("48 %"), "no tooltip");
+    }
+
+    /// Issue 16: the tooltip of a bar is its line, then the kinds of its
+    /// tokens, then their money; the total under the title lists the
+    /// same kinds of the whole period.
+    #[test]
+    fn a_bar_and_the_total_list_their_kinds_on_hover() {
+        let kinds = codex_kinds();
+        let bar = UsageBarViewModel {
+            value: 100,
+            lit: None,
+            tip: String::from("Nov 16: 100 tokens, $1.25"),
+            breakdown: kinds.clone(),
+        };
+
+        let tooltip = bar_tooltip(&bar);
+        let total = breakdown_tooltip(&kinds);
+
+        assert_eq!(
+            tooltip,
+            TooltipText::new("Nov 16: 100 tokens, $1.25")
+                .rows(rows_of(&kinds.tokens))
+                .rows(rows_of(&kinds.money))
+        );
+        assert_eq!(
+            total,
+            Some(
+                TooltipText::default()
+                    .rows(rows_of(&kinds.tokens))
+                    .rows(rows_of(&kinds.money))
+            )
+        );
+        assert_eq!(breakdown_tooltip(&Breakdown::default()), None);
     }
 
     /// Spec 2026-11-23, Decision 1: the tabs have no By account.

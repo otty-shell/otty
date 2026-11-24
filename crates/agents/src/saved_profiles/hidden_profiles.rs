@@ -77,7 +77,7 @@ mod tests {
             .with_profile_hidden(&work_codex(), true);
         let renamed = Profile::added(
             codex_id(),
-            "Codex · Office",
+            "Codex (Office)",
             PathBuf::from("/home/user/.codex-work"),
         );
         let other_folder = Profile::default_for(

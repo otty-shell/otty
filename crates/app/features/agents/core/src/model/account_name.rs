@@ -35,8 +35,8 @@ pub(crate) fn short_account_name(
     }
 }
 
-/// The provider and the name the part gives `account`, such as "OpenAI ·
-/// you@example.com". The provider is named as the entry of `registry` of
+/// The provider and the name the part gives `account`, the parts of the
+/// name in parentheses, such as "OpenAI (you@example.com)". The provider is named as the entry of `registry` of
 /// the part that found it names it, else by its id.
 pub(crate) fn own_account_name(
     registry: &Registry,
@@ -44,7 +44,7 @@ pub(crate) fn own_account_name(
 ) -> String {
     let provider = account_provider_name(registry, account);
 
-    format!("{provider} · {}", account.name())
+    format!("{provider} ({})", account.name())
 }
 
 #[cfg(test)]
@@ -73,7 +73,7 @@ mod tests {
 
         assert_eq!(
             own_account_name(&registry, &login("openai")),
-            "OpenAI · you@example.com"
+            "OpenAI (you@example.com)"
         );
         assert_eq!(
             short_account_name(None, &login("openai")),

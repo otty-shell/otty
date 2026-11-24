@@ -227,7 +227,7 @@ mod tests {
     use crate::testing::{claude, claude_work, codex, titled_session};
 
     /// One project in `/work/otty`: c1 "Fix tabs" and c2 "Add docs" of
-    /// Claude Code, w1 "Fix docs" of Claude Code · Work, x1 "Bump deps" of
+    /// Claude Code, w1 "Fix docs" of Claude Code (Work), x1 "Bump deps" of
     /// Codex.
     fn project() -> Project {
         let claude_sessions = [

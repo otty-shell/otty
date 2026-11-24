@@ -201,10 +201,10 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         at, bill_loaded, bill_of, chatgpt_login, chatgpt_login_in, claude,
-        codex, codex_work, connected, five_hour_limits, limits_numbers,
-        numbers_loaded, organization, price_table, read, saved_with_given_key,
-        session, set_prices, spend_loaded, spend_of, with_accounts,
-        with_profiles,
+        codex, codex_work, connected, five_hour_limits, input_money,
+        limits_numbers, numbers_loaded, organization, price_table, read,
+        saved_with_given_key, session, set_prices, spend_loaded, spend_of,
+        with_accounts, with_profiles,
     };
     use crate::types::SpendCount;
 
@@ -215,7 +215,7 @@ mod tests {
         )
     }
 
-    /// Codex and Codex · Work, both logged in to the [`chatgpt_login`],
+    /// Codex and Codex (Work), both logged in to the [`chatgpt_login`],
     /// with the answer `limits` read through Codex.
     fn chatgpt_with_limits(limits: Limits) -> AgentsState {
         let mut state = with_accounts(
@@ -362,10 +362,7 @@ mod tests {
             1,
         )
         .with_provider(Some(ProviderRef::of_id("anthropic")))
-        .with_money(MoneyTotal::at_api_prices(
-            Dollars::from_micro_dollars(6_000_000),
-            1,
-        ));
+        .with_money(MoneyTotal::at_api_prices(input_money(6_000_000), 1));
         let written = priced.clone().with_money(MoneyTotal::written(
             Dollars::from_micro_dollars(1_500_000),
         ));

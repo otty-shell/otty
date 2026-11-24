@@ -732,7 +732,7 @@ mod tests {
         assert_eq!(
             outcomes,
             vec![open_tab(
-                "Claude Code · Work",
+                "Claude Code (Work)",
                 "/work/otty",
                 AgentCommand::new("claude")
                     .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),

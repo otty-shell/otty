@@ -717,6 +717,51 @@ mod tests {
         }
     }
 
+    /// Owner, 2026-11-24 (issue 16 of spec
+    /// 2026-11-23-accounts-apart-from-profiles): the middle dot " · " is
+    /// too small and unclear, so no text of the UI holds it. A list has
+    /// one item per line, two values side by side take a comma, and the
+    /// parts of a name take parentheses.
+    #[test]
+    fn no_text_of_any_locale_holds_a_middle_dot() {
+        for locale in Locale::ALL {
+            for key in Key::ALL {
+                let text = text_in(locale, key);
+
+                assert!(
+                    !text.contains('·'),
+                    "{} {key:?}: {text}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
+    /// Issue 16: the kinds of tokens and of money a tooltip lists have
+    /// short names, and two values side by side take a comma.
+    #[test]
+    fn the_kinds_of_a_breakdown_have_short_names() {
+        let names = [
+            (Key::AgentsKindInput, "in"),
+            (Key::AgentsKindCacheWritten, "cache write"),
+            (Key::AgentsKindCached, "cached"),
+            (Key::AgentsKindOutput, "out"),
+            (Key::AgentsMoneyWrittenByAgent, "written by the agent"),
+        ];
+
+        for (key, english) in names {
+            assert_eq!(text_in(Locale::En, key), english, "{key:?}");
+        }
+        assert_eq!(
+            fill_in(
+                Locale::En,
+                Key::TplAgentsTokensAndMoney,
+                &[("tokens", "400K"), ("money", "~$12.40")]
+            ),
+            "400K tokens, ~$12.40"
+        );
+    }
+
     #[test]
     fn given_chinese_tags_when_parsed_then_script_selects_the_variant() {
         assert_eq!(Locale::from_tag("zh_CN.UTF-8"), Locale::ZhCn);
@@ -1263,9 +1308,9 @@ mod tests {
             fill_in(
                 Locale::En,
                 Key::TplAgentsRemoveTitle,
-                &[("name", "Coder · Work")]
+                &[("name", "Coder (Work)")]
             ),
-            "Remove Coder · Work?"
+            "Remove Coder (Work)?"
         );
         assert_eq!(
             fill_in(

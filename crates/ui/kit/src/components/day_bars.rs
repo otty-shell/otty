@@ -5,7 +5,7 @@ use iced::widget::{Space, column, container, row, text};
 use iced::{Alignment, Border, Color, Element, Length, border};
 
 use super::divider;
-use super::tooltip::tooltip_above;
+use super::tooltip::{TooltipText, tooltip_above};
 use crate::palette::UiPalette;
 use crate::{fonts, spacing};
 
@@ -27,7 +27,7 @@ const AXIS_TEXT_SIZE: f32 = 11.5;
 struct Bar {
     value: f64,
     part: Option<f64>,
-    tooltip: String,
+    tooltip: TooltipText,
 }
 
 /// Bars of one value per day, oldest first and today last, standing on a
@@ -38,9 +38,10 @@ struct Bar {
 /// project, and then no bar is in the accent as a whole. The highest value
 /// fills the height; a value above zero is never thinner than a sliver, and
 /// zero has no bar. Each bar shows its tooltip, such as "2026-11-13: 2.9M
-/// tokens", under the pointer, and the whole height above the bar takes the
-/// pointer, so a low bar is easy to hover. Two labels under the baseline can name the first and the last
-/// day.
+/// tokens" or a [`TooltipText`] with rows of what the bar is made of, over
+/// the pointer, and the whole height above the bar takes the pointer, so a
+/// low bar is easy to hover. Two labels under the baseline can name the
+/// first and the last day.
 ///
 /// # Example
 ///
@@ -56,8 +57,8 @@ struct Bar {
 ///     .axis("Nov 15", "Today")
 ///     .into();
 /// let hours: Element<'_, ()> = DayBars::new(&palette)
-///     .bar_with_part(3.0, 1.0, "12:00: 3M · otty 1M")
-///     .bar_with_part(2.0, 0.0, "13:00: 2M · otty 0")
+///     .bar_with_part(3.0, 1.0, "12:00: 3M\notty: 1M")
+///     .bar_with_part(2.0, 0.0, "13:00: 2M\notty: 0")
 ///     .axis("00:00", "23:00")
 ///     .into();
 /// ```
@@ -82,7 +83,7 @@ impl DayBars {
     }
 
     /// Adds the bar of the next day, of `value`, with its `tooltip`.
-    pub fn bar(mut self, value: f64, tooltip: impl Into<String>) -> Self {
+    pub fn bar(mut self, value: f64, tooltip: impl Into<TooltipText>) -> Self {
         self.bars.push(Bar {
             value,
             part: None,
@@ -98,7 +99,7 @@ impl DayBars {
         mut self,
         value: f64,
         part: f64,
-        tooltip: impl Into<String>,
+        tooltip: impl Into<TooltipText>,
     ) -> Self {
         self.bars.push(Bar {
             value,

@@ -219,7 +219,7 @@ fn subscription_name(account: &OauthAccount) -> String {
 
     match account.organization_name() {
         Some(organization) if !organization.contains(email) => {
-            format!("{email} · {organization}")
+            format!("{email} ({organization})")
         },
         _ => email.to_string(),
     }
@@ -343,7 +343,7 @@ mod tests {
             found,
             [Account {
                 id: "claude:00000000-0000-4000-8000-00000000000c".to_string(),
-                name: "own@example.com · Example Org".to_string(),
+                name: "own@example.com (Example Org)".to_string(),
                 kind: AccountKind::Subscription,
                 plan: Some("Max 20x".to_string()),
                 found_in: vec![login_folder(&host, ".claude-work")],
@@ -361,7 +361,7 @@ mod tests {
         let found = accounts_in(".claude");
 
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].name, "dev@example.com · Example Org");
+        assert_eq!(found[0].name, "dev@example.com (Example Org)");
         assert_eq!(found[0].plan.as_deref(), Some("Max 20x"));
     }
 
@@ -566,7 +566,7 @@ mod tests {
         });
 
         assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!(found[0].name, "own@example.com · Example Org");
+        assert_eq!(found[0].name, "own@example.com (Example Org)");
         assert_eq!(found[0].found_in, [own]);
     }
 

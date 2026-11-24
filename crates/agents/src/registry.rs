@@ -487,12 +487,12 @@ mod tests {
         let agent = AgentId::new("coder");
         let work = Profile::added(
             agent.clone(),
-            "Coder · Work",
+            "Coder (Work)",
             PathBuf::from("/no/such/home/.coder-work"),
         );
         let old = Profile::added(
             agent.clone(),
-            "Coder · Old",
+            "Coder (Old)",
             PathBuf::from("/no/such/home/.coder-old"),
         );
         let saved = SavedProfiles::default()
@@ -515,7 +515,7 @@ mod tests {
         assert!(saved.is_profile_hidden(&old));
         assert_eq!(
             names(&registry()),
-            ["Coder", "Coder · Work", "Coder · Old"]
+            ["Coder", "Coder (Work)", "Coder (Old)"]
         );
     }
 }

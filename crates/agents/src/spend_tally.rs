@@ -246,7 +246,7 @@ mod tests {
 
     use super::*;
     use crate::dollars::Dollars;
-    use crate::money_estimate::{AnswerCost, MoneyTotal};
+    use crate::money_estimate::{AnswerCost, MoneyByKind, MoneyTotal};
     use crate::testing::{NOW, at, berlin, hours_east, utc_now};
 
     /// 2026-11-16T10:00:00Z, a Monday.
@@ -523,8 +523,14 @@ mod tests {
             answer(seconds, "gpt-5", input(10))
                 .with_cost(Some(AnswerCost::Written(micro(cost))))
         };
-        let listed = answer(NOW - 60, "gpt-5", input(10))
-            .with_cost(Some(AnswerCost::AtApiPrices(micro(200))));
+        let listed = answer(NOW - 60, "gpt-5", input(10)).with_cost(Some(
+            AnswerCost::AtApiPrices(MoneyByKind::new(
+                micro(150),
+                micro(0),
+                micro(0),
+                micro(50),
+            )),
+        ));
         let files = [file(
             "/a",
             vec![costly(NOW, 300), listed, costly(NOW - DAY, 7)],
@@ -539,6 +545,15 @@ mod tests {
         assert_eq!(today.parts()[0].tokens().money(), money);
         let hours = spend.today_by_hour();
         assert_eq!(hours[9].parts()[0].tokens().money().cost(), micro(200));
+        assert_eq!(
+            hours[9].parts()[0]
+                .tokens()
+                .money()
+                .priced_by_kind()
+                .output(),
+            micro(50),
+            "the money by kind stays with its hour"
+        );
         assert_eq!(
             hours[10].parts()[0].tokens().money(),
             MoneyTotal::written(micro(300))

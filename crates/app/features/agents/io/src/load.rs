@@ -470,7 +470,7 @@ mod tests {
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"default_profiles":{{"codex":{{"name":"Codex · Home"}}}},"added_profiles":[{{"agent":"codex","name":"Codex · Work","config_dir":"{}"}}]}}"#,
+                r#"{{"default_profiles":{{"codex":{{"name":"Codex (Home)"}}}},"added_profiles":[{{"agent":"codex","name":"Codex (Work)","config_dir":"{}"}}]}}"#,
                 work.display()
             ),
         );
@@ -491,7 +491,7 @@ mod tests {
             .iter()
             .map(|entry| entry.profile.name())
             .collect();
-        assert_eq!(names, ["Claude Code", "Codex · Home", "Codex · Work"]);
+        assert_eq!(names, ["Claude Code", "Codex (Home)", "Codex (Work)"]);
         assert!(
             matches!(
                 &loaded.profiles[2].status,
@@ -539,10 +539,10 @@ mod tests {
             )
         };
         let profiles = [
-            added("codex", "Codex · New", &codex_new),
-            added("claude-code", "Claude Code · New", &claude_new),
-            added("opencode", "OpenCode · New", &opencode_new),
-            added("codex", "Codex · Gone", &codex_gone),
+            added("codex", "Codex (New)", &codex_new),
+            added("claude-code", "Claude Code (New)", &claude_new),
+            added("opencode", "OpenCode (New)", &opencode_new),
+            added("codex", "Codex (Gone)", &codex_gone),
         ];
         write(
             &config_dir.join("agents.json"),
@@ -576,7 +576,7 @@ mod tests {
                 .map(|entry| entry.status.clone())
                 .expect("the profile")
         };
-        let codex = status_of(&loaded, "Codex · New");
+        let codex = status_of(&loaded, "Codex (New)");
         let codex_login = login_command(&codex);
         assert_eq!(codex_login.program(), "codex");
         assert_eq!(codex_login.args(), ["login"]);
@@ -584,7 +584,7 @@ mod tests {
             codex_login.env(),
             [("CODEX_HOME".to_string(), codex_new.display().to_string())]
         );
-        let claude = status_of(&loaded, "Claude Code · New");
+        let claude = status_of(&loaded, "Claude Code (New)");
         let claude_login = login_command(&claude);
         assert_eq!(claude_login.program(), "claude");
         assert_eq!(claude_login.args(), ["auth", "login", "--claudeai"]);
@@ -596,11 +596,11 @@ mod tests {
             )]
         );
         assert_eq!(
-            status_of(&opencode, "OpenCode · New"),
+            status_of(&opencode, "OpenCode (New)"),
             ProfileStatus::Connected
         );
         assert_eq!(
-            status_of(&loaded, "Codex · Gone"),
+            status_of(&loaded, "Codex (Gone)"),
             ProfileStatus::ConfigDirNotFound
         );
     }
@@ -656,7 +656,7 @@ mod tests {
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"default_profiles":{{"codex":{{"hidden":true,"program":"/no/such/codex"}}}},"added_profiles":[{{"agent":"codex","name":"Codex · Work","config_dir":"{}","program":"/no/such/codex","hidden":true}}]}}"#,
+                r#"{{"default_profiles":{{"codex":{{"hidden":true,"program":"/no/such/codex"}}}},"added_profiles":[{{"agent":"codex","name":"Codex (Work)","config_dir":"{}","program":"/no/such/codex","hidden":true}}]}}"#,
                 work.display()
             ),
         );
@@ -674,7 +674,7 @@ mod tests {
 
         let statuses = statuses(&loaded);
         assert_eq!(statuses[1], ("Codex", &ProfileStatus::ConfigDirNotFound));
-        assert_eq!(statuses[2].0, "Codex · Work");
+        assert_eq!(statuses[2].0, "Codex (Work)");
         assert!(
             matches!(statuses[2].1, ProfileStatus::NotLoggedIn(Some(_))),
             "{statuses:?}"
@@ -701,7 +701,7 @@ mod tests {
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code · Work","config_dir":"{}"}}]}}"#,
+                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code (Work)","config_dir":"{}"}}]}}"#,
                 work.display()
             ),
         );
@@ -820,7 +820,7 @@ mod tests {
         let home = TempDir::new("agents-read-content");
         write(
             &home.path().join("agents.json"),
-            r#"{"default_profiles":{"codex":{"name":"Codex · Home"}}}"#,
+            r#"{"default_profiles":{"codex":{"name":"Codex (Home)"}}}"#,
         );
         let broken = TempDir::new("agents-read-content-broken");
         write(&broken.path().join("agents.json"), "{ not json");
@@ -848,7 +848,7 @@ mod tests {
         assert!(
             saved
                 .default_changes_of(&AgentId::new("codex"))
-                .is_some_and(|changes| changes.name() == Some("Codex · Home"))
+                .is_some_and(|changes| changes.name() == Some("Codex (Home)"))
         );
         assert_eq!(unread.saved, None);
         assert!(unread.problem.is_some());

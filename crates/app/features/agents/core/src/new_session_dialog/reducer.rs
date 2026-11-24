@@ -115,7 +115,7 @@ mod tests {
         folder_query(FolderAsker::NewSessionDialog, folder, list_in, prefix)
     }
 
-    /// Claude Code · Work and Codex can start; nothing is selected but the
+    /// Claude Code (Work) and Codex can start; nothing is selected but the
     /// first profile.
     fn two_profiles() -> AgentsState {
         with_profiles(&[(claude_work(), connected()), (codex(), connected())])
@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(
             started,
             vec![open_tab(
-                "Claude Code · Work",
+                "Claude Code (Work)",
                 "/work/new",
                 AgentCommand::new("claude")
                     .with_env("CLAUDE_CONFIG_DIR", "/home/user/.claude-work"),

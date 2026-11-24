@@ -272,7 +272,7 @@ mod tests {
         let mut adding = open_add();
         send(
             &mut adding,
-            ProfileDialogIntent::NameChanged(String::from("Codex · Own")),
+            ProfileDialogIntent::NameChanged(String::from("Codex (Own)")),
         );
         send(
             &mut adding,
@@ -342,7 +342,7 @@ mod tests {
         let mut state = open_add();
         send(
             &mut state,
-            ProfileDialogIntent::NameChanged(String::from("Claude Code · C")),
+            ProfileDialogIntent::NameChanged(String::from("Claude Code (C)")),
         );
         send(
             &mut state,

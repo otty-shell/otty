@@ -71,7 +71,7 @@ mod tests {
     };
 
     /// One project in `/work/otty` with sessions of three profiles: c1 and
-    /// c2 of Claude Code, w1 of Claude Code · Work, x1 of Codex.
+    /// c2 of Claude Code, w1 of Claude Code (Work), x1 of Codex.
     fn project() -> Project {
         let claude_sessions = [
             titled_session("c1", "fix tabs", 400),

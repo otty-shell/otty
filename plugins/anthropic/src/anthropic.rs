@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(found.accounts.len(), 1);
         let account = &found.accounts[0];
         assert_eq!(account.id, "claude:00000000-0000-4000-8000-00000000000a");
-        assert_eq!(account.name, "dev@example.com · Example Org");
+        assert_eq!(account.name, "dev@example.com (Example Org)");
         assert_eq!(
             account.found_in,
             [
@@ -412,9 +412,9 @@ mod tests {
             .map(|account| account.name.as_str())
             .collect();
         assert_eq!(names.len(), 3);
-        assert_eq!(names[0], "dev@example.com · Example Org");
+        assert_eq!(names[0], "dev@example.com (Example Org)");
         assert!(names[1].starts_with("key ••••"), "{}", names[1]);
-        assert_eq!(names[2], "own@example.com · Example Org");
+        assert_eq!(names[2], "own@example.com (Example Org)");
     }
 
     /// One key in two places is one account.

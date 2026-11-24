@@ -357,7 +357,9 @@ fn answer_of(record: Record) -> Option<Answer> {
 
 #[cfg(test)]
 mod tests {
-    use otty_plugin_sdk::agents::{AnswerCost, ModelPrice, TokenPrices};
+    use otty_plugin_sdk::agents::{
+        AnswerCost, ModelPrice, PricedCost, TokenPrices,
+    };
 
     use super::*;
     use crate::provider::ANTHROPIC;
@@ -428,10 +430,17 @@ mod tests {
             file.into_answers("/fallback", Some(&anthropic), None)
         });
 
-        // 1,000 input at $3 and 100 output at $15 a million tokens.
+        // 1,000 input at $3 and 100 output at $15 a million tokens, each
+        // kind apart next to the total (issue 16 of the spec).
         assert_eq!(
             priced.answers[0].cost,
-            Some(AnswerCost::AtApiPrices(3_000 + 1_500))
+            Some(AnswerCost::AtApiPrices(PricedCost {
+                total: 3_000 + 1_500,
+                input: 3_000,
+                cache_written: 0,
+                cached: 0,
+                output: 1_500,
+            }))
         );
     }
 

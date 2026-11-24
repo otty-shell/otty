@@ -188,7 +188,7 @@ pub use crate::limits::{
     Billing, Credits, ExtraUsage, LimitWindow, Limits, UsageWindows, WindowId,
 };
 pub use crate::local_time::LocalNow;
-pub use crate::money_estimate::MoneyTotal;
+pub use crate::money_estimate::{MoneyByKind, MoneyTotal};
 pub use crate::own_login::{
     OwnLogin, is_own_login_folder, log_in_command, own_login_accounts,
 };

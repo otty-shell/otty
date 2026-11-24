@@ -81,7 +81,7 @@ mod tests {
             Some(RenameDialogViewModel {
                 title: i18n::t(Key::AgentsRenameAccountTitle),
                 text: i18n::t(Key::AgentsRenameAccountText),
-                name: "OpenAI · you@example.com",
+                name: "OpenAI (you@example.com)",
                 error: None,
                 can_save: true,
             })

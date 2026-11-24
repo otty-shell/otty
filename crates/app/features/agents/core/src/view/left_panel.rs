@@ -342,7 +342,7 @@ mod tests {
                 account: chatgpt(),
                 is_selected: false,
                 icon: crate::testing::provider_icon("openai"),
-                name: String::from("OpenAI · you@example.com"),
+                name: String::from("OpenAI (you@example.com)"),
                 number: Some(crate::model::AccountNumber::word(
                     String::from("42 % used"),
                     SessionTone::Muted,
@@ -484,7 +484,7 @@ mod tests {
         let mut ui = simulator(panel_view(panel(agents()), &themes));
 
         let row = ui
-            .find("OpenAI · you@example.com")
+            .find("OpenAI (you@example.com)")
             .expect("the account should show");
         ui.point_at(row.bounds().center());
         let _ = ui.simulate(right_click());
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn all_accounts_and_an_account_row_show_their_pages() {
         let all = pressed(panel(agents()), i18n::t(Key::AgentsAllAccounts));
-        let account = pressed(panel(agents()), "OpenAI · you@example.com");
+        let account = pressed(panel(agents()), "OpenAI (you@example.com)");
         let themes = ThemeManager::new();
         let mut ui = simulator(panel_view(panel(agents()), &themes));
 

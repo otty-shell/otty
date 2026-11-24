@@ -318,7 +318,7 @@ mod tests {
         let MainAreaViewModel::Profile(page) = vm else {
             panic!("the page of the hidden profile shows: {vm:?}");
         };
-        assert_eq!(page.name, "Codex · Work");
+        assert_eq!(page.name, "Codex (Work)");
         assert_eq!(
             page.info.as_deref(),
             Some(i18n::t(Key::AgentsHiddenProfileNote))

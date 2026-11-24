@@ -3,6 +3,7 @@ mod account_numbers;
 mod account_page;
 mod add_account_dialog;
 mod age;
+mod breakdown;
 mod entry_icon;
 mod found_report;
 mod kept_answer;
@@ -41,6 +42,7 @@ pub(crate) use add_account_dialog::AddAccountDialogViewModel;
 pub(crate) use add_account_dialog::{
     LogInChoiceViewModel, PasteKeyChoiceViewModel, ProviderOptionViewModel,
 };
+pub(crate) use breakdown::{Breakdown, BreakdownLine};
 pub(crate) use entry_icon::EntryIcon;
 pub(crate) use found_report::{
     FoundAccountRowViewModel, FoundProfileRowViewModel, FoundReportViewModel,
@@ -88,10 +90,9 @@ pub(crate) use stats_dialog::{
     StatsDialogViewModel,
 };
 pub(crate) use status_bar::StatusBarViewModel;
-#[cfg(test)]
-pub(crate) use usage_block::UsageBarViewModel;
 pub(crate) use usage_block::{
-    PeriodPicker, UsageBlockViewModel, UsageTableRowViewModel,
+    PeriodPicker, UsageBarViewModel, UsageBlockViewModel,
+    UsageTableRowViewModel,
 };
 
 /// What stands for a number, a time or an amount that is not known.

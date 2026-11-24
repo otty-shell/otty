@@ -153,7 +153,7 @@ mod tests {
     fn work() -> Profile {
         Profile::added(
             AgentId::new("codex"),
-            "Codex · Work",
+            "Codex (Work)",
             PathBuf::from("/home/user/.codex-work"),
         )
     }
@@ -162,9 +162,9 @@ mod tests {
         ProfilePageViewModel {
             profile: work(),
             icon: crate::testing::agent_icon("codex"),
-            name: String::from("Codex · Work"),
+            name: String::from("Codex (Work)"),
             needs: vec![NeedViewModel {
-                place: String::from("Codex · Work"),
+                place: String::from("Codex (Work)"),
                 plugin: None,
                 title: String::from("needs login"),
                 line: String::from("Log in to use it."),
@@ -241,7 +241,7 @@ mod tests {
             let mut ui = in_main_area(page(), width, &themes);
 
             let parts = [
-                at(&mut ui, "Codex · Work"),
+                at(&mut ui, "Codex (Work)"),
                 at(&mut ui, i18n::t(Key::AgentsNeedsFromYou)),
                 at(&mut ui, "Codex has no sessions yet."),
                 at(&mut ui, i18n::t(Key::AgentsUsage)),
@@ -355,7 +355,7 @@ mod tests {
     fn refresh_and_the_more_button_end_the_line_of_the_name() {
         let themes = ThemeManager::new();
         let mut ui = in_main_area(page(), WIDE, &themes);
-        let name = at(&mut ui, "Codex · Work");
+        let name = at(&mut ui, "Codex (Work)");
         let right_end = (WIDE + size::FORM) / 2.0;
         let more =
             Point::new(right_end - size::CONTROL_MD / 2.0, name.center_y());

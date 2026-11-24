@@ -139,7 +139,7 @@ pub(crate) struct CreditsViewModel {
     pub(crate) value: String,
     /// How much of the pool is used, from 0 to 100, when both are known.
     pub(crate) percent: Option<u8>,
-    /// What is left and when the pool renews, such as "3 760 left ·
+    /// What is left and when the pool renews, such as "3 760 left,
     /// Resets on Thursday at 09:00", leaving out what the value already
     /// says.
     pub(crate) line: Option<String>,

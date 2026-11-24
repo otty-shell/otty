@@ -46,7 +46,7 @@ impl AllAccountsViewModel {
 pub(crate) struct AccountTableRowViewModel {
     /// The account, sent when the row is pressed.
     pub(crate) account: Account,
-    /// The provider and the login, such as "Example Cloud · you@example.com".
+    /// The provider and the login, such as "Example Cloud (you@example.com)".
     pub(crate) name: String,
     /// The name of the provider, such as "Example Cloud".
     pub(crate) provider: String,
@@ -181,8 +181,8 @@ mod tests {
     use crate::types::SpendCount;
 
     /// Claude Code paying through the [`organization`] with no admin key,
-    /// Codex logged in to the [`chatgpt_login`] with 42 % used, and Codex ·
-    /// Work not logged in; Claude Code 2.1.328 spent 1.8M tokens today.
+    /// Codex logged in to the [`chatgpt_login`] with 42 % used, and Codex
+    /// (Work) not logged in; Claude Code 2.1.328 spent 1.8M tokens today.
     fn found() -> AgentsState {
         let mut state =
             AgentsState::new(agents(), crate::testing::registry(), env());
@@ -238,7 +238,7 @@ mod tests {
             vec![
                 AccountTableRowViewModel {
                     account: organization(),
-                    name: String::from("Anthropic · dev@example.com"),
+                    name: String::from("Anthropic (dev@example.com)"),
                     provider: String::from("Anthropic"),
                     now: AccountNumber::word(
                         String::from(UNKNOWN),
@@ -248,7 +248,7 @@ mod tests {
                 },
                 AccountTableRowViewModel {
                     account: chatgpt_login_in("/home/user/.codex"),
-                    name: String::from("OpenAI · you@example.com"),
+                    name: String::from("OpenAI (you@example.com)"),
                     provider: String::from("OpenAI"),
                     now: AccountNumber::word(
                         i18n::with_count(Key::TplAgentsPercentUsed, 42),
@@ -312,8 +312,8 @@ mod tests {
         assert_eq!(
             rows,
             [
-                ("openai", "OpenAI · you@example.com"),
-                ("openai-fork", "OpenAI · you@example.com"),
+                ("openai", "OpenAI (you@example.com)"),
+                ("openai-fork", "OpenAI (you@example.com)"),
             ]
         );
     }
@@ -383,7 +383,7 @@ mod tests {
                 },
                 ProfileTableRowViewModel {
                     profile: codex_work(),
-                    name: String::from("Codex · Work"),
+                    name: String::from("Codex (Work)"),
                     agent: String::from("Codex"),
                     version: String::from(UNKNOWN),
                     today: i18n::t(Key::AgentsStateNeedsLogin).to_string(),
@@ -403,7 +403,7 @@ mod tests {
 
         let places: Vec<&str> =
             vm.needs.iter().map(|need| need.place.as_str()).collect();
-        assert_eq!(places, ["Codex · Work"]);
+        assert_eq!(places, ["Codex (Work)"]);
     }
 
     /// The command of the button of `need`.
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(on_profile, [("Codex", "The login expired")]);
         assert_eq!(
             on_account,
-            [("OpenAI · you@example.com", "The login expired")]
+            [("OpenAI (you@example.com)", "The login expired")]
         );
         assert_eq!(
             command_of(&all_profiles.needs[0]),

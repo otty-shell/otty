@@ -214,7 +214,7 @@ mod tests {
 
         Profile::added(
             AgentId::new("claude-code"),
-            "Claude Code · Test",
+            "Claude Code (Test)",
             config_dir,
         )
     }
@@ -235,7 +235,7 @@ mod tests {
             &lines.join("\n"),
         );
 
-        Profile::added(AgentId::new("codex"), "Codex · Test", config_dir)
+        Profile::added(AgentId::new("codex"), "Codex (Test)", config_dir)
     }
 
     fn stranger() -> Profile {

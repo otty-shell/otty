@@ -10,7 +10,9 @@
 
 use std::path::Path;
 
-use otty_agents::{DaySpend, HourSpend, MoneyTotal, ProjectModelTokens, Spend};
+use otty_agents::{
+    DaySpend, HourSpend, MoneyTotal, ProjectModelTokens, Spend, TokenCount,
+};
 use otty_app_domain::folder_path::folder_name;
 
 use super::super::usage::{UsagePeriod, UsageTab};
@@ -27,17 +29,26 @@ const THIRTY_DAYS: usize = 30;
 pub(crate) struct UsageGroup {
     /// The name of the row, such as "otty" or "example-large".
     pub(crate) name: String,
-    /// Its tokens at each point, oldest first.
-    pub(crate) tokens: Vec<u64>,
+    /// Its tokens at each point, oldest first, kind by kind, which the
+    /// tooltips list (issue 16 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    pub(crate) tokens: Vec<TokenCount>,
     /// The money of those tokens at each point, oldest first, as their
     /// agent parts priced them.
     pub(crate) money: Vec<MoneyTotal>,
 }
 
 impl UsageGroup {
-    /// Its tokens over the whole period.
+    /// Its tokens over the whole period, all kinds together.
     pub(crate) fn total_tokens(&self) -> u64 {
-        self.tokens.iter().sum()
+        self.total_count().total()
+    }
+
+    /// Its tokens over the whole period, kind by kind.
+    pub(crate) fn total_count(&self) -> TokenCount {
+        self.tokens
+            .iter()
+            .fold(TokenCount::default(), |sum, count| sum + *count)
     }
 
     /// The money of its tokens over the whole period.
@@ -51,7 +62,7 @@ impl UsageGroup {
     fn empty(name: String, count: usize) -> Self {
         Self {
             name,
-            tokens: vec![0; count],
+            tokens: vec![TokenCount::default(); count],
             money: vec![MoneyTotal::default(); count],
         }
     }
@@ -59,7 +70,7 @@ impl UsageGroup {
     /// Add the tokens and the money of `part` at the point `index`.
     fn add(&mut self, index: usize, part: &ProjectModelTokens) {
         if let Some(slot) = self.tokens.get_mut(index) {
-            *slot += part.tokens().tokens().total();
+            *slot += part.tokens().tokens();
         }
         if let Some(slot) = self.money.get_mut(index) {
             *slot = *slot + part.tokens().money();
@@ -219,7 +230,9 @@ fn row_name(
 mod tests {
     use std::path::PathBuf;
 
-    use otty_agents::{Dollars, ModelTokens, ProviderRef, TokenCount};
+    use otty_agents::{
+        Dollars, ModelTokens, MoneyByKind, ProviderRef, TokenCount,
+    };
 
     use super::*;
 
@@ -289,7 +302,7 @@ mod tests {
             .map(|day| {
                 let gpt = |project: &str, input: u64| {
                     let money = MoneyTotal::at_api_prices(
-                        Dollars::from_micro_dollars(input * 5 / 4),
+                        input_money(input * 5 / 4),
                         1,
                     );
                     let tokens = ModelTokens::new(
@@ -315,14 +328,32 @@ mod tests {
         Spend::new(days, Vec::new())
     }
 
-    /// A row of `tokens` at each point with no money: the tokens of
+    /// `micro_dollars` at API prices, all of it for input tokens.
+    fn input_money(micro_dollars: u64) -> MoneyByKind {
+        MoneyByKind::new(
+            Dollars::from_micro_dollars(micro_dollars),
+            Dollars::default(),
+            Dollars::default(),
+            Dollars::default(),
+        )
+    }
+
+    /// A row of `input` tokens at each point with no money: the tokens of
     /// [`spend`] carry none.
-    fn group(name: &str, tokens: &[u64]) -> UsageGroup {
+    fn group(name: &str, input: &[u64]) -> UsageGroup {
         UsageGroup {
             name: String::from(name),
-            tokens: tokens.to_vec(),
-            money: vec![MoneyTotal::default(); tokens.len()],
+            tokens: input
+                .iter()
+                .map(|input| TokenCount::new(*input, 0, 0))
+                .collect(),
+            money: vec![MoneyTotal::default(); input.len()],
         }
+    }
+
+    /// The tokens of each point of `group`, all kinds together.
+    fn totals(group: &UsageGroup) -> Vec<u64> {
+        group.tokens.iter().map(TokenCount::total).collect()
     }
 
     fn micro_dollars(money: MoneyTotal) -> u64 {
@@ -380,8 +411,8 @@ mod tests {
         let names: Vec<&str> =
             groups.iter().map(|group| group.name.as_str()).collect();
         assert_eq!(names, ["docs", "otty"]);
-        assert_eq!(groups[0].tokens[13], 100);
-        assert_eq!(groups[1].tokens[9], 16);
+        assert_eq!(groups[0].tokens[13].total(), 100);
+        assert_eq!(groups[1].tokens[9].total(), 16);
         assert_eq!(groups[1].total_tokens(), 16);
     }
 
@@ -431,15 +462,15 @@ mod tests {
         let groups =
             group_usage(&otty, UsagePeriod::SevenDays, UsageTab::ByProfile);
 
-        let rows: Vec<(&str, &[u64])> = groups
+        let rows: Vec<(&str, Vec<u64>)> = groups
             .iter()
-            .map(|group| (group.name.as_str(), group.tokens.as_slice()))
+            .map(|group| (group.name.as_str(), totals(group)))
             .collect();
         assert_eq!(
             rows,
             [
-                ("Codex", [1_000; 7].as_slice()),
-                ("Claude Code", [10, 11, 12, 13, 14, 15, 16].as_slice()),
+                ("Codex", vec![1_000; 7]),
+                ("Claude Code", vec![10, 11, 12, 13, 14, 15, 16]),
             ]
         );
     }
@@ -463,8 +494,8 @@ mod tests {
             .find(|group| group.name == "Codex")
             .expect("Codex has a row");
         assert_eq!(codex.tokens.len(), 16);
-        assert_eq!(codex.tokens[..9], [0; 9]);
-        assert_eq!(codex.tokens[9..], [1_050; 7]);
+        assert_eq!(totals(codex)[..9], [0; 9]);
+        assert_eq!(totals(codex)[9..], [1_050; 7]);
         assert_eq!(codex.money[..9], [MoneyTotal::default(); 9]);
     }
 
@@ -499,10 +530,7 @@ mod tests {
     /// is a row of its tokens, with only unpriced requests for money.
     #[test]
     fn money_is_what_the_part_gave_in_micro_dollars() {
-        let priced = MoneyTotal::at_api_prices(
-            Dollars::from_micro_dollars(1_250_000),
-            1,
-        );
+        let priced = MoneyTotal::at_api_prices(input_money(1_250_000), 1);
         let gpt = ProjectModelTokens::new(
             None,
             ModelTokens::new(
@@ -537,16 +565,50 @@ mod tests {
             [
                 UsageGroup {
                     name: String::from("gpt-5"),
-                    tokens: vec![1_000_000],
+                    tokens: vec![TokenCount::new(1_000_000, 0, 0)],
                     money: vec![priced],
                 },
                 UsageGroup {
                     name: String::from("mystery"),
-                    tokens: vec![9],
+                    tokens: vec![TokenCount::new(9, 0, 0)],
                     money: vec![MoneyTotal::unpriced(1)],
                 },
             ]
         );
+    }
+
+    /// Issue 16 of spec 2026-11-23: a row keeps the kinds of its tokens at
+    /// each point, for the tooltips that list them, and adds them up kind
+    /// by kind.
+    #[test]
+    fn each_row_keeps_the_kinds_of_its_tokens() {
+        let kinds = TokenCount::new(100, 5_000, 20).with_cache_written(40);
+        let part = || {
+            ProjectModelTokens::new(
+                None,
+                ModelTokens::new(Some("opus"), kinds, 1),
+            )
+        };
+        let spend = Spend::new(
+            vec![
+                DaySpend::new(jiff::civil::date(2026, 11, 15), Vec::new())
+                    .with_parts(vec![part()]),
+                DaySpend::new(jiff::civil::date(2026, 11, 16), Vec::new())
+                    .with_parts(vec![part(), part()]),
+            ],
+            Vec::new(),
+        );
+        let sources = [source("Claude Code", &spend)];
+
+        let groups = group_usage(
+            &input(&sources),
+            UsagePeriod::SevenDays,
+            UsageTab::ByModel,
+        );
+
+        assert_eq!(groups[0].tokens, [kinds, kinds + kinds]);
+        assert_eq!(groups[0].total_count(), kinds + kinds + kinds);
+        assert_eq!(groups[0].total_tokens(), 3 * 5_120);
     }
 
     /// Money the agent wrote for every answer, such as OpenCode's, is

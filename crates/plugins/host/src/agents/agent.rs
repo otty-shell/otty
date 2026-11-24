@@ -14,8 +14,8 @@ use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
-    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, Profile,
-    ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
+    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, PricedCost,
+    Profile, ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
 };
 use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Guest, GuestIndices,
@@ -528,15 +528,19 @@ mod tests {
             .expect("the call ran")
             .expect("the answers");
 
-        let costs: Vec<Option<u64>> = answers
+        let costs: Vec<Option<(u64, u64, u64)>> = answers
             .answers
             .iter()
-            .map(|answer| match answer.cost {
-                Some(AnswerCost::AtApiPrices(cost)) => Some(cost),
+            .map(|answer| match &answer.cost {
+                Some(AnswerCost::AtApiPrices(cost)) => {
+                    Some((cost.total, cost.input, cost.output))
+                },
                 _ => None,
             })
             .collect();
-        assert_eq!(costs, [Some(1_200), Some(800)]);
+        // Issue 16: the money comes by kind next to its total; only the
+        // input has a price here.
+        assert_eq!(costs, [Some((1_200, 1_200, 0)), Some((800, 800, 0))]);
     }
 
     /// Decision 3: a model the price list has no price for has no cost.

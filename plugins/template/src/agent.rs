@@ -205,7 +205,7 @@ fn folder_env(profile: &Profile) -> Vec<(String, String)> {
 mod tests {
     use otty_plugin_sdk::NeedAction;
     use otty_plugin_sdk::agents::{
-        AnswerCost, ModelPrice, ProviderRef, TokenPrices,
+        AnswerCost, ModelPrice, PricedCost, ProviderRef, TokenPrices,
     };
     use otty_plugin_sdk::test_host::TestHost;
 
@@ -416,10 +416,17 @@ mod tests {
 
         let answers = answers_of_s2(&host);
 
-        // 500 input at $1 and 900 output at $2 a million tokens.
+        // 500 input at $1 and 900 output at $2 a million tokens, each kind
+        // apart and the total next to them (issue 16 of the spec).
         assert_eq!(
             answers.answers[0].cost,
-            Some(AnswerCost::AtApiPrices(2_300))
+            Some(AnswerCost::AtApiPrices(PricedCost {
+                total: 2_300,
+                input: 500,
+                cache_written: 0,
+                cached: 0,
+                output: 1_800,
+            }))
         );
     }
 

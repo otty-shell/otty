@@ -30,8 +30,8 @@ the need that fixes it, the part's own call) or gone, never whose login
 it is. Each answer carries its money: the cost the agent wrote, as it
 is, else its tokens at the API price of the model that OTTY's price list
 gives (`agents::price_of`, the host call `prices.price-of`), marked "at
-API prices". `agents::answer_cost` does both; OTTY only adds the money
-up. In tests, `TestHost::with_price` gives the price list.
+API prices", kind by kind next to its total (`PricedCost`).
+`agents::answer_cost` does both; OTTY only adds the money up. In tests, `TestHost::with_price` gives the price list.
 
 A provider part owns its accounts. OTTY calls `Provider::accounts` with
 the profile folders of the agent parts its manifest names in `logins`

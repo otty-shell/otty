@@ -471,6 +471,7 @@ fn models_of<'a>(days: impl Iterator<Item = &'a DaySpend>) -> Vec<ModelTokens> {
 mod tests {
     use super::*;
     use crate::dollars::Dollars;
+    use crate::money_estimate::MoneyByKind;
 
     fn tokens(input: u64) -> TokenCount {
         TokenCount::new(input, 0, 0)
@@ -557,7 +558,8 @@ mod tests {
         let mut model = ModelTokens::new(Some("m"), TokenCount::default(), 0);
 
         model.count_request(tokens(10), MoneyTotal::written(micro(2)));
-        model.count_request(tokens(5), MoneyTotal::at_api_prices(micro(3), 1));
+        let listed = MoneyByKind::new(micro(3), micro(0), micro(0), micro(0));
+        model.count_request(tokens(5), MoneyTotal::at_api_prices(listed, 1));
         model.count_request(tokens(1), MoneyTotal::unpriced(1));
 
         assert_eq!(model.tokens(), tokens(16));

@@ -98,7 +98,7 @@ page scrolls sideways, and a project's sessions table still scrolls up and down 
 
 | Section      | Lists                                                                                     | "+" opens         |
 | ------------ | ----------------------------------------------------------------------------------------- | ----------------- |
-| **Accounts** | **All accounts**, then each account by the logo of its provider and its name, such as "you@example.com" or "key ••••a1f3", or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month". An account with OTTY's own login has the tag **OTTY**. The title of an account's page names it the same way, beside the same logo. Everywhere else an account is named with its provider, such as "OpenAI · you@example.com". | [Add account](#add-account) |
+| **Accounts** | **All accounts**, then each account by the logo of its provider and its name, such as "you@example.com" or "key ••••a1f3", or by the name you gave it, with its number now: "62 % used", "¥110 left", "$44.87 this month". An account with OTTY's own login has the tag **OTTY**. The title of an account's page names it the same way, beside the same logo. Everywhere else an account is named with its provider, such as "OpenAI (you@example.com)". | [Add account](#add-account) |
 | **Profiles** | **All profiles**, then each profile with today's tokens, or its state: "needs login", "format changed". | Add profile |
 | **Projects** | The project folders of all agents, with search and filters.                               | New session       |
 
@@ -118,12 +118,18 @@ The **usage block** of a profile has a period (Today, 7 days, 30 days) and the t
 and **By model**. Project statistics has **By profile** and **By model**, Session statistics **By
 model**. The block shows the tokens and their money side by side, with no switch between them:
 
-- The total under the title says both, such as "400K tokens · ~$12.40 in 7 days". The "~" tells
+- The total under the title says both, such as "400K tokens, ~$12.40 in 7 days". The "~" tells
   that some of the money is [at API prices](#the-money).
 - Each table has a **Tokens** and a **Money** column. A model with no price shows "—" in Money.
 - The bars are as tall as their tokens, so a model with no price still has its bar. The tooltip of
-  a bar says both, such as "Nov 13: 120K tokens · ~$3.10".
-- Until the list prices are read, the money is "…".
+  a bar says both, such as "Nov 13: 120K tokens, ~$3.10".
+- Hover the total, a bar or a Tokens or Money cell to see what it is made of, one kind per line:
+  **in** (the input not written to the cache), **cache write**, **cached** (read from the cache)
+  and **out**, as tokens and as money, such as "cached ~$0.40". Cached tokens are often by far the
+  largest number and cost little, so their money tells what they weigh. A kind with nothing is left
+  out. Money the agent wrote has no parts and shows as **written by the agent**, and a mix shows
+  the parts of the money at API prices and the written money on one more line.
+- Until the list prices are read, the money is "…", with no money on hover.
 
 ## Needs
 
@@ -281,7 +287,7 @@ of an account come only from the provider part that found it.
   plugin, give a key.
 - Money of a profile's tokens priced at [API prices](#the-money) has the mark **at API prices**
   under the table of the usage block and of the statistics. Its tooltip says when the prices are
-  from. The Cost of a project has the mark after the sum: "$42.10 · at API prices". Money with no
+  from. The Cost of a project has the mark after the sum: "$42.10, at API prices". Money with no
   mark is the cost the agent wrote, or, on an account page, what the provider told.
 - **Read by** in Account info and Profile info names the plugin and its version. What a plugin
   failed to read last is on its card on the [Plugins](../plugins/) page.

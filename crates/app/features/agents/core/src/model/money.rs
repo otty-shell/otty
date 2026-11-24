@@ -61,7 +61,7 @@ impl ShownMoney {
 
     /// The sum in one line, where there is room for the mark but no place
     /// for it under the sum, such as the Cost of a project: "$42.10", or
-    /// "$42.10 · at API prices".
+    /// "$42.10, at API prices".
     pub(crate) fn line_text(&self) -> String {
         match &self.kind {
             MoneyKind::AtApiPrices(mark) => mark.after(&self.amount),
@@ -148,7 +148,7 @@ impl ApiPricesMarkViewModel {
         }
     }
 
-    /// `amount` followed by the mark: "$42.10 · at API prices".
+    /// `amount` followed by the mark: "$42.10, at API prices".
     fn after(&self, amount: &str) -> String {
         i18n::filled(
             Key::TplAgentsAmountAtApiPrices,
@@ -162,7 +162,7 @@ mod tests {
     use otty_agents::{Dollars, ModelTokens, TokenCount};
 
     use super::*;
-    use crate::testing::{at, fetched_prices};
+    use crate::testing::{at, fetched_prices, input_money};
 
     /// The tooltip of the mark for prices fetched at `at(10)`.
     fn tip() -> String {
@@ -193,10 +193,7 @@ mod tests {
     #[test]
     fn money_at_api_prices_shows_its_mark() {
         let prices = fetched_prices(at(10));
-        let listed = MoneyTotal::at_api_prices(
-            Dollars::from_micro_dollars(1_250_000),
-            1,
-        );
+        let listed = MoneyTotal::at_api_prices(input_money(1_250_000), 1);
         let total = MoneyTotal::of_models(&[gpt_5(listed)]);
 
         let money = ShownMoney::of_total(&total, &prices, None);

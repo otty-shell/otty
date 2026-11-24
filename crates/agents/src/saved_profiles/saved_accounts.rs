@@ -76,7 +76,7 @@ mod tests {
         SavedProfiles::default()
             .with_account_name(
                 &chatgpt_login("made-up-one"),
-                Some(String::from("ChatGPT · Home")),
+                Some(String::from("ChatGPT (Home)")),
             )
             .with_account_hidden(&chatgpt_login("made-up-two"), true)
             .with_account_name(
@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(loaded, saved);
         assert_eq!(
             loaded.account_name(&chatgpt_login("made-up-one")),
-            Some("ChatGPT · Home")
+            Some("ChatGPT (Home)")
         );
         assert_eq!(
             loaded.account_name(&organization("made-up-org")),
@@ -116,7 +116,7 @@ mod tests {
     fn the_text_keeps_each_account_by_its_plugin_and_id() {
         let text = r#"{
             "accounts": [
-                { "plugin": "example", "id": "chatgpt:made-up-one", "name": "ChatGPT · Home" },
+                { "plugin": "example", "id": "chatgpt:made-up-one", "name": "ChatGPT (Home)" },
                 { "plugin": "example", "id": "chatgpt:made-up-two", "hidden": true },
                 { "plugin": "example", "id": "org:made-up-org", "name": "Acme" },
                 { "plugin": "deepseek", "id": "key:27c8d30e", "hidden": true }

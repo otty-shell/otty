@@ -33,8 +33,8 @@ pub use crate::agents::provider::ProviderExport;
 pub use crate::agents::provider::Provider;
 /// The types of the agent contract.
 pub use crate::bindings::agents_agent::exports::otty::agents_agent::agent::{
-    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, Profile,
-    ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
+    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, PricedCost,
+    Profile, ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
 };
 /// OTTY's price list as an agent part asks it: who served an answer and
 /// the API price of a model.

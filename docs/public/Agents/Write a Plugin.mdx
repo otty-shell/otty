@@ -86,7 +86,7 @@ otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY rel
 [plugin]
 id = "example"                  # stable; a new id is a new plugin
 name = "Example"
-version = "0.1.8"               # equals the release tag without "v"
+version = "0.1.9"               # equals the release tag without "v"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/you/otty-plugin-example"
 license = "Apache-2.0"
@@ -336,11 +336,14 @@ login command in that folder, shown on the account only.
 Give each answer its money in `cost`. When the agent wrote what the answer cost, give that as it
 is: `AnswerCost::Written`, in millionths of a US dollar, shown with no mark. Else price its tokens
 at the API price of the model that OTTY gives: `AnswerCost::AtApiPrices`, shown with the mark "at
-API prices", on a subscription too. `agents::answer_cost(written, model, provider, &tokens)` does
-both. `agents::price_of(model, provider)` asks OTTY's price list for a model's price, and
-`agents::cost_at(&price, &tokens)` prices the tokens of one request, at the long prompt prices when
-its prompt is over their limit. With no written cost and no price, `cost` is `None`. OTTY only adds
-the money up. In tests, `TestHost::with_price` gives the price list.
+API prices", on a subscription too. It carries a `PricedCost`: the money of each kind of token
+(`input` not written to the cache, `cache_written`, `cached` and `output`) next to their `total`,
+which OTTY lists on hover. A written cost has no parts. `agents::answer_cost(written, model,
+provider, &tokens)` does both. `agents::price_of(model, provider)` asks OTTY's price list for a
+model's price, and `agents::cost_at(&price, &tokens)` prices the tokens of one request kind by kind,
+at the long prompt prices when its prompt is over their limit. Each kind is rounded on its own, and
+the total is their sum. With no written cost and no price, `cost` is `None`. OTTY only adds the
+money up. In tests, `TestHost::with_price` gives the price list.
 
 ### Who served an answer
 

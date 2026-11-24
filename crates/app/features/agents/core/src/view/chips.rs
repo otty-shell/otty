@@ -29,7 +29,7 @@ const CHIP_PADDING: Padding = Padding {
 pub(super) struct Chip {
     /// The icon of the agent.
     pub(super) icon: EntryIcon,
-    /// The name, such as "Coder · Work".
+    /// The name, such as "Coder (Work)".
     pub(super) name: String,
     /// What a press sends.
     pub(super) on_press: AgentsIntent,
@@ -103,7 +103,7 @@ mod tests {
     const NARROW: f32 = 320.0;
     /// A profile name too long for a chip in [`NARROW`].
     const LONG: &str =
-        "Claude Code · a very long name of a profile for client work";
+        "Claude Code (a very long name of a profile for client work)";
 
     fn chip_named(name: &str) -> Chip {
         Chip {
@@ -147,8 +147,8 @@ mod tests {
     /// before any of them is cut.
     #[test]
     fn chips_go_to_the_next_line_before_they_are_cut() {
-        let first = "Claude Code · first profile";
-        let second = "Codex · the second profile";
+        let first = "Claude Code (first profile)";
+        let second = "Codex (the second profile)";
         let mut ui =
             chips_in(NARROW, vec![chip_named(first), chip_named(second)]);
 

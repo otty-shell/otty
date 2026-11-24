@@ -93,15 +93,31 @@ interface agent {
     reasoning: u64,
   }
 
+  /// The money of one answer at API prices, in millionths of a US
+  /// dollar: what each kind of token cost, and their total, which OTTY
+  /// shows on hover as what the money is made of.
+  record priced-cost {
+    /// The four kinds added up.
+    total: u64,
+    /// The input not written to the cache, at the input price.
+    input: u64,
+    /// The input written to the cache, at the cache write price.
+    cache-written: u64,
+    /// The tokens read from the cache, at the cached price.
+    cached: u64,
+    /// The output, at the output price.
+    output: u64,
+  }
+
   /// What one answer cost, in millionths of a US dollar.
   variant answer-cost {
     /// The cost the agent wrote itself, such as OpenCode writes for each
-    /// answer: given as it is, exact.
+    /// answer: given as it is, exact, and with no parts.
     written(u64),
     /// The tokens priced by the part at the price of the model that
-    /// `prices.price-of` gave: shown "at API prices", on a subscription
-    /// too.
-    at-api-prices(u64),
+    /// `prices.price-of` gave, kind by kind: shown "at API prices", on a
+    /// subscription too.
+    at-api-prices(priced-cost),
   }
 
   /// One answer of the model: a fact, as the agent wrote it, with its

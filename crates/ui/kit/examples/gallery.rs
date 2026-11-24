@@ -1792,14 +1792,14 @@ fn agent_rows<'a>(state: &Gallery, p: &UiPalette) -> Element<'a, Message> {
     let agents = [
         ("Claude Code", CLAUDE_LOGO, "42 %", SessionTone::Muted),
         (
-            "Claude Code · Work",
+            "Claude Code (Work)",
             CLAUDE_LOGO,
             "86 %",
             SessionTone::Waiting,
         ),
         ("Codex", OPENAI_LOGO, "3 760 left", SessionTone::Muted),
         (
-            "Claude Code · API key",
+            "Claude Code (API key)",
             CLAUDE_LOGO,
             "$12.40 today",
             SessionTone::Muted,
@@ -2083,7 +2083,7 @@ fn data_parts<'a>(
 
     let heading_row = |width: f32| {
         let heading =
-            text("Claude Code · Work").size(20).color(p.text_strong());
+            text("Claude Code (Work)").size(20).color(p.text_strong());
         let actions = row![
             IconButton::new(
                 svg::Handle::from_memory(REFRESH_ICON),

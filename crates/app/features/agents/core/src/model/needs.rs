@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(
             accounts,
             vec![NeedViewModel {
-                place: String::from("Anthropic · dev@example.com"),
+                place: String::from("Anthropic (dev@example.com)"),
                 plugin: plugin_label("Anthropic"),
                 title: String::from("The real bill needs a key"),
                 line: String::from("OTTY shows an estimate from the tokens."),
@@ -772,7 +772,7 @@ mod tests {
                     extra: None,
                 },
                 NeedViewModel {
-                    place: String::from("Codex · Work"),
+                    place: String::from("Codex (Work)"),
                     plugin: None,
                     title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
                     line: i18n::filled(
@@ -932,7 +932,7 @@ mod tests {
         assert_eq!(
             account_needs(&state),
             vec![NeedViewModel {
-                place: String::from("OpenAI · you@example.com"),
+                place: String::from("OpenAI (you@example.com)"),
                 plugin: plugin_label("Openai"),
                 title: String::from("The login expired"),
                 line: String::from("Open Codex: it renews the login."),
@@ -942,7 +942,7 @@ mod tests {
                         &[("command", "codex")]
                     ),
                     action: Some(NeedAction::Run {
-                        title: String::from("OpenAI · you@example.com"),
+                        title: String::from("OpenAI (you@example.com)"),
                         command: AgentCommand::new("codex"),
                     }),
                 }),

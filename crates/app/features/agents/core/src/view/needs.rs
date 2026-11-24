@@ -8,6 +8,7 @@
 
 use iced::widget::{Column, column, row};
 use iced::{Alignment, Element, Length};
+use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::button::{Button, ButtonKind, ButtonSize};
 use otty_ui_kit::components::divider;
 use otty_ui_kit::components::small_text::small_text;
@@ -32,7 +33,10 @@ pub(super) fn view<'a>(
             list = list.push(divider::horizontal(palette));
         }
 
-        let place = format!("{} · {}", need.place, need.title);
+        let place = i18n::filled(
+            Key::TplAgentsNeedHeading,
+            &[("place", &need.place), ("title", &need.title)],
+        );
         let mut heading = row![small_text(place, palette.text_strong())]
             .spacing(spacing::SPACE_2);
         if let Some(plugin) = need.plugin {

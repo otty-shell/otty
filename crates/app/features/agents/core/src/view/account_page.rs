@@ -142,7 +142,7 @@ mod tests {
     fn page() -> AccountPageViewModel {
         AccountPageViewModel {
             account: chatgpt(),
-            name: String::from("OpenAI · you@example.com"),
+            name: String::from("OpenAI (you@example.com)"),
             icon: crate::testing::provider_icon("openai"),
             needs: Vec::new(),
             numbers: Some(AccountNumbersViewModel::Limits(LimitsViewModel {
@@ -175,7 +175,7 @@ mod tests {
 
     fn expired() -> NeedViewModel {
         NeedViewModel {
-            place: String::from("OpenAI · you@example.com"),
+            place: String::from("OpenAI (you@example.com)"),
             plugin: None,
             title: String::from("The login expired"),
             line: String::from("Open Codex to log in again."),
@@ -207,7 +207,7 @@ mod tests {
         let mut ui = simulator(page);
 
         for shown in [
-            "OpenAI · you@example.com",
+            "OpenAI (you@example.com)",
             i18n::t(Key::AgentsNumberLimits),
             "Updated 2 min ago",
             "42 % used",
@@ -280,7 +280,7 @@ mod tests {
             container(view(page(), themes.current().ui())).width(WIDTH),
         );
         let title = ui
-            .find("OpenAI · you@example.com")
+            .find("OpenAI (you@example.com)")
             .expect("the title should show")
             .bounds();
         let right_end = (WIDTH + otty_ui_kit::size::FORM) / 2.0;

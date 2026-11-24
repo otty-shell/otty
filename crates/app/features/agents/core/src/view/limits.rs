@@ -98,7 +98,7 @@ mod tests {
                 value: String::from("1 240 of 5 000 used"),
                 percent: Some(25),
                 line: Some(String::from(
-                    "3 760 left · Resets on Thursday at 09:00",
+                    "3 760 left, Resets on Thursday at 09:00",
                 )),
                 note: None,
             }),
@@ -127,7 +127,7 @@ mod tests {
             "$4.20",
             i18n::t(Key::AgentsFieldCredits),
             "1 240 of 5 000 used",
-            "3 760 left · Resets on Thursday at 09:00",
+            "3 760 left, Resets on Thursday at 09:00",
             "Recorded in a session 1 h ago",
             "Could not read again: y",
         ] {

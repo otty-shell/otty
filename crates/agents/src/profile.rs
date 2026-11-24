@@ -8,7 +8,7 @@ use crate::part_need::PartNeed;
 /// One agent together with one config folder and a name.
 ///
 /// Two profiles of the same agent are two config folders, such as "Coder"
-/// in `~/.coder`, the agent's default one, and "Coder · Work" in
+/// in `~/.coder`, the agent's default one, and "Coder (Work)" in
 /// `~/.coder-work`, which the user added.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {

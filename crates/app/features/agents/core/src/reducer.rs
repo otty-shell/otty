@@ -564,7 +564,7 @@ mod tests {
             .iter()
             .map(|shown| shown.profile().name())
             .collect();
-        assert_eq!(shown, ["Claude Code", "Codex", "Claude Code · Work"]);
+        assert_eq!(shown, ["Claude Code", "Codex", "Claude Code (Work)"]);
         assert!(state.profiles().shown()[0].is_reading_sessions());
         assert!(!state.profiles().shown()[2].is_reading_sessions());
     }
@@ -1002,7 +1002,7 @@ mod tests {
     fn a_renamed_profile_keeps_what_was_read_of_it() {
         let renamed = Profile::default_for(
             claude().agent().clone(),
-            "Claude Code · Home",
+            "Claude Code (Home)",
             claude().config_dir().to_path_buf(),
         );
         let mut state = with_profiles(&[(claude(), connected())]);
@@ -1038,7 +1038,7 @@ mod tests {
     fn a_read_on_its_way_lands_after_the_profile_was_renamed() {
         let renamed = Profile::default_for(
             claude().agent().clone(),
-            "Claude Code · Home",
+            "Claude Code (Home)",
             claude().config_dir().to_path_buf(),
         );
         let mut state = with_profiles(&[(claude(), connected())]);

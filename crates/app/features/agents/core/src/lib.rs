@@ -650,7 +650,7 @@ pub enum AgentsScreen {
     /// The page of the profile with this name.
     Profile(String),
     /// The page of the account with this name: its provider and its
-    /// login, such as "OpenAI · you@example.com".
+    /// login, such as "OpenAI (you@example.com)".
     Account(String),
     /// Every account and what the accounts need from the user.
     AllAccounts,

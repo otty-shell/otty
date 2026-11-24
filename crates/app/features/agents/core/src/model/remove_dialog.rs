@@ -79,7 +79,7 @@ mod tests {
             Some(RemoveDialogViewModel {
                 title: i18n::filled(
                     Key::TplAgentsRemoveTitle,
-                    &[("name", "Claude Code · Work")]
+                    &[("name", "Claude Code (Work)")]
                 ),
                 text: i18n::filled(
                     Key::TplAgentsRemoveText,

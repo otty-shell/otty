@@ -325,9 +325,9 @@ mod tests {
     use crate::model::{PeriodPicker, UsageTableRowViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
-        at, chatgpt_login, claude, codex, connected, month_spend, now,
-        organization, read, session, set_prices, spend_loaded, with_accounts,
-        with_profiles,
+        at, chatgpt_login, claude, codex, connected, input_money, month_spend,
+        now, organization, read, session, set_prices, spend_loaded,
+        with_accounts, with_profiles,
     };
     use crate::types::{LoadedProjectStats, LoadedSessionStats, SpendCount};
     use crate::usage::{UsagePeriod, UsageTab};
@@ -364,7 +364,7 @@ mod tests {
             "gpt-5" => 2 * DOLLAR,
             _ => return MoneyTotal::unpriced(requests),
         };
-        let cost = Dollars::from_micro_dollars(input * per_million / DOLLAR);
+        let cost = input_money(input * per_million / DOLLAR);
 
         MoneyTotal::at_api_prices(cost, requests)
     }
@@ -872,21 +872,23 @@ mod tests {
         let by_profile = project_body(&state).usage;
 
         assert_eq!(by_profile.tabs, [UsageTab::ByProfile, UsageTab::ByModel]);
+        let rows: Vec<[&str; 4]> = by_profile
+            .rows
+            .iter()
+            .map(|row| {
+                [
+                    row.name.as_str(),
+                    row.tokens.as_str(),
+                    row.money.as_str(),
+                    row.share.as_str(),
+                ]
+            })
+            .collect();
         assert_eq!(
-            by_profile.rows,
+            rows,
             [
-                UsageTableRowViewModel {
-                    name: String::from("Claude Code"),
-                    tokens: String::from("1M"),
-                    money: String::from("$1.00"),
-                    share: String::from("100 %"),
-                },
-                UsageTableRowViewModel {
-                    name: String::from("Codex"),
-                    tokens: String::from("2K"),
-                    money: String::from("$0.00"),
-                    share: String::from("0 %"),
-                },
+                ["Claude Code", "1M", "$1.00", "100 %"],
+                ["Codex", "2K", "$0.00", "0 %"],
             ]
         );
     }
@@ -909,7 +911,7 @@ mod tests {
         assert_eq!(mark.label, i18n::t(Key::AgentsApiPricesMark));
     }
 
-    /// "{tokens} tokens · {money}".
+    /// "{tokens} tokens, {money}".
     fn both(tokens: &str, money: &str) -> String {
         i18n::filled(
             Key::TplAgentsTokensAndMoney,
@@ -917,8 +919,8 @@ mod tests {
         )
     }
 
-    /// The total under the title over `count` days, such as "700K tokens
-    /// · ~$0.88 in 7 days".
+    /// The total under the title over `count` days, such as "700K tokens,
+    /// ~$0.88 in 7 days".
     fn in_days(amount: &str, count: &str) -> Option<String> {
         Some(i18n::filled(
             Key::TplAgentsAmountInDays,
@@ -926,7 +928,7 @@ mod tests {
         ))
     }
 
-    /// The total under the title of today, such as "100K tokens · ~$0.13
+    /// The total under the title of today, such as "100K tokens, ~$0.13
     /// today".
     fn of_today(amount: &str) -> Option<String> {
         Some(i18n::filled(

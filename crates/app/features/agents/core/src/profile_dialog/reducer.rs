@@ -254,7 +254,7 @@ mod tests {
     fn adding_with_a_typed_path_saves_the_full_path() {
         let mut state = two_defaults();
         let _ = opened_add(&mut state);
-        type_name(&mut state, "Claude Code · Data");
+        type_name(&mut state, "Claude Code (Data)");
         let _ = send(
             &mut state,
             ProfileDialogIntent::FolderChoicePicked(FolderChoice::Typed),
@@ -267,7 +267,7 @@ mod tests {
             outcomes,
             save(
                 SavedProfiles::default().with_added(claude_added(
-                    "Claude Code · Data",
+                    "Claude Code (Data)",
                     "/home/user/data/claude"
                 )),
                 None
@@ -343,8 +343,8 @@ mod tests {
         let cases: [(&str, &str); 4] = [
             ("  ", "/home/user/.claude-x"),
             ("Codex", "/home/user/.claude-x"),
-            ("Claude Code · X", "/home/user/.claude"),
-            ("Claude Code · X", "work/.claude-x"),
+            ("Claude Code (X)", "/home/user/.claude"),
+            ("Claude Code (X)", "work/.claude-x"),
         ];
 
         for (name, path) in cases {
@@ -502,7 +502,7 @@ mod tests {
         let opened = state.dialog().map(|dialog| {
             (dialog.name().to_string(), dialog.path_text().to_string())
         });
-        type_name(&mut state, "Claude Code · Home");
+        type_name(&mut state, "Claude Code (Home)");
         type_path(&mut state, "/data/claude");
 
         let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
@@ -519,7 +519,7 @@ mod tests {
             save(
                 SavedProfiles::default().with_default_changes(
                     DefaultProfileChanges::new(claude_id())
-                        .with_name("Claude Code · Home")
+                        .with_name("Claude Code (Home)")
                         .with_config_dir(PathBuf::from("/data/claude"))
                 ),
                 None
@@ -552,7 +552,7 @@ mod tests {
             with_saved_profiles(&[(claude_work(), connected())], saved.clone());
         let _ =
             reduce_agents(&mut state, AgentsIntent::EditProfile(claude_work()));
-        type_name(&mut state, "Claude Code · Office");
+        type_name(&mut state, "Claude Code (Office)");
 
         let outcomes = send(&mut state, ProfileDialogIntent::Submitted);
 
@@ -561,9 +561,9 @@ mod tests {
             save(
                 saved.with_added_replaced(
                     &claude_id(),
-                    "Claude Code · Work",
+                    "Claude Code (Work)",
                     claude_added(
-                        "Claude Code · Office",
+                        "Claude Code (Office)",
                         "/home/user/.claude-work"
                     )
                 ),
@@ -675,7 +675,7 @@ mod tests {
     #[test]
     fn a_picked_folder_fills_the_field_and_lists_the_next_level() {
         let mut state = with_config_folders_suggested();
-        type_name(&mut state, "Claude Code · Data");
+        type_name(&mut state, "Claude Code (Data)");
 
         let outcomes = send(
             &mut state,
@@ -699,7 +699,7 @@ mod tests {
             saved,
             save(
                 SavedProfiles::default().with_added(claude_added(
-                    "Claude Code · Data",
+                    "Claude Code (Data)",
                     "/home/user/.claude-work"
                 )),
                 None
@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn a_missing_folder_is_no_error_of_the_profile_dialog() {
         let mut state = adding_a_typed_folder();
-        type_name(&mut state, "Claude Code · New");
+        type_name(&mut state, "Claude Code (New)");
         type_path(&mut state, "~/.claude-new");
         let _ = reduce_agents(
             &mut state,
@@ -756,7 +756,7 @@ mod tests {
             outcomes,
             save(
                 SavedProfiles::default().with_added(claude_added(
-                    "Claude Code · New",
+                    "Claude Code (New)",
                     "/home/user/.claude-new"
                 )),
                 None

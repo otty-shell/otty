@@ -123,7 +123,7 @@ mod tests {
     fn the_saved_profiles_are_read_from_agents_json() {
         let folder = folder_with(
             "agents-file-read",
-            r#"{"added_profiles":[{"agent":"codex","name":"Codex · Work","config_dir":"/home/user/.codex-work"}]}"#,
+            r#"{"added_profiles":[{"agent":"codex","name":"Codex (Work)","config_dir":"/home/user/.codex-work"}]}"#,
         );
 
         let (saved, problem) = read_saved(folder.path());
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(problem, None);
         let names: Vec<_> =
             saved.added().iter().map(|profile| profile.name()).collect();
-        assert_eq!(names, ["Codex · Work"]);
+        assert_eq!(names, ["Codex (Work)"]);
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         let saved =
             SavedProfiles::default().with_added(otty_agents::Profile::added(
                 otty_agents::AgentId::new("codex"),
-                "Codex · Work",
+                "Codex (Work)",
                 PathBuf::from("/home/user/.codex-work"),
             ));
 

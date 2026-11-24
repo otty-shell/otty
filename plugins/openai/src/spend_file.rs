@@ -432,7 +432,9 @@ pub(crate) mod testing {
 #[cfg(test)]
 mod tests {
     use otty_plugin_sdk::HostError;
-    use otty_plugin_sdk::agents::{AnswerCost, ModelPrice, TokenPrices};
+    use otty_plugin_sdk::agents::{
+        AnswerCost, ModelPrice, PricedCost, TokenPrices,
+    };
 
     use super::testing::tokens;
     use super::*;
@@ -533,10 +535,17 @@ mod tests {
         let spend = as_part(&host, || spend_of(&[&meta, &turn, &count]));
 
         // 200 input at $1, 800 cached at $0.10 and 50 output at $10 a
-        // million tokens.
+        // million tokens, each kind apart next to the total (issue 16 of
+        // the spec).
         assert_eq!(
             spend.answers[0].cost,
-            Some(AnswerCost::AtApiPrices(200 + 80 + 500))
+            Some(AnswerCost::AtApiPrices(PricedCost {
+                total: 200 + 80 + 500,
+                input: 200,
+                cache_written: 0,
+                cached: 80,
+                output: 500,
+            }))
         );
     }
 

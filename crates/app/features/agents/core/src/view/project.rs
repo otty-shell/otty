@@ -278,13 +278,13 @@ mod tests {
             rows: vec![
                 vec![
                     TableCell::plain("Fix the tabs"),
-                    profile_cell("codex", "Codex · Work"),
+                    profile_cell("codex", "Codex (Work)"),
                     TableCell::muted("Codex"),
                     TableCell::muted("5 min ago"),
                 ],
                 vec![
                     TableCell::plain("Add docs"),
-                    profile_cell("claude-code", "Claude Code · Home"),
+                    profile_cell("claude-code", "Claude Code (Home)"),
                     TableCell::muted("Claude Code"),
                     TableCell::muted("2 h ago"),
                 ],
@@ -304,14 +304,14 @@ mod tests {
         )
     }
 
-    /// Project info with the profile Codex · Main.
+    /// Project info with the profile Codex (Main).
     fn info() -> ProjectInfoViewModel {
         ProjectInfoViewModel {
             path: String::from("~/work/otty"),
             profiles: vec![ProjectProfileViewModel {
                 profile: codex(),
                 icon: crate::testing::agent_icon("codex"),
-                name: String::from("Codex · Main"),
+                name: String::from("Codex (Main)"),
             }],
             facts: vec![
                 FactViewModel::new("Sessions", String::from("2")),
@@ -418,7 +418,7 @@ mod tests {
     fn the_profile_of_a_row_opens_its_page() {
         let search = TagSearch::default();
 
-        let opened = sent(vm(&search, false), "Claude Code · Home");
+        let opened = sent(vm(&search, false), "Claude Code (Home)");
 
         assert_eq!(opened, vec![AgentsIntent::OpenSessionProfile(1)]);
     }
@@ -444,7 +444,7 @@ mod tests {
         assert!(ui.find(i18n::t(Key::AgentsSectionAccounts)).is_err());
         drop(ui);
 
-        let profile = sent(vm(&search, false), "Codex · Main");
+        let profile = sent(vm(&search, false), "Codex (Main)");
 
         assert_eq!(profile, vec![AgentsIntent::SelectProfile(codex())]);
     }

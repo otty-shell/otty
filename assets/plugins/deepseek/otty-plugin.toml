@@ -3,7 +3,7 @@
 [plugin]
 id = "deepseek"
 name = "DeepSeek"
-version = "0.1.6"
+version = "0.1.7"
 description = "DeepSeek accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-deepseek"
 license = "Apache-2.0"

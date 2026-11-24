@@ -5,7 +5,7 @@ use iced::widget::{row, text};
 use iced::{Alignment, Color, Element};
 
 use super::target_dot::dot;
-use super::tooltip::tooltip;
+use super::tooltip::{TooltipText, tooltip};
 use crate::fonts;
 use crate::palette::UiPalette;
 
@@ -67,7 +67,7 @@ pub struct StatusBadge {
     tone: StatusTone,
     palette: UiPalette,
     is_wrapping: bool,
-    tooltip: Option<String>,
+    tooltip: Option<TooltipText>,
 }
 
 impl StatusBadge {
@@ -96,7 +96,7 @@ impl StatusBadge {
 
     /// Shows `tip` in the kit's tooltip while the pointer is over the
     /// badge, such as why a state failed. None by default.
-    pub fn tooltip(mut self, tip: impl Into<String>) -> Self {
+    pub fn tooltip(mut self, tip: impl Into<TooltipText>) -> Self {
         self.tooltip = Some(tip.into());
         self
     }

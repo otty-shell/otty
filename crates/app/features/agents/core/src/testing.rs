@@ -11,20 +11,21 @@ use otty_agents::{
     Account, AccountKind, AccountNumbers, AgentCommand, AgentEnv, AgentId,
     AgentSession, Answer, Bill, Billing, DayCost, DaySpend, Dollars,
     FetchedPrices, FoundAccounts, FoundIn, GivenKey, HourSpend, KeyRef,
-    LimitWindow, Limits, LogInWith, ModelPrice, ModelTokens, MoneyTotal,
-    OwnLogin, PriceTable, Profile, ProfileStatus, ProjectModelTokens,
-    ProviderEntry, ProviderId, ProviderRef, Registry, SavedProfiles, SessionId,
-    SourceError, SourceFailure, SourceId, Spend, TokenCount, TokenPrices,
-    Unavailable, UsageWindows, WindowId,
+    LimitWindow, Limits, LogInWith, ModelPrice, ModelTokens, MoneyByKind,
+    MoneyTotal, OwnLogin, PriceTable, Profile, ProfileStatus,
+    ProjectModelTokens, ProviderEntry, ProviderId, ProviderRef, Registry,
+    SavedProfiles, SessionId, SourceError, SourceFailure, SourceId, Spend,
+    TokenCount, TokenPrices, Unavailable, UsageWindows, WindowId,
 };
+use otty_app_i18n::{self as i18n, Key};
 use otty_plugin_host::PluginPart;
 use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
 use crate::model::{
-    EntryIcon, MoneyKind, PeriodPicker, ShownMoney, UsageBarViewModel,
-    UsageBlockViewModel, UsageTableRowViewModel,
+    Breakdown, BreakdownLine, EntryIcon, MoneyKind, PeriodPicker, ShownMoney,
+    UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
 };
 use crate::reducer::reduce;
 use crate::state::AgentsState;
@@ -187,7 +188,7 @@ pub(crate) fn claude() -> Profile {
 pub(crate) fn claude_work() -> Profile {
     Profile::added(
         claude_id(),
-        "Claude Code · Work",
+        "Claude Code (Work)",
         PathBuf::from("/home/user/.claude-work"),
     )
 }
@@ -205,7 +206,7 @@ pub(crate) fn codex() -> Profile {
 pub(crate) fn codex_work() -> Profile {
     Profile::added(
         codex_id(),
-        "Codex · Work",
+        "Codex (Work)",
         PathBuf::from("/home/user/.codex-work"),
     )
 }
@@ -1000,7 +1001,17 @@ pub(crate) fn price_table() -> PriceTable {
 /// agent part prices it at the made-up list prices of [`price_table`]:
 /// $1.25 a million, at API prices.
 pub(crate) fn at_list_prices(input: u64) -> MoneyTotal {
-    MoneyTotal::at_api_prices(Dollars::from_micro_dollars(input * 5 / 4), 1)
+    MoneyTotal::at_api_prices(input_money(input * 5 / 4), 1)
+}
+
+/// `micro_dollars` at API prices, all of it the money of input tokens.
+pub(crate) fn input_money(micro_dollars: u64) -> MoneyByKind {
+    MoneyByKind::new(
+        Dollars::from_micro_dollars(micro_dollars),
+        Dollars::default(),
+        Dollars::default(),
+        Dollars::default(),
+    )
 }
 
 /// The made-up prices of [`price_table`], fetched at `fetched_at`.
@@ -1011,8 +1022,7 @@ pub(crate) fn fetched_prices(fetched_at: SystemTime) -> FetchedPrices {
 /// $1.25 at API prices: one million input tokens of `gpt-5` at the
 /// made-up list prices, fetched at `at(10)`.
 pub(crate) fn estimated_money() -> ShownMoney {
-    let listed =
-        MoneyTotal::at_api_prices(Dollars::from_micro_dollars(1_250_000), 1);
+    let listed = MoneyTotal::at_api_prices(input_money(1_250_000), 1);
     let tokens =
         ModelTokens::new(Some("gpt-5"), TokenCount::new(1_000_000, 0, 0), 1)
             .with_money(listed);
@@ -1201,11 +1211,36 @@ pub(crate) fn save(saved: SavedProfiles) -> AgentsOutcome {
     }
 }
 
+/// One line of a tooltip that lists what a number is made of: the kind
+/// `key` and its `value`.
+pub(crate) fn kind_line(key: Key, value: &str) -> BreakdownLine {
+    BreakdownLine {
+        name: i18n::t(key),
+        value: String::from(value),
+    }
+}
+
+/// What gpt-5.5-codex is made of in [`usage_block`]: 60 tokens in and 40
+/// out, $1.00 and $0.25 of them at API prices.
+pub(crate) fn codex_kinds() -> Breakdown {
+    Breakdown {
+        tokens: vec![
+            kind_line(Key::AgentsKindInput, "60"),
+            kind_line(Key::AgentsKindOutput, "40"),
+        ],
+        money: vec![
+            kind_line(Key::AgentsKindInput, "~$1.00"),
+            kind_line(Key::AgentsKindOutput, "~$0.25"),
+        ],
+    }
+}
+
 /// A usage block of 7 days by model with two models, one with a price
-/// written by the agent and one with none, as a page shows it.
+/// and one with none, as a page shows it.
 pub(crate) fn usage_block() -> UsageBlockViewModel {
     UsageBlockViewModel {
-        line: Some(String::from("191 tokens · $1.25 in 7 days")),
+        line: Some(String::from("191 tokens, $1.25 in 7 days")),
+        breakdown: codex_kinds(),
         period: UsagePeriod::SevenDays,
         tab: UsageTab::ByModel,
         tabs: UsageTab::PROFILE_PAGE.to_vec(),
@@ -1213,7 +1248,8 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
             .map(|day| UsageBarViewModel {
                 value: day,
                 lit: None,
-                tip: format!("Nov {day}: {day} tokens · $0.10"),
+                tip: format!("Nov {day}: {day} tokens, $0.10"),
+                breakdown: Breakdown::default(),
             })
             .collect(),
         current: Some(6),
@@ -1224,12 +1260,17 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
                 tokens: String::from("100"),
                 money: String::from("$1.25"),
                 share: String::from("52 %"),
+                breakdown: codex_kinds(),
             },
             UsageTableRowViewModel {
                 name: String::from("gpt-5.4"),
                 tokens: String::from("91"),
                 money: String::from("—"),
                 share: String::from("48 %"),
+                breakdown: Breakdown {
+                    tokens: vec![kind_line(Key::AgentsKindInput, "91")],
+                    money: Vec::new(),
+                },
             },
         ],
         picked: None,

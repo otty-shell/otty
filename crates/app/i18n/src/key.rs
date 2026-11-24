@@ -1223,11 +1223,9 @@ pub enum Key {
     TplAgentsLimitsReadFailed,
     /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
     TplAgentsTokensFailed,
-    /// What goes between two failures listed in one line, such as "; ".
-    AgentsFailureSeparator,
     /// A source or a profile and why it failed, such as "Session files: not logged in". Placeholders: `{name}`, `{reason}`.
     TplAgentsNamedFailure,
-    /// The line under the credits: what is left and when the pool renews, such as "3 760 left · Resets on Thursday at 09:00". Placeholders: `{left}`, `{renews}`.
+    /// The line under the credits: what is left and when the pool renews, such as "3 760 left, Resets on Thursday at 09:00". Placeholders: `{left}`, `{renews}`.
     TplAgentsCreditsLeftRenews,
     /// Tooltip of the Refresh button of the Agents section: reads the profiles, their limits and sessions again.
     AgentsRefreshAll,
@@ -1298,7 +1296,7 @@ pub enum Key {
     TplAgentsMoneyAtApiPrices,
     /// Short mark next to money of tokens at the API list prices, on a subscription too.
     AgentsApiPricesMark,
-    /// An amount at API prices with its mark in one line, such as "$42.10 · at API prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
+    /// An amount at API prices with its mark in one line, such as "$42.10, at API prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
     TplAgentsAmountAtApiPrices,
     /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
     TplAgentsBillReadFailed,
@@ -1515,16 +1513,28 @@ pub enum Key {
     TplAgentsAmountInDays,
     /// Under the title of the usage block when the latest count failed. Placeholder: `{time}`.
     TplAgentsLastGoodNumbers,
-    /// Tooltip of a bar of the usage block, such as "Nov 13: 2.9M tokens · ~$3.10". Placeholders: `{point}`, `{amount}`.
+    /// Tooltip of a bar of the usage block, such as "Nov 13: 2.9M tokens, ~$3.10". Placeholders: `{point}`, `{amount}`.
     TplAgentsBarTip,
-    /// Tooltip of a bar of the usage block with a lit row, such as "Nov 13: 2.9M tokens · ~$3.10 · otty 1.2M tokens · ~$1.20". Placeholders: `{point}`, `{amount}`, `{name}`, `{part}`.
+    /// Tooltip of a bar of the usage block with a lit row, the lit row on a line of its own, such as "Nov 13: 2.9M tokens, ~$3.10" and "otty: 1.2M tokens, ~$1.20". Placeholders: `{point}`, `{amount}`, `{name}`, `{part}`.
     TplAgentsBarTipLit,
     /// A share of the usage block, such as "62 %". Placeholder: `{percent}`.
     TplAgentsShare,
     /// Column of the usage block: the share of each row.
     AgentsColumnShare,
-    /// Tokens and their money in one line of the usage block, such as "400K tokens · ~$12.40". Placeholders: `{tokens}`, `{money}`.
+    /// Tokens and their money in one line of the usage block, such as "400K tokens, ~$12.40". Placeholders: `{tokens}`, `{money}`.
     TplAgentsTokensAndMoney,
+    /// A tooltip line of the usage block: the input tokens not written to the cache, or their money.
+    AgentsKindInput,
+    /// A tooltip line of the usage block: the input tokens written to the cache, or their money.
+    AgentsKindCacheWritten,
+    /// A tooltip line of the usage block: the tokens read from the cache, or their money.
+    AgentsKindCached,
+    /// A tooltip line of the usage block: the output tokens, or their money.
+    AgentsKindOutput,
+    /// A tooltip line of the usage block: the money the agent wrote itself, which has no parts.
+    AgentsMoneyWrittenByAgent,
+    /// The heading of a need: where it is and what it asks, side by side, such as "Codex, needs login". Placeholders: `{place}`, `{title}`.
+    TplAgentsNeedHeading,
     /// Info line of a profile with no sessions. Placeholder: `{agent}`.
     TplAgentsNoSessionsYet,
     /// Info line of a profile with no sessions and no logins. Placeholder: `{agent}`.
@@ -1613,7 +1623,7 @@ pub enum Key {
     TplAgentsWindowDays,
     /// Name of a usage window whose length the source did not tell.
     AgentsWindowLimit,
-    /// Name of a usage window that counts one model alone, such as "7 days · Opus". Placeholders: `{length}`, the name of the window, and `{model}`.
+    /// Name of a usage window that counts one model alone, such as "7 days, Opus". Placeholders: `{length}`, the name of the window, and `{model}`.
     TplAgentsWindowForModel,
     /// Item of the account and profile menus that opens the Rename dialog.
     AgentsRename,
@@ -1731,6 +1741,8 @@ pub enum Key {
     PluginsOfficial,
     /// Mark of a community plugin.
     PluginsCommunity,
+    /// The words on the right of a row of the plugin list: its mark and its sign side by side, such as "Official, failed". Placeholders: `{trust}`, `{sign}`.
+    TplPluginsTrustAndSign,
     /// Mark of a plugin installed from a local folder.
     PluginsLocal,
     /// Kind of an agent part, as in "Coder (agent)".
@@ -2023,7 +2035,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 943] = [
+    pub(super) const ALL: [Self; 949] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2579,7 +2591,6 @@ impl Key {
         Self::TplAgentsLimitsNotAvailable,
         Self::TplAgentsLimitsReadFailed,
         Self::TplAgentsTokensFailed,
-        Self::AgentsFailureSeparator,
         Self::TplAgentsNamedFailure,
         Self::TplAgentsCreditsLeftRenews,
         Self::AgentsRefreshAll,
@@ -2727,6 +2738,12 @@ impl Key {
         Self::TplAgentsShare,
         Self::AgentsColumnShare,
         Self::TplAgentsTokensAndMoney,
+        Self::AgentsKindInput,
+        Self::AgentsKindCacheWritten,
+        Self::AgentsKindCached,
+        Self::AgentsKindOutput,
+        Self::AgentsMoneyWrittenByAgent,
+        Self::TplAgentsNeedHeading,
         Self::TplAgentsNoSessionsYet,
         Self::TplAgentsInstalledNotUsed,
         Self::AgentsProfileInfo,
@@ -2828,6 +2845,7 @@ impl Key {
         Self::PluginsHealthPaused,
         Self::PluginsOfficial,
         Self::PluginsCommunity,
+        Self::TplPluginsTrustAndSign,
         Self::PluginsLocal,
         Self::PluginsPartAgent,
         Self::PluginsPartProvider,

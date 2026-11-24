@@ -201,7 +201,7 @@ mod tests {
                 },
                 FoundProfileRowViewModel {
                     agent: String::from("Codex"),
-                    profile: String::from("Codex · Work"),
+                    profile: String::from("Codex (Work)"),
                     version: String::from(UNKNOWN),
                     folder: String::from("~/.codex-work"),
                 },

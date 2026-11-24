@@ -407,7 +407,7 @@ mod tests {
         assert_eq!(before.len(), 1);
         assert_eq!(
             listed[1],
-            (String::from("Codex · Work"), Some(String::from("hidden")))
+            (String::from("Codex (Work)"), Some(String::from("hidden")))
         );
     }
 
