@@ -4,7 +4,7 @@
 //! What it says is a [`TooltipText`]: lines of text, and rows that name
 //! the parts of a number with each part's number at the right.
 
-use iced::widget::{Column, container, row, tooltip as iced_tooltip};
+use iced::widget::{Column, Space, container, row, tooltip as iced_tooltip};
 use iced::{Alignment, Border, Element, Padding};
 
 use super::small_text::small_text;
@@ -147,8 +147,8 @@ fn bubble<'a, Message: 'a>(
     for line in label.lines {
         said = said.push(small_text(line, color));
     }
-    for group in label.groups {
-        said = said.push(rows_view(group, color));
+    if !label.groups.is_empty() {
+        said = said.push(rows_view(label.groups, color));
     }
 
     container(said)
@@ -166,17 +166,27 @@ fn bubble<'a, Message: 'a>(
         .into()
 }
 
-/// `rows` one per line: the names in a column at the left, the numbers in
-/// a column at the right, each number ending where the others do.
+/// The rows of every group in one grid, one row per line: the names in a
+/// column at the left, the numbers in a column at the right, so every
+/// name starts and every number ends where the others of all groups do,
+/// and a little space between groups. The grid is as wide as its widest
+/// row: a wider line above does not stretch it, since a filling row would
+/// stretch the bubble to its widest.
 fn rows_view<'a, Message: 'a>(
-    rows: Vec<(String, String)>,
+    groups: Vec<Vec<(String, String)>>,
     color: iced::Color,
 ) -> Element<'a, Message> {
     let mut names = Column::new();
     let mut numbers = Column::new().align_x(Alignment::End);
-    for (name, number) in rows {
-        names = names.push(small_text(name, color));
-        numbers = numbers.push(small_text(number, color));
+    for (index, rows) in groups.into_iter().enumerate() {
+        if index > 0 {
+            names = names.push(Space::new().height(spacing::SPACE_1));
+            numbers = numbers.push(Space::new().height(spacing::SPACE_1));
+        }
+        for (name, number) in rows {
+            names = names.push(small_text(name, color));
+            numbers = numbers.push(small_text(number, color));
+        }
     }
 
     row![names, numbers].spacing(spacing::SPACE_3).into()
@@ -274,6 +284,39 @@ mod tests {
             (few.x + few.width - many.x - many.width).abs() < 1.0,
             "the numbers end together: {few:?} {many:?}"
         );
+    }
+
+    /// Rows of several groups, such as the tokens and the money of a bar,
+    /// share one grid: every name starts at the left edge of the bubble and
+    /// the numbers of all groups end together.
+    #[test]
+    fn rows_of_all_groups_share_one_grid() {
+        let label =
+            TooltipText::new("Nov 13: 120K tokens, ~$3.10 at API prices")
+                .rows(vec![
+                    (String::from("in"), String::from("20K")),
+                    (String::from("cache write"), String::from("8K")),
+                ])
+                .rows(vec![(String::from("cached"), String::from("~$0.40"))]);
+        let hint: Element<'_, ()> = bubble(label, &UiPalette::otty_dark());
+        let mut ui = simulator(hint);
+        let mut at =
+            |text: &str| ui.find(text).expect("the text should show").bounds();
+
+        let line = at("Nov 13: 120K tokens, ~$3.10 at API prices");
+        let input = at("in");
+        let written = at("cache write");
+        let cached = at("cached");
+        let few = at("20K");
+        let some = at("8K");
+        let money = at("~$0.40");
+        let right = few.x + few.width;
+
+        assert!((input.x - line.x).abs() < 1.0, "{input:?} {line:?}");
+        assert!((written.x - line.x).abs() < 1.0, "{written:?}");
+        assert!((cached.x - line.x).abs() < 1.0, "{cached:?}");
+        assert!((some.x + some.width - right).abs() < 1.0, "{some:?}");
+        assert!((money.x + money.width - right).abs() < 1.0, "{money:?}");
     }
 
     /// Text alone is a tooltip of one line with no rows.
