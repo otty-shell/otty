@@ -17,6 +17,7 @@ use crate::keys::KeyHandle;
 use crate::operations;
 use crate::operations::lines::read_lines;
 use crate::operations::listing::list;
+use crate::operations::local_offset::local_offset_minutes;
 use crate::operations::remove;
 use crate::operations::small_file::read_small_file;
 use crate::operations::sqlite_keys::with_handles;
@@ -184,6 +185,10 @@ impl clock::Host for CallState {
             .unwrap_or_default();
 
         i64::try_from(since_epoch.as_millis()).unwrap_or(i64::MAX)
+    }
+
+    fn local_offset_minutes(&mut self, at_ms: i64) -> i32 {
+        local_offset_minutes(at_ms)
     }
 }
 

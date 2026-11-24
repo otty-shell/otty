@@ -9,8 +9,8 @@
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountNumbers, Balance, SourceError, SourceFailure, SourceId,
-    Unavailable,
+    Account, AccountKind, AccountNumbers, Balance, SourceError, SourceFailure,
+    SourceId, Unavailable,
 };
 
 use super::bill::AccountBill;
@@ -27,6 +27,10 @@ pub(crate) struct AccountRead {
     reads: ReadState,
     may_start_programs: bool,
     waits_for_programs: bool,
+    /// Whether the list prices changed since the read on its way or the
+    /// last one started: the provider part of an account paid per token
+    /// prices what the agent's sessions spent at them (issue 22).
+    waits_for_prices: bool,
     bill: AccountBill,
 }
 
@@ -91,6 +95,7 @@ impl AccountRead {
             reads: ReadState::default(),
             may_start_programs: true,
             waits_for_programs: false,
+            waits_for_prices: false,
             bill: AccountBill::default(),
         }
     }
@@ -213,6 +218,35 @@ impl AccountReads {
             let bill = &mut self.read_mut(&organization).bill;
             if bill.reads().is_wanted(which) && bill.start_reading() {
                 started.push(organization);
+            }
+        }
+
+        started
+    }
+
+    /// The list prices changed: the numbers of each account paid per token
+    /// that was read or is being read want a read at the new prices. The
+    /// limits of a subscription have no price.
+    pub(crate) fn wait_for_prices(&mut self) {
+        for read in &mut self.reads {
+            read.waits_for_prices =
+                read.account.kind() != AccountKind::Subscription;
+        }
+    }
+
+    /// Start a read of the numbers of each account that waits for new list
+    /// prices and has no read on its way, and return those. The read may
+    /// start the agent's program when `may_start_programs`.
+    pub(crate) fn start_at_new_prices(
+        &mut self,
+        may_start_programs: bool,
+    ) -> Vec<Account> {
+        let mut started = Vec::new();
+
+        for read in &mut self.reads {
+            if read.waits_for_prices && read.start(may_start_programs) {
+                read.waits_for_prices = false;
+                started.push(read.account.clone());
             }
         }
 

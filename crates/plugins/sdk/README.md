@@ -44,7 +44,13 @@ of `Account::found_in`, from the provider's server with the login there,
 or by asking the agent itself; the provider world imports files,
 programs and hidden terminals for that. With no way that works the part
 answers numbers with nothing in them, not an error. In tests,
-`TestHost::as_provider_in` runs a call with its folders.
+`TestHost::as_provider_in` runs a call with its folders. During
+`numbers` OTTY answers `agents::price_of` too, so a provider whose
+server tells nothing of what a key spent may count it from the agent's
+own sessions: `agents::MonthSpend` adds up the answers of the user's
+calendar month (`clock::local_offset_minutes`) kind by kind, given as
+`spent_this_month` with `by_kind`, which marks it "at API prices". In
+tests, `TestHost::with_local_offset_minutes` sets the user's clock.
 
 What the user must do for an agent or a provider is the part's to say,
 as a `Need`: a stable id, a title, a text and one button, a `NeedAction`

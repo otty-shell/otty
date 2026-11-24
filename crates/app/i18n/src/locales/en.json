@@ -684,6 +684,8 @@
     "agents_account_info": "Account info",
     "agents_field_key": "Key",
     "agents_spent_this_month": "Spent this month",
+    "agents_your_spend_this_month": "Your spend this month",
+    "tpl_agents_spent_from_sessions": "From your {agent} sessions on this computer",
     "agents_source_format_changed": "format changed",
     "tpl_agents_failure_format_changed": "the format of the session files changed: {understood} of {seen} records understood",
     "tpl_agents_failure_plugin": "{plugin} {version} could not read: {reason}",

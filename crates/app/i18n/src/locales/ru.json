@@ -684,6 +684,8 @@
     "agents_account_info": "Об аккаунте",
     "agents_field_key": "Ключ",
     "agents_spent_this_month": "Потрачено в этом месяце",
+    "agents_your_spend_this_month": "Ваши траты в этом месяце",
+    "tpl_agents_spent_from_sessions": "По вашим сессиям {agent} на этом компьютере",
     "agents_source_format_changed": "формат изменился",
     "tpl_agents_failure_format_changed": "формат файлов сессий изменился: понятно {understood} из {seen} записей",
     "tpl_agents_failure_plugin": "{plugin} {version} не смог прочитать: {reason}",

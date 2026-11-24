@@ -7,12 +7,14 @@
 
 pub mod v0_1;
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use wasmtime::Store;
 use wasmtime::component::InstancePre;
 
 use crate::agents::agent::ReadError;
+use crate::agents::prices::PriceList;
 /// The newest provider contract's types, which the rest of OTTY uses.
 pub use crate::agents::provider::v0_1::exports::otty::agents_provider::provider::{
     Account, AccountKind, AccountNumbers, Bill, Credits, DayCost, DayRange,
@@ -92,11 +94,15 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
     /// its slot. A reading that ran a program or a hidden terminal is
     /// slow: it runs at most once in the five minutes of the limits read
     /// per part and account id, and the answer of the last reading is
-    /// given within that time.
+    /// given within that time. While it reads, the part may price tokens
+    /// at `prices` with `prices.price-of`, such as what the agent's own
+    /// sessions spent through a key (issue 22 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
     pub fn numbers(
         &mut self,
         account: &Account,
         given: &[(String, KeySource)],
+        prices: &Arc<dyn PriceList>,
     ) -> Result<Result<AccountNumbers, ReadError>, CallError> {
         let provider = self.batch.part().id().to_string();
         let plugin = self.batch.plugin();
@@ -110,14 +116,12 @@ impl<'batch, 'plugin> ProviderCalls<'batch, 'plugin> {
             &account.found_in,
             given,
             |guest, store, given| {
-                let answer = guest.call_numbers(
-                    &mut *store,
-                    &provider,
-                    account,
-                    &given,
-                )?;
+                store.data_mut().set_prices(Some(Arc::clone(prices)));
+                let answer =
+                    guest.call_numbers(&mut *store, &provider, account, &given);
+                store.data_mut().set_prices(None);
 
-                Ok((answer, store.data().has_started_programs()))
+                Ok((answer?, store.data().has_started_programs()))
             },
         )?;
 
@@ -225,10 +229,15 @@ fn folders_of_call(
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use otty_plugin_manifest::PartRef;
 
     use super::*;
+    use crate::agents::prices::{
+        MockPriceList, ModelPrice, PriceList, ProviderRef, TokenPrices,
+    };
     use crate::calls::CallKind;
     use crate::https::MockHttpsSend;
     use crate::keys::KeyText;
@@ -239,8 +248,8 @@ mod tests {
     };
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{
-        TempDir, debug_err, engine_with, load_template, template_env,
-        write_file,
+        TempDir, debug_err, engine_with, load_template, no_prices,
+        template_env, write_file,
     };
 
     const KEY: &str = "ex-made-up-key-0001";
@@ -332,6 +341,18 @@ mod tests {
         account: &Account,
         https: MockHttpsSend,
     ) -> Result<AccountNumbers, ReadError> {
+        numbers_at_prices(account, https, no_prices())
+    }
+
+    /// The numbers the template's provider part reads of `account`, its
+    /// tokens priced at `prices`. `https` serves its requests.
+    // A `ReadError` may hold a need, a record the contract can not box.
+    #[allow(clippy::result_large_err)]
+    fn numbers_at_prices(
+        account: &Account,
+        https: MockHttpsSend,
+        prices: Arc<dyn PriceList>,
+    ) -> Result<AccountNumbers, ReadError> {
         let cache = TempDir::new();
         let engine = engine_with(&cache, https, MockKeyringRead::new());
         let plugin = load_template(&engine, &template_env());
@@ -342,8 +363,56 @@ mod tests {
         batch
             .provider()
             .expect("a provider part")
-            .numbers(account, &[])
+            .numbers(account, &[], &prices)
             .expect("the call")
+    }
+
+    /// A price list where `example-large` of `example-cloud` costs $1 per
+    /// million input tokens and $10 per million output tokens.
+    fn example_large_prices() -> Arc<dyn PriceList> {
+        let mut prices = MockPriceList::new();
+        prices
+            .expect_price_of()
+            .withf(|model, provider| {
+                model == "example-large"
+                    && matches!(
+                        provider,
+                        Some(ProviderRef::Id(id)) if id == "example-cloud"
+                    )
+            })
+            .returning(|_, _| {
+                Some(ModelPrice {
+                    standard: TokenPrices {
+                        input: 1_000_000,
+                        cached: 0,
+                        cache_written: 0,
+                        output: 10_000_000,
+                    },
+                    long_prompt: None,
+                })
+            });
+
+        Arc::new(prices)
+    }
+
+    /// The login folder with [`KEY`] and a session file of the example
+    /// agent with one answer written now, of 2 000 input and 300 output
+    /// tokens of `example-large`.
+    fn login_folder_with_session() -> TempDir {
+        let folder = login_folder();
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("after 1970")
+            .as_millis();
+        let answer = format!(
+            r#"{{"type":"answer","id":"a1","at_ms":{now_ms},"model":"example-large","tokens":{{"input":2000,"cached":0,"output":300}}}}"#
+        );
+        write_file(
+            &folder.path().join("sessions/s1.jsonl"),
+            format!("{answer}\n").as_bytes(),
+        );
+
+        folder
     }
 
     /// An HTTP mock that answers one request for the balance, which must
@@ -493,6 +562,53 @@ mod tests {
             panic!("the part's answer: {numbers:?}");
         };
         assert_eq!(numbers.left.map(|left| left.amount), Some(7.5));
+    }
+
+    /// Issue 22 of spec 2026-11-23-accounts-apart-from-profiles: a
+    /// provider part asks OTTY's price list for the price of a model while
+    /// it reads the numbers of an account, as an agent part does while it
+    /// reads its answers. The template counts this month's spend of a key
+    /// from the sessions of its folders, at API prices kind by kind.
+    #[test]
+    fn a_provider_part_prices_tokens_while_it_reads_the_numbers() {
+        let folder = login_folder_with_session();
+        let account =
+            account_in(AccountKind::Key, &[profile(AGENT, folder.path())]);
+
+        let numbers = numbers_at_prices(
+            &account,
+            balance_answer(7.5),
+            example_large_prices(),
+        );
+
+        let Ok(numbers) = numbers else {
+            panic!("the part's answer: {numbers:?}");
+        };
+        let spent = numbers.spent_this_month.expect("the spend of the key");
+        let by_kind = spent.by_kind.expect("money at API prices");
+        // 2 000 input at $1 and 300 output at $10 per million tokens.
+        assert_eq!(
+            (by_kind.total, by_kind.input, by_kind.output),
+            (5_000, 2_000, 3_000)
+        );
+        assert!((spent.amount - 0.005).abs() < 1e-9, "{}", spent.amount);
+        assert_eq!(spent.currency, "USD");
+    }
+
+    /// With no price for its model, the spend of the key is not known.
+    #[test]
+    fn with_no_price_the_spend_is_not_told() {
+        let folder = login_folder_with_session();
+        let account =
+            account_in(AccountKind::Key, &[profile(AGENT, folder.path())]);
+
+        let numbers =
+            numbers_at_prices(&account, balance_answer(7.5), no_prices());
+
+        let Ok(numbers) = numbers else {
+            panic!("the part's answer: {numbers:?}");
+        };
+        assert!(numbers.spent_this_month.is_none());
     }
 
     /// An account found in no folder gives the part no login: it reads

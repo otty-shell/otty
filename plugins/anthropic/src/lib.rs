@@ -51,6 +51,7 @@ mod project_folder;
 mod provider;
 mod requests;
 mod session_file;
+mod session_spend;
 mod sessions;
 mod spend_file;
 #[cfg(test)]

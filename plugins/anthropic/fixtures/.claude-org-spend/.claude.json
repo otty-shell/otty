@@ -1,0 +1,11 @@
+{
+  "numStartups": 4,
+  "primaryApiKey": "sk-ant-made-up-key-0000-c3d5",
+  "oauthAccount": {
+    "accountUuid": "00000000-0000-4000-8000-00000000000e",
+    "emailAddress": "dev@example.com",
+    "organizationUuid": "00000000-0000-4000-8000-0000000000ee",
+    "organizationName": "Spend Org",
+    "billingType": "prepaid"
+  }
+}

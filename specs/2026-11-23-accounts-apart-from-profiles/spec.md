@@ -533,6 +533,13 @@ the part's to judge (issue 12). The prices
 an agent part asks for are the imported interface `otty:agents-agent/prices`
 with `price-of`, and an `answer` carries its `cost` (Decision 3).
 
+Built as (issue 22): `priced-cost` lives in `prices`, which the provider
+world imports too, so a provider part prices tokens during `numbers`.
+The `money` of the provider contract has `by-kind: option<priced-cost>`,
+set only on money the part counted at API prices, such as "Your spend
+this month" of a key from the agent's own sessions. The host `clock`
+has `local-offset-minutes`, so the month is the user's own.
+
 The manifest of a provider part names the agent parts whose profiles it
 reads, and whether it offers "Log in with":
 

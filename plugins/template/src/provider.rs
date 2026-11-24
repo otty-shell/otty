@@ -7,7 +7,7 @@
 
 use otty_plugin_sdk::agents::{
     Account, AccountKind, AccountNumbers, Bill, DayCost, DayRange, Found,
-    LoginFolder, Money, Provider, ReadError,
+    LoginFolder, Money, MonthSpend, Provider, ReadError,
 };
 use otty_plugin_sdk::http::{self, Request};
 use otty_plugin_sdk::{
@@ -16,6 +16,7 @@ use otty_plugin_sdk::{
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
+use crate::session_file::SessionFile;
 use crate::{Example, agent, needs};
 
 /// The provider's API.
@@ -130,7 +131,8 @@ impl Provider for Example {
     }
 
     /// The money left on the key of the account, read with the key of
-    /// the first of its folders that still holds one. With no key there
+    /// the first of its folders that still holds one, and what the
+    /// sessions of its profile folders spent this month. With no key there
     /// now, such as a key taken out of the file, the part has no other way
     /// to read the account, so it answers nothing and sends nothing.
     fn numbers(
@@ -149,7 +151,9 @@ impl Provider for Example {
             left: Some(Money {
                 amount: balance.balance,
                 currency: balance.currency,
+                by_kind: None,
             }),
+            spent_this_month: session_spend(account),
             ..no_numbers()
         })
     }
@@ -190,6 +194,7 @@ impl Provider for Example {
                 cost: Money {
                     amount: day.usd,
                     currency: "USD".to_string(),
+                    by_kind: None,
                 },
             })
             .collect();
@@ -201,6 +206,43 @@ impl Provider for Example {
     fn log_in(_provider: &str, folder: &str) -> Option<Command> {
         Some(agent::login_in(folder))
     }
+}
+
+/// What the made-up provider tells nothing of: what the example agent's
+/// sessions in the profile folders of `account` spent this month, each
+/// answer at the API price OTTY's price list gives during `numbers`,
+/// kind by kind, marked at API prices by its kinds (issue 22 of spec
+/// 2026-11-23-accounts-apart-from-profiles). A provider that tells the
+/// spend of a key gives that instead. OTTY's own login folder holds no
+/// session to count. `None` when no answer had a price.
+fn session_spend(account: &Account) -> Option<Money> {
+    let mut month = MonthSpend::this_month();
+
+    for folder in &account.found_in {
+        let LoginFolder::Profile((agent, path)) = folder else {
+            continue;
+        };
+        if agent != AGENT {
+            continue;
+        }
+
+        let Ok(files) = files::list(&format!("{path}/sessions/*.jsonl")) else {
+            continue;
+        };
+        for file in files {
+            if file.changed_ms < month.since_ms() {
+                continue;
+            }
+            let Ok(session) = SessionFile::read(&file.path) else {
+                continue;
+            };
+            for answer in session.into_answers("").answers {
+                month.add(&answer);
+            }
+        }
+    }
+
+    month.money()
 }
 
 /// The login of the first folder of `account` that holds one.
@@ -310,6 +352,7 @@ fn get_json<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
+    use otty_plugin_sdk::agents::{ModelPrice, PricedCost, TokenPrices};
     use otty_plugin_sdk::test_host::TestHost;
     use otty_plugin_sdk::{Command, GivenKey, HostError, NeedAction, files};
 
@@ -497,6 +540,79 @@ mod tests {
             host.requests()[0].header("authorization"),
             Some("Bearer ex-made-up-key-0002")
         );
+    }
+
+    /// 2025-11-21 at 00:00 UTC, the day after the answer of
+    /// `.example-agent-work`.
+    const NOV_21_2025: i64 = 1_763_683_200_000;
+
+    /// 2025-12-15 at 00:00 UTC.
+    const DEC_15_2025: i64 = 1_765_756_800_000;
+
+    /// The host at `now_ms`, where `example-large` costs $1 per million
+    /// input tokens and $10 per million output tokens, and the balance of
+    /// a key is $12.50.
+    fn priced_host_at(now_ms: i64) -> TestHost {
+        let price = ModelPrice {
+            standard: TokenPrices {
+                input: 1_000_000,
+                cached: 0,
+                cache_written: 0,
+                output: 10_000_000,
+            },
+            long_prompt: None,
+        };
+        let host =
+            host()
+                .with_now_ms(now_ms)
+                .with_price("example-large", None, price);
+        host.answer(
+            "GET",
+            "https://api.example.com/v1/balance",
+            200,
+            br#"{"balance": 12.5, "currency": "USD"}"#,
+        );
+
+        host
+    }
+
+    /// Issue 22 of spec 2026-11-23-accounts-apart-from-profiles: a key's
+    /// spend this month, counted from the example agent's sessions in its
+    /// folders and priced kind by kind at the price OTTY gives, comes as
+    /// the money spent this month, marked at API prices by its kinds.
+    #[test]
+    fn numbers_give_this_month_s_spend_of_the_sessions() {
+        let host = priced_host_at(NOV_21_2025);
+        let account = account_in(&host, ".example-agent-work");
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
+        let spent = numbers.spent_this_month.expect("the spend of the key");
+        // 300 input at $1 and 100 output at $10 per million tokens.
+        assert_eq!(
+            spent.by_kind,
+            Some(PricedCost {
+                total: 1_300,
+                input: 300,
+                cache_written: 0,
+                cached: 0,
+                output: 1_000,
+            })
+        );
+        assert!((spent.amount - 0.0013).abs() < 1e-9, "{}", spent.amount);
+        assert_eq!(spent.currency, "USD");
+    }
+
+    /// Issue 22: an answer of another month is not spent this month.
+    #[test]
+    fn an_answer_of_another_month_is_not_spent_this_month() {
+        let host = priced_host_at(DEC_15_2025);
+        let account = account_in(&host, ".example-agent-work");
+
+        let numbers = numbers_of(&host, &account).expect("the numbers");
+
+        let spent = numbers.spent_this_month.expect("the spend of the key");
+        assert_eq!(spent.by_kind.map(|cost| cost.total), Some(0));
     }
 
     /// Issue 29: an account whose key is not there now is no failure: the

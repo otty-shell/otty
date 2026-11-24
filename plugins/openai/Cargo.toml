@@ -2,7 +2,7 @@
 name = "otty-plugin-openai"
 description = "The official OpenAI plugin of OTTY: the Codex agent part and the OpenAI provider part"
 readme = "README.md"
-version = "0.2.16"
+version = "0.2.17"
 license = "Apache-2.0"
 publish = false
 edition = "2024"

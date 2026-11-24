@@ -3,7 +3,7 @@
 [plugin]
 id = "openrouter"
 name = "OpenRouter"
-version = "0.1.7"
+version = "0.1.8"
 description = "OpenRouter keys in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-openrouter"
 license = "Apache-2.0"

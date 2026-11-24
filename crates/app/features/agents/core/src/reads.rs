@@ -80,11 +80,13 @@ pub(crate) fn after_profiles(
 pub(crate) fn after_account_numbers(
     state: &mut AgentsState,
 ) -> Vec<AgentsOutcome> {
+    let mut outcomes = read_accounts_at_new_prices(state);
     if !state.is_active() {
-        return Vec::new();
+        return outcomes;
     }
 
-    load_account_numbers(state, Which::WaitingForPrograms)
+    outcomes.extend(load_account_numbers(state, Which::WaitingForPrograms));
+    outcomes
 }
 
 /// The timer ticked: while the mode is on screen, read the numbers of the
@@ -137,11 +139,34 @@ pub(crate) fn load_profiles(state: &mut AgentsState) -> Vec<AgentsOutcome> {
 pub(crate) fn count_at_new_prices(
     state: &mut AgentsState,
 ) -> Vec<AgentsOutcome> {
-    state
+    let mut outcomes: Vec<AgentsOutcome> = state
         .profiles_mut()
         .start_counts_at_new_prices()
         .into_iter()
         .map(AgentsOutcome::LoadSpend)
+        .collect();
+
+    outcomes.extend(read_accounts_at_new_prices(state));
+    outcomes
+}
+
+/// Ask for the numbers of each account paid per token that waits for new
+/// list prices, unless a read of it is on its way, which asks again once
+/// it ends: its provider part prices what the agent's sessions spent
+/// through it at them (issue 22 of spec
+/// 2026-11-23-accounts-apart-from-profiles).
+fn read_accounts_at_new_prices(state: &mut AgentsState) -> Vec<AgentsOutcome> {
+    let may_start_programs = state.is_active();
+
+    state
+        .profiles_mut()
+        .start_account_reads_at_new_prices(may_start_programs)
+        .into_iter()
+        .map(|(account, given)| AgentsOutcome::LoadAccountNumbers {
+            account,
+            given,
+            may_start_programs,
+        })
         .collect()
 }
 
@@ -575,6 +600,38 @@ mod tests {
             state.profiles().api_prices().as_ref(),
             &ApiPrices::new(price_table(), registry())
         );
+    }
+
+    /// Issue 22 of spec 2026-11-23-accounts-apart-from-profiles: a part
+    /// prices the sessions of an account paid per token while it reads its
+    /// numbers, so new list prices read those numbers again; a
+    /// subscription's limits have no price, and the same prices read
+    /// nothing.
+    #[test]
+    fn new_prices_read_the_numbers_of_accounts_paid_per_token_again() {
+        let mut state = crate::testing::with_accounts(
+            &[(claude(), connected(), vec![organization(), claude_login()])],
+            saved_with_given_key(),
+        );
+        let money = otty_agents::AccountNumbers::Balance(
+            otty_agents::Balance::new(None, None),
+        );
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(&organization(), Ok(money.clone()), at(10)),
+        );
+        let _ = reduce(&mut state, login_answered(at(10)));
+
+        let new = reduce(&mut state, good_prices(at(20)));
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(&organization(), Ok(money), at(30)),
+        );
+        let same = reduce(&mut state, good_prices(at(20)));
+
+        assert_eq!(reads_of(&new, &organization()), 1, "{new:?}");
+        assert_eq!(reads_of(&new, &claude_login()), 0, "{new:?}");
+        assert_eq!(reads_of(&same, &organization()), 0, "{same:?}");
     }
 
     /// Issue 11 of spec 2026-11-23-accounts-apart-from-profiles: at the

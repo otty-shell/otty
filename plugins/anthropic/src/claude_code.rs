@@ -50,10 +50,8 @@ impl Agent for Anthropic {
     /// Every `*.jsonl` file in the project folders, at any depth, so the
     /// files of helper agents in `<session id>/subagents/` count too.
     fn spend_places(profile: &Profile) -> Vec<Place> {
-        let projects = escaped(&projects_folder(&profile.folder));
-
         vec![Place {
-            glob: format!("{projects}/*/**/*.jsonl"),
+            glob: session_files_glob(&profile.folder),
             kind: PlaceKind::Files,
         }]
     }
@@ -82,6 +80,15 @@ impl Agent for Anthropic {
 
         start_command(profile, args)
     }
+}
+
+/// Every session file of the config folder `folder`: each `*.jsonl` file
+/// in its project folders, at any depth, so the files of helper agents in
+/// `<session id>/subagents/` count too.
+pub(crate) fn session_files_glob(folder: &str) -> String {
+    let projects = escaped(&projects_folder(folder));
+
+    format!("{projects}/*/**/*.jsonl")
 }
 
 /// `claude` with `args` for `profile`, as [`command_in`] gives it.

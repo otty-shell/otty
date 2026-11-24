@@ -1,8 +1,12 @@
 //! The money a provider tells of a key (spec 2026-11-19, Decision 5): the
 //! money left on the account, the limit of the key and how much of it was
-//! used, the money spent this month and the credits of the account.
+//! used, the money spent this month and the credits of the account. The
+//! money spent this month may also be what the agent's own sessions spent
+//! through the key at API prices, as the provider part counted it (issue
+//! 22 of spec 2026-11-23-accounts-apart-from-profiles).
 
 use crate::limits::Credits;
+use crate::money_estimate::MoneyByKind;
 
 /// An amount of money as a provider told it, in its currency, such as
 /// `110.0` Chinese yuan.
@@ -90,6 +94,9 @@ pub struct Balance {
     left: Option<Amount>,
     key_limit: Option<KeyLimit>,
     spent_this_month: Option<Amount>,
+    /// Boxed, as most balances have none and the answers of a read travel
+    /// in the app's messages.
+    spent_by_kind: Option<Box<MoneyByKind>>,
     credits: Option<Credits>,
 }
 
@@ -105,9 +112,20 @@ impl Balance {
         self.key_limit.as_ref()
     }
 
-    /// The money spent this month, as the provider counts it.
+    /// The money spent this month, as the provider counts it, or as the
+    /// part counted it from the agent's sessions at API prices
+    /// ([`Balance::spent_by_kind`]).
     pub fn spent_this_month(&self) -> Option<&Amount> {
         self.spent_this_month.as_ref()
+    }
+
+    /// What the money spent this month is made of, when the part counted
+    /// it itself from the agent's sessions on this computer at API prices
+    /// (issue 22 of spec 2026-11-23-accounts-apart-from-profiles): an
+    /// estimate, shown "at API prices". `None` for money the provider
+    /// told, which is exact.
+    pub fn spent_by_kind(&self) -> Option<&MoneyByKind> {
+        self.spent_by_kind.as_deref()
     }
 
     /// The credits of an account paid for by a pool of credits.
@@ -121,6 +139,7 @@ impl Balance {
             left,
             key_limit,
             spent_this_month: None,
+            spent_by_kind: None,
             credits: None,
         }
     }
@@ -140,6 +159,13 @@ impl Balance {
     /// ```
     pub fn with_spent_this_month(mut self, spent: Option<Amount>) -> Self {
         self.spent_this_month = spent;
+        self
+    }
+
+    /// The same balance with the money spent this month made of `by_kind`
+    /// at API prices, which marks it an estimate.
+    pub fn with_spent_by_kind(mut self, by_kind: Option<MoneyByKind>) -> Self {
+        self.spent_by_kind = by_kind.map(Box::new);
         self
     }
 

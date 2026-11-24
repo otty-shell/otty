@@ -684,6 +684,8 @@
     "agents_account_info": "アカウント情報",
     "agents_field_key": "キー",
     "agents_spent_this_month": "今月の使用額",
+    "agents_your_spend_this_month": "今月のあなたの使用額",
+    "tpl_agents_spent_from_sessions": "このコンピューターの {agent} のセッションから",
     "agents_source_format_changed": "形式が変更",
     "tpl_agents_failure_format_changed": "セッションファイルの形式が変わりました: {seen} 件中 {understood} 件を読み取れました",
     "tpl_agents_failure_plugin": "{plugin} {version} は読み取れませんでした: {reason}",

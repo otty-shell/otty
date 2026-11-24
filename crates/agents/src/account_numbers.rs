@@ -12,9 +12,11 @@
 //! handle.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::account::Account;
 use crate::agent::Agent;
+use crate::api_prices::ApiPrices;
 use crate::balance::Balance;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenKey, read_given_keys};
@@ -96,7 +98,9 @@ pub fn find_accounts(
 /// found it, in the folders it was found in, with the keys the user gave
 /// for it (`given`), read now from their files or their variables
 /// (`env_var`). The part's programs and hidden terminals start only when
-/// `starts_programs`, while Agents mode is on screen. It blocks.
+/// `starts_programs`, while Agents mode is on screen. The part may price
+/// tokens at `prices` while it reads, such as what the agent's own
+/// sessions spent through a key this month. It blocks.
 ///
 /// # Errors
 ///
@@ -109,6 +113,7 @@ pub fn read_account_numbers(
     account: &Account,
     given: &[GivenKey],
     starts_programs: bool,
+    prices: &Arc<ApiPrices>,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> Result<AccountNumbers, SourceError> {
     let provider = providers
@@ -118,7 +123,7 @@ pub fn read_account_numbers(
 
     let given = read_given_keys(given, &env_var)?;
 
-    provider.read(account, &given, starts_programs)
+    provider.read(account, &given, starts_programs, prices)
 }
 
 #[cfg(test)]
@@ -151,6 +156,7 @@ mod tests {
             left: Some(Money {
                 amount: 4.2,
                 currency: "USD".to_string(),
+                by_kind: None,
             }),
             key_limit: None,
             spent_this_month: None,
@@ -280,17 +286,18 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|account, _, starts_programs| {
+            .withf(|account, _, starts_programs, _| {
                 account.id == "key:made-up" && !*starts_programs
             })
             .times(1)
-            .returning(|_, _, _| Ok(four_dollars_twenty()));
+            .returning(|_, _, _, _| Ok(four_dollars_twenty()));
 
         let numbers = read_account_numbers(
             &[example_cloud(calls)],
             &example_key(),
             &[],
             false,
+            &Arc::default(),
             no_variables,
         );
 
@@ -312,6 +319,7 @@ mod tests {
             &chatgpt_login("made-up"),
             &[],
             true,
+            &Arc::default(),
             |_| panic!("no key is read for an account no part reads"),
         );
 
@@ -329,12 +337,12 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|_, given, _| {
+            .withf(|_, given, _, _| {
                 matches!(given, [(slot, KeySource::Given(key))]
                     if slot == "admin" && key.as_str() == "sk-made-up-org")
             })
             .times(1)
-            .returning(|_, _, _| Ok(four_dollars_twenty()));
+            .returning(|_, _, _, _| Ok(four_dollars_twenty()));
         let given = [GivenKey::new(
             "admin",
             KeyRef::EnvVar(String::from("EXAMPLE_ORG_KEY")),
@@ -345,6 +353,7 @@ mod tests {
             &example_key(),
             &given,
             true,
+            &Arc::default(),
             |name| {
                 (name == "EXAMPLE_ORG_KEY")
                     .then(|| String::from("sk-made-up-org"))
@@ -373,6 +382,7 @@ mod tests {
             &example_key(),
             &given,
             true,
+            &Arc::default(),
             no_variables,
         );
 

@@ -27,6 +27,14 @@ their fingerprint; an admin key is an organization. A key that
 `settings.json` sends to another server, such as DeepSeek's, is no
 Anthropic account.
 
+Anthropic tells nothing of what a key spent, so a key or a Console
+organization gets "Your spend this month" at API prices: the answers of
+this calendar month in the Claude Code sessions of the folders it pays
+for now, priced at the price OTTY gives during `numbers`, kind by kind.
+It counts only this computer's Claude Code sessions, never OTTY's own
+login folder, and leaves out answers sent to another server. A bill read
+with an admin key comes first.
+
 It reads the numbers of an account any way it can, only in the folders
 the account was found in: the limits of a Claude login (and its extra
 usage) from Anthropic's usage request with the login's token, and the

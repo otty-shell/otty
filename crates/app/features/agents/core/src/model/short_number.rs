@@ -166,8 +166,10 @@ fn balance_now(
 
 /// The money an account paid per token spent this month, "$44.87 this
 /// month": its bill when one of its profiles read it, else what its
-/// provider counted for its key. `None` when the
-/// provider told neither.
+/// provider counted for its key, else what the agent's sessions spent
+/// through it at API prices, an estimate with "~" (issue 22 of spec
+/// 2026-11-23-accounts-apart-from-profiles). `None` when the provider
+/// told none of them.
 fn money_this_month(
     state: &AgentsState,
     account: &Account,
@@ -179,7 +181,11 @@ fn money_this_month(
         Some(bill) => dollars_text(bill.this_month()),
         None => {
             let (balance, _) = own?.balance()?;
-            amount_text(balance.spent_this_month()?)
+            let spent = amount_text(balance.spent_this_month()?);
+            match balance.spent_by_kind() {
+                Some(_) => format!("~{spent}"),
+                None => spent,
+            }
         },
     };
 
@@ -567,6 +573,29 @@ mod tests {
             muted(i18n::filled(
                 Key::TplAgentsAmountThisMonth,
                 &[("amount", "$4.20")]
+            ))
+        );
+    }
+
+    /// Issue 22 of spec 2026-11-23: what a key spent this month by its
+    /// sessions, at API prices, is an estimate with "~".
+    #[test]
+    fn a_key_shows_its_spend_at_api_prices_as_an_estimate() {
+        let account = crate::testing::found_key("anthropic");
+        let spent = otty_agents::Balance::new(None, None)
+            .with_spent_this_month(otty_agents::Amount::new(42.1, "USD"))
+            .with_spent_by_kind(Some(input_money(42_100_000)));
+
+        let state = crate::testing::with_key_read(
+            &account,
+            Ok(otty_agents::AccountNumbers::Balance(spent)),
+        );
+
+        assert_eq!(
+            number_of(&state, &account),
+            muted(i18n::filled(
+                Key::TplAgentsAmountThisMonth,
+                &[("amount", "~$42.10")]
             ))
         );
     }

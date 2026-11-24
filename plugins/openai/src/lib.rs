@@ -48,6 +48,7 @@ mod codex_limits;
 mod detect;
 mod glob;
 mod individual_limit;
+mod key_spend;
 mod limits;
 mod needs;
 mod openai;

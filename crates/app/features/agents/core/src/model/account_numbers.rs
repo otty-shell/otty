@@ -11,7 +11,8 @@
 use std::time::SystemTime;
 
 use otty_agents::{
-    Account, AccountKind, Amount, Balance, KeyLimit, SourceError,
+    Account, AccountKind, Amount, Balance, FoundIn, KeyLimit, MoneyByKind,
+    SourceError,
 };
 use otty_app_i18n::{self as i18n, Key};
 
@@ -21,7 +22,7 @@ use super::super::state::AgentsState;
 use super::limits::{
     LimitsViewModel, UsageRowViewModel, credits_left, updated_text,
 };
-use super::money::MoneyViewModel;
+use super::money::{MoneyViewModel, SpentAtApiPricesViewModel};
 use super::numbers::{dollars_text, money_text};
 
 /// The numbers block of an account page.
@@ -96,7 +97,7 @@ fn money(
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
     let own = state.profiles().account_reads().of(account);
-    let spent = spent_money(own, now);
+    let spent = spent_money(state, account, own, now);
     let Some(own) = own else {
         return spent;
     };
@@ -114,6 +115,7 @@ fn money(
         updated: None,
         rows: Vec::new(),
         spent: None,
+        spent_at_api_prices: None,
         is_stale: false,
         failure: None,
     });
@@ -201,11 +203,16 @@ fn own_failure_text(
     }
 }
 
-/// The money spent this month, from `own`, what was read of the account:
-/// from the bill of the organization when it was read, else as the
-/// provider counted it for the account's key; with neither, only why the
-/// bill could not be read with the admin key, if it could not.
+/// The money spent this month of `account`, from `own`, what was read of
+/// it: from the bill of the organization when it was read, else as the
+/// provider counted it for the account's key, else what the agent's
+/// sessions spent through it at API prices, as its part counted them
+/// (issue 22 of spec 2026-11-23-accounts-apart-from-profiles); with none,
+/// only why the bill could not be read with the admin key, if it could
+/// not.
 fn spent_money(
+    state: &AgentsState,
+    account: &Account,
     own: Option<&AccountRead>,
     now: SystemTime,
 ) -> Option<MoneyViewModel> {
@@ -222,31 +229,67 @@ fn spent_money(
 
     let counted = own.and_then(|own| {
         let (balance, read_at) = own.balance()?;
-        Some((balance.spent_this_month()?, read_at))
+        Some((balance, balance.spent_this_month()?, read_at))
     });
 
-    let (amount, read_at) = match (bill, counted) {
-        (Some((bill, read_at)), _) => {
-            (dollars_text(bill.this_month()), read_at)
-        },
-        (None, Some((spent, read_at))) => (amount_text(spent), read_at),
-        (None, None) => {
-            return bill_failure.map(|failure| MoneyViewModel {
-                updated: None,
-                rows: Vec::new(),
-                spent: None,
-                is_stale: false,
-                failure: Some(failure),
-            });
-        },
-    };
-    Some(MoneyViewModel {
-        updated: Some(updated_text(now, read_at)),
+    let mut vm = MoneyViewModel {
+        updated: None,
         rows: Vec::new(),
-        spent: Some(amount),
+        spent: None,
+        spent_at_api_prices: None,
         is_stale: false,
         failure: None,
-    })
+    };
+    let read_at = match (bill, counted) {
+        (Some((bill, read_at)), _) => {
+            vm.spent = Some(dollars_text(bill.this_month()));
+            read_at
+        },
+        (None, Some((balance, spent, read_at))) => {
+            match balance.spent_by_kind() {
+                Some(by_kind) => {
+                    vm.spent_at_api_prices = Some(spent_at_api_prices(
+                        state, account, spent, by_kind,
+                    )?);
+                },
+                None => vm.spent = Some(amount_text(spent)),
+            }
+            read_at
+        },
+        (None, None) => {
+            vm.failure = Some(bill_failure?);
+            return Some(vm);
+        },
+    };
+
+    vm.updated = Some(updated_text(now, read_at));
+    Some(vm)
+}
+
+/// What the agent's sessions spent through `account` this month, `spent`
+/// made of `by_kind` at API prices, with the mark of the list prices read
+/// and the agent of the first profile the account was found in; `None`
+/// before the prices are read, as the part could not have priced it.
+fn spent_at_api_prices(
+    state: &AgentsState,
+    account: &Account,
+    spent: &Amount,
+    by_kind: &MoneyByKind,
+) -> Option<SpentAtApiPricesViewModel> {
+    let profiles = state.profiles();
+    let prices = profiles.prices().last_good()?;
+    let agent = account.found_in().iter().find_map(|place| match place {
+        FoundIn::ProfileFolder { agent, .. } => Some(state.agent_name(agent)),
+        _ => None,
+    });
+
+    Some(SpentAtApiPricesViewModel::of(
+        &amount_text(spent),
+        by_kind,
+        agent,
+        prices,
+        profiles.time_zone(),
+    ))
 }
 
 #[cfg(test)]
@@ -260,9 +303,9 @@ mod tests {
     use crate::reducer::reduce;
     use crate::testing::{
         at, bill_loaded, bill_of, chatgpt_login, claude, codex, connected,
-        five_hour_limits, limits_numbers, now, numbers_loaded, organization,
-        price_table, saved_with_given_key, set_prices, spend_loaded,
-        with_accounts,
+        five_hour_limits, kind_line, limits_numbers, now, numbers_loaded,
+        organization, price_table, saved_with_given_key, set_prices,
+        spend_loaded, with_accounts,
     };
     use crate::types::SpendCount;
 
@@ -396,10 +439,95 @@ mod tests {
                 updated: Some(updated_text(now(), now())),
                 rows: Vec::new(),
                 spent: exact("$42.00"),
+                spent_at_api_prices: None,
                 is_stale: false,
                 failure: None,
             }))
         );
+    }
+
+    /// The money of a key that its part counted from the agent's sessions
+    /// at API prices, $42.10 this month: $30 of input, $10 written to the
+    /// cache and $2.10 read from it.
+    fn spent_at_api_prices() -> Balance {
+        let micro = otty_agents::Dollars::from_micro_dollars;
+        let by_kind = otty_agents::MoneyByKind::new(
+            micro(30_000_000),
+            micro(10_000_000),
+            micro(2_100_000),
+            micro(0),
+        );
+
+        Balance::new(None, None)
+            .with_spent_this_month(Amount::new(42.1, "USD"))
+            .with_spent_by_kind(Some(by_kind))
+    }
+
+    /// Issue 22 of spec 2026-11-23: a key whose provider tells no spend
+    /// shows what its sessions on this computer spent this month at API
+    /// prices, marked so, with its kinds for the tooltip and where it was
+    /// counted.
+    #[test]
+    fn a_key_shows_its_spend_at_api_prices_from_its_sessions() {
+        let key = crate::testing::found_key("anthropic");
+        let numbers =
+            otty_agents::AccountNumbers::Balance(spent_at_api_prices());
+        let mut state = crate::testing::with_key_read(&key, Ok(numbers));
+        set_prices(&mut state, price_table());
+
+        let numbers = AccountNumbersViewModel::of(&state, &key, now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the money of the key: {numbers:?}");
+        };
+        assert_eq!(money.spent, None, "no exact money");
+        let spent = money.spent_at_api_prices.expect("the spend at API prices");
+        assert_eq!(spent.amount, "~$42.10");
+        assert_eq!(
+            spent.kinds,
+            [
+                kind_line(Key::AgentsKindInput, "~$30.00"),
+                kind_line(Key::AgentsKindCacheWritten, "~$10.00"),
+                kind_line(Key::AgentsKindCached, "~$2.10"),
+            ]
+        );
+        assert_eq!(spent.mark.label, i18n::t(Key::AgentsApiPricesMark));
+        let agent = state.agent_name(&crate::testing::claude_id()).to_string();
+        assert_eq!(
+            spent.source,
+            Some(i18n::filled(
+                Key::TplAgentsSpentFromSessions,
+                &[("agent", &agent)]
+            ))
+        );
+        assert_eq!(money.updated, Some(updated_text(now(), at(10))));
+    }
+
+    /// Issue 22: an organization whose bill is read with an admin key
+    /// shows its bill, not the spend of its sessions.
+    #[test]
+    fn the_bill_comes_before_the_spend_at_api_prices() {
+        let mut state = with_accounts(
+            &[(claude(), connected(), vec![organization()])],
+            saved_with_given_key(),
+        );
+        let numbers =
+            otty_agents::AccountNumbers::Balance(spent_at_api_prices());
+        let _ = reduce(
+            &mut state,
+            numbers_loaded(&organization(), Ok(numbers), at(10)),
+        );
+        let _ = reduce(&mut state, bill_loaded(Ok(bill_of(40, 2))));
+        set_prices(&mut state, price_table());
+
+        let numbers =
+            AccountNumbersViewModel::of(&state, &organization(), now());
+
+        let Some(AccountNumbersViewModel::Money(money)) = numbers else {
+            panic!("the money of the organization: {numbers:?}");
+        };
+        assert_eq!(money.spent, exact("$42.00"));
+        assert_eq!(money.spent_at_api_prices, None);
     }
 
     /// Spec 2026-11-23, Decision 1: with no bill, the tokens of the
@@ -514,6 +642,7 @@ mod tests {
                 updated: Some(updated_text(now(), at(10))),
                 rows: vec![row(Key::AgentsLeft, "¥110.00", None)],
                 spent: None,
+                spent_at_api_prices: None,
                 is_stale: false,
                 failure: None,
             }))

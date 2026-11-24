@@ -8,9 +8,10 @@
 //! or a note itself.
 
 use jiff::tz::TimeZone;
-use otty_agents::{FetchedPrices, MoneyTotal};
+use otty_agents::{FetchedPrices, MoneyByKind, MoneyTotal, TokenCount};
 use otty_app_i18n::{self as i18n, Key};
 
+use super::breakdown::{Breakdown, BreakdownLine};
 use super::limits::UsageRowViewModel;
 use super::numbers::dollars_text;
 use super::reset_time::date_time_text;
@@ -29,11 +30,60 @@ pub(crate) struct MoneyViewModel {
     /// The money spent this month, such as "$42.00": the bill or the
     /// provider's count; `None` when the provider told none.
     pub(crate) spent: Option<String>,
+    /// What the agent's sessions on this computer spent this month at API
+    /// prices, as the provider part counted it, for an account with no
+    /// bill and no count of its provider (issue 22 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    pub(crate) spent_at_api_prices: Option<SpentAtApiPricesViewModel>,
     /// Whether the money is older, drawn greyed, because the latest read
     /// failed.
     pub(crate) is_stale: bool,
     /// Why the latest read failed, or why the bill could not be read.
     pub(crate) failure: Option<String>,
+}
+
+/// "Your spend this month" of an account: what the agent's own sessions
+/// on this computer spent through it this month, priced at API prices by
+/// its provider part, with the mark, its kinds on hover and where it was
+/// counted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpentAtApiPricesViewModel {
+    /// The sum, an estimate: "~$42.10".
+    pub(crate) amount: String,
+    /// What the sum is made of, kind by kind, for its tooltip.
+    pub(crate) kinds: Vec<BreakdownLine>,
+    /// The mark "at API prices" with its tooltip.
+    pub(crate) mark: ApiPricesMarkViewModel,
+    /// Where it was counted, "From your Claude Code sessions on this
+    /// computer"; `None` when the account names no profile of an agent.
+    pub(crate) source: Option<String>,
+}
+
+impl SpentAtApiPricesViewModel {
+    /// `amount` spent at API prices, made of `by_kind`, counted from the
+    /// sessions of the agent named `agent`, priced at `prices`, fetched
+    /// at a time told in the user's `time_zone`.
+    pub(crate) fn of(
+        amount: &str,
+        by_kind: &MoneyByKind,
+        agent: Option<&str>,
+        prices: &FetchedPrices,
+        time_zone: Option<&TimeZone>,
+    ) -> Self {
+        let money = MoneyTotal::at_api_prices(*by_kind, 1);
+        let kinds =
+            Breakdown::of(&TokenCount::default(), &money, Some(prices)).money;
+        let source = agent.map(|agent| {
+            i18n::filled(Key::TplAgentsSpentFromSessions, &[("agent", agent)])
+        });
+
+        Self {
+            amount: format!("~{amount}"),
+            kinds,
+            mark: ApiPricesMarkViewModel::of(prices, time_zone),
+            source,
+        }
+    }
 }
 
 /// A sum of money of tokens as it is shown: the sum written, such as

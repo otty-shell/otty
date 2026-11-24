@@ -7,14 +7,14 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.16, install it from `assets/plugins/openai/` of the OTTY repository with
+Official, version 0.2.17, install it from `assets/plugins/openai/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
 repository will be `github.com/otty-shell/otty-plugin-openai`.
 
 | Part                       | Kind     | Gives                                                                         |
 | -------------------------- | -------- | ----------------------------------------------------------------------------- |
 | [Codex](#codex-agent)      | agent    | The default profile, sessions, tokens and their money at API prices, and whether a profile is logged in. |
-| [OpenAI](#openai-provider) | provider | The OpenAI accounts found in your Codex profiles and in OTTY's own Codex logins, the limits and credits of a ChatGPT login, from OpenAI or from Codex, and the bill of an organization. |
+| [OpenAI](#openai-provider) | provider | The OpenAI accounts found in your Codex profiles and in OTTY's own Codex logins, the limits and credits of a ChatGPT login, from OpenAI or from Codex, the bill of an organization, and your spend this month of a key from your Codex sessions. |
 
 The two parts do not know about each other's pages: the Codex part says nothing about accounts,
 and the OpenAI part shows no profile.
@@ -74,7 +74,7 @@ both places under Source.
 
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Logins in Codex profiles | Inside each folder of a call: `auth.json` with its keys as handles, `config.toml` (who a login is sent to), and the session files `sessions/**` and `archived_sessions/**` of a profile, where Codex writes the limits it was last told. |
+| Logins in Codex profiles | Inside each folder of a call: `auth.json` with its keys as handles, `config.toml` (who a login is sent to), and the session files `sessions/**` and `archived_sessions/**` of a profile, where Codex writes the limits it was last told and the tokens of each answer, for [your spend this month](#your-spend-this-month). |
 | Runs           | [`codex -s read-only -a never app-server`](#codex-app-server), with `CODEX_HOME` set to one of the folders of the call. |
 
 - The limits of a ChatGPT login come from `chatgpt.com` with the login's token. In OTTY's own login
@@ -87,9 +87,27 @@ both places under Source.
   login, a login the server refused needs **Log in again**. Nothing is renewed by the plugin.
 - OTTY's own login (Add account → **Log in with Codex**) runs `codex login` with `CODEX_HOME` set to
   OTTY's own folder.
-- An API key has no numbers OpenAI tells: nothing is sent for it.
+- An API key has no numbers OpenAI tells: nothing is sent for it. It shows
+  [your spend this month](#your-spend-this-month).
 - While it runs, the files of the Codex part are refused to it, but for what it lists inside the
   folders of the call.
+
+### Your spend this month
+
+OpenAI tells nothing of what one API key spent. So a key found in your Codex profiles shows **Your
+spend this month**, such as "~$42.10", marked "at API prices": what the answers of this calendar
+month (of your time zone) in the session files of those folders would cost at the API price of each
+model, from OTTY's price list. Hovering over it lists the input, cached and output money.
+
+- It counts only the Codex sessions on this computer, of the profiles OTTY shows. Other programs,
+  other computers and other people using the same key are not in it.
+- Each session names the provider that served it (`model_provider`), so a session of a local model
+  or of another provider is left out. It does not name the login it used, so the answers of a
+  folder served by OpenAI count for the key that folder logs in with now. A folder that changed
+  from a ChatGPT login to a key this month counts its earlier answers for the key too.
+- An admin key runs no session, a ChatGPT login shows its limits instead, and OTTY's own login
+  folder is never counted.
+- It is an estimate: list prices know nothing of discounts or of a negotiated rate.
 
 **Open usage page** opens `chatgpt.com/codex/settings/usage` for a login,
 `platform.openai.com/usage` for a key or an organization.

@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "otty-plugin-openrouter"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "otty-plugin-sdk",
  "serde_json",

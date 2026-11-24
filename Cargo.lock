@@ -4556,6 +4556,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "globset",
+ "jiff",
  "keyring",
  "log",
  "memchr",

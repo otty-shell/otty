@@ -74,6 +74,7 @@ impl DaySums {
                 cost: Money {
                     amount: sum.max(0) as f64 / MICRO_DOLLARS_IN_DOLLAR,
                     currency: "USD".to_string(),
+                    by_kind: None,
                 },
             })
             .collect();

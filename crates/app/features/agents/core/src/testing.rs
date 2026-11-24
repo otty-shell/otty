@@ -24,8 +24,9 @@ use otty_ui_kit::components::context_menu::MenuPlace;
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
 use crate::model::{
-    Breakdown, BreakdownLine, EntryIcon, MoneyKind, PeriodPicker, ShownMoney,
-    UsageBarViewModel, UsageBlockViewModel, UsageTableRowViewModel,
+    ApiPricesMarkViewModel, Breakdown, BreakdownLine, EntryIcon, MoneyKind,
+    PeriodPicker, ShownMoney, SpentAtApiPricesViewModel, UsageBarViewModel,
+    UsageBlockViewModel, UsageTableRowViewModel,
 };
 use crate::reducer::reduce;
 use crate::state::AgentsState;
@@ -1223,6 +1224,29 @@ pub(crate) fn kind_line(key: Key, value: &str) -> BreakdownLine {
     BreakdownLine {
         name: i18n::t(key),
         value: String::from(value),
+    }
+}
+
+/// What a key spent this month by its Claude Code sessions, as its page
+/// shows it: $42.10 at API prices, $30 of input, $10 written to the cache
+/// and $2.10 read from it (issue 22 of spec
+/// 2026-11-23-accounts-apart-from-profiles).
+pub(crate) fn spent_at_api_prices() -> SpentAtApiPricesViewModel {
+    SpentAtApiPricesViewModel {
+        amount: String::from("~$42.10"),
+        kinds: vec![
+            kind_line(Key::AgentsKindInput, "~$30.00"),
+            kind_line(Key::AgentsKindCacheWritten, "~$10.00"),
+            kind_line(Key::AgentsKindCached, "~$2.10"),
+        ],
+        mark: ApiPricesMarkViewModel {
+            label: i18n::t(Key::AgentsApiPricesMark),
+            tip: String::from("Tokens priced at the API list prices"),
+        },
+        source: Some(i18n::filled(
+            Key::TplAgentsSpentFromSessions,
+            &[("agent", "Claude Code")],
+        )),
     }
 }
 

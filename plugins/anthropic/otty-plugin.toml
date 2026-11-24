@@ -3,7 +3,7 @@
 [plugin]
 id = "anthropic"
 name = "Anthropic"
-version = "0.2.17"
+version = "0.2.18"
 description = "Claude Code and Anthropic accounts in OTTY."
 repository = "https://github.com/otty-shell/otty-plugin-anthropic"
 license = "Apache-2.0"
@@ -60,7 +60,8 @@ fields = ["/env/ANTHROPIC_AUTH_TOKEN", "/env/ANTHROPIC_API_KEY"]
 # Claude login, read from Anthropic's usage request, else from the
 # `/usage` panel of Claude Code in a profile the login was found in, and
 # the bill of an organization read with its own admin key or the one the
-# user gives for it.
+# user gives for it. A key or an organization without a bill gets what
+# the Claude Code sessions of its folders spent this month, at API prices.
 [[agents.provider]]
 id = "anthropic"
 name = "Anthropic"
@@ -124,13 +125,19 @@ args = [
 # time or Anthropic refused it, so Claude Code renews OTTY's own login
 # itself; the part never renews a token.
 #
+# `read` is the session files of Claude Code: the part counts what the
+# sessions of a profile folder spent this month through the key or the
+# Console organization that pays for that folder, at API prices ("Your
+# spend this month"), and the probe lists its own files there. The files
+# of OTTY's own login folder are the probe's and are never counted.
+#
 # `write` is the session files of the probe and their folder, the only
 # files the part may delete, inside each folder of the call.
 [[agents.provider.logins]]
 agent = "claude-code"
 folder_env = "CLAUDE_CONFIG_DIR"
 log_in = true
-read = ["projects/*--cache-otty-agent-probe/*.jsonl"]
+read = ["projects/*/**/*.jsonl"]
 write = [
   "projects/*--cache-otty-agent-probe",
   "projects/*--cache-otty-agent-probe/*.jsonl",

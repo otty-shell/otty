@@ -29,6 +29,7 @@ use crate::accounts::{
     own_login_folders,
 };
 use crate::codex_limits::{read_codex_limits, read_own_login_limits};
+use crate::key_spend::key_spend;
 use crate::limits::Limits;
 use crate::needs::{self, ADMIN_SLOT};
 use crate::{OpenAi, accounts, chatgpt_usage, organization_costs};
@@ -46,14 +47,18 @@ impl Provider for OpenAi {
     /// holds it; else what Codex knows in one of its folders; else
     /// nothing. A refused or expired login needs the user to log in again
     /// in that folder. OpenAI tells nothing of the money of one API key,
-    /// so a key has no numbers and nothing is sent.
+    /// so for a key the part counts what the Codex sessions of its folders
+    /// spent this month at API prices (issue 22), and sends nothing.
     fn numbers(
         _provider: &str,
         account: &Account,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
         if account.kind != AccountKind::Subscription {
-            return Ok(no_numbers());
+            return Ok(AccountNumbers {
+                spent_this_month: key_spend(account),
+                ..no_numbers()
+            });
         }
 
         let own = own_login_folders(account);
@@ -505,14 +510,25 @@ mod tests {
         assert!(host.started().is_empty());
     }
 
+    /// Issue 22: an API key has no numbers of OpenAI's but its spend this
+    /// month by its sessions served by OpenAI, nothing for a folder whose
+    /// sessions a local model served, and nothing is sent.
     #[test]
-    fn an_api_key_has_no_numbers_and_sends_nothing() {
+    fn an_api_key_has_only_its_spend_and_sends_nothing() {
         let host = host();
         let account = account_in(&host, ".codex-work");
 
-        let numbers = numbers_of(&host, &account);
+        let numbers = numbers_of(&host, &account).expect("the numbers");
 
-        assert_eq!(numbers, Ok(no_numbers()));
+        let spent = numbers.spent_this_month.clone().expect("the spend");
+        assert_eq!(spent.by_kind.map(|cost| cost.total), Some(0));
+        assert_eq!(
+            numbers,
+            AccountNumbers {
+                spent_this_month: Some(spent),
+                ..no_numbers()
+            }
+        );
         assert!(host.requests().is_empty());
     }
 

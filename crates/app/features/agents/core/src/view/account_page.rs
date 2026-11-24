@@ -251,6 +251,7 @@ mod tests {
                 updated: None,
                 rows: Vec::new(),
                 spent: Some(String::from("$42.00")),
+                spent_at_api_prices: None,
                 is_stale: false,
                 failure: None,
             })),
@@ -268,6 +269,40 @@ mod tests {
         assert!(
             ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err(),
             "the money of an account is as its provider told it"
+        );
+    }
+
+    /// Issue 22 of spec 2026-11-23: what a key spent this month by its
+    /// sessions shows as "Your spend this month", with the mark "at API
+    /// prices" and where it was counted.
+    #[test]
+    fn a_key_shows_its_spend_at_api_prices_with_the_mark() {
+        let vm = AccountPageViewModel {
+            numbers: Some(AccountNumbersViewModel::Money(MoneyViewModel {
+                updated: None,
+                rows: Vec::new(),
+                spent: None,
+                spent_at_api_prices: Some(crate::testing::spent_at_api_prices()),
+                is_stale: false,
+                failure: None,
+            })),
+            ..page()
+        };
+        let themes = ThemeManager::new();
+        let mut ui =
+            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+
+        for shown in [
+            i18n::t(Key::AgentsYourSpendThisMonth),
+            "~$42.10",
+            i18n::t(Key::AgentsApiPricesMark),
+            "From your Claude Code sessions on this computer",
+        ] {
+            ui.find(shown).expect("the spend at API prices shows");
+        }
+        assert!(
+            ui.find(i18n::t(Key::AgentsSpentThisMonth)).is_err(),
+            "no exact money"
         );
     }
 

@@ -19,6 +19,13 @@ admin key an organization. One account logged in to two folders is one
 account found in both. A login Codex sends to a gateway is for the
 gateway's host and is no OpenAI account.
 
+OpenAI tells nothing of what a key spent, so an API key gets "Your
+spend this month" at API prices: the answers of this calendar month that
+OpenAI served (`model_provider`) in the Codex sessions of the folders
+that log in with it now, priced at the price OTTY gives during
+`numbers`, kind by kind. It counts only this computer's Codex sessions,
+never OTTY's own login folder.
+
 It reads the numbers of an account any way it can, only in the folders
 it was found in: the limits and credits of a ChatGPT login from
 `chatgpt.com` with its token; when the server gives no answer, the

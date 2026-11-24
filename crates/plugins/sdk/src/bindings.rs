@@ -66,6 +66,7 @@ pub mod agents_provider {
             "otty:host/clock@0.1.0": crate::bindings::host::otty::host::clock,
             "otty:host/log@0.1.0": crate::bindings::host::otty::host::log,
             "otty:agents-agent/types@0.1.0": crate::bindings::agents_agent::otty::agents_agent::types,
+            "otty:agents-agent/prices@0.1.0": crate::bindings::agents_agent::otty::agents_agent::prices,
         },
         additional_derives: [PartialEq],
         pub_export_macro: true,

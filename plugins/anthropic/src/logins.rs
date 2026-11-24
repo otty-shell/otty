@@ -110,6 +110,56 @@ pub(crate) fn logins(folder: &LoginFolder) -> Vec<FolderLogin> {
     [claude, console, settings].into_iter().flatten().collect()
 }
 
+/// The id of the account that pays for the answers Claude Code gets in the
+/// profile folder `folder` now, an account paid per token (issue 22 of
+/// spec 2026-11-23-accounts-apart-from-profiles): the key of the settings,
+/// which Claude Code sends first, else the Console organization of its
+/// login, else its Console key. Its Console key is only how Claude Code
+/// reaches the organization, so the organization pays. `None` when a
+/// Claude subscription pays, when the settings send Claude Code to
+/// another server than Anthropic's, for an admin key, which runs no
+/// session, and for OTTY's own login folder, whose sessions are the
+/// `/usage` probe's.
+pub(crate) fn paying_account(folder: &LoginFolder) -> Option<String> {
+    let LoginFolder::Profile((agent, path)) = folder else {
+        return None;
+    };
+    if agent != CLAUDE_CODE {
+        return None;
+    }
+    let settings = read_settings(path);
+    let provider = provider_of(settings.as_ref().map(KeyFile::fields))?;
+    if !is_anthropic(&provider) {
+        return None;
+    }
+
+    let settings_login = settings
+        .and_then(settings_key)
+        .and_then(|key| key_login(folder, key));
+    if let Some(login) = settings_login {
+        let account = login.account;
+        return (account.kind == AccountKind::Key).then_some(account.id);
+    }
+
+    let configs = read_global_configs(path);
+    let claude = configs
+        .iter()
+        .find_map(|config| config.fields().oauth_account())
+        .and_then(|account| claude_login(folder, path, account));
+    if let Some(login) = claude {
+        let account = login.account;
+        return (account.kind == AccountKind::Organization)
+            .then_some(account.id);
+    }
+
+    let console = configs
+        .into_iter()
+        .find_map(console_key)
+        .and_then(|key| key_login(folder, key))?;
+    let account = console.account;
+    (account.kind == AccountKind::Key).then_some(account.id)
+}
+
 /// The path of `folder` when it is a Claude Code config folder: a
 /// profile folder of `claude-code`, or OTTY's own login folder, where
 /// `claude auth login` ran with `CLAUDE_CONFIG_DIR` (spec

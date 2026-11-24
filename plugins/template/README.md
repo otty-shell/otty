@@ -77,6 +77,12 @@ the folder into a new repository and replace what the parts read.
   provider part has only its server, so an account whose key is gone
   reads nothing. Its tests run it with `TestHost::as_provider_in`, which
   gives the folders as OTTY does.
+- A provider whose server tells nothing of what a key spent may count it
+  from the agent's own sessions: the template adds the answers of this
+  month of its profile folders with `agents::MonthSpend` and gives them
+  as `spent_this_month` with `by_kind`, which OTTY shows "at API
+  prices". During `numbers` OTTY answers `agents::price_of`, and the
+  month starts on the user's clock (`clock::local_offset_minutes`).
 - What the user must do for the agent or the provider, the part says
   itself as a need: an id, a title, a text and one button
   (`src/needs.rs`). The agent part gives one when nobody is logged in

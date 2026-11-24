@@ -339,6 +339,11 @@ interface env {
 interface clock {
   /// Milliseconds since the Unix epoch.
   now-ms: func() -> s64;
+  /// How many minutes the user's clock is ahead of UTC at `at-ms`, in the
+  /// time zone of the system, such as 180 in Moscow or -300 in New York
+  /// in winter; 0 when the system tells none. A plugin counts the days
+  /// and months of the user's own calendar with it.
+  local-offset-minutes: func(at-ms: s64) -> s32;
 }
 
 /// The plugin's log, shown on the Plugins page.

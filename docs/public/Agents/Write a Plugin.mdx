@@ -86,7 +86,7 @@ otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY rel
 [plugin]
 id = "example"                  # stable; a new id is a new plugin
 name = "Example"
-version = "0.1.10"              # equals the release tag without "v"
+version = "0.1.11"              # equals the release tag without "v"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/you/otty-plugin-example"
 license = "Apache-2.0"
@@ -292,6 +292,17 @@ A key that is not at its place is a normal case, such as a Claude Code profile w
 `.credentials.json` is `{}` while Claude Code still works: using the handle fails with
 `HostError::NotFound`. Try your other ways then. When no way works, answer numbers with nothing in
 them, not an error, and OTTY shows no limits.
+
+When the provider tells nothing of what a key or an organization spent, the part may count it from
+the agent's own sessions in the account's folders: give it as `spent_this_month` with `by_kind`, a
+`PricedCost` in millionths of a US dollar, whose presence shows it as "Your spend this month" marked
+"at API prices", its kinds on hover. Money the provider told has no `by_kind`. During `numbers` OTTY
+answers `agents::price_of` as it does for an agent part. `agents::MonthSpend::this_month()` adds up
+the answers of the user's calendar month (it starts at midnight of the first day on the user's
+clock, `clock::local_offset_minutes`), kind by kind and each identity once, and
+`MonthSpend::money()` gives that money. Skip a file changed before `MonthSpend::since_ms()`. In
+tests, `TestHost::with_local_offset_minutes` sets the user's clock. The template counts the spend of
+its key this way.
 
 A place is a glob and its kind, files or a database. OTTY lists the files of the places, keeps
 what each file gave, and asks your part again only for a file that is new or whose size or change
@@ -504,8 +515,8 @@ permissions of the called part; a refused call returns `HostError::NotAllowed`.
 | `keys::open`                                         | A handle for a declared key place.                       | `keys`             |
 | `env::var`, `env::home`                              | A variable; the home folder.                             | `env`              |
 | `env::language`, `env::in_language`                  | The language OTTY shows now; one of your translations.   | none               |
-| `agents::price_of`                                   | The API price of a model from OTTY's price list.         | none, agent parts  |
-| `clock::now_ms`, `log::info` and the other levels    | The time; a line in the plugin's log.                    | none               |
+| `agents::price_of`                                   | The API price of a model from OTTY's price list, while an agent part reads answers or a provider part reads numbers. | none |
+| `clock::now_ms`, `clock::local_offset_minutes`, `log::info` and the other levels | The time; how far the user's clock is from UTC at a time; a line in the plugin's log. | none |
 
 A `Key` has `fingerprint()`, `has_prefix(text)`, `jwt_claims()` and `is_given_in_otty()` (whether
 the user gave it in OTTY, [above](#a-refused-key)); the plugin never reads the key.

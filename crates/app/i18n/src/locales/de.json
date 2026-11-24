@@ -684,6 +684,8 @@
     "agents_account_info": "Kontoinfo",
     "agents_field_key": "Schlüssel",
     "agents_spent_this_month": "Diesen Monat ausgegeben",
+    "agents_your_spend_this_month": "Deine Ausgaben diesen Monat",
+    "tpl_agents_spent_from_sessions": "Aus deinen {agent}-Sitzungen auf diesem Computer",
     "agents_source_format_changed": "Format geändert",
     "tpl_agents_failure_format_changed": "das Format der Sitzungsdateien hat sich geändert: {understood} von {seen} Einträgen verstanden",
     "tpl_agents_failure_plugin": "{plugin} {version} konnte nicht lesen: {reason}",

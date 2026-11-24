@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use iced::Task;
-use otty_agents::{Account, GivenKey, PluginProvider};
+use otty_agents::{Account, ApiPrices, GivenKey, PluginProvider};
 use otty_app_agents::{AgentsIntent, LoadedAccountNumbers};
 
 use crate::background::{on_own_thread, read_stopped};
@@ -23,9 +23,10 @@ use crate::shell_variable::shell_variable;
 /// (`given`), read from their files or variables, a variable as the
 /// user's login shell at `shell` sees it. The part reads with a handle to
 /// each key, any way it can, in the folders the account was found in; its
-/// programs start only when `starts_programs`. A key is used for this read
-/// only and never logged. The answer comes back as
-/// [`AgentsIntent::AccountNumbersLoaded`].
+/// programs start only when `starts_programs`, and it may price tokens at
+/// `prices`, such as what the agent's own sessions spent through a key
+/// this month. A key is used for this read only and never logged. The
+/// answer comes back as [`AgentsIntent::AccountNumbersLoaded`].
 ///
 /// # Example
 ///
@@ -48,6 +49,7 @@ use crate::shell_variable::shell_variable;
 ///     account,
 ///     Vec::new(),
 ///     true,
+///     &Arc::default(),
 ///     "/bin/zsh",
 /// );
 ///
@@ -58,6 +60,7 @@ pub fn load_account_numbers(
     account: Account,
     given: Vec<GivenKey>,
     starts_programs: bool,
+    prices: &Arc<ApiPrices>,
     shell: &str,
 ) -> Task<AgentsIntent> {
     let task = format!(
@@ -65,6 +68,7 @@ pub fn load_account_numbers(
         account.provider().as_str()
     );
     let providers = Arc::clone(providers);
+    let prices = Arc::clone(prices);
     let fallback = account.clone();
     let shell = shell.to_string();
 
@@ -76,6 +80,7 @@ pub fn load_account_numbers(
                 account,
                 &given,
                 starts_programs,
+                &prices,
                 |name| shell_variable(&shell, name),
             )
         },
@@ -89,13 +94,15 @@ pub fn load_account_numbers(
 }
 
 /// The numbers of `account`, read with the keys the user gave for it
-/// (`given`), starting programs only when `starts_programs`; `env_var`
-/// gives the value of an environment variable.
+/// (`given`), starting programs only when `starts_programs`, its tokens
+/// priced at `prices`; `env_var` gives the value of an environment
+/// variable.
 fn read_account_numbers(
     providers: &[PluginProvider],
     account: Account,
     given: &[GivenKey],
     starts_programs: bool,
+    prices: &Arc<ApiPrices>,
     env_var: impl Fn(&str) -> Option<String>,
 ) -> LoadedAccountNumbers {
     let numbers = otty_agents::read_account_numbers(
@@ -103,6 +110,7 @@ fn read_account_numbers(
         &account,
         given,
         starts_programs,
+        prices,
         env_var,
     );
 
@@ -192,6 +200,7 @@ mod tests {
             account.clone(),
             &[],
             true,
+            &Arc::default(),
             |_| None,
         );
 
@@ -210,8 +219,14 @@ mod tests {
         let (_, providers) =
             agents_and_providers_with_shell(home.path(), &shell);
 
-        let loaded =
-            read_account_numbers(&providers, account, &[], false, |_| None);
+        let loaded = read_account_numbers(
+            &providers,
+            account,
+            &[],
+            false,
+            &Arc::default(),
+            |_| None,
+        );
 
         assert!(!started(&home), "the shell was started");
         assert!(
@@ -258,6 +273,7 @@ mod tests {
             account.clone(),
             &[],
             true,
+            &Arc::default(),
             |_| None,
         );
 
@@ -280,6 +296,7 @@ mod tests {
             account.clone(),
             Vec::new(),
             false,
+            &Arc::default(),
             "/no/such/shell",
         ));
 

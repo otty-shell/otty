@@ -26,6 +26,7 @@ use otty_plugin_sdk::{Command, GivenKey, HostError, Key, given_key};
 use crate::claude_code::{claude_in_folder, claude_login_in};
 use crate::logins::{Access, claude_folder, logins};
 use crate::needs::{self, ADMIN_PREFIX, ADMIN_SLOT};
+use crate::session_spend::session_spend;
 use crate::{Anthropic, cost_report, oauth_usage, usage_probe};
 
 impl Provider for Anthropic {
@@ -52,29 +53,31 @@ impl Provider for Anthropic {
     /// The windows and the extra usage of a Claude login, read in one of
     /// the account's folders: from Anthropic's server with its token, else
     /// from the `/usage` panel there, else nothing. Anthropic tells
-    /// nothing of the money of one API key, so a key has no numbers and
-    /// nothing is sent.
+    /// nothing of the money of one API key, so for a key or an
+    /// organization the part counts what the Claude Code sessions of its
+    /// folders spent this month at API prices (issue 22), and sends
+    /// nothing for a key. A failed read of the server for an account paid
+    /// per token gives that spend all the same; a need comes first.
     fn numbers(
         _provider: &str,
         account: &Account,
         _given: &[GivenKey],
     ) -> Result<AccountNumbers, ReadError> {
-        let Some((folder, access)) = account_access(account) else {
-            return Ok(no_numbers());
-        };
-        let Some(path) = claude_folder(&folder) else {
-            return Ok(no_numbers());
-        };
+        let spent = session_spend(account);
 
-        match (access, &folder) {
-            (Access::Claude { token, is_past }, LoginFolder::OwnLogin(_)) => {
-                let token = token.filter(|_| !is_past);
-                own_login_numbers(account.kind, path, token.as_ref())
+        match login_numbers(account) {
+            Ok(numbers) => Ok(AccountNumbers {
+                spent_this_month: spent,
+                ..numbers
+            }),
+            Err(ReadError::NeedsUser(need)) => Err(ReadError::NeedsUser(need)),
+            Err(error) => match spent {
+                Some(spent) => Ok(AccountNumbers {
+                    spent_this_month: Some(spent),
+                    ..no_numbers()
+                }),
+                None => Err(error),
             },
-            (Access::Claude { token, .. }, _) => {
-                claude_numbers(account.kind, path, token.as_ref())
-            },
-            (Access::Key(_), _) => Ok(no_numbers()),
         }
     }
 
@@ -112,6 +115,30 @@ impl Provider for Anthropic {
     /// set to OTTY's own folder, which the user runs in a terminal tab.
     fn log_in(_provider: &str, folder: &str) -> Option<Command> {
         Some(claude_login_in(folder))
+    }
+}
+
+/// What the login of `account` tells in one of its folders: the windows
+/// and the extra usage of a Claude login, read from Anthropic's server
+/// with its token, else from the `/usage` panel there, else nothing. A key
+/// tells nothing and sends nothing.
+fn login_numbers(account: &Account) -> Result<AccountNumbers, ReadError> {
+    let Some((folder, access)) = account_access(account) else {
+        return Ok(no_numbers());
+    };
+    let Some(path) = claude_folder(&folder) else {
+        return Ok(no_numbers());
+    };
+
+    match (access, &folder) {
+        (Access::Claude { token, is_past }, LoginFolder::OwnLogin(_)) => {
+            let token = token.filter(|_| !is_past);
+            own_login_numbers(account.kind, path, token.as_ref())
+        },
+        (Access::Claude { token, .. }, _) => {
+            claude_numbers(account.kind, path, token.as_ref())
+        },
+        (Access::Key(_), _) => Ok(no_numbers()),
     }
 }
 
@@ -622,14 +649,25 @@ mod tests {
         assert!(host.started().is_empty());
     }
 
+    /// Issue 22: an API key has no numbers of Anthropic's but its spend
+    /// this month by its sessions, nothing in a folder with none, and
+    /// nothing is sent.
     #[test]
-    fn an_api_key_has_no_numbers_and_sends_nothing() {
+    fn an_api_key_has_only_its_spend_and_sends_nothing() {
         let host = host();
         let account = account_in(&host, &[".claude-api"]);
 
-        let numbers = numbers_of(&host, &account);
+        let numbers = numbers_of(&host, &account).expect("the numbers");
 
-        assert_eq!(numbers, Ok(no_numbers()));
+        let spent = numbers.spent_this_month.clone().expect("the spend");
+        assert_eq!(spent.by_kind.map(|cost| cost.total), Some(0));
+        assert_eq!(
+            numbers,
+            AccountNumbers {
+                spent_this_month: Some(spent),
+                ..no_numbers()
+            }
+        );
         assert!(host.requests().is_empty());
     }
 

@@ -18,6 +18,10 @@ rust-version = { workspace = true }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 # Matches the globs of `files.list` against the folders it walks.
 globset = { version = "0.4.21", default-features = false }
+# `clock.local-offset-minutes`: the offset of the system's time zone at a
+# time. The crate and the features otty-app-agents-io already reads the
+# user's time zone with, so no new crate is built.
+jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 # `keyring.read` and key handles in a keyring entry, only after the user
 # allowed it. The features otty-agents uses: the Secret Service over zbus
 # on Linux, the Keychain on macOS. OTTY never writes an entry.

@@ -94,6 +94,7 @@ mod tests {
             cost: Money {
                 amount,
                 currency: currency.to_string(),
+                by_kind: None,
             },
         }
     }

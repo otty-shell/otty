@@ -133,6 +133,7 @@ impl TestHost {
             vars: Vec::new(),
             language: String::from("en"),
             now_ms: None,
+            local_offset_minutes: 0,
             keyring: Vec::new(),
             keyring_allowed: false,
             terminal_folder,
@@ -225,6 +226,14 @@ impl TestHost {
     /// The same host with its clock stopped at `now_ms`.
     pub fn with_now_ms(self, now_ms: i64) -> Self {
         self.state.borrow_mut().now_ms = Some(now_ms);
+
+        self
+    }
+
+    /// The same host with the user's clock `minutes` ahead of UTC at every
+    /// time, such as 180 for Moscow; UTC until then.
+    pub fn with_local_offset_minutes(self, minutes: i32) -> Self {
+        self.state.borrow_mut().local_offset_minutes = minutes;
 
         self
     }
@@ -467,6 +476,8 @@ struct HostState {
     vars: Vec<(String, String)>,
     language: String,
     now_ms: Option<i64>,
+    /// How many minutes the user's clock is ahead of UTC.
+    local_offset_minutes: i32,
     keyring: Vec<(String, String, String)>,
     keyring_allowed: bool,
     terminal_folder: PathBuf,
@@ -839,6 +850,13 @@ pub(crate) fn now_ms() -> i64 {
 
         i64::try_from(since_epoch.as_millis()).unwrap_or(i64::MAX)
     })
+}
+
+/// The offset of the user's clock the test gave
+/// ([`TestHost::with_local_offset_minutes`]), at every time; UTC outside
+/// a call.
+pub(crate) fn local_offset_minutes(_at_ms: i64) -> i32 {
+    with_host(|state, _| Ok(state.local_offset_minutes)).unwrap_or(0)
 }
 
 pub(crate) fn write_log(level: Level, text: &str) {
@@ -1858,5 +1876,21 @@ mod tests {
 
         assert_eq!(now, 1_763_600_000_000);
         assert_eq!(host.log(), ["[warn] the format changed"]);
+    }
+
+    /// The user's time zone is UTC until a test gives another offset.
+    #[test]
+    fn the_local_offset_is_the_one_the_test_gives() {
+        let plugin = MadeUpPlugin::new();
+        let utc = TestHost::new(plugin.folder());
+        let moscow =
+            TestHost::new(plugin.folder()).with_local_offset_minutes(180);
+
+        let in_utc =
+            utc.as_agent(AGENT, || crate::clock::local_offset_minutes(0));
+        let in_moscow =
+            moscow.as_agent(AGENT, || crate::clock::local_offset_minutes(0));
+
+        assert_eq!((in_utc, in_moscow), (0, 180));
     }
 }

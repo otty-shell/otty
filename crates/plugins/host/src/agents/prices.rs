@@ -1,14 +1,15 @@
-//! OTTY's price list as the host gives it to an agent part (spec
+//! OTTY's price list as the host gives it to a part (spec
 //! 2026-11-23-accounts-apart-from-profiles, Decision 3): the part asks
 //! `prices.price-of` for the API price of a model while it reads its
-//! answers, and prices their tokens itself. The host keeps no prices: the
-//! app gives a [`PriceList`] to each read of answers.
+//! answers, and a provider part while it reads the numbers of an account
+//! (issue 22), and prices the tokens itself. The host keeps no prices: the
+//! app gives a [`PriceList`] to each read of answers and of numbers.
 
 use wasmtime::component::{HasSelf, Linker};
 
 /// The types of OTTY's price list, in the newest agent contract.
 pub use crate::agents::agent::v0_1::otty::agents_agent::prices::{
-    LongPromptPrice, ModelPrice, ProviderRef, TokenPrices,
+    LongPromptPrice, ModelPrice, PricedCost, ProviderRef, TokenPrices,
 };
 use crate::calls::CallState;
 
@@ -28,8 +29,8 @@ pub trait PriceList: Send + Sync {
     ) -> Option<ModelPrice>;
 }
 
-/// `prices.price-of`: the price list the running read of answers was
-/// given; no price outside such a read.
+/// `prices.price-of`: the price list the running read of answers or of
+/// numbers was given; no price outside such a read.
 impl crate::agents::agent::v0_1::otty::agents_agent::prices::Host
     for CallState
 {

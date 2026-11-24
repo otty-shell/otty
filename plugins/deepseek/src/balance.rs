@@ -104,6 +104,7 @@ fn money_of(info: &Value) -> Option<Money> {
     Some(Money {
         amount,
         currency: currency.to_string(),
+        by_kind: None,
     })
 }
 
@@ -268,6 +269,7 @@ mod tests {
             Some(Money {
                 amount: 110.0,
                 currency: "CNY".to_string(),
+                by_kind: None,
             })
         );
         assert_eq!(numbers.key_limit, None);
@@ -293,6 +295,7 @@ mod tests {
             Some(Money {
                 amount: 4.2,
                 currency: "USD".to_string(),
+                by_kind: None,
             })
         );
     }

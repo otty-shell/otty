@@ -7,14 +7,14 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.17, install it from `assets/plugins/anthropic/` of the OTTY repository with
+Official, version 0.2.18, install it from `assets/plugins/anthropic/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
 repository will be `github.com/otty-shell/otty-plugin-anthropic`.
 
 | Part                          | Kind     | Gives                                                                    |
 | ----------------------------- | -------- | ------------------------------------------------------------------------ |
 | [Claude Code](#claude-code-agent) | agent    | The default profile, sessions, tokens and their money at API prices, and whether a profile is logged in. |
-| [Anthropic](#anthropic-provider)  | provider | The Anthropic accounts found in your Claude Code profiles and in OTTY's own Claude Code logins, the limits of a Claude login, from Anthropic or from `/usage`, and the bill of an organization. |
+| [Anthropic](#anthropic-provider)  | provider | The Anthropic accounts found in your Claude Code profiles and in OTTY's own Claude Code logins, the limits of a Claude login, from Anthropic or from `/usage`, the bill of an organization, and your spend this month of a key or an organization from your Claude Code sessions. |
 
 The two parts do not know about each other's pages: the Claude Code part says nothing about
 accounts, and the Anthropic part shows no profile.
@@ -78,14 +78,15 @@ One account logged in to two folders is one account with both places under Sourc
 
 | What           | Where                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Logins in Claude Code profiles | Inside each folder of a call: `.credentials.json`, `.claude.json` and `settings.json`, their keys as handles. The session files of the `/usage` run, `projects/*--cache-otty-agent-probe/*.jsonl`, which it reads and deletes with their folder once empty. |
+| Logins in Claude Code profiles | Inside each folder of a call: `.credentials.json`, `.claude.json` and `settings.json`, their keys as handles. The session files `projects/**/*.jsonl`, for [your spend this month](#your-spend-this-month). The session files of the `/usage` run, `projects/*--cache-otty-agent-probe/*.jsonl`, which it deletes with their folder once empty. |
 | Logins         | `~/.claude.json`, next to the default `~/.claude`: `primaryApiKey`, as a handle.                        |
 | Variables      | `CLAUDE_CONFIG_DIR`, to tell the default folder. `DISABLE_AUTOUPDATER`, passed to the `/usage` run only. `CLAUDE_CONFIG_DIR` set to one of the folders of the call, for that run. |
 | Runs           | `claude` in a hidden terminal for [`/usage`](#claude-code-usage).                                      |
 
 - A login token that is not in its file is no failure: the part asks `/usage` instead, or reads
   nothing. An admin key you gave still reads the bill.
-- An API key has no numbers Anthropic tells: nothing is sent for it.
+- An API key has no numbers Anthropic tells: nothing is sent for it. It shows
+  [your spend this month](#your-spend-this-month).
 - A Claude login whose token is past its time with no refresh token beside it can not be renewed:
   it expired. When Anthropic refuses a login, or `/usage` asks to log in, the account gets **The
   login expired**. A token past its time with a refresh token is no need: Claude Code renews it on
@@ -96,6 +97,25 @@ One account logged in to two folders is one account with both places under Sourc
   even that fails, the account needs **Log in again**.
 - While it runs, the files of the Claude Code part are refused to it, but for what it lists inside
   the folders of the call.
+
+### Your spend this month
+
+Anthropic tells an employee nothing of what their key spent, and an admin key is for admins only.
+So a key or a Console organization found in your Claude Code profiles shows **Your spend this
+month**, such as "~$42.10", marked "at API prices": what the answers of this calendar month (of your
+time zone) in the session files of those folders would cost at the API price of each model, from
+OTTY's price list. Hovering over it lists the input, cache write, cached and output money.
+
+- It counts only the Claude Code sessions on this computer, of the profiles OTTY shows. Other
+  programs, other computers and your colleagues using the same key or organization are not in it.
+- Claude Code does not write which account served an answer, so the answers of a folder count for
+  the account that pays for that folder now: the key of `settings.json`, else the Console
+  organization of its login, else its Console key. A folder that changed its login this month
+  counts its earlier answers for the new one too.
+- Answers sent to another server by `ANTHROPIC_BASE_URL`, such as DeepSeek's, are left out. OTTY's
+  own login folder is never counted, and a Claude subscription shows its limits instead.
+- It is an estimate: list prices know nothing of discounts or of a negotiated rate. An organization
+  whose bill is read with an admin key shows that bill instead.
 
 **Open usage page** opens `claude.ai/settings/usage` for a login, `console.anthropic.com/settings/usage`
 for a key or an organization.
@@ -114,7 +134,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 | Needs login                      | Claude Code | Nobody is logged in with the profile's folder, such as a new folder that is still empty. | **Run claude auth login --claudeai**, with `CLAUDE_CONFIG_DIR` set to the profile's folder. |
 | The login expired                | Claude Code, Anthropic | The Claude login of the folder expired with no way to renew it (both parts, on the profile and on its account), or Anthropic refused it, or `/usage` asked to log in (Anthropic, on the account). | **Run claude** in that folder: Claude Code renews the login or asks you to log in again. Acting on either page fixes both. |
 | Log in again                     | Anthropic   | Anthropic refused OTTY's own login, or Claude Code could not renew it there. Shown on the account only. | **Run claude auth login --claudeai** in OTTY's own folder. |
-| The real bill needs an admin key | Anthropic   | An organization has no admin key of its own in its folders. Until it has one, the organization shows no money: OTTY counts no money from the tokens. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
+| The real bill needs an admin key | Anthropic   | An organization has no admin key of its own in its folders. Until it has one, the organization shows only [your spend this month](#your-spend-this-month) at API prices, not its bill. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
 | The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. The next bill reads with it. |
 
 ## What it changes

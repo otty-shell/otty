@@ -10,13 +10,16 @@
 // provider's server with the login there, or by asking the agent itself,
 // such as `claude /usage` or the limits Codex writes in its files. It
 // gets keys only as handles. The values it shares with the agent contract
-// come from `otty:agents-agent/types`.
+// come from `otty:agents-agent/types`, and OTTY's price list, which it asks
+// while it reads numbers, with the money it prices, from
+// `otty:agents-agent/prices`.
 package otty:agents-provider@0.1.0;
 
 interface provider {
   use otty:host/types@0.1.0.{command, need};
   use otty:host/keys@0.1.0.{given-key};
   use otty:agents-agent/types@0.1.0.{read-error};
+  use otty:agents-agent/prices@0.1.0.{priced-cost};
 
   /// A folder where a login of this provider may sit. Inside it, for the
   /// call it is given to, the part reads what the `logins` of its
@@ -104,6 +107,13 @@ interface provider {
     amount: f64,
     /// The ISO code of the currency, such as `USD`.
     currency: string,
+    /// What the money is made of when the part counted it itself from
+    /// tokens at API prices (`prices.price-of`), such as what the agent's
+    /// own sessions on this computer spent through a key this month: in
+    /// millionths of a US dollar, its total the amount. Its presence marks
+    /// the money "at API prices", an estimate; none for money the
+    /// provider told, which is exact.
+    by-kind: option<priced-cost>,
   }
 
   /// How much a key used of its own limit.
@@ -132,6 +142,9 @@ interface provider {
     extra-usage: option<extra-usage>,
     left: option<money>,
     key-limit: option<key-limit>,
+    /// The money spent this calendar month of the user's time zone: as
+    /// the provider counted it, else as the part counted it from the
+    /// agent's sessions at API prices, with its `by-kind`.
     spent-this-month: option<money>,
     plan: option<string>,
     /// When the numbers were true, for numbers read from an older record
@@ -167,7 +180,8 @@ interface provider {
   /// part asked for them, each under its slot. With no way that works
   /// the part answers numbers with nothing in them, not an error; a
   /// refused or expired login is `needs-user` with the need that fixes
-  /// it.
+  /// it. During this call `prices.price-of` answers, so the part may
+  /// price tokens, such as those of the agent's own sessions.
   numbers: func(provider: string, account: account, given: list<given-key>) -> result<account-numbers, read-error>;
   /// The bill of the organization `account` over `days`, day by day. A
   /// part that needs a key it has not got answers `needs-user` with
@@ -195,5 +209,6 @@ world provider-part {
   import otty:host/clock@0.1.0;
   import otty:host/log@0.1.0;
   import otty:agents-agent/types@0.1.0;
+  import otty:agents-agent/prices@0.1.0;
   export provider;
 }

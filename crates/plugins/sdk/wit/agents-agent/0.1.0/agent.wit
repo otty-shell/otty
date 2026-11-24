@@ -14,7 +14,7 @@ interface agent {
   use otty:host/types@0.1.0.{command, need};
   use otty:host/files@0.1.0.{file-info};
   use types.{read-error};
-  use prices.{provider-ref};
+  use prices.{provider-ref, priced-cost};
 
   /// A config folder of the agent on this computer.
   record profile-place {
@@ -91,22 +91,6 @@ interface agent {
     cache-written: u64,
     output: u64,
     reasoning: u64,
-  }
-
-  /// The money of one answer at API prices, in millionths of a US
-  /// dollar: what each kind of token cost, and their total, which OTTY
-  /// shows on hover as what the money is made of.
-  record priced-cost {
-    /// The four kinds added up.
-    total: u64,
-    /// The input not written to the cache, at the input price.
-    input: u64,
-    /// The input written to the cache, at the cache write price.
-    cache-written: u64,
-    /// The tokens read from the cache, at the cached price.
-    cached: u64,
-    /// The output, at the output price.
-    output: u64,
   }
 
   /// What one answer cost, in millionths of a US dollar.

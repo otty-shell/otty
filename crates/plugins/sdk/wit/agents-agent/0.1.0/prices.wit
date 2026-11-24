@@ -4,7 +4,10 @@ package otty:agents-agent@0.1.0;
 /// (the LiteLLM price table today). An agent part asks it for the price
 /// of a model when the agent did not write what an answer cost, prices
 /// the tokens itself and marks that money "at API prices" (spec
-/// 2026-11-23-accounts-apart-from-profiles, Decision 3).
+/// 2026-11-23-accounts-apart-from-profiles, Decision 3). A provider part
+/// asks it while it reads the numbers of an account, to price what the
+/// agent's own sessions spent through it (issue 22). Both contracts share
+/// the money it prices, `priced-cost`.
 interface prices {
   /// Who served an answer: the provider's name as the agent wrote it, or
   /// the host of its server when the agent names no provider. A name
@@ -40,8 +43,25 @@ interface prices {
     long-prompt: option<long-prompt-price>,
   }
 
+  /// Money at API prices, in millionths of a US dollar: what each kind
+  /// of token cost, and their total, which OTTY shows on hover as what
+  /// the money is made of.
+  record priced-cost {
+    /// The four kinds added up.
+    total: u64,
+    /// The input not written to the cache, at the input price.
+    input: u64,
+    /// The input written to the cache, at the cache write price.
+    cache-written: u64,
+    /// The tokens read from the cache, at the cached price.
+    cached: u64,
+    /// The output, at the output price.
+    output: u64,
+  }
+
   /// The API price of `model`, as the provider names it, served by
   /// `provider`: that provider's price of the model, else its maker's.
-  /// None when the list has no price for it, or OTTY has no list yet.
+  /// None when the list has no price for it, or OTTY has no list yet,
+  /// and outside a read of answers or of numbers.
   price-of: func(model: string, provider: option<provider-ref>) -> option<model-price>;
 }

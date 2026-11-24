@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use otty_plugin_host::agents::prices::{PriceList, PricedCost};
 use otty_plugin_host::agents::provider::{
     Account as PartAccount, AccountKind as PartKind,
     AccountNumbers as PartNumbers, Bill as PartBill, DayRange, LoginFolder,
@@ -25,12 +26,15 @@ use otty_plugin_host::{
 use crate::account::{Account, AccountKind, FoundIn};
 use crate::account_numbers::AccountNumbers;
 use crate::agent::{Agent, AgentId, agent_of};
+use crate::api_prices::ApiPrices;
 use crate::balance::{Amount, Balance, KeyLimit};
 use crate::bill::Bill;
 use crate::command::AgentCommand;
+use crate::dollars::Dollars;
 use crate::error::{SourceError, Unavailable};
 use crate::given_key::{GivenSecret, KeySecret};
 use crate::limits::{Billing, ExtraUsage, Limits, UsageWindows};
+use crate::money_estimate::MoneyByKind;
 use crate::own_login::OwnLogin;
 use crate::part_need::{PartNeed, started_command};
 use crate::plugin_bill::BillDays;
@@ -65,12 +69,14 @@ pub(crate) trait ProviderPartCalls: Send + Sync {
 
     /// The numbers of `account`, read in its folders with the keys of
     /// `given` under their slots. The read starts the programs and hidden
-    /// terminals the part declares only when `starts_programs`.
+    /// terminals the part declares only when `starts_programs`, and the
+    /// part may price tokens at `prices` while it reads.
     fn read_numbers(
         &self,
         account: &PartAccount,
         given: &[(String, KeySource)],
         starts_programs: bool,
+        prices: &Arc<dyn PriceList>,
     ) -> Result<PartNumbers, SourceError>;
 
     /// The bill of the organization `account` over `days`, read in its
@@ -229,7 +235,9 @@ impl PluginProvider {
     /// was found in, with the keys the user gave for it (`given`): the
     /// money of a key or an organization, or the limits of a subscription,
     /// which the part may read any way it can. The part's programs and
-    /// hidden terminals start only when `starts_programs`. An account the
+    /// hidden terminals start only when `starts_programs`. While it reads,
+    /// the part may price tokens at `prices`, such as what the agent's own
+    /// sessions spent through a key this month (issue 22). An account the
     /// part does not read is not read.
     ///
     /// What the user must do, such as log in again, comes from the part
@@ -241,6 +249,7 @@ impl PluginProvider {
         account: &Account,
         given: &[GivenSecret],
         starts_programs: bool,
+        prices: &Arc<ApiPrices>,
     ) -> Result<AccountNumbers, SourceError> {
         if !self.reads(account) {
             return Err(SourceError::NotAvailable(
@@ -249,10 +258,12 @@ impl PluginProvider {
         }
 
         let given = given_sources(given)?;
+        let prices: Arc<dyn PriceList> = Arc::clone(prices) as _;
         let numbers = self.calls.read_numbers(
             &part_account(account),
             &given,
             starts_programs,
+            &prices,
         )?;
 
         Ok(match account.kind() {
@@ -404,9 +415,10 @@ impl ProviderPartCalls for PartCalls {
         account: &PartAccount,
         given: &[(String, KeySource)],
         starts_programs: bool,
+        prices: &Arc<dyn PriceList>,
     ) -> Result<PartNumbers, SourceError> {
         let read = |batch: &mut CallBatch<'_>| {
-            batch.provider()?.numbers(account, given)
+            batch.provider()?.numbers(account, given, prices)
         };
         let answer = match starts_programs {
             true => self.part.read(READ_NUMBERS, read)?,
@@ -547,7 +559,8 @@ fn given_sources(
 }
 
 /// What a key told in `numbers`: the money left, the key's own limit, the
-/// money spent this month and the credits.
+/// money spent this month, with its kinds when the part counted it at API
+/// prices, and the credits.
 fn balance_of(numbers: &PartNumbers) -> Balance {
     let key_limit = numbers.key_limit.as_ref().and_then(|limit| {
         let used = amount_of(&limit.used)?;
@@ -561,7 +574,26 @@ fn balance_of(numbers: &PartNumbers) -> Balance {
         .with_spent_this_month(
             numbers.spent_this_month.as_ref().and_then(amount_of),
         )
+        .with_spent_by_kind(
+            numbers
+                .spent_this_month
+                .as_ref()
+                .and_then(|spent| spent.by_kind.as_ref())
+                .map(money_by_kind),
+        )
         .with_credits(numbers.credits.as_ref().map(credits_of))
+}
+
+/// Money at API prices the part counted, kind by kind, as OTTY keeps it.
+fn money_by_kind(cost: &PricedCost) -> MoneyByKind {
+    let micro = Dollars::from_micro_dollars;
+
+    MoneyByKind::new(
+        micro(cost.input),
+        micro(cost.cache_written),
+        micro(cost.cached),
+        micro(cost.output),
+    )
 }
 
 /// The limits of a subscription in `numbers`: its windows with the extra
@@ -607,6 +639,7 @@ mod tests {
     use super::*;
     use crate::given_key::GivenSecret;
     use crate::limits::Credits;
+    use crate::price_table::{ModelPrice, PriceTable};
     use crate::testing::{NOW, at};
 
     /// The made-up agent part `coder` of the plugin `plugin`.
@@ -675,7 +708,13 @@ mod tests {
         Money {
             amount,
             currency: "USD".to_string(),
+            by_kind: None,
         }
+    }
+
+    /// No list prices: no answer gets a price.
+    fn prices() -> Arc<ApiPrices> {
+        Arc::default()
     }
 
     /// The folders of `folders`, as text: the agent part of a profile
@@ -950,7 +989,7 @@ mod tests {
         for account in [of_another_plugin, of_another_provider] {
             assert!(!provider.reads(&account));
             assert_eq!(
-                provider.read(&account, &[], true),
+                provider.read(&account, &[], true, &prices()),
                 Err(SourceError::NotAvailable(Unavailable::NoAccountSource))
             );
         }
@@ -963,7 +1002,7 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|account, given, starts_programs| {
+            .withf(|account, given, starts_programs, _| {
                 account.id == "chatgpt:made-up"
                     && folders_of(&account.found_in)
                         == [("coder", "/home/dev/.coder")]
@@ -971,7 +1010,7 @@ mod tests {
                     && !*starts_programs
             })
             .times(1)
-            .returning(|_, _, _| {
+            .returning(|_, _, _, _| {
                 Ok(PartNumbers {
                     windows: vec![
                         otty_plugin_host::agents::provider::LimitWindow {
@@ -989,7 +1028,7 @@ mod tests {
             PluginProvider::made_up("example-cloud", &["coder"], calls);
         let account = subscription().with_plan(Some("Plus".into()));
 
-        let numbers = provider.read(&account, &[], false);
+        let numbers = provider.read(&account, &[], false, &prices());
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");
@@ -1012,11 +1051,11 @@ mod tests {
         calls
             .expect_read_numbers()
             .times(1)
-            .returning(move |_, _, _| Err(SourceError::NeedsUser(need())));
+            .returning(move |_, _, _, _| Err(SourceError::NeedsUser(need())));
         let provider =
             PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let numbers = provider.read(&key(), &[], true);
+        let numbers = provider.read(&key(), &[], true, &prices());
 
         assert_eq!(numbers, Err(SourceError::NeedsUser(need())));
     }
@@ -1028,17 +1067,17 @@ mod tests {
         let mut calls = MockProviderPartCalls::new();
         calls
             .expect_read_numbers()
-            .withf(|_, given, _| {
+            .withf(|_, given, _, _| {
                 matches!(given, [(slot, KeySource::Given(key))]
                     if slot == "admin" && key.as_str() == "sk-made-up-admin-1")
             })
             .times(1)
-            .returning(|_, _, _| Ok(nothing()));
+            .returning(|_, _, _, _| Ok(nothing()));
         let provider =
             PluginProvider::made_up("example-cloud", &["coder"], calls);
         let given = [GivenSecret::made_up("admin", "sk-made-up-admin-1")];
 
-        let numbers = provider.read(&key(), &given, true);
+        let numbers = provider.read(&key(), &given, true, &prices());
 
         assert!(
             matches!(numbers, Ok(AccountNumbers::Balance(_))),
@@ -1051,7 +1090,7 @@ mod tests {
     #[test]
     fn a_key_gives_its_money_spent_this_month_and_its_credits() {
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _| {
+        calls.expect_read_numbers().returning(|_, _, _, _| {
             Ok(PartNumbers {
                 spent_this_month: Some(usd(4.2)),
                 credits: Some(otty_plugin_host::agents::provider::Credits {
@@ -1067,7 +1106,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let numbers = provider.read(&key(), &[], true);
+        let numbers = provider.read(&key(), &[], true, &prices());
 
         let Ok(AccountNumbers::Balance(balance)) = numbers else {
             panic!("a balance: {numbers:?}");
@@ -1081,13 +1120,76 @@ mod tests {
             balance.credits(),
             Some(&Credits::new(Some(80.0), Some(20.0), Some(100.0), None))
         );
+        assert_eq!(balance.spent_by_kind(), None, "the provider's own count");
+    }
+
+    /// Issue 22: money the part counted from the agent's sessions at API
+    /// prices comes with its kinds, which mark it so.
+    #[test]
+    fn money_spent_at_api_prices_keeps_its_kinds() {
+        let mut calls = MockProviderPartCalls::new();
+        calls.expect_read_numbers().returning(|_, _, _, _| {
+            Ok(PartNumbers {
+                spent_this_month: Some(Money {
+                    by_kind: Some(PricedCost {
+                        total: 73,
+                        input: 10,
+                        cache_written: 20,
+                        cached: 3,
+                        output: 40,
+                    }),
+                    ..usd(0.000_073)
+                }),
+                ..nothing()
+            })
+        });
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+
+        let numbers = provider.read(&key(), &[], true, &prices());
+
+        let Ok(AccountNumbers::Balance(balance)) = numbers else {
+            panic!("a balance: {numbers:?}");
+        };
+        let micro = Dollars::from_micro_dollars;
+        assert_eq!(
+            balance.spent_by_kind(),
+            Some(&MoneyByKind::new(micro(10), micro(20), micro(3), micro(40)))
+        );
+        assert_eq!(
+            balance.spent_this_month(),
+            Amount::new(0.000_073, "USD").as_ref()
+        );
+    }
+
+    /// Issue 22: the part prices tokens during the read at the prices
+    /// OTTY gives it.
+    #[test]
+    fn the_read_gives_the_part_otty_s_prices() {
+        let mut calls = MockProviderPartCalls::new();
+        calls
+            .expect_read_numbers()
+            .withf(|_, _, _, prices| prices.price_of("m", None).is_some())
+            .times(1)
+            .returning(|_, _, _, _| Ok(nothing()));
+        let provider =
+            PluginProvider::made_up("example-cloud", &["coder"], calls);
+        let table = PriceTable::new(vec![ModelPrice::new(
+            "m",
+            crate::testing::token_prices(1_000_000, 0, 0, 0),
+        )]);
+        let prices = Arc::new(ApiPrices::new(table, Arc::default()));
+
+        let numbers = provider.read(&key(), &[], true, &prices);
+
+        assert!(numbers.is_ok(), "{numbers:?}");
     }
 
     /// The extra usage of a Claude login is kept next to its windows.
     #[test]
     fn a_subscription_keeps_the_extra_usage_next_to_its_windows() {
         let mut calls = MockProviderPartCalls::new();
-        calls.expect_read_numbers().returning(|_, _, _| {
+        calls.expect_read_numbers().returning(|_, _, _, _| {
             Ok(PartNumbers {
                 extra_usage: Some(
                     otty_plugin_host::agents::provider::ExtraUsage {
@@ -1102,7 +1204,7 @@ mod tests {
         let provider =
             PluginProvider::made_up("example-cloud", &["coder"], calls);
 
-        let numbers = provider.read(&subscription(), &[], true);
+        let numbers = provider.read(&subscription(), &[], true, &prices());
 
         let Ok(AccountNumbers::Limits(limits)) = numbers else {
             panic!("the limits: {numbers:?}");

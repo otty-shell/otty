@@ -14,8 +14,8 @@ use wasmtime::component::{HasSelf, InstancePre, Linker};
 
 /// The newest agent contract's types, which the rest of OTTY uses.
 pub use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
-    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, PricedCost,
-    Profile, ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
+    Answer, AnswerCost, Answers, Place, PlaceItem, PlaceKind, Profile,
+    ProfilePlace, ProfileStatus, RecordCounts, Session, TokenCount,
 };
 use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
     Guest, GuestIndices,
@@ -25,7 +25,7 @@ use crate::agents::agent::v0_1::exports::otty::agents_agent::agent::{
 pub use crate::agents::agent::v0_1::otty::agents_agent::types::ReadError;
 use crate::agents::prices::PriceList;
 /// Who served an answer, which prices it.
-pub use crate::agents::prices::ProviderRef;
+pub use crate::agents::prices::{PricedCost, ProviderRef};
 use crate::calls::{CallBatch, CallError, CallKind, CallState};
 use crate::contract::AgentVersion;
 /// The host's types the agent contract uses.

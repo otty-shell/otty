@@ -110,7 +110,7 @@ else "—".
 
 | Page        | Shows                                                                                                                       |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit) and the bill of an organization, as the provider tells them; **Account info**: Provider, Name, Kind (Subscription, Key or Organization), Plan, **Source** ("Found in ~/.codex", one line per folder, and "OTTY's own login"), **Read by** (the plugin and its version). An account with OTTY's own login has the mark "OTTY's own login" after its name and a **Log in again** button in its header. |
+| **Account** | Needs from you; **Limits**, **Credits** or **Money** (Left, Spent this month, Key limit, or **Your spend this month** at API prices) and the bill of an organization, as the provider tells them; **Account info**: Provider, Name, Kind (Subscription, Key or Organization), Plan, **Source** ("Found in ~/.codex", one line per folder, and "OTTY's own login"), **Read by** (the plugin and its version). An account with OTTY's own login has the mark "OTTY's own login" after its name and a **Log in again** button in its header. |
 | **Profile** | Needs from you; the usage block; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
 | **Project** | The folder name as the title, then **Project info** with the path and the profiles, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab, and the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
@@ -329,8 +329,11 @@ The money of a profile comes from its plugin, for each answer of the agent:
 This holds on a subscription too: there the money answers "what would this work cost me on the
 API". The money of an account is only what its provider tells: the bill of an organization (with an
 admin key), the money left, the key limit or what was spent this month. OTTY never counts an
-account's money from the tokens of a profile: an organization with no admin key shows no money,
-and its need asks for the key.
+account's money from the tokens of a profile. A provider part may count it itself, from the
+agent's own sessions on this computer: a key or an organization with no bill and no count of its
+provider then shows **Your spend this month**, such as "~$42.10", with the mark "at API prices", its
+kinds on hover and where it was counted ("From your Claude Code sessions on this computer"). The
+Now of the account shows it with "~". The page of each official plugin says what it counts.
 
 The price of a model depends on who served it: the maker itself, a cloud or a reseller such as
 OpenRouter. Each plugin knows who served each answer, as the agent wrote it, and OTTY gives the

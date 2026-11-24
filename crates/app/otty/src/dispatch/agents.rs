@@ -144,6 +144,8 @@ impl Delivery for AgentsIntent {
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
+            // The list prices the provider part prices the sessions of a
+            // key at.
             AgentsOutcome::LoadAccountNumbers {
                 account,
                 given,
@@ -153,6 +155,7 @@ impl Delivery for AgentsIntent {
                 account,
                 given,
                 may_start_programs,
+                app.agents.api_prices(),
                 app.shell_session.program(),
             )
             .map(AppEvent::Agents),
@@ -467,6 +470,8 @@ mod tests {
 
         let task = AgentsIntent::read(
             &mut app,
+            // The list prices the provider part prices the sessions of a
+            // key at.
             AgentsOutcome::LoadAccountNumbers {
                 account,
                 given: Vec::new(),

@@ -103,6 +103,7 @@ fn dollars(amount: f64) -> Money {
     Money {
         amount,
         currency: "USD".to_string(),
+        by_kind: None,
     }
 }
 

@@ -8,6 +8,7 @@ mod keyring;
 mod keys;
 mod lines;
 mod listing;
+mod local_offset;
 mod programs;
 mod real_path;
 mod remove;

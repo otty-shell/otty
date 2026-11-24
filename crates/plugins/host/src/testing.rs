@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use otty_plugin_manifest::{Environment, Manifest, PartRef, Permissions};
 
 use crate::agents::agent::ReadError;
+use crate::agents::prices::{MockPriceList, PriceList};
 use crate::agents::provider::{
     Account, AccountKind, AccountNumbers, LoginFolder,
 };
@@ -481,8 +482,16 @@ pub(crate) fn read_in_profiles(
     batch
         .provider()
         .expect("a provider part")
-        .numbers(&account, &[])
+        .numbers(&account, &[], &no_prices())
         .expect("the call")
+}
+
+/// A price list with no price, for a read that prices nothing.
+pub(crate) fn no_prices() -> Arc<dyn PriceList> {
+    let mut prices = MockPriceList::new();
+    prices.expect_price_of().returning(|_, _| None);
+
+    Arc::new(prices)
 }
 
 /// What the program answered, as [`read_by_way`] gave it: the plan, or

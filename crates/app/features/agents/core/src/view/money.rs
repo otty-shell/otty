@@ -9,11 +9,14 @@ use iced::widget::{Column, Space, row};
 use iced::{Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::small_text::small_text;
-use otty_ui_kit::components::tooltip::tooltip;
+use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
 use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::spacing;
 
 use super::super::event::AgentsIntent;
-use super::super::model::{MoneyKind, MoneyViewModel, UsageRowViewModel};
+use super::super::model::{
+    MoneyKind, MoneyViewModel, SpentAtApiPricesViewModel, UsageRowViewModel,
+};
 use super::blocks;
 
 /// Render the block of money named `title`, "Money" on the page of an
@@ -38,11 +41,54 @@ pub(super) fn view<'a>(
         };
         block = block.push(blocks::usage_row(row, vm.is_stale, palette));
     }
+    if let Some(spent) = vm.spent_at_api_prices {
+        block = block.push(spent_at_api_prices(spent, vm.is_stale, palette));
+    }
 
     block
         .push(blocks::notes(None, vm.failure, palette))
         .width(Length::Fill)
         .into()
+}
+
+/// "Your spend this month ~$42.10" of the agent's sessions at API prices
+/// (issue 22 of spec 2026-11-23-accounts-apart-from-profiles): the row
+/// with its kinds on hover, under it the mark "at API prices" with its
+/// tooltip at the right end, then where it was counted.
+fn spent_at_api_prices<'a>(
+    spent: SpentAtApiPricesViewModel,
+    is_stale: bool,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let tip = kinds_tooltip(&spent);
+    let name = i18n::t(Key::AgentsYourSpendThisMonth).to_string();
+    let line = blocks::name_and_value(name, spent.amount, is_stale, palette);
+    let mark = small_text(spent.mark.label, palette.text_muted());
+
+    let mut lines = Column::new()
+        .spacing(spacing::SPACE_1)
+        .push(tooltip(line, tip, palette))
+        .push(row![
+            Space::new().width(Length::Fill),
+            tooltip(mark, spent.mark.tip, palette)
+        ]);
+    if let Some(source) = spent.source {
+        lines = lines.push(small_text(source, palette.text_muted()));
+    }
+
+    lines.into()
+}
+
+/// The tooltip of the spend at API prices: each kind at the left and its
+/// money at the right.
+fn kinds_tooltip(spent: &SpentAtApiPricesViewModel) -> TooltipText {
+    let rows = spent
+        .kinds
+        .iter()
+        .map(|line| (line.name.to_string(), line.value.clone()))
+        .collect();
+
+    TooltipText::default().rows(rows)
 }
 
 /// The mark "at API prices" of money of `kind` right under the sums it is
@@ -92,6 +138,7 @@ mod tests {
             updated: Some(String::from("Updated 2 min ago")),
             rows: vec![row(i18n::t(Key::AgentsLeft), "$110.00", None)],
             spent: Some(String::from("$184.75")),
+            spent_at_api_prices: None,
             is_stale: false,
             failure: Some(String::from("Could not count: z")),
         }
@@ -149,6 +196,33 @@ mod tests {
         assert!(
             (label.x + label.width - WIDTH).abs() < 1.0,
             "the mark ends the row: {label:?}"
+        );
+    }
+
+    /// Issue 22 of spec 2026-11-23: the spend at API prices tells its
+    /// kinds on hover, each name at the left and its money at the right.
+    #[test]
+    fn the_spend_at_api_prices_lists_its_kinds_on_hover() {
+        let spent = crate::testing::spent_at_api_prices();
+
+        let tip = kinds_tooltip(&spent);
+
+        assert_eq!(
+            tip,
+            TooltipText::default().rows(vec![
+                (
+                    String::from(i18n::t(Key::AgentsKindInput)),
+                    String::from("~$30.00")
+                ),
+                (
+                    String::from(i18n::t(Key::AgentsKindCacheWritten)),
+                    String::from("~$10.00")
+                ),
+                (
+                    String::from(i18n::t(Key::AgentsKindCached)),
+                    String::from("~$2.10")
+                ),
+            ])
         );
     }
 

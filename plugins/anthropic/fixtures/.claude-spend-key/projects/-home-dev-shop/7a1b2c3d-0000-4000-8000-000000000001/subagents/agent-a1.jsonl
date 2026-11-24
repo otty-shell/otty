@@ -1,0 +1,1 @@
+{"cwd":"/home/dev/shop","sessionId":"7a1b2c3d-0000-4000-8000-000000000001","isSidechain":true,"version":"2.1.328","message":{"id":"msg_s2","type":"message","role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":100}},"requestId":"req_s2","type":"assistant","uuid":"a-s2","timestamp":"2026-11-18T08:00:00.000Z"}

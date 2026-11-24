@@ -592,7 +592,9 @@ impl Profiles {
 
     /// The prices the agent parts price at, from the latest prices read
     /// and the registry. When they changed, every shown profile wants a
-    /// new count of its tokens, whose money follows the new prices.
+    /// new count of its tokens, whose money follows the new prices, and
+    /// every account paid per token a new read of its numbers, whose part
+    /// prices its sessions at them (issue 22).
     fn renew_api_prices(&mut self) {
         let table = self.prices.table().cloned().unwrap_or_default();
         let renewed = ApiPrices::new(table, Arc::clone(&self.registry));
@@ -604,6 +606,30 @@ impl Profiles {
         for shown in &mut self.shown {
             shown.spend_waits_for_prices();
         }
+        self.account_reads.wait_for_prices();
+    }
+
+    /// Start a read of the numbers of each account paid per token that
+    /// waits for new list prices and has none on its way, and return
+    /// those accounts with the keys the user gave for them. Nothing starts
+    /// while the first read of the prices is on its way. The read may
+    /// start the agent's program when `may_start_programs`.
+    pub(crate) fn start_account_reads_at_new_prices(
+        &mut self,
+        may_start_programs: bool,
+    ) -> Vec<(Account, Vec<GivenKey>)> {
+        if self.prices.is_first_read_on_its_way() {
+            return Vec::new();
+        }
+
+        self.account_reads
+            .start_at_new_prices(may_start_programs)
+            .into_iter()
+            .map(|account| {
+                let given = self.given_keys_of(&account);
+                (account, given)
+            })
+            .collect()
     }
 
     /// Start a read of the numbers of each listed account a provider part

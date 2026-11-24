@@ -664,7 +664,8 @@ mod tests {
                 other => panic!("a failed read: {other:?}"),
             })
             .collect();
-        let other_part = provider.read(&cloud_account(), &[], true);
+        let other_part =
+            provider.read(&cloud_account(), &[], true, &Arc::default());
 
         assert_eq!(
             failures,
