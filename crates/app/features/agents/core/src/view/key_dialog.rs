@@ -107,6 +107,7 @@ pub(crate) fn view(props: KeyDialogProps<'_>) -> Element<'_, AgentsIntent> {
     }
 
     Dialog::new(vm.title, palette)
+        .on_close(send(KeyDialogIntent::Cancelled), i18n::t(Key::ButtonClose))
         .body(body)
         .action(cancel)
         .action(submit)

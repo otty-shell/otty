@@ -78,6 +78,7 @@ pub(crate) fn view(props: FoundReportProps<'_>) -> Element<'_, AgentsIntent> {
 
     Dialog::new(vm.title, palette)
         .width(REPORT_WIDTH)
+        .on_close(AgentsIntent::CloseFoundReport, i18n::t(Key::ButtonClose))
         .body(body)
         .action(done)
         .into()

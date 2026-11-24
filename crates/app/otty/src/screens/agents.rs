@@ -471,6 +471,33 @@ mod tests {
         assert_eq!(app.agents.top_overlay(), None);
     }
 
+    /// Owner, issue 18: the statistics popup of a session closes on a press
+    /// on the dimmed area around it, through the window and the input
+    /// checks, as the other dialogs do. A press on the popup keeps it.
+    #[test]
+    fn the_statistics_popup_closes_on_a_press_on_the_dimmed_area() {
+        let mut app = agents_app();
+        for intent in [
+            AgentsIntent::SelectProject(PathBuf::from("/work/otty")),
+            AgentsIntent::OpenSessionMenu(0),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+        let mut running = RunningApp::new(app);
+        let stats = otty_app_agents::AgentsOverlay::StatsDialog;
+
+        running.click_text(i18n::t(Key::AgentsShowStatistics));
+        let opened = running.app().agents.top_overlay();
+        running.click_text(i18n::t(Key::AgentsStatsReading));
+        let kept = running.app().agents.top_overlay();
+        running.move_to(iced::Point::new(40.0, 400.0));
+        running.click(iced::mouse::Button::Left);
+
+        assert_eq!(opened, Some(stats));
+        assert_eq!(kept, Some(stats), "a press on the popup keeps it");
+        assert_eq!(running.app().agents.top_overlay(), None);
+    }
+
     /// Owner, issue 35: the statistics button of the project title row
     /// goes through the frame to the feature and opens the dialog.
     #[test]

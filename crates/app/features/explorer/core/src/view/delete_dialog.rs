@@ -33,6 +33,7 @@ pub(crate) fn view<'a>(
         i18n::filled(Key::TplFilesDeleteTitle, &[("name", vm.name)]),
         palette,
     )
+    .on_close(ExplorerIntent::DeleteCancelled, i18n::t(Key::ButtonClose))
     .body(body)
     .action(cancel)
     .action(delete)

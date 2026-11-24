@@ -107,6 +107,10 @@ pub(crate) fn view(
     }
 
     Dialog::new(i18n::t(Key::AgentsNewSession), palette)
+        .on_close(
+            send(NewSessionDialogIntent::Cancelled),
+            i18n::t(Key::ButtonClose),
+        )
         .body(column![folder, profile].spacing(spacing::SPACE_4))
         .action(cancel)
         .action(start)

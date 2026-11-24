@@ -44,6 +44,10 @@ fn dialog<'a>(
         .on_press(QuickLaunchIntent::SecretPromptSubmit);
 
     Dialog::new(vm.title, palette)
+        .on_close(
+            QuickLaunchIntent::SecretPromptCancel,
+            i18n::t(Key::ButtonClose),
+        )
         .body(column![hint, input].spacing(spacing::SPACE_4))
         .action(cancel)
         .action(connect)

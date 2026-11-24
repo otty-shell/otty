@@ -52,8 +52,6 @@ pub(crate) fn view(
     Dialog::new(i18n::t(Key::SettingsTitle), palette)
         .width(size::DIALOG_WIDE)
         .on_close(SettingsIntent::Close, i18n::t(Key::ButtonClose))
-        // Owner, 2026-11-09: only Settings closes on a press outside it.
-        .on_backdrop_press(SettingsIntent::Close)
         .body(sections)
         .action(reset)
         .action(save)
@@ -368,7 +366,7 @@ mod tests {
     }
 
     /// Owner, 2026-11-09: a press on the dimmed area around the popup closes
-    /// it like the cross, with any mouse button. Only Settings does this.
+    /// it like the cross, with any mouse button, as for every dialog.
     #[test]
     fn a_press_on_the_dimmed_area_closes_the_popup() {
         let draft = SettingsData::default();

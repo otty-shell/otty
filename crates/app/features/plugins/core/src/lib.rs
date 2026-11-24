@@ -209,7 +209,7 @@ impl MainArea for Plugins {
 impl Overlays for Plugins {
     /// The open dialog, in the middle of the window over a dimmed layer,
     /// or else the menu of a plugin at the pointer. Esc closes either, and
-    /// Cancel the dialog.
+    /// Cancel, the cross and a press on the dimmed layer the dialog.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,

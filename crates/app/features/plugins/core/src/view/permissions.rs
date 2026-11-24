@@ -63,6 +63,7 @@ pub(super) fn install<'a>(
 
     Dialog::new(dialog.title, palette)
         .width(size::DIALOG_WIDE)
+        .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
         .body(body)
         .action(cancel)
         .action(install)
@@ -95,6 +96,7 @@ pub(super) fn update<'a>(
 
     Dialog::new(dialog.title, palette)
         .width(size::DIALOG_WIDE)
+        .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
         .body(body)
         .action(not_now)
         .action(update)

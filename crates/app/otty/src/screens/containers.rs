@@ -447,10 +447,10 @@ mod tests {
         assert!(offsets.iter().all(|offset| *offset == offsets[0]));
     }
 
-    /// A Containers dialog sends nothing from its dimmed area: a press there
-    /// leaves it open (old overlay test).
+    /// Issue 18: a press on the dimmed area of a Containers dialog sends
+    /// its Cancel, as for every dialog.
     #[test]
-    fn a_press_on_the_dimmed_area_of_a_containers_dialog_sends_nothing() {
+    fn a_press_on_the_dimmed_area_of_a_containers_dialog_cancels_it() {
         let mut app = containers_app_with_lists();
         crate::testing::window::open_confirm(&mut app);
         let mut ui = simulator(view(&app));
@@ -460,9 +460,12 @@ mod tests {
 
         let events: Vec<AppEvent> = ui.into_messages().collect();
         assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, AppEvent::Containers(_))),
+            matches!(
+                events.as_slice(),
+                [AppEvent::Containers(ContainersIntent::Actions(
+                    ActionsIntent::ConfirmCancelled
+                ))]
+            ),
             "{events:?}"
         );
     }

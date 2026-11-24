@@ -20,8 +20,11 @@ const WINDOW_MARGIN: f32 = 48.0;
 /// Modal dialog: a title, an optional body and a row of actions, `space-5`
 /// apart, on a `surface_overlay` card `size::DIALOG` wide by default. The
 /// title can end with a close cross. The card sits in the middle of a
-/// full-window `scrim`. Clicks never reach the UI behind it, and a press on the
-/// scrim does nothing unless the dialog asks for it with `on_backdrop_press`.
+/// full-window `scrim`. Clicks never reach the UI behind it. A dialog that
+/// can be closed (`on_close`) closes the same way everywhere: its cross and
+/// a press on the scrim send its close message, and the app sends the same
+/// message on Esc. A press on the scrim of a dialog with no cross does
+/// nothing.
 /// The card is never taller than the window less a margin: a body that does
 /// not fit scrolls inside the card, with its bar along the card's right
 /// side, while the title and the actions stay. A body that fits shows no
@@ -52,7 +55,6 @@ const WINDOW_MARGIN: f32 = 48.0;
 /// let settings: Element<'_, Message> = Dialog::new("Settings", &palette)
 ///     .width(size::DIALOG_WIDE)
 ///     .on_close(Message::Close, "Close")
-///     .on_backdrop_press(Message::Close)
 ///     .body(text("Theme"))
 ///     .into();
 /// ```
@@ -61,7 +63,6 @@ pub struct Dialog<'a, Message> {
     palette: UiPalette,
     width: f32,
     close: Option<(Message, String)>,
-    backdrop_press: Option<Message>,
     body: Option<Element<'a, Message>>,
     actions: Vec<Element<'a, Message>>,
 }
@@ -75,7 +76,6 @@ impl<'a, Message> Dialog<'a, Message> {
             palette: palette.clone(),
             width: size::DIALOG,
             close: None,
-            backdrop_press: None,
             body: None,
             actions: Vec::new(),
         }
@@ -89,40 +89,17 @@ impl<'a, Message> Dialog<'a, Message> {
     }
 
     /// Ends the title with a close cross that sends `message`, with `label`
-    /// as its tooltip. Use it for a dialog that needs no Cancel action.
+    /// as its tooltip. A press on the scrim around the card with the left,
+    /// right or middle button sends `message` too, as a press outside a menu
+    /// closes it; a press on the card never does. `message` is what the
+    /// Cancel or Close action of the dialog sends, and what the app sends on
+    /// Esc.
     pub fn on_close(
         mut self,
         message: Message,
         label: impl Into<String>,
     ) -> Self {
         self.close = Some((message, label.into()));
-        self
-    }
-
-    /// Sends `message` when the scrim around the card is pressed with the
-    /// left, right or middle button, as a press outside a menu closes it. A
-    /// press on the card never sends it. Without this, a press on the scrim
-    /// does nothing.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use iced::Element;
-    /// use otty_ui_kit::components::dialog::Dialog;
-    /// use otty_ui_kit::palette::UiPalette;
-    ///
-    /// #[derive(Clone)]
-    /// enum Message {
-    ///     Close,
-    /// }
-    ///
-    /// let palette = UiPalette::otty_dark();
-    /// let dialog: Element<'_, Message> = Dialog::new("Settings", &palette)
-    ///     .on_backdrop_press(Message::Close)
-    ///     .into();
-    /// ```
-    pub fn on_backdrop_press(mut self, message: Message) -> Self {
-        self.backdrop_press = Some(message);
         self
     }
 
@@ -146,6 +123,8 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
     fn from(value: Dialog<'a, Message>) -> Self {
         let palette = value.palette;
 
+        let close_message =
+            value.close.as_ref().map(|(message, _)| message.clone());
         let title = title_row(value.title, value.close, &palette);
 
         let mut content = DialogColumn::new(title, spacing::SPACE_5);
@@ -191,7 +170,7 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>>
                 ..Default::default()
             });
 
-        let backdrop: Element<'a, Message> = match value.backdrop_press {
+        let backdrop: Element<'a, Message> = match close_message {
             Some(message) => mouse_area(backdrop)
                 .on_press(message.clone())
                 .on_right_press(message.clone())
@@ -261,7 +240,6 @@ mod tests {
     enum Message {
         Deleted,
         Closed,
-        Backdrop,
         Picked(&'static str),
         TypedIn(&'static str),
     }
@@ -418,11 +396,11 @@ mod tests {
             && inner.y + inner.height <= outer.y + outer.height
     }
 
-    /// The dialog of [`dialog`] that also sends `Backdrop` on a scrim press.
+    /// The dialog of [`dialog`] with a close cross that sends `Closed`.
     fn closing_dialog() -> Simulator<'static, Message> {
         let palette = UiPalette::otty_dark();
         let dialog = Dialog::new("Delete session", &palette)
-            .on_backdrop_press(Message::Backdrop)
+            .on_close(Message::Closed, "Close")
             .body(text("body").width(Length::Fill))
             .action(button(text("Delete")).on_press(Message::Deleted));
 
@@ -443,7 +421,7 @@ mod tests {
             &palette,
         );
         let dialog = Dialog::new("Pick", &palette)
-            .on_backdrop_press(Message::Backdrop)
+            .on_close(Message::Closed, "Close")
             .body(list);
 
         Simulator::with_size(
@@ -598,9 +576,10 @@ mod tests {
     }
 
     /// The scrim takes a press of any button, so none reaches the UI behind
-    /// the dialog, and the dialog stays open: it sends nothing.
+    /// the dialog. A dialog with no close cross can not be closed there: it
+    /// sends nothing.
     #[test]
-    fn given_a_dialog_when_any_button_is_pressed_on_the_scrim_then_the_press_stops_there()
+    fn given_no_on_close_when_any_button_is_pressed_on_the_scrim_then_the_press_stops_there()
      {
         for button in [
             mouse::Button::Left,
@@ -625,11 +604,11 @@ mod tests {
         }
     }
 
-    /// The scrim is everything around the card, the room left for its
-    /// shadow too, and any button closes the dialog there, as a press
-    /// outside a menu closes it.
+    /// Issue 18: the scrim is everything around the card, the room left for
+    /// its shadow too, and any button there sends the message of the close
+    /// cross, as a press outside a menu closes it.
     #[test]
-    fn given_on_backdrop_press_when_any_button_is_pressed_on_the_scrim_then_its_message_is_sent()
+    fn given_on_close_when_any_button_is_pressed_on_the_scrim_then_its_message_is_sent()
      {
         for button in BUTTONS {
             let mut ui = closing_dialog();
@@ -644,14 +623,14 @@ mod tests {
             let pressed: Vec<Message> = ui.into_messages().collect();
             assert_eq!(
                 pressed,
-                vec![Message::Backdrop, Message::Backdrop],
+                vec![Message::Closed, Message::Closed],
                 "{button:?}"
             );
         }
     }
 
     #[test]
-    fn given_on_backdrop_press_when_the_card_is_pressed_then_nothing_is_sent() {
+    fn given_on_close_when_the_card_is_pressed_then_nothing_is_sent() {
         for button in BUTTONS {
             let mut ui = closing_dialog();
             let card = card_bounds(&mut ui);
@@ -671,7 +650,7 @@ mod tests {
     /// A drag that starts on the card is no press on the scrim, wherever it
     /// ends.
     #[test]
-    fn given_on_backdrop_press_when_a_press_on_the_card_ends_on_the_scrim_then_nothing_is_sent()
+    fn given_on_close_when_a_press_on_the_card_ends_on_the_scrim_then_nothing_is_sent()
      {
         let mut ui = closing_dialog();
         let body = ui.find("body").expect("body").bounds();
@@ -690,8 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn given_on_backdrop_press_then_the_card_buttons_still_send_their_messages()
-    {
+    fn given_on_close_then_the_card_buttons_still_send_their_messages() {
         let mut ui = closing_dialog();
 
         ui.click("Delete").expect("the action should show");
@@ -706,7 +684,7 @@ mod tests {
     /// the scrolling card there is no room under the field, so the list opens
     /// upwards, over the title and the scrim above the card.
     #[test]
-    fn given_on_backdrop_press_when_an_option_over_the_scrim_is_picked_then_only_the_option_is_sent()
+    fn given_on_close_when_an_option_over_the_scrim_is_picked_then_only_the_option_is_sent()
      {
         let mut ui = dialog_with_a_list();
         let title = ui.find("Pick").expect("the title should show").bounds();

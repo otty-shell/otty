@@ -140,6 +140,21 @@ impl RunningApp {
         }
     }
 
+    /// Return where the window shows the text `label` last, if it does: on
+    /// the top layer when a dialog over the window shows the same text as
+    /// the window under it.
+    pub(crate) fn find_last(&mut self, label: &str) -> Option<Rectangle> {
+        let mut find = Selector::find_all(label);
+        self.operate_once(&mut operation::black_box(&mut find));
+
+        match find.finish() {
+            operation::Outcome::Some(found) => {
+                found.last().map(|text| text.bounds())
+            },
+            _ => None,
+        }
+    }
+
     /// Return where the window shows the widget that takes the keyboard
     /// at `point`, such as the terminal of a pane, if one is there.
     pub(crate) fn find_focusable_at(

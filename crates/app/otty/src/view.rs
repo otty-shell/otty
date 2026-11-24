@@ -264,8 +264,8 @@ fn view_settings<'a>(
 }
 
 /// The SSH secret prompt, while a launch waits for its password or
-/// passphrase, in either mode. A press on the dimmed area around it does
-/// nothing: it waits for Connect or Cancel.
+/// passphrase, in either mode. A press on the dimmed area around it
+/// cancels it, like Esc.
 fn view_secret_prompt<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -878,34 +878,6 @@ mod tests {
         }
     }
 
-    /// Only Settings closes on a press outside it: the SSH prompt and the
-    /// Containers dialogs wait for their answer.
-    #[test]
-    fn a_press_on_the_dimmed_area_leaves_the_other_dialogs_open() {
-        use crate::testing::window::{
-            containers_app_with_lists, open_confirm, open_create_dialog,
-        };
-
-        let mut prompt = app();
-        open_secret_prompt(&mut prompt);
-        let mut create = containers_app_with_lists();
-        open_create_dialog(&mut create);
-        let mut confirm = containers_app_with_lists();
-        open_confirm(&mut confirm);
-
-        for mut app in [prompt, create, confirm] {
-            let opened = crate::guards::top_overlay(&app);
-
-            press_in_window(&mut app, ON_THE_DIM);
-
-            assert_eq!(
-                opened.and_then(crate::guards::Overlay::kind),
-                Some(otty_app_slots::OverlayKind::Dialog)
-            );
-            assert_eq!(crate::guards::top_overlay(&app), opened);
-        }
-    }
-
     /// An SSH launch asks for its password while a Containers dialog is
     /// open: the prompt is drawn on top and takes the click.
     #[test]
@@ -1105,22 +1077,20 @@ mod tests {
         assert!(sends_connect(&events), "{events:?}");
     }
 
-    /// Only Settings closes on a press outside it: the SSH prompt waits for
-    /// its answer, and over Settings it takes the press, so neither closes.
+    /// Issue 18: the SSH prompt closes on a press on the dimmed area like
+    /// every dialog. Over Settings it takes the press, so only the prompt
+    /// closes and Settings stays.
     #[test]
-    fn a_press_on_the_dimmed_area_under_the_secret_prompt_keeps_settings() {
-        let mut alone = app();
-        open_secret_prompt(&mut alone);
-        let mut over_settings = app();
-        open_settings(&mut over_settings);
-        open_secret_prompt(&mut over_settings);
+    fn a_press_on_the_dimmed_area_over_settings_closes_only_the_secret_prompt()
+    {
+        let mut app = app();
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
 
-        press_in_window(&mut alone, ON_THE_DIM);
-        press_in_window(&mut over_settings, ON_THE_DIM);
+        press_in_window(&mut app, ON_THE_DIM);
 
-        assert!(alone.quick_launch.has_secret_prompt());
-        assert!(over_settings.settings.is_open());
-        assert!(over_settings.quick_launch.has_secret_prompt());
+        assert!(!app.quick_launch.has_secret_prompt());
+        assert!(app.settings.is_open());
     }
 
     /// The grips at the window edges stay away while the SSH prompt or the

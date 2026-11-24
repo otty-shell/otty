@@ -38,6 +38,7 @@ pub(crate) fn view(props: KeyringDialogProps<'_>) -> Element<'_, AgentsIntent> {
         .on_press(AgentsIntent::AllowKeyring);
 
     Dialog::new(vm.title, palette)
+        .on_close(AgentsIntent::KeyringNotNow, i18n::t(Key::ButtonClose))
         .body(body)
         .action(not_now)
         .action(allow)

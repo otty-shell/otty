@@ -1,6 +1,6 @@
 # 18 Every dialog closes the same way
 
-Status: ready
+Status: done
 Blocked by: 17
 
 ## Why
@@ -47,3 +47,16 @@ component behaves differently per dialog.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25: Done. The kit `Dialog` closes on a press of any button on the
+scrim by itself, with the message of `on_close`; `on_backdrop_press` is
+gone, as no dialog of the app must stay open on a scrim press. Every
+dialog of the app now has `on_close` with what its Cancel or Close sends,
+so each shows the cross, and the cross, Esc and the scrim send the same
+message. The guards needed no change: that message is already an answer
+of each dialog, so it passes; only their docs changed. Tests through the
+app's input path press the scrim, the cross and the title of every dialog
+and send Esc to each; the statistics popup of a session closes on a scrim
+press and stays on a press on the popup. The cross of the Containers
+confirmation, whose title names a fixture container, is pressed in its
+view test.

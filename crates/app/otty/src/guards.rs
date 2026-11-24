@@ -398,8 +398,8 @@ fn keeps_menus_open(event: &AppEvent) -> bool {
 /// presses outside it and other keys do nothing, and a menu under the dialog
 /// stays open.
 ///
-/// Settings is the one dialog that closes on a press on the dimmed area
-/// around it: the press sends its Close, one of its own answers, so it
+/// Every dialog closes on a press on the dimmed area around it: the press
+/// sends what its Cancel or Close sends, one of its own answers, so it
 /// passes here like the close cross.
 pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
     if is_dialog_answer(dialog, event) || passes_every_dialog(event) {
@@ -568,9 +568,8 @@ fn leaves_inline_edits(event: &AppEvent) -> bool {
 }
 
 /// Whether `event` answers `dialog`: typing in it, its buttons and choices,
-/// its close cross, Esc in its fields and, for Settings, a press on the
-/// dimmed area around it. The Containers dialogs send nothing from their
-/// dimmed area: a press there does nothing.
+/// its close cross, Esc in its fields and a press on the dimmed area
+/// around it, which sends what the cross sends.
 fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     match dialog {
         Overlay::SecretPrompt => matches!(
@@ -1390,9 +1389,8 @@ mod tests {
         }
     }
 
-    /// The Containers dialogs send nothing from their dimmed area, and a
-    /// press on the table or the tree under them is no answer: the dialog
-    /// stays open.
+    /// A press on the table or the tree under a Containers dialog is no
+    /// answer: the dialog stays open.
     #[test]
     fn a_containers_dialog_ignores_a_press_outside_it() {
         let presses = [
@@ -2956,5 +2954,231 @@ mod tests {
         // Typing in the Files name field cancels a Launches one.
         let typing = AppEvent::Explorer(ExplorerIntent::InlineEditSubmit);
         assert!(inline_edit_guard(&typing));
+    }
+
+    /// An app with a dialog open: what makes the app, what opens the dialog
+    /// on it and the dialog.
+    type OpenDialog = (fn() -> App, Opener, Overlay);
+
+    /// Add plugin… of Plugins mode, one of its dialogs.
+    fn open_add_plugin(app: &mut App) {
+        for event in [
+            AppEvent::Modes(ModesIntent::Select(Mode::Plugins)),
+            AppEvent::Plugins(PluginsIntent::AddPlugin),
+        ] {
+            let _ = crate::dispatch::dispatch(app, event);
+        }
+    }
+
+    /// Every dialog of the app, each on the app it opens on.
+    const EVERY_DIALOG: [OpenDialog; 15] = [
+        (app, open_secret_prompt, Overlay::SecretPrompt),
+        (app, open_settings, Overlay::Settings),
+        (app, open_files_delete_dialog, Overlay::FilesDeleteDialog),
+        (
+            containers_app_with_lists,
+            open_create_dialog,
+            Overlay::ContainersCreate,
+        ),
+        (
+            containers_app_with_lists,
+            open_confirm,
+            Overlay::ContainersConfirm,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_profile_dialog,
+            Overlay::AgentsProfileDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_add_account_dialog,
+            Overlay::AgentsAddAccountDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_key_dialog,
+            Overlay::AgentsKeyDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_rename_dialog,
+            Overlay::AgentsRenameDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_remove_dialog,
+            Overlay::AgentsRemoveDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_keyring_dialog,
+            Overlay::AgentsKeyringDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_stats_dialog,
+            Overlay::AgentsStatsDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_new_session_dialog,
+            Overlay::AgentsNewSessionDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_found_report,
+            Overlay::AgentsFoundReport,
+        ),
+        (app, open_add_plugin, Overlay::PluginsDialog),
+    ];
+
+    /// The title each dialog of [`EVERY_DIALOG`] shows. The confirmation of
+    /// Containers mode names a container of the fixture engine, so it has
+    /// none here: its own view tests press its cross.
+    fn title_of(dialog: Overlay) -> Option<String> {
+        use i18n::Key;
+
+        let title = match dialog {
+            Overlay::SecretPrompt => i18n::filled(
+                Key::TplSecretPromptPasswordTitle,
+                &[("target", "ubuntu@192.168.1.20:22")],
+            ),
+            Overlay::Settings => i18n::t(Key::SettingsTitle).to_string(),
+            Overlay::FilesDeleteDialog => {
+                i18n::filled(Key::TplFilesDeleteTitle, &[("name", "notes.txt")])
+            },
+            Overlay::ContainersCreate => {
+                i18n::t(Key::ContainersPullImage).to_string()
+            },
+            Overlay::AgentsProfileDialog => {
+                i18n::t(Key::AgentsAddProfile).to_string()
+            },
+            Overlay::AgentsAddAccountDialog => {
+                i18n::t(Key::AgentsAddAccountTitle).to_string()
+            },
+            Overlay::AgentsKeyDialog => String::from("Admin key"),
+            Overlay::AgentsRenameDialog => {
+                i18n::t(Key::AgentsRenameProfileTitle).to_string()
+            },
+            Overlay::AgentsRemoveDialog => i18n::filled(
+                Key::TplAgentsRemoveTitle,
+                &[("name", "Codex (Work)")],
+            ),
+            Overlay::AgentsKeyringDialog => {
+                i18n::t(Key::AgentsKeyringDialogTitle).to_string()
+            },
+            // The folder name of the project.
+            Overlay::AgentsStatsDialog => String::from("otty"),
+            Overlay::AgentsNewSessionDialog => {
+                i18n::t(Key::AgentsNewSession).to_string()
+            },
+            Overlay::AgentsFoundReport => {
+                i18n::t(Key::AgentsFoundTitle).to_string()
+            },
+            Overlay::PluginsDialog => {
+                i18n::t(Key::PluginsAddPluginTitle).to_string()
+            },
+            _ => return None,
+        };
+
+        Some(title)
+    }
+
+    /// A point on the dimmed area of every dialog: left of the widest card,
+    /// in the main area.
+    const ON_THE_SCRIM: iced::Point = iced::Point::new(40.0, 400.0);
+
+    /// The middle of the close cross at the end of the row of `title`: the
+    /// title fills its row up to the cross.
+    fn cross_after(title: iced::Rectangle) -> iced::Point {
+        iced::Point::new(
+            title.x
+                + title.width
+                + otty_ui_kit::spacing::SPACE_3
+                + otty_ui_kit::size::CONTROL_MD / 2.0,
+            title.center_y(),
+        )
+    }
+
+    /// Opens `open` on a new app from `make`, in a window.
+    fn window_with(make: fn() -> App, open: Opener) -> RunningApp {
+        let mut app = make();
+        open(&mut app);
+
+        RunningApp::new(app)
+    }
+
+    /// Owner, issue 18: a press on the dimmed area around any dialog closes
+    /// it, as its Cancel or Close does, through the window and the input
+    /// checks.
+    #[test]
+    fn a_press_on_the_dimmed_area_closes_every_dialog() {
+        for (make, open, dialog) in EVERY_DIALOG {
+            let mut window = window_with(make, open);
+            let opened = top_overlay(window.app());
+
+            window.move_to(ON_THE_SCRIM);
+            window.click(iced::mouse::Button::Left);
+
+            assert_eq!(opened, Some(dialog));
+            assert_ne!(top_overlay(window.app()), Some(dialog), "{dialog:?}");
+        }
+    }
+
+    /// Issue 18: a press of the right or the middle button on the dimmed
+    /// area closes a dialog too.
+    #[test]
+    fn any_button_on_the_dimmed_area_closes_a_dialog() {
+        for button in [iced::mouse::Button::Right, iced::mouse::Button::Middle]
+        {
+            let mut window = window_with(app, open_add_plugin);
+
+            window.move_to(ON_THE_SCRIM);
+            window.click(button);
+
+            assert!(!window.app().plugins.has_dialog(), "{button:?}");
+        }
+    }
+
+    /// Issue 18: Esc closes every dialog, as its cross does.
+    #[test]
+    fn esc_closes_every_dialog() {
+        for (make, open, dialog) in EVERY_DIALOG {
+            let mut app = make();
+            open(&mut app);
+
+            let _ = crate::update::update_input(
+                &mut app,
+                AppEvent::Keyboard(crate::testing::keyboard::escape_press()),
+            );
+
+            assert_ne!(top_overlay(&app), Some(dialog), "{dialog:?}");
+        }
+    }
+
+    /// Issue 18: every dialog ends its title with a close cross that closes
+    /// it, and a press on the title, on the card, closes nothing.
+    #[test]
+    fn the_cross_closes_every_dialog_and_a_press_on_the_card_does_not() {
+        let with_titles = EVERY_DIALOG
+            .into_iter()
+            .filter_map(|open| title_of(open.2).map(|title| (open, title)));
+
+        for ((make, open, dialog), title) in with_titles {
+            let mut window = window_with(make, open);
+            let title = window
+                .find_last(&title)
+                .unwrap_or_else(|| panic!("{dialog:?} shows {title:?}"));
+
+            window.move_to(title.center());
+            window.click(iced::mouse::Button::Left);
+            let kept = top_overlay(window.app());
+            window.move_to(cross_after(title));
+            window.click(iced::mouse::Button::Left);
+
+            assert_eq!(kept, Some(dialog), "a press on the title keeps it");
+            assert_ne!(top_overlay(window.app()), Some(dialog), "{dialog:?}");
+        }
     }
 }

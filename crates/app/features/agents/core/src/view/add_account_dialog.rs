@@ -72,6 +72,7 @@ pub(crate) fn view(
     }
 
     Dialog::new(vm.title, palette)
+        .on_close(send(AddAccountIntent::Cancelled), i18n::t(Key::ButtonClose))
         .body(body)
         .action(cancel)
         .action(continue_button)

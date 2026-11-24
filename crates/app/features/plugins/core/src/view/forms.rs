@@ -126,6 +126,7 @@ pub(super) fn remove<'a>(
 
     Dialog::new(title, palette)
         .body(body)
+        .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
         .action(cancel)
         .action(remove)
         .into()
@@ -171,6 +172,7 @@ fn find_dialog<'a>(
     Dialog::new(title, palette)
         .width(size::DIALOG_WIDE)
         .body(body)
+        .on_close(PluginsIntent::Back, i18n::t(Key::ButtonClose))
         .action(cancel)
         .action(next)
         .into()
