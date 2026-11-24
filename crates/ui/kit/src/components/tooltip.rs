@@ -4,8 +4,10 @@
 //! What it says is a [`TooltipText`]: lines of text, and rows that name
 //! the parts of a number with each part's number at the right.
 
-use iced::widget::{Column, Space, container, row, tooltip as iced_tooltip};
-use iced::{Alignment, Border, Element, Padding};
+use iced::widget::{
+    Column, Space, Stack, container, row, tooltip as iced_tooltip,
+};
+use iced::{Alignment, Border, Color, Element, Length, Padding};
 
 use super::small_text::small_text;
 use crate::palette::UiPalette;
@@ -143,13 +145,7 @@ fn bubble<'a, Message: 'a>(
     let color = palette.text_body();
     let shadow = palette.shadow_popover();
 
-    let mut said = Column::new().spacing(spacing::SPACE_1);
-    for line in label.lines {
-        said = said.push(small_text(line, color));
-    }
-    if !label.groups.is_empty() {
-        said = said.push(rows_view(label.groups, color));
-    }
+    let said = said(label, color);
 
     container(said)
         .max_width(TOOLTIP_MAX_WIDTH)
@@ -166,30 +162,74 @@ fn bubble<'a, Message: 'a>(
         .into()
 }
 
-/// The rows of every group in one grid, one row per line: the names in a
-/// column at the left, the numbers in a column at the right, so every
-/// name starts and every number ends where the others of all groups do,
-/// and a little space between groups. The grid is as wide as its widest
-/// row: a wider line above does not stretch it, since a filling row would
-/// stretch the bubble to its widest.
+/// What `label` says in `color`: its lines, then its rows, whose names
+/// stick to the left edge of the bubble and whose numbers to its right
+/// edge, also under a line wider than the rows.
+///
+/// A row that fills its width would stretch the bubble to its widest, so
+/// the width comes from a layer that is never seen: the lines and the
+/// rows at their own width, the rows in no color. Under it, sized by it,
+/// lies what shows: the lines, and the rows filling that width.
+fn said<'a, Message: 'a>(
+    label: TooltipText,
+    color: Color,
+) -> Element<'a, Message> {
+    let lines = |color: Color| {
+        label
+            .lines
+            .iter()
+            .fold(Column::new().spacing(spacing::SPACE_1), |lines, line| {
+                lines.push(small_text(line.clone(), color))
+            })
+    };
+    if label.groups.is_empty() {
+        return lines(color).into();
+    }
+
+    let measure = lines(color).push(rows_view(
+        &label.groups,
+        Color::TRANSPARENT,
+        Length::Shrink,
+    ));
+    let shown = lines(Color::TRANSPARENT).push(rows_view(
+        &label.groups,
+        color,
+        Length::Fill,
+    ));
+
+    Stack::new()
+        .push(measure)
+        .push_under(shown)
+        .width(Length::Shrink)
+        .into()
+}
+
+/// The rows of every group in one grid `width` wide, one row per line: the
+/// names in a column at the left, the numbers in a column at the right, so
+/// every name starts and every number ends where the others of all groups
+/// do, and a little space between groups.
 fn rows_view<'a, Message: 'a>(
-    groups: Vec<Vec<(String, String)>>,
-    color: iced::Color,
+    groups: &[Vec<(String, String)>],
+    color: Color,
+    width: Length,
 ) -> Element<'a, Message> {
     let mut names = Column::new();
     let mut numbers = Column::new().align_x(Alignment::End);
-    for (index, rows) in groups.into_iter().enumerate() {
+    for (index, rows) in groups.iter().enumerate() {
         if index > 0 {
             names = names.push(Space::new().height(spacing::SPACE_1));
             numbers = numbers.push(Space::new().height(spacing::SPACE_1));
         }
         for (name, number) in rows {
-            names = names.push(small_text(name, color));
-            numbers = numbers.push(small_text(number, color));
+            names = names.push(small_text(name.clone(), color));
+            numbers = numbers.push(small_text(number.clone(), color));
         }
     }
 
-    row![names, numbers].spacing(spacing::SPACE_3).into()
+    row![names, Space::new().width(Length::Fill), numbers]
+        .spacing(spacing::SPACE_3)
+        .width(width)
+        .into()
 }
 
 #[cfg(test)]
@@ -288,9 +328,10 @@ mod tests {
 
     /// Rows of several groups, such as the tokens and the money of a bar,
     /// share one grid: every name starts at the left edge of the bubble and
-    /// the numbers of all groups end together.
+    /// every number ends at its right edge, under a line wider than they
+    /// are too.
     #[test]
-    fn rows_of_all_groups_share_one_grid() {
+    fn rows_of_all_groups_stick_to_the_two_sides_of_the_bubble() {
         let label =
             TooltipText::new("Nov 13: 120K tokens, ~$3.10 at API prices")
                 .rows(vec![
@@ -310,11 +351,12 @@ mod tests {
         let few = at("20K");
         let some = at("8K");
         let money = at("~$0.40");
-        let right = few.x + few.width;
+        let right = line.x + line.width;
 
         assert!((input.x - line.x).abs() < 1.0, "{input:?} {line:?}");
         assert!((written.x - line.x).abs() < 1.0, "{written:?}");
         assert!((cached.x - line.x).abs() < 1.0, "{cached:?}");
+        assert!((few.x + few.width - right).abs() < 1.0, "{few:?} {line:?}");
         assert!((some.x + some.width - right).abs() < 1.0, "{some:?}");
         assert!((money.x + money.width - right).abs() < 1.0, "{money:?}");
     }
