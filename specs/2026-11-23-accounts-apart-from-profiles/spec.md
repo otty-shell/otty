@@ -130,6 +130,10 @@ interface `otty:agents-agent/prices`, and the part picks the long prompt
 price for each request. Money stays off in the usage block only until the
 list prices are read, since there is nothing to price with.
 
+Built as (issue 14): there is no Tokens / Money switch. The usage block
+shows the tokens and the money side by side, "…" for the money until the
+list prices are read, and its bars are as tall as their tokens.
+
 ### 4. OTTY finds only the default profiles
 
 When an agent part is on, OTTY shows its default profile (the folder the

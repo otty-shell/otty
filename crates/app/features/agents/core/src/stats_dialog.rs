@@ -262,7 +262,7 @@ mod tests {
         claude, codex, codex_work, connected, read, session,
         two_agents_with_sessions, with_profiles,
     };
-    use crate::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
+    use crate::usage::{UsagePeriod, UsageTab};
 
     fn otty() -> PathBuf {
         PathBuf::from("/work/otty")
@@ -463,7 +463,6 @@ mod tests {
         for intent in [
             AgentsIntent::ShowUsageTab(UsageTab::ByProfile),
             AgentsIntent::PickPeriod(UsagePeriod::Today),
-            AgentsIntent::PickMeasure(UsageMeasure::Money),
             AgentsIntent::PickUsageRow(String::from("Codex")),
             AgentsIntent::HoverUsageRow(Some(String::from("Claude Code"))),
         ] {
@@ -475,7 +474,6 @@ mod tests {
 
         assert_eq!(popup.tab(), UsageTab::ByProfile);
         assert_eq!(popup.period(), UsagePeriod::Today);
-        assert_eq!(popup.measure(), UsageMeasure::Money);
         assert_eq!(popup.picked(), Some("Codex"));
         assert_eq!(popup.hovered(), Some("Claude Code"));
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
@@ -486,28 +484,28 @@ mod tests {
         );
     }
 
-    /// No menu of the mode shows over a dialog: the drop-downs of the
-    /// popup open their lists under them.
+    /// No menu of the mode shows over a dialog: the period drop-down of
+    /// the popup opens its list under it, and a pick closes it.
     #[test]
-    fn a_drop_down_of_the_popup_opens_its_list_and_no_menu() {
+    fn the_drop_down_of_the_popup_opens_its_list_and_no_menu() {
         let mut state = two_agents_with_sessions();
         let _ = reduce(&mut state, AgentsIntent::SelectProject(otty()));
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
+        let is_open = |state: &AgentsState| {
+            state
+                .stats()
+                .is_some_and(|dialog| dialog.usage().is_period_list_open())
+        };
 
         let opened = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
-        let open = state.stats().and_then(|dialog| dialog.usage().open_list());
-        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
-        let other = state.stats().and_then(|dialog| dialog.usage().open_list());
+        let open = is_open(&state);
         let _ =
-            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
-        let picked =
-            state.stats().and_then(|dialog| dialog.usage().open_list());
+            reduce(&mut state, AgentsIntent::PickPeriod(UsagePeriod::Today));
 
         assert_eq!(opened, Vec::new());
         assert!(state.menu().is_none());
-        assert_eq!(open, Some(UsageList::Period));
-        assert_eq!(other, Some(UsageList::Measure));
-        assert_eq!(picked, None);
+        assert!(open);
+        assert!(!is_open(&state), "a pick closes the list");
     }
 
     #[test]

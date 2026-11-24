@@ -116,11 +116,11 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        FactViewModel, ProjectStatsViewModel, SessionStatsViewModel,
-        StatsBodyViewModel, UsageBlockViewModel, UsageListsViewModel,
+        FactViewModel, PeriodPicker, ProjectStatsViewModel,
+        SessionStatsViewModel, StatsBodyViewModel, UsageBlockViewModel,
     };
     use crate::testing::usage_block;
-    use crate::usage::{UsageList, UsagePeriod, UsageTab};
+    use crate::usage::{UsagePeriod, UsageTab};
 
     fn dialog(body: StatsBodyViewModel) -> StatsDialogViewModel {
         StatsDialogViewModel {
@@ -129,19 +129,12 @@ mod tests {
         }
     }
 
-    /// The usage block of a popup with `tabs`, its `open` list and Money
-    /// off for `money_reason`.
-    fn popup_usage(
-        tabs: &[UsageTab],
-        open: Option<UsageList>,
-        money_reason: Option<&str>,
-    ) -> UsageBlockViewModel {
+    /// The usage block of a popup with `tabs`, its list of the periods
+    /// open when `is_open`.
+    fn popup_usage(tabs: &[UsageTab], is_open: bool) -> UsageBlockViewModel {
         UsageBlockViewModel {
             tabs: tabs.to_vec(),
-            lists: Some(UsageListsViewModel {
-                open,
-                money_reason: money_reason.map(String::from),
-            }),
+            period_picker: PeriodPicker::List { is_open },
             ..usage_block()
         }
     }
@@ -226,7 +219,7 @@ mod tests {
     /// By account.
     #[test]
     fn a_session_shows_its_facts_limits_and_usage_by_model() {
-        let vm = session(popup_usage(&UsageTab::SESSION_POPUP, None, None));
+        let vm = session(popup_usage(&UsageTab::SESSION_POPUP, false));
 
         let labels = [
             "Started",
@@ -248,7 +241,7 @@ mod tests {
             facts: vec![FactViewModel::new("Sessions", String::from("7"))],
             usage: UsageBlockViewModel {
                 tab: UsageTab::ByProfile,
-                ..popup_usage(&UsageTab::PROJECT_POPUP, None, None)
+                ..popup_usage(&UsageTab::PROJECT_POPUP, false)
             },
         }));
 
@@ -267,18 +260,14 @@ mod tests {
     #[test]
     fn the_period_list_opens_under_its_field_and_a_press_picks() {
         let themes = ThemeManager::new();
-        let closed = session(popup_usage(&UsageTab::SESSION_POPUP, None, None));
+        let closed = session(popup_usage(&UsageTab::SESSION_POPUP, false));
         let mut closed_ui = ui(closed, &themes);
         closed_ui
             .click(UsagePeriod::SevenDays.label())
             .expect("the period field shows");
         let toggled: Vec<AgentsIntent> = closed_ui.into_messages().collect();
 
-        let open = session(popup_usage(
-            &UsageTab::SESSION_POPUP,
-            Some(UsageList::Period),
-            None,
-        ));
+        let open = session(popup_usage(&UsageTab::SESSION_POPUP, true));
         let mut open_ui = ui(open, &themes);
         open_ui
             .click(UsagePeriod::ThirtyDays.label())
@@ -289,29 +278,26 @@ mod tests {
         assert_eq!(picked, [AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays)]);
     }
 
-    /// Issue 42: Money off in the popup puts no note in the block. Its
-    /// option in the open list sends nothing (its reason shows on hover,
-    /// as the kit's tests of `NoteSelect` check).
+    /// Issue 14 of spec 2026-11-23: the table of a popup has the Tokens
+    /// and the Money columns and fits the dialog, so it never scrolls
+    /// sideways.
     #[test]
-    fn money_off_in_the_popup_has_no_note_and_its_option_sends_nothing() {
-        let reason = "The list prices are not read yet";
-        let closed =
-            session(popup_usage(&UsageTab::SESSION_POPUP, None, Some(reason)));
-        let open = session(popup_usage(
-            &UsageTab::SESSION_POPUP,
-            Some(UsageList::Measure),
-            Some(reason),
-        ));
+    fn the_table_of_a_popup_has_tokens_and_money_and_fits_the_dialog() {
         let themes = ThemeManager::new();
-        let mut open_ui = ui(open, &themes);
+        let vm = session(popup_usage(&UsageTab::SESSION_POPUP, false));
+        let mut ui = ui(vm, &themes);
+        let mut at =
+            |label: &str| ui.find(label).expect("the column shows").bounds();
 
-        let notes = shown(closed, &[reason]);
-        open_ui
-            .click(i18n::t(Key::AgentsNumberMoney))
-            .expect("the list shows Money");
-        let picked: Vec<AgentsIntent> = open_ui.into_messages().collect();
+        let tokens = at(i18n::t(Key::AgentsTokens));
+        let money = at(i18n::t(Key::AgentsNumberMoney));
+        let share = at(i18n::t(Key::AgentsColumnShare));
 
-        assert!(notes.is_empty(), "{notes:?}");
-        assert!(picked.is_empty(), "{picked:?}");
+        let dialog_end = (1000.0 + size::DIALOG_WIDE) / 2.0;
+        assert!(tokens.x + tokens.width < money.x, "{tokens:?} {money:?}");
+        assert!(
+            share.x + share.width < dialog_end,
+            "{share:?} ends inside the dialog at {dialog_end}"
+        );
     }
 }

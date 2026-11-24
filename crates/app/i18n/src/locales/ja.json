@@ -717,7 +717,7 @@
     "tpl_agents_bar_tip_lit": "{point}: {amount} · {name} {part}",
     "tpl_agents_share": "{percent} %",
     "agents_column_share": "割合",
-    "agents_money_no_prices": "定価はまだ読み込まれていません",
+    "tpl_agents_tokens_and_money": "{tokens} トークン · {money}",
     "tpl_agents_no_sessions_yet": "{agent} にはまだセッションがありません。セッションができ次第 OTTY が数えます。",
     "tpl_agents_installed_not_used": "{agent} はインストール済みですが、セッションもログインもまだありません。使い始めると OTTY が自動で拾います。",
     "agents_profile_info": "プロファイル情報",

@@ -6,8 +6,7 @@ use super::super::own_login_actions::has_own_login;
 use super::super::project_filter::ProjectFilter;
 use super::super::sessions_table::SessionKey;
 use super::super::state::AgentsState;
-use super::super::usage::{UsageMeasure, UsagePeriod};
-use super::profile_page::money_reason;
+use super::super::usage::UsagePeriod;
 
 /// The open menu of Agents mode, with what it lists.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,8 +30,6 @@ pub(crate) enum MenuViewModel {
     AllProfiles(HiddenListMenuViewModel),
     /// The periods of the usage block.
     UsagePeriod(UsagePeriodMenuViewModel),
-    /// The measures of the usage block.
-    UsageMeasure(UsageMeasureMenuViewModel),
 }
 
 impl MenuViewModel {
@@ -101,22 +98,6 @@ impl MenuViewModel {
                 Self::UsagePeriod(UsagePeriodMenuViewModel {
                     place: open.place(),
                     picked: state.usage().period(),
-                })
-            },
-            AgentsMenu::UsageMeasure => {
-                // The menu of the usage block of a profile page.
-                let money_reason =
-                    state.selected_profile().and_then(|_| money_reason(state));
-                let picked = if money_reason.is_some() {
-                    UsageMeasure::Tokens
-                } else {
-                    state.usage().measure()
-                };
-
-                Self::UsageMeasure(UsageMeasureMenuViewModel {
-                    place: open.place(),
-                    picked,
-                    money_reason,
                 })
             },
             AgentsMenu::NewSession => {
@@ -255,25 +236,12 @@ pub(crate) struct UsagePeriodMenuViewModel {
     pub(crate) picked: UsagePeriod,
 }
 
-/// The measures of the usage block, the shown one lit; Money is off, with
-/// its reason under it, when the profile on screen can not show it.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct UsageMeasureMenuViewModel {
-    /// Where the menu opens.
-    pub(crate) place: MenuPlace,
-    /// The measure shown.
-    pub(crate) picked: UsageMeasure,
-    /// Why Money is off; `None` when it is on.
-    pub(crate) money_reason: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use iced::{Point, Size};
     use otty_agents::{Account, ProfileStatus, SavedProfiles};
-    use otty_app_i18n::{self as i18n, Key};
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
@@ -687,42 +655,6 @@ mod tests {
                 place: place(),
                 hidden: 0,
                 is_showing: false,
-            }))
-        );
-    }
-
-    /// Spec 2026-11-23, Decision 3: Money is off only while the prices
-    /// are not known, with its reason, and the menu lights Tokens, the
-    /// measure shown; then a subscription has Money too.
-    #[test]
-    fn the_measure_menu_has_money_off_only_until_the_prices_are_known() {
-        let mut state = with_profiles(&[(codex(), connected())]);
-        let _ = reduce(&mut state, AgentsIntent::SelectProfile(codex()));
-        let _ =
-            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
-        state.set_pointer(place());
-
-        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
-        let no_prices = MenuViewModel::from_state(&state);
-        crate::testing::set_prices(&mut state, crate::testing::price_table());
-        let priced = MenuViewModel::from_state(&state);
-
-        assert_eq!(
-            no_prices,
-            Some(MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
-                place: place(),
-                picked: UsageMeasure::Tokens,
-                money_reason: Some(
-                    i18n::t(Key::AgentsMoneyNoPrices).to_string()
-                ),
-            }))
-        );
-        assert_eq!(
-            priced,
-            Some(MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
-                place: place(),
-                picked: UsageMeasure::Money,
-                money_reason: None,
             }))
         );
     }

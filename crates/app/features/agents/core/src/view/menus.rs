@@ -16,10 +16,10 @@ use super::super::event::{
 use super::super::model::{
     AccountMenuViewModel, FilterMenuViewModel, HiddenListMenuViewModel,
     MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
-    SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
+    SessionMenuViewModel, UsagePeriodMenuViewModel,
 };
 use super::super::project_filter::ProjectFilterChange;
-use super::super::usage::{UsageMeasure, UsagePeriod};
+use super::super::usage::UsagePeriod;
 
 /// The key that continues the selected session, shown after Continue.
 const ENTER_KEY: &str = "Enter";
@@ -68,10 +68,6 @@ pub(crate) fn view(props: MenuProps<'_>) -> Element<'_, AgentsIntent> {
         MenuViewModel::UsagePeriod(vm) => {
             let place = vm.place;
             (period_menu(&vm, palette), place)
-        },
-        MenuViewModel::UsageMeasure(vm) => {
-            let place = vm.place;
-            (measure_menu(vm, palette), place)
         },
     };
 
@@ -369,36 +365,13 @@ fn period_menu(
         })
 }
 
-/// The measures of the usage block, the shown one lit. Money is off while
-/// the profile can not show it, and then says why on hover.
-fn measure_menu(
-    vm: UsageMeasureMenuViewModel,
-    palette: &UiPalette,
-) -> Menu<AgentsIntent> {
-    let mut menu = Menu::new(palette);
-    for measure in UsageMeasure::ALL {
-        let mut item =
-            MenuItem::new(measure.label()).active(measure == vm.picked);
-        match (&vm.money_reason, measure) {
-            (Some(reason), UsageMeasure::Money) => {
-                item = item.disabled_reason(reason.as_str());
-            },
-            _ => item = item.on_press(AgentsIntent::PickMeasure(measure)),
-        }
-        menu = menu.item(item);
-    }
-
-    menu
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use iced::{Point, Size};
-    use iced_test::{Simulator, simulator};
+    use iced_test::simulator;
     use otty_agents::{AgentId, Profile};
-    use otty_app_testing::temp_dir::TempDir;
     use otty_app_theme::theme::ThemeManager;
     use otty_ui_kit::components::context_menu::MenuPlace;
 
@@ -762,44 +735,6 @@ mod tests {
         assert!(ui.find(i18n::t(Key::AgentsHide)).is_ok());
     }
 
-    /// Whether the menu of `vm`, drawn with the pointer on the item
-    /// `hovered` or with no pointer, gives the picture saved at
-    /// `reference`; the first call saves it. iced draws tooltips as
-    /// overlays that widget queries do not reach, so a reason on hover is
-    /// checked on the drawing.
-    fn draws(
-        vm: MenuViewModel,
-        hovered: Option<&str>,
-        reference: &Path,
-    ) -> bool {
-        let themes = ThemeManager::new();
-        let mut ui = Simulator::with_size(
-            iced::Settings::default(),
-            Size::new(800.0, 600.0),
-            view(MenuProps {
-                vm,
-                theme: ThemeProps::new(themes.current()),
-            }),
-        );
-
-        if let Some(label) = hovered {
-            let position = ui
-                .find(label)
-                .expect("the item should show")
-                .bounds()
-                .center();
-            ui.point_at(position);
-            let _ = ui.simulate([iced::Event::Mouse(
-                iced::mouse::Event::CursorMoved { position },
-            )]);
-        }
-
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("the menu should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
-    }
-
     #[test]
     fn the_all_accounts_menu_shows_the_hidden_and_the_found_report() {
         let menu = |hidden, is_showing| {
@@ -883,44 +818,6 @@ mod tests {
             assert!(item.x + item.width <= area.width, "{item:?}");
             assert!(item.y + item.height <= area.height, "{item:?}");
         }
-    }
-
-    /// The measure menu with Tokens picked and Money off for `reason`.
-    fn measure_menu_off_for(reason: &str) -> MenuViewModel {
-        MenuViewModel::UsageMeasure(UsageMeasureMenuViewModel {
-            place: place(),
-            picked: UsageMeasure::Tokens,
-            money_reason: Some(String::from(reason)),
-        })
-    }
-
-    /// Issue 42: Money off sends nothing and says why only on hover: the
-    /// menu has no heading with the reason.
-    #[test]
-    fn money_off_sends_nothing_and_says_why_on_hover() {
-        let folder = TempDir::new("agents-measure-menu");
-        let idle = folder.path().join("idle");
-        let hovered = folder.path().join("hovered");
-        let money = i18n::t(Key::AgentsNumberMoney);
-        let no_price = measure_menu_off_for("no price per request");
-        let no_list = measure_menu_off_for("the list prices are not read");
-
-        assert!(draws(no_price.clone(), None, &idle), "save");
-        assert!(draws(no_price.clone(), Some(money), &hovered), "save");
-
-        assert!(
-            draws(no_list.clone(), None, &idle),
-            "the menu shows no reason of its own"
-        );
-        assert!(
-            !draws(no_list, Some(money), &hovered),
-            "Money says its reason on hover"
-        );
-        assert_eq!(pressed(no_price.clone(), money), []);
-        assert_eq!(
-            pressed(no_price, i18n::t(Key::AgentsTokens)),
-            [AgentsIntent::PickMeasure(UsageMeasure::Tokens)]
-        );
     }
 
     #[test]

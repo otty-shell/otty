@@ -56,7 +56,7 @@ pub(crate) use main_area::MainAreaViewModel;
 pub(crate) use menus::{
     AccountMenuViewModel, FilterMenuViewModel, HiddenListMenuViewModel,
     MenuViewModel, NewSessionMenuViewModel, ProfileMenuViewModel,
-    SessionMenuViewModel, UsageMeasureMenuViewModel, UsagePeriodMenuViewModel,
+    SessionMenuViewModel, UsagePeriodMenuViewModel,
 };
 #[cfg(test)]
 pub(crate) use money::ShownMoney;
@@ -91,11 +91,15 @@ pub(crate) use status_bar::StatusBarViewModel;
 #[cfg(test)]
 pub(crate) use usage_block::UsageBarViewModel;
 pub(crate) use usage_block::{
-    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
+    PeriodPicker, UsageBlockViewModel, UsageTableRowViewModel,
 };
 
 /// What stands for a number, a time or an amount that is not known.
 pub(crate) const UNKNOWN: &str = "—";
+
+/// What stands for money while the list prices it is counted at are not
+/// read yet.
+pub(crate) const NOT_READ_YET: &str = "…";
 
 /// One fact of a list, such as the Profile facts of a profile page or the
 /// facts of a session: its label and its value.

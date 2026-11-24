@@ -100,19 +100,6 @@ impl ProfilePageViewModel {
     }
 }
 
-/// Why the usage can not be shown as money, for the Money choice of a
-/// usage block: the list prices are not known yet. `None` when they are:
-/// the money of every profile is its tokens at API prices, on a
-/// subscription too (spec 2026-11-23-accounts-apart-from-profiles,
-/// Decision 3).
-pub(crate) fn money_reason(state: &AgentsState) -> Option<String> {
-    if state.profiles().prices().table().is_none() {
-        return Some(i18n::t(Key::AgentsMoneyNoPrices).to_string());
-    }
-
-    None
-}
-
 /// The usage block of `shown` at `now`: `None` while its agent counts no
 /// tokens or nothing was counted yet, only why the count failed while no
 /// count ended well, and the last good numbers greyed after a failed
@@ -128,7 +115,6 @@ fn usage_block(
     }
 
     let profiles = state.profiles();
-    let money_reason = money_reason(state);
     let kept = KeptAnswer::new(spend.last_good(), spend.failure());
     let counted = match kept {
         KeptAnswer::Nothing => return None,
@@ -148,7 +134,6 @@ fn usage_block(
         project: None,
         tabs: &UsageTab::PROFILE_PAGE,
         prices: profiles.prices().last_good(),
-        can_show_money: money_reason.is_none(),
         home: state.env().home(),
         time_zone: profiles.time_zone(),
     };
@@ -255,7 +240,7 @@ mod tests {
         price_table, read, session, set_prices, spend_loaded, with_accounts,
     };
     use crate::types::SpendCount;
-    use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
+    use crate::usage::{UsagePeriod, UsageTab};
 
     /// 1 000 tokens of gpt-5 in otty today, 2026-11-16, through OpenAI.
     fn spend() -> Spend {
@@ -333,7 +318,6 @@ mod tests {
         assert_eq!(usage.period, UsagePeriod::SevenDays);
         assert_eq!(usage.tab, UsageTab::ByModel);
         assert_eq!(usage.tabs, [UsageTab::ByProject, UsageTab::ByModel]);
-        assert_eq!(usage.measure, UsageMeasure::Tokens);
         assert_eq!(
             vm.facts,
             [
@@ -416,48 +400,65 @@ mod tests {
         assert!(failed.failure.is_some());
     }
 
-    /// Spec 2026-11-23, Decision 3: money is off only until the prices are
-    /// known, for a subscription as for a key.
-    #[test]
-    fn money_is_off_only_until_the_prices_are_known() {
-        let no_prices = codex_with(connected(), vec![chatgpt_login()], spend());
-        let mut subscription =
-            codex_with(connected(), vec![chatgpt_login()], spend());
-        set_prices(&mut subscription, price_table());
-        let mut key = codex_with(connected(), Vec::new(), spend());
-        set_prices(&mut key, price_table());
-
-        assert_eq!(
-            money_reason(&no_prices),
-            Some(i18n::t(Key::AgentsMoneyNoPrices).to_string())
-        );
-        assert_eq!(money_reason(&subscription), None);
-        assert_eq!(money_reason(&key), None);
+    /// "{tokens} tokens · {money}".
+    fn both(tokens: &str, money: &str) -> String {
+        i18n::filled(
+            Key::TplAgentsTokensAndMoney,
+            &[("tokens", tokens), ("money", money)],
+        )
     }
 
-    /// Spec 2026-11-23, Decision 3: the money of a profile logged in with a
-    /// subscription is its tokens at API prices, shown and marked "at API
-    /// prices".
+    fn in_days(amount: &str, count: &str) -> Option<String> {
+        Some(i18n::filled(
+            Key::TplAgentsAmountInDays,
+            &[("amount", amount), ("count", count)],
+        ))
+    }
+
+    /// Issue 14 of spec 2026-11-23: the money shows next to the tokens,
+    /// "…" while the prices are not read, then the money of a profile
+    /// logged in with a subscription too: its tokens at API prices, with
+    /// "~" in the total and the mark "at API prices" (Decision 3).
     #[test]
-    fn money_of_a_subscription_is_shown_at_api_prices() {
+    fn the_money_of_a_subscription_shows_next_to_its_tokens() {
         let mut state =
             codex_with(connected(), vec![chatgpt_login()], month_spend());
+
+        let before = page(&state).usage.expect("the usage shows");
         set_prices(&mut state, price_table());
+        let priced = page(&state).usage.expect("the usage shows");
 
-        let shown = usage_after(
-            &mut state,
-            &[AgentsIntent::PickMeasure(UsageMeasure::Money)],
-        );
-
-        let money = &shown[0];
-        assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.rows[0].value, "$0.88");
-        let mark = money
+        assert_eq!(before.line, in_days(&both("700K", "…"), "7"));
+        assert_eq!(before.rows[0].money, "…");
+        assert_eq!(before.money_kind, None);
+        assert_eq!(priced.line, in_days(&both("700K", "~$0.88"), "7"));
+        assert_eq!(priced.rows[0].tokens, "700K");
+        assert_eq!(priced.rows[0].money, "$0.88");
+        let mark = priced
             .money_kind
             .as_ref()
             .and_then(crate::model::MoneyKind::mark)
             .expect("the money is marked");
         assert_eq!(mark.label, i18n::t(Key::AgentsApiPricesMark));
+    }
+
+    /// Issue 14: the bars of the page are as tall as their tokens, and the
+    /// tooltip of a bar says the tokens and the money.
+    #[test]
+    fn the_bars_are_as_tall_as_their_tokens_and_say_both() {
+        let mut state = codex_with(connected(), Vec::new(), month_spend());
+        set_prices(&mut state, price_table());
+
+        let usage = page(&state).usage.expect("the usage shows");
+
+        assert_eq!(usage.bars[6].value, 100_000, "tokens, not micro-dollars");
+        assert_eq!(
+            usage.bars[6].tip,
+            i18n::filled(
+                Key::TplAgentsBarTip,
+                &[("point", "Nov 16"), ("amount", &both("100K", "~$0.13"))]
+            )
+        );
     }
 
     /// The usage block of the page after each intent of `intents`.
@@ -495,12 +496,6 @@ mod tests {
             panic!("three blocks: {shown:?}");
         };
         let today_word = i18n::t(Key::AgentsToday).to_string();
-        let in_days = |amount: &str, count: &str| {
-            Some(i18n::filled(
-                Key::TplAgentsAmountInDays,
-                &[("amount", amount), ("count", count)],
-            ))
-        };
         assert_eq!(today.period, UsagePeriod::Today);
         assert_eq!(today.bars.len(), 24);
         assert_eq!(today.bars[9].value, 100_000);
@@ -508,7 +503,7 @@ mod tests {
             today.line,
             Some(i18n::filled(
                 Key::TplAgentsAmountToday,
-                &[("amount", "100K")]
+                &[("amount", &both("100K", "…"))]
             ))
         );
         assert_eq!(
@@ -517,7 +512,7 @@ mod tests {
         );
         assert_eq!(month.period, UsagePeriod::ThirtyDays);
         assert_eq!(month.bars.len(), 30);
-        assert_eq!(month.line, in_days("3M", "30"));
+        assert_eq!(month.line, in_days(&both("3M", "…"), "30"));
         assert_eq!(month.current, Some(29), "today is the last bar");
         assert_eq!(
             month.axis,
@@ -525,50 +520,13 @@ mod tests {
         );
         assert_eq!(week.period, UsagePeriod::SevenDays);
         assert_eq!(week.bars.len(), 7);
-        assert_eq!(week.line, in_days("700K", "7"));
+        assert_eq!(week.line, in_days(&both("700K", "…"), "7"));
         assert_eq!(week.axis, Some((String::from("Nov 10"), today_word)));
     }
 
-    /// Owner, 2026-11-23: the measure switch of the page. Money writes
-    /// the total, the bars and the rows in dollars at API prices, with
-    /// its mark; Tokens writes them in tokens again.
-    #[test]
-    fn money_and_tokens_switch_the_numbers_of_the_page() {
-        let mut state = codex_with(connected(), Vec::new(), month_spend());
-        set_prices(&mut state, price_table());
-
-        let shown = usage_after(
-            &mut state,
-            &[
-                AgentsIntent::PickMeasure(UsageMeasure::Money),
-                AgentsIntent::PickMeasure(UsageMeasure::Tokens),
-            ],
-        );
-
-        let [money, tokens] = shown.as_slice() else {
-            panic!("two blocks: {shown:?}");
-        };
-        let in_week = |amount: &str| {
-            Some(i18n::filled(
-                Key::TplAgentsAmountInDays,
-                &[("amount", amount), ("count", "7")],
-            ))
-        };
-        assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.line, in_week("$0.88"));
-        assert_eq!(money.rows[0].value, "$0.88");
-        assert_eq!(money.bars[6].value, 125_000, "micro-dollars");
-        assert!(money.money_kind.is_some(), "the money is marked");
-        assert_eq!(tokens.measure, UsageMeasure::Tokens);
-        assert_eq!(tokens.line, in_week("700K"));
-        assert_eq!(tokens.rows[0].value, "700K");
-        assert_eq!(tokens.bars[6].value, 100_000);
-        assert_eq!(tokens.money_kind, None);
-    }
-
     /// The module doc of `usage.rs`: the choices of the profile pages are
-    /// the same for every profile. A period and a measure picked on one
-    /// page show on the next and on the first again.
+    /// the same for every profile. A period picked on one page shows on
+    /// the next and on the first again.
     #[test]
     fn the_choices_stay_when_another_profile_shows() {
         let mut state = with_accounts(
@@ -595,15 +553,13 @@ mod tests {
             &mut state,
             &[
                 AgentsIntent::PickPeriod(UsagePeriod::Today),
-                AgentsIntent::PickMeasure(UsageMeasure::Money),
                 AgentsIntent::SelectProfile(claude()),
                 AgentsIntent::SelectProfile(codex()),
             ],
         );
 
-        for usage in &shown[2..] {
+        for usage in &shown[1..] {
             assert_eq!(usage.period, UsagePeriod::Today);
-            assert_eq!(usage.measure, UsageMeasure::Money);
             assert_eq!(usage.bars.len(), 24);
         }
     }

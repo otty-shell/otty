@@ -114,10 +114,16 @@ else "—".
 | **Profile** | Needs from you; the usage block; **Profile info**: agent, version, folder, projects, sessions, **Read by**. |
 | **Project** | The folder name as the title, then **Project info** with the path and the profiles, then the sessions of all profiles. Double click or Enter continues a session in a terminal tab, and the menu also has Continue in a split, Copy resume command, Copy session ID and Show statistics. **Project statistics** opens the numbers of the whole project. |
 
-The **usage block** of a profile has a period (Today, 7 days, 30 days), a measure (Tokens or Money)
-and the tabs **By project** and **By model**. Project statistics has **By profile** and **By
-model**, Session statistics **By model**. Money is on as soon as the list prices are read. Until
-then it is off and says "The list prices are not read yet" when the pointer is over it.
+The **usage block** of a profile has a period (Today, 7 days, 30 days) and the tabs **By project**
+and **By model**. Project statistics has **By profile** and **By model**, Session statistics **By
+model**. The block shows the tokens and their money side by side, with no switch between them:
+
+- The total under the title says both, such as "400K tokens · ~$12.40 in 7 days". The "~" tells
+  that some of the money is [at API prices](#the-money).
+- Each table has a **Tokens** and a **Money** column. A model with no price shows "—" in Money.
+- The bars are as tall as their tokens, so a model with no price still has its bar. The tooltip of
+  a bar says both, such as "Nov 13: 120K tokens · ~$3.10".
+- Until the list prices are read, the money is "…".
 
 ## Needs
 
@@ -274,9 +280,9 @@ of an account come only from the provider part that found it.
   says why. When you can do something, it is in **Needs from you**: log in again, update the
   plugin, give a key.
 - Money of a profile's tokens priced at [API prices](#the-money) has the mark **at API prices**
-  under it, under the usage block in Money and in the statistics. Its tooltip says when the prices
-  are from. The Cost of a project has the mark after the sum: "$42.10 · at API prices". Money with
-  no mark is the cost the agent wrote, or, on an account page, what the provider told.
+  under the table of the usage block and of the statistics. Its tooltip says when the prices are
+  from. The Cost of a project has the mark after the sum: "$42.10 · at API prices". Money with no
+  mark is the cost the agent wrote, or, on an account page, what the provider told.
 - **Read by** in Account info and Profile info names the plugin and its version. What a plugin
   failed to read last is on its card on the [Plugins](../plugins/) page.
 

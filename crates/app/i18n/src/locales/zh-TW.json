@@ -717,7 +717,7 @@
     "tpl_agents_bar_tip_lit": "{point}：{amount} · {name} {part}",
     "tpl_agents_share": "{percent} %",
     "agents_column_share": "占比",
-    "agents_money_no_prices": "尚未讀取牌價",
+    "tpl_agents_tokens_and_money": "{tokens} 權杖 · {money}",
     "tpl_agents_no_sessions_yet": "{agent} 還沒有工作階段。一旦有工作階段，OTTY 會立即統計。",
     "tpl_agents_installed_not_used": "{agent} 已安裝，但還沒有工作階段和登入。開始使用後 OTTY 會自動識別。",
     "agents_profile_info": "設定檔資訊",

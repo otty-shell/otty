@@ -717,7 +717,7 @@
     "tpl_agents_bar_tip_lit": "{point}: {amount} · {name} {part}",
     "tpl_agents_share": "{percent} %",
     "agents_column_share": "비율",
-    "agents_money_no_prices": "정가를 아직 읽지 않았습니다",
+    "tpl_agents_tokens_and_money": "{tokens} 토큰 · {money}",
     "tpl_agents_no_sessions_yet": "{agent}에 아직 세션이 없습니다. 세션이 생기면 OTTY가 바로 셉니다.",
     "tpl_agents_installed_not_used": "{agent}이(가) 설치되었지만 아직 세션과 로그인이 없습니다. 사용을 시작하면 OTTY가 자동으로 찾습니다.",
     "agents_profile_info": "프로필 정보",

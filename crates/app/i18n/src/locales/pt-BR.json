@@ -717,7 +717,7 @@
     "tpl_agents_bar_tip_lit": "{point}: {amount} · {name} {part}",
     "tpl_agents_share": "{percent} %",
     "agents_column_share": "Parte",
-    "agents_money_no_prices": "Os preços de tabela ainda não foram lidos",
+    "tpl_agents_tokens_and_money": "{tokens} tokens · {money}",
     "tpl_agents_no_sessions_yet": "{agent} ainda não tem sessões. O OTTY as conta assim que houver alguma.",
     "tpl_agents_installed_not_used": "{agent} está instalado, mas ainda não tem sessões nem logins. O OTTY os detecta assim que você o usar.",
     "agents_profile_info": "Informações do perfil",

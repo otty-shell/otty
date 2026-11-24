@@ -9,7 +9,6 @@ use super::menus::AgentsMenu;
 use super::model::account_name;
 use super::state::AgentsState;
 use super::types::{FolderAsker, LoadedFolder};
-use super::usage::UsageList;
 use super::{
     add_account_dialog, found_report, key_dialog, keyring, login_tabs,
     menu_actions, need, new_session_dialog, own_login_actions, profile_actions,
@@ -357,20 +356,10 @@ pub(super) fn reduce(
             state.toggle_projects_section();
             Vec::new()
         },
-        AgentsIntent::OpenPeriodMenu => {
-            open_usage_list(state, UsageList::Period, AgentsMenu::UsagePeriod)
-        },
-        AgentsIntent::OpenMeasureMenu => {
-            open_usage_list(state, UsageList::Measure, AgentsMenu::UsageMeasure)
-        },
+        AgentsIntent::OpenPeriodMenu => open_period_menu(state),
         AgentsIntent::PickPeriod(period) => {
             let _ = state.close_menu();
             state.shown_usage_mut().pick_period(period);
-            Vec::new()
-        },
-        AgentsIntent::PickMeasure(measure) => {
-            let _ = state.close_menu();
-            state.shown_usage_mut().pick_measure(measure);
             Vec::new()
         },
         AgentsIntent::ShowUsageTab(tab) => {
@@ -424,20 +413,16 @@ pub(super) fn reduce(
     }
 }
 
-/// Open the drop-down `list` of the usage block on screen: in a
+/// Open the period drop-down of the usage block on screen: in a
 /// statistics popup its list under it, since no menu shows over a dialog,
-/// else its `menu` at the pointer.
-fn open_usage_list(
-    state: &mut AgentsState,
-    list: UsageList,
-    menu: AgentsMenu,
-) -> Vec<AgentsOutcome> {
+/// else the period menu at the pointer.
+fn open_period_menu(state: &mut AgentsState) -> Vec<AgentsOutcome> {
     if let Some(dialog) = state.stats_mut() {
-        dialog.usage_mut().toggle_list(list);
+        dialog.usage_mut().toggle_period_list();
         return Vec::new();
     }
 
-    state.open_menu(menu);
+    state.open_menu(AgentsMenu::UsagePeriod);
     vec![AgentsOutcome::MenuOpened]
 }
 
@@ -1512,19 +1497,19 @@ mod tests {
         assert!(state.search().filter().is_sorted_by_name());
     }
 
-    /// Owner, 2026-11-23: with the period menu open, a press on the
-    /// measure drop-down opens its menu in place of it, and a press on the
+    /// Owner, 2026-11-23: with the funnel menu open, a press on the
+    /// period drop-down opens its menu in place of it, and a press on the
     /// drop-down of the open menu closes it.
     #[test]
-    fn another_drop_down_opens_its_menu_and_the_same_one_closes_it() {
+    fn the_period_drop_down_opens_its_menu_and_a_second_press_closes_it() {
         let mut state = two_agents_with_sessions();
+        let _ = reduce(&mut state, AgentsIntent::OpenFilterMenu);
+
+        let _ = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
+        let switched = open_menu(&state);
         let _ = reduce(&mut state, AgentsIntent::OpenPeriodMenu);
 
-        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
-        let switched = open_menu(&state);
-        let _ = reduce(&mut state, AgentsIntent::OpenMeasureMenu);
-
-        assert_eq!(switched, Some(AgentsMenu::UsageMeasure));
+        assert_eq!(switched, Some(AgentsMenu::UsagePeriod));
         assert_eq!(open_menu(&state), None);
     }
 

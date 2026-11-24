@@ -313,7 +313,6 @@ pub(crate) fn menu_opened_by(event: &AppEvent) -> Option<Overlay> {
             | AgentsIntent::OpenAllAccountsMenu
             | AgentsIntent::OpenAllProfilesMenu
             | AgentsIntent::OpenPeriodMenu
-            | AgentsIntent::OpenMeasureMenu
             | AgentsIntent::OpenFilterMenu
             | AgentsIntent::OpenNewSessionMenu,
         ) => Overlay::AgentsMenu,
@@ -651,17 +650,15 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                 AgentsIntent::AllowKeyring | AgentsIntent::KeyringNotNow
             )
         ),
-        // Close, the cross and everything of its usage block: the lists
-        // of its drop-downs, its tabs and its rows. The answer of the read
+        // Close, the cross and everything of its usage block: the list of
+        // its period drop-down, its tabs and its rows. The answer of the read
         // arrives on its own, so it does not pass here.
         Overlay::AgentsStatsDialog => matches!(
             event,
             AppEvent::Agents(
                 AgentsIntent::CloseStats
                     | AgentsIntent::OpenPeriodMenu
-                    | AgentsIntent::OpenMeasureMenu
                     | AgentsIntent::PickPeriod(_)
-                    | AgentsIntent::PickMeasure(_)
                     | AgentsIntent::ShowUsageTab(_)
                     | AgentsIntent::PickUsageRow(_)
                     | AgentsIntent::HoverUsageRow(_)
@@ -762,8 +759,8 @@ mod tests {
     use iced::keyboard::key::{Code, Physical};
     use otty_app_agents::{
         AddAccountIntent, AgentsCtx, FolderFieldIntent, KeyDialogIntent,
-        NewSessionDialogIntent, ProfileDialogIntent, RenameIntent,
-        UsageMeasure, UsagePeriod, UsageTab,
+        NewSessionDialogIntent, ProfileDialogIntent, RenameIntent, UsagePeriod,
+        UsageTab,
     };
     use otty_app_domain::commands::AppCommand;
     use otty_app_explorer::ExplorerIntent;
@@ -1166,12 +1163,8 @@ mod tests {
                 vec![
                     AppEvent::Agents(AgentsIntent::CloseStats),
                     AppEvent::Agents(AgentsIntent::OpenPeriodMenu),
-                    AppEvent::Agents(AgentsIntent::OpenMeasureMenu),
                     AppEvent::Agents(AgentsIntent::PickPeriod(
                         UsagePeriod::Today,
-                    )),
-                    AppEvent::Agents(AgentsIntent::PickMeasure(
-                        UsageMeasure::Money,
                     )),
                     AppEvent::Agents(AgentsIntent::ShowUsageTab(
                         UsageTab::ByProfile,
@@ -2297,11 +2290,11 @@ mod tests {
         );
     }
 
-    /// Owner, 2026-11-23: Today, 7 days, 30 days, Tokens and Money of the
-    /// usage block of a profile page did nothing, the frame took them for
-    /// a press outside the menu. Every item of both menus now goes to it.
+    /// Owner, 2026-11-23: Today, 7 days and 30 days of the usage block of
+    /// a profile page did nothing, the frame took them for a press outside
+    /// the menu. Every item of the menu now goes to it.
     #[test]
-    fn every_item_of_the_agents_usage_menus_passes() {
+    fn every_item_of_the_agents_period_menu_passes() {
         let mut app = agents_app_with_a_session();
 
         open_agents_menu_with(&mut app, AgentsIntent::OpenPeriodMenu);
@@ -2311,14 +2304,6 @@ mod tests {
                 i18n::t(i18n::Key::AgentsToday),
                 i18n::t(i18n::Key::AgentsSevenDays),
                 i18n::t(i18n::Key::AgentsThirtyDays),
-            ],
-        );
-        open_agents_menu_with(&mut app, AgentsIntent::OpenMeasureMenu);
-        assert_items_pass(
-            &app,
-            &[
-                i18n::t(i18n::Key::AgentsTokens),
-                i18n::t(i18n::Key::AgentsNumberMoney),
             ],
         );
     }
@@ -2433,18 +2418,23 @@ mod tests {
         ui.find(text).is_ok()
     }
 
-    /// Owner, 2026-11-23: a period and a measure picked in their menus
-    /// show on the profile page: the menu closes and the total under
-    /// Usage follows.
+    /// Owner, 2026-11-23: a period picked in its menu shows on the
+    /// profile page: the menu closes and the total under Usage follows.
+    /// Issue 14 of spec 2026-11-23: the total says the tokens and their
+    /// money at API prices, with no switch between them.
     #[test]
-    fn a_period_and_a_measure_picked_in_their_menus_show_on_the_page() {
+    fn a_period_picked_in_its_menu_shows_on_the_page() {
         let mut app = agents_app_with_a_counted_profile();
+        let both = i18n::filled(
+            i18n::Key::TplAgentsTokensAndMoney,
+            &[("tokens", "400K"), ("money", "~$0.50")],
+        );
         let total = |amount: &str, key: i18n::Key| {
             i18n::filled(key, &[("amount", amount), ("count", "7")])
         };
         let week = main_area_shows(
             &app,
-            &total("400K", i18n::Key::TplAgentsAmountInDays),
+            &total(&both, i18n::Key::TplAgentsAmountInDays),
         );
 
         pick_in_usage_menu(
@@ -2454,23 +2444,13 @@ mod tests {
         );
         let today = main_area_shows(
             &app,
-            &total("400K", i18n::Key::TplAgentsAmountToday),
+            &total(&both, i18n::Key::TplAgentsAmountToday),
         );
         let is_closed = top_overlay(&app).is_none();
-        pick_in_usage_menu(
-            &mut app,
-            AgentsIntent::OpenMeasureMenu,
-            i18n::t(i18n::Key::AgentsNumberMoney),
-        );
-        let money = main_area_shows(
-            &app,
-            &total("$0.50", i18n::Key::TplAgentsAmountToday),
-        );
 
-        assert!(week, "the page opens on 7 days of tokens");
-        assert!(today, "Today shows the tokens of today");
+        assert!(week, "the page opens on 7 days of tokens and money");
+        assert!(today, "Today shows the tokens and the money of today");
         assert!(is_closed, "the menu closes");
-        assert!(money, "Money shows the dollars of today");
     }
 
     /// Issue 42: the pointer moving over a disabled item of an open menu,

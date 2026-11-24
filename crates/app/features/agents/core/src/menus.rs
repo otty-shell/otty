@@ -32,8 +32,6 @@ pub(crate) enum AgentsMenu {
     AllProfiles,
     /// The periods of the usage block: Today, 7 days, 30 days.
     UsagePeriod,
-    /// The measures of the usage block: Tokens, Money.
-    UsageMeasure,
 }
 
 /// A menu that is open, with the place it opened at.

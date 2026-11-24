@@ -21,7 +21,7 @@ use super::types::{
     LoadedSessionStats, LoadedSessions, LoadedSpend, LoadedVersion,
     PreparedOwnLogin,
 };
-use super::usage::{UsageMeasure, UsagePeriod, UsageTab};
+use super::usage::{UsagePeriod, UsageTab};
 
 /// What the agents feature is asked to do: a press in its views, or the
 /// answer of a read the binary ran for it.
@@ -268,15 +268,10 @@ pub enum AgentsIntent {
     /// at the pointer, or in a statistics popup its list under it. The
     /// usage intents act on the block of the popup while one is open.
     OpenPeriodMenu,
-    /// The measure drop-down of the usage block was pressed: open its menu
-    /// at the pointer, or in a statistics popup its list under it.
-    OpenMeasureMenu,
     /// A period of its menu was picked: the usage block looks back over it.
     PickPeriod(UsagePeriod),
-    /// A measure of its menu was picked: the usage block counts in it.
-    PickMeasure(UsageMeasure),
     /// A tab of the usage block was pressed: its table lists the projects,
-    /// the profiles, the models or the accounts.
+    /// the profiles or the models.
     ShowUsageTab(UsageTab),
     /// A row of the table of the usage block was pressed, by its name:
     /// light its part of every bar, or stop when it was lit.

@@ -1515,16 +1515,16 @@ pub enum Key {
     TplAgentsAmountInDays,
     /// Under the title of the usage block when the latest count failed. Placeholder: `{time}`.
     TplAgentsLastGoodNumbers,
-    /// Tooltip of a bar of the usage block, such as "Nov 13: 2.9M". Placeholders: `{point}`, `{amount}`.
+    /// Tooltip of a bar of the usage block, such as "Nov 13: 2.9M tokens · ~$3.10". Placeholders: `{point}`, `{amount}`.
     TplAgentsBarTip,
-    /// Tooltip of a bar of the usage block with a lit row, such as "Nov 13: 2.9M · otty 1.2M". Placeholders: `{point}`, `{amount}`, `{name}`, `{part}`.
+    /// Tooltip of a bar of the usage block with a lit row, such as "Nov 13: 2.9M tokens · ~$3.10 · otty 1.2M tokens · ~$1.20". Placeholders: `{point}`, `{amount}`, `{name}`, `{part}`.
     TplAgentsBarTipLit,
     /// A share of the usage block, such as "62 %". Placeholder: `{percent}`.
     TplAgentsShare,
     /// Column of the usage block: the share of each row.
     AgentsColumnShare,
-    /// Why the usage can not be shown in money before the list prices are read.
-    AgentsMoneyNoPrices,
+    /// Tokens and their money in one line of the usage block, such as "400K tokens · ~$12.40". Placeholders: `{tokens}`, `{money}`.
+    TplAgentsTokensAndMoney,
     /// Info line of a profile with no sessions. Placeholder: `{agent}`.
     TplAgentsNoSessionsYet,
     /// Info line of a profile with no sessions and no logins. Placeholder: `{agent}`.
@@ -2726,7 +2726,7 @@ impl Key {
         Self::TplAgentsBarTipLit,
         Self::TplAgentsShare,
         Self::AgentsColumnShare,
-        Self::AgentsMoneyNoPrices,
+        Self::TplAgentsTokensAndMoney,
         Self::TplAgentsNoSessionsYet,
         Self::TplAgentsInstalledNotUsed,
         Self::AgentsProfileInfo,

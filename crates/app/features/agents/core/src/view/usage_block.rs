@@ -1,11 +1,13 @@
 //! The usage block of a profile page and of the statistics popups (spec
-//! 2026-11-19, Decision 6): the title with its line and two drop-downs at
-//! its right, the bars in the look of the kit `DayBars`, the tabs of the
-//! block and the table of the rows of the tab. Pressing a row, or the
-//! pointer over it, lights its part of every bar. Money at API prices has
-//! the mark "at API prices" under the table. On a page a drop-down
-//! opens the menu of the mode at the pointer; in a popup, over which no
-//! menu shows, its list opens under it.
+//! 2026-11-19, Decision 6): the title with its line and the period
+//! drop-down at its right, the bars in the look of the kit `DayBars`, the
+//! tabs of the block and the table of the rows of the tab, their tokens and
+//! their money side by side (issue 14 of spec
+//! 2026-11-23-accounts-apart-from-profiles). Pressing a row, or the pointer
+//! over it, lights its part of every bar. Money at API prices has the mark
+//! "at API prices" under the table. On a page the drop-down opens the
+//! menu of the mode at the pointer; in a popup, over which no menu shows,
+//! its list opens under it.
 
 use iced::widget::{Column, container, mouse_area, row};
 use iced::{Alignment, Element, Length, Point};
@@ -21,17 +23,19 @@ use otty_ui_kit::{size, spacing};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
-    UsageBlockViewModel, UsageListsViewModel, UsageTableRowViewModel,
+    PeriodPicker, UsageBlockViewModel, UsageTableRowViewModel,
 };
-use super::super::usage::{UsageList, UsageMeasure, UsagePeriod, UsageTab};
+use super::super::usage::{UsagePeriod, UsageTab};
 use super::{blocks, money};
 
-/// Width of each drop-down at the right of the title.
+/// Width of the period drop-down at the right of the title.
 const DROPDOWN_WIDTH: f32 = 112.0;
 /// Least width of the name column.
 const NAME_MIN_WIDTH: u16 = 120;
-/// Least width of the value column.
-const VALUE_MIN_WIDTH: u16 = 80;
+/// Least width of the Tokens column: "999.9K" and its padding.
+const TOKENS_MIN_WIDTH: u16 = 72;
+/// Least width of the Money column: "$12 345.67" and its padding.
+const MONEY_MIN_WIDTH: u16 = 88;
 /// Least width of the share column.
 const SHARE_MIN_WIDTH: u16 = 56;
 
@@ -66,7 +70,7 @@ pub(super) fn view<'a>(
 }
 
 /// The title with the total of the period, or the time of the last good
-/// numbers, under it, and the period and measure drop-downs at its right.
+/// numbers, under it, and the period drop-down at its right.
 fn title_row<'a>(
     vm: &UsageBlockViewModel,
     palette: &UiPalette,
@@ -78,57 +82,49 @@ fn title_row<'a>(
     ))
     .width(Length::Fill);
 
-    let (period, measure) = match &vm.lists {
-        Some(lists) => (
-            period_list(vm, lists, palette),
-            measure_list(vm, lists, palette),
-        ),
-        None => (
-            dropdown(vm.period.label(), AgentsIntent::OpenPeriodMenu, palette),
-            dropdown(
-                vm.measure.label(),
-                AgentsIntent::OpenMeasureMenu,
-                palette,
-            ),
-        ),
+    let period = match vm.period_picker {
+        PeriodPicker::List { is_open } => {
+            period_list(vm.period, is_open, palette)
+        },
+        PeriodPicker::Menu => period_dropdown(vm.period, palette),
     };
 
-    row![title, period, measure]
+    row![title, period]
         .spacing(spacing::SPACE_3)
         .align_y(Alignment::Center)
         .into()
 }
 
-/// A compact drop-down showing `label`; a press opens its menu at the
+/// A compact drop-down showing `period`; a press opens its menu at the
 /// pointer.
-fn dropdown<'a>(
-    label: &str,
-    on_press: AgentsIntent,
+fn period_dropdown<'a>(
+    period: UsagePeriod,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let field =
-        NoteSelect::new(vec![NoteSelectOption::new(label)], Some(0), palette)
-            .on_toggle(on_press);
+    let field = NoteSelect::new(
+        vec![NoteSelectOption::new(period.label())],
+        Some(0),
+        palette,
+    )
+    .on_toggle(AgentsIntent::OpenPeriodMenu);
 
     container(field).width(DROPDOWN_WIDTH).into()
 }
 
-/// The period drop-down of a popup, whose list of the periods opens under
-/// it.
+/// The period drop-down of a popup, `period` picked, whose list of the
+/// periods opens under it while `is_open`.
 fn period_list<'a>(
-    vm: &UsageBlockViewModel,
-    lists: &UsageListsViewModel,
+    period: UsagePeriod,
+    is_open: bool,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let options = UsagePeriod::ALL
         .iter()
         .map(|period| NoteSelectOption::new(period.label()))
         .collect();
-    let picked = UsagePeriod::ALL
-        .iter()
-        .position(|period| *period == vm.period);
+    let picked = UsagePeriod::ALL.iter().position(|shown| *shown == period);
     let field = NoteSelect::new(options, picked, palette)
-        .open(lists.open == Some(UsageList::Period))
+        .open(is_open)
         .on_toggle(AgentsIntent::OpenPeriodMenu)
         .on_pick(|index| {
             let period = UsagePeriod::ALL.get(index).copied();
@@ -138,41 +134,8 @@ fn period_list<'a>(
     container(field).width(DROPDOWN_WIDTH).into()
 }
 
-/// The measure drop-down of a popup, whose list of the measures opens
-/// under it. Money while it is off can not be picked and says why on
-/// hover.
-fn measure_list<'a>(
-    vm: &UsageBlockViewModel,
-    lists: &UsageListsViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let options = UsageMeasure::ALL
-        .iter()
-        .map(|measure| {
-            let option = NoteSelectOption::new(measure.label());
-            match (*measure, &lists.money_reason) {
-                (UsageMeasure::Money, Some(reason)) => {
-                    option.disabled_reason(reason.as_str())
-                },
-                _ => option,
-            }
-        })
-        .collect();
-    let picked = UsageMeasure::ALL
-        .iter()
-        .position(|measure| *measure == vm.measure);
-    let field = NoteSelect::new(options, picked, palette)
-        .open(lists.open == Some(UsageList::Measure))
-        .on_toggle(AgentsIntent::OpenMeasureMenu)
-        .on_pick(|index| {
-            let measure = UsageMeasure::ALL.get(index).copied();
-            AgentsIntent::PickMeasure(measure.unwrap_or_default())
-        });
-
-    container(field).width(DROPDOWN_WIDTH).into()
-}
-
-/// The bars, muted while the numbers are the last good ones.
+/// The bars, as tall as their tokens, muted while the numbers are the
+/// last good ones.
 fn bars<'a>(
     vm: &UsageBlockViewModel,
     palette: &UiPalette,
@@ -208,7 +171,7 @@ fn table<'a>(
         vm.rows.iter().map(|row| row.name.clone()).collect();
     let pressed = names.clone();
 
-    let mut table = DataTable::new(columns(vm.tab, vm.measure), palette)
+    let mut table = DataTable::new(columns(vm.tab), palette)
         .selected(vm.picked)
         .empty_message(i18n::t(Key::AgentsTopEmpty))
         .on_row_press(move |index| {
@@ -232,27 +195,30 @@ fn table<'a>(
     hovered.into()
 }
 
-/// The columns of the table: the name of the rows of `tab`, the value in
-/// `measure` and the share.
-fn columns(tab: UsageTab, measure: UsageMeasure) -> Vec<TableColumn> {
+/// The columns of the table: the name of the rows of `tab`, the tokens,
+/// their money and the share, the numbers at the right end of their
+/// columns. The four minimums fit the smallest screen, so the table never
+/// scrolls sideways inside a page that does.
+fn columns(tab: UsageTab) -> Vec<TableColumn> {
     let name = match tab {
         UsageTab::ByProject => Key::AgentsColumnProject,
         UsageTab::ByProfile => Key::AgentsProfile,
         UsageTab::ByModel => Key::AgentsColumnModel,
+    };
+    let number = |key: Key, min_width: u16| {
+        TableColumn::new(i18n::t(key), 1)
+            .min_width(min_width)
+            .align(ColumnAlign::End)
+            .sortable(false)
     };
 
     vec![
         TableColumn::new(i18n::t(name), 3)
             .min_width(NAME_MIN_WIDTH)
             .sortable(false),
-        TableColumn::new(measure.label(), 1)
-            .min_width(VALUE_MIN_WIDTH)
-            .align(ColumnAlign::End)
-            .sortable(false),
-        TableColumn::new(i18n::t(Key::AgentsColumnShare), 1)
-            .min_width(SHARE_MIN_WIDTH)
-            .align(ColumnAlign::End)
-            .sortable(false),
+        number(Key::AgentsTokens, TOKENS_MIN_WIDTH),
+        number(Key::AgentsNumberMoney, MONEY_MIN_WIDTH),
+        number(Key::AgentsColumnShare, SHARE_MIN_WIDTH),
     ]
 }
 
@@ -275,7 +241,12 @@ fn cells(
         }
     };
 
-    vec![name, number(&row.value), number(&row.share)]
+    vec![
+        name,
+        number(&row.tokens),
+        number(&row.money),
+        number(&row.share),
+    ]
 }
 
 /// The index of the row of the table at `point`, measured from the top of
@@ -307,18 +278,74 @@ mod tests {
         ui.find(label).expect("the text should show").bounds()
     }
 
-    /// Spec 2026-11-23, Decision 3: money at API prices carries the mark
-    /// "at API prices" under the sums of the table, at the right end.
+    fn ui<'a>(
+        vm: UsageBlockViewModel,
+        themes: &'a ThemeManager,
+        width: f32,
+    ) -> Simulator<'a, AgentsIntent> {
+        simulator(container(view(vm, themes.current().ui())).width(width))
+    }
+
+    /// Issue 14 of spec 2026-11-23: the table has a Tokens and a Money
+    /// column side by side, the money at the right end of its column like
+    /// the numbers, and "—" for a model with no price.
     #[test]
-    fn money_at_api_prices_is_marked_under_the_table_of_its_sums() {
+    fn the_table_has_tokens_and_money_side_by_side() {
+        let themes = ThemeManager::new();
+        let mut ui = ui(usage_block(), &themes, WIDTH);
+
+        let tokens = at(&mut ui, i18n::t(Key::AgentsTokens));
+        let money = at(&mut ui, i18n::t(Key::AgentsNumberMoney));
+        let share = at(&mut ui, i18n::t(Key::AgentsColumnShare));
+        let priced = at(&mut ui, "$1.25");
+        let unpriced = at(&mut ui, "—");
+
+        assert!((tokens.y - money.y).abs() < 1.0, "{tokens:?} {money:?}");
+        assert!(tokens.x + tokens.width < money.x, "Tokens, then Money");
+        assert!(money.x + money.width < share.x, "Money, then Share");
+        let money_end = money.x + money.width;
+        for cell in [priced, unpriced] {
+            assert!(
+                (cell.x + cell.width - money_end).abs() < 1.0,
+                "{cell:?} ends where its title {money:?} does"
+            );
+        }
+    }
+
+    /// Issue 14: no Tokens / Money switch. The block has one drop-down,
+    /// the period, and Tokens and Money are the titles of columns of the
+    /// table, under the tabs.
+    #[test]
+    fn there_is_no_measure_switch_on_a_page_or_in_a_popup() {
+        let in_popup = UsageBlockViewModel {
+            period_picker: PeriodPicker::List { is_open: false },
+            ..usage_block()
+        };
+
+        for vm in [usage_block(), in_popup] {
+            let themes = ThemeManager::new();
+            let mut ui = ui(vm, &themes, WIDTH);
+
+            let tabs = at(&mut ui, i18n::t(Key::AgentsTopByModel));
+            let period = at(&mut ui, i18n::t(Key::AgentsSevenDays));
+            for title in [Key::AgentsTokens, Key::AgentsNumberMoney] {
+                let column = at(&mut ui, i18n::t(title));
+                assert!(column.y > tabs.y, "{title:?} is under the tabs");
+            }
+            assert!(period.y < tabs.y, "the period is in the title row");
+        }
+    }
+
+    /// Spec 2026-11-23, Decision 3: money at API prices carries the mark
+    /// "at API prices" under the table, at the right end.
+    #[test]
+    fn money_at_api_prices_is_marked_under_the_table() {
         let themes = ThemeManager::new();
         let vm = UsageBlockViewModel {
-            measure: UsageMeasure::Money,
             money_kind: Some(estimated_money().kind().clone()),
             ..usage_block()
         };
-        let mut ui =
-            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+        let mut ui = ui(vm, &themes, WIDTH);
 
         let last_row = at(&mut ui, "gpt-5.4");
         let mark = at(&mut ui, i18n::t(Key::AgentsApiPricesMark));
@@ -334,9 +361,7 @@ mod tests {
     #[test]
     fn the_tabs_have_no_by_account() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(
-            container(view(usage_block(), themes.current().ui())).width(WIDTH),
-        );
+        let mut ui = ui(usage_block(), &themes, WIDTH);
 
         ui.find(i18n::t(Key::AgentsTopByProject))
             .expect("By project shows");
@@ -345,12 +370,15 @@ mod tests {
         assert!(ui.find("By account").is_err());
     }
 
+    /// Money not read yet has no mark.
     #[test]
-    fn tokens_have_no_mark() {
+    fn money_not_read_yet_has_no_mark() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(
-            container(view(usage_block(), themes.current().ui())).width(WIDTH),
-        );
+        let vm = UsageBlockViewModel {
+            money_kind: None,
+            ..usage_block()
+        };
+        let mut ui = ui(vm, &themes, WIDTH);
 
         assert!(ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err());
     }
@@ -360,12 +388,10 @@ mod tests {
     fn exact_money_has_no_mark() {
         let themes = ThemeManager::new();
         let vm = UsageBlockViewModel {
-            measure: UsageMeasure::Money,
             money_kind: Some(MoneyKind::Exact),
             ..usage_block()
         };
-        let mut ui =
-            simulator(container(view(vm, themes.current().ui())).width(WIDTH));
+        let mut ui = ui(vm, &themes, WIDTH);
 
         assert!(ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err());
     }

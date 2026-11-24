@@ -262,32 +262,51 @@ mod tests {
     }
 
     /// Spec Decision 6: the usage block must not overflow at a narrow
-    /// main area; its drop-downs end inside the page.
+    /// main area; its period drop-down ends inside the page.
     #[test]
-    fn in_a_narrow_main_area_the_drop_downs_stay_inside_the_page() {
+    fn in_a_narrow_main_area_the_drop_down_stays_inside_the_page() {
         let themes = ThemeManager::new();
         let mut ui = in_main_area(page(), NARROW, &themes);
 
-        let measure = at(&mut ui, i18n::t(Key::AgentsTokens));
+        let period = at(&mut ui, i18n::t(Key::AgentsSevenDays));
         let usage = at(&mut ui, i18n::t(Key::AgentsUsage));
         let right_end = NARROW.max(size::SCREEN_MIN) - PAGE_PADDING_X;
 
         assert!(
-            measure.x + measure.width <= right_end,
-            "{measure:?} ends inside {right_end}"
+            period.x + period.width <= right_end,
+            "{period:?} ends inside {right_end}"
         );
-        assert!(measure.x > usage.x, "{measure:?} at the right of {usage:?}");
+        assert!(period.x > usage.x, "{period:?} at the right of {usage:?}");
+    }
+
+    /// Issue 14 of spec 2026-11-23, with issues 38 and 39 of spec
+    /// 2026-11-19-agent-plugins: on the smallest screen the usage table,
+    /// its Tokens and Money columns too, fits the page, so it never
+    /// scrolls sideways inside a page that does.
+    #[test]
+    fn the_usage_table_fits_the_smallest_screen() {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(page(), NARROW, &themes);
+
+        let money = at(&mut ui, i18n::t(Key::AgentsNumberMoney));
+        let share = at(&mut ui, i18n::t(Key::AgentsColumnShare));
+        let right_end = size::SCREEN_MIN - PAGE_PADDING_X - spacing::SPACE_4;
+
+        assert!(money.x + money.width < share.x, "{money:?} {share:?}");
+        assert!(
+            share.x + share.width <= right_end + 0.5,
+            "the Share column ends at {}, inside {right_end}",
+            share.x + share.width
+        );
     }
 
     #[test]
-    fn the_drop_downs_tabs_and_rows_send_their_choices() {
+    fn the_drop_down_tabs_and_rows_send_their_choices() {
         let period = sent(page(), i18n::t(Key::AgentsSevenDays));
-        let measure = sent(page(), i18n::t(Key::AgentsTokens));
         let tab = sent(page(), i18n::t(Key::AgentsTopByProject));
         let row = sent(page(), "gpt-5.4");
 
         assert_eq!(period, [AgentsIntent::OpenPeriodMenu]);
-        assert_eq!(measure, [AgentsIntent::OpenMeasureMenu]);
         assert_eq!(tab, [AgentsIntent::ShowUsageTab(UsageTab::ByProject)]);
         assert!(
             row.contains(&AgentsIntent::PickUsageRow(String::from("gpt-5.4"))),

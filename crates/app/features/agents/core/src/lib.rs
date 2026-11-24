@@ -206,7 +206,7 @@ pub use types::{
     LoadedSessions, LoadedSpend, LoadedVersion, PreparedOwnLogin,
     ProjectStatsFailure, SessionsRead, SpendCount,
 };
-pub use usage::{UsageMeasure, UsagePeriod, UsageTab};
+pub use usage::{UsagePeriod, UsageTab};
 use view::{
     add_account_dialog as add_account_view, found_report as found_view,
     key_dialog as key_view, keyring_dialog as keyring_view, left_panel,

@@ -1,44 +1,45 @@
 //! The usage block (spec 2026-11-19, Decision 6) of a profile page and of
 //! the statistics popups of a project and of a session: the title with
-//! the total of the period and two drop-downs, a bar per hour of today or
-//! per day in the look of the kit `DayBars`, the tabs of the block and a
-//! table of the rows of the tab with their value and share. The row picked
-//! or under the pointer lights its part of every bar. Money is the tokens
-//! of every profile at API prices, on a subscription too, and carries the
-//! mark "at API prices" (spec 2026-11-23-accounts-apart-from-profiles,
-//! Decision 3). The last good numbers stay, greyed, after a failed count.
+//! the total of the period and the period drop-down, a bar per hour of
+//! today or per day in the look of the kit `DayBars`, the tabs of the
+//! block and a table of the rows of the tab with their tokens, their money
+//! and their share. The row picked or under the pointer lights its part of
+//! every bar. Tokens and money show side by side, with no switch between
+//! them, and the bars are as tall as their tokens, since a model with no
+//! price would drop out of bars of money (issue 14 of spec
+//! 2026-11-23-accounts-apart-from-profiles). Money is the tokens of every
+//! profile at API prices, on a subscription too, and carries the mark "at
+//! API prices", or the cost the agent wrote, with no mark (Decision 3).
+//! The last good numbers stay, greyed, after a failed count.
 
 use std::path::Path;
 use std::time::SystemTime;
 
 use jiff::tz::TimeZone;
-use otty_agents::{Dollars, FetchedPrices, LocalNow, SourceError, Spend};
+use otty_agents::{FetchedPrices, LocalNow, MoneyTotal, SourceError, Spend};
 use otty_app_i18n::{self as i18n, Key};
 
-use super::super::usage::{
-    UsageChoice, UsageList, UsageMeasure, UsagePeriod, UsageTab,
-};
-use super::UNKNOWN;
+use super::super::usage::{UsageChoice, UsagePeriod, UsageTab};
 use super::money::MoneyKind;
 use super::numbers::{dollars_text, short_count};
 use super::reset_time::{date_text, date_time_text};
 use super::tokens::count_failed_text;
 use super::usage_groups::{
-    UsageGroup, UsageInput, UsageSource, group_usage, money_is_at_api_prices,
-    period_points, point_count,
+    UsageGroup, UsageInput, UsageSource, group_usage, period_points,
+    point_count,
 };
+use super::{NOT_READ_YET, UNKNOWN};
 
 /// The usage block, as the choices of the user and what its subject can
 /// show make it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageBlockViewModel {
-    /// The line under the title: the total of the period ("1.2M in 7
-    /// days"), or when the last good numbers were counted.
+    /// The line under the title: the tokens and the money of the period
+    /// ("400K tokens · ~$12.40 in 7 days"), or when the last good numbers
+    /// were counted.
     pub(crate) line: Option<String>,
     /// The period shown.
     pub(crate) period: UsagePeriod,
-    /// The measure shown: tokens while the prices are not known.
-    pub(crate) measure: UsageMeasure,
     /// The tab shown: By model when the picked one is not in `tabs`.
     pub(crate) tab: UsageTab,
     /// The tabs of the block, in their order.
@@ -49,22 +50,20 @@ pub(crate) struct UsageBlockViewModel {
     pub(crate) current: Option<usize>,
     /// What the first and the last bar are, written under the bars.
     pub(crate) axis: Option<(String, String)>,
-    /// The rows of the tab, the largest first.
+    /// The rows of the tab, the most tokens first.
     pub(crate) rows: Vec<UsageTableRowViewModel>,
     /// The index of the picked row.
     pub(crate) picked: Option<usize>,
     /// Whether the numbers are the last good ones, drawn greyed.
     pub(crate) is_stale: bool,
-    /// What the sums are while they are money: at API prices, which brings
-    /// its mark under them, or exact, the cost the agent wrote. `None` for
-    /// tokens.
+    /// What the money is once the prices are read: at API prices, which
+    /// brings its mark under the table, or exact, the cost the agent
+    /// wrote. `None` while the prices are not read.
     pub(crate) money_kind: Option<MoneyKind>,
     /// Why the latest count failed.
     pub(crate) failure: Option<String>,
-    /// The lists of the drop-downs in a statistics popup, where no menu of
-    /// the mode can open; `None` on a page, whose drop-downs open the
-    /// menus of the mode.
-    pub(crate) lists: Option<UsageListsViewModel>,
+    /// How the period drop-down opens its choices.
+    pub(crate) period_picker: PeriodPicker,
 }
 
 impl UsageBlockViewModel {
@@ -74,11 +73,6 @@ impl UsageBlockViewModel {
         choice: &UsageChoice,
         now: SystemTime,
     ) -> Self {
-        let measure = if subject.can_show_money {
-            choice.measure()
-        } else {
-            UsageMeasure::Tokens
-        };
         let tab = match choice.tab() {
             tab if subject.tabs.contains(&tab) => tab,
             _ => UsageTab::ByModel,
@@ -89,39 +83,30 @@ impl UsageBlockViewModel {
             project: subject.project,
             home: subject.home,
         };
-        let amount = match measure {
-            UsageMeasure::Money => Amount::Money,
-            _ => Amount::Tokens,
-        };
-
-        let money_kind = match (amount, subject.prices) {
-            (Amount::Money, Some(prices)) => Some(MoneyKind::at_prices(
-                money_is_at_api_prices(&input, period),
-                prices,
-                subject.time_zone,
-            )),
-            _ => None,
-        };
+        let prices = subject.prices;
 
         let labels = point_labels(subject.sources, period);
-        let groups = group_usage(&input, period, tab, measure);
-        let totals: Vec<u64> = (0..point_count(&input, period))
-            .map(|index| {
-                groups
-                    .iter()
-                    .filter_map(|group| group.values.get(index))
-                    .sum()
-            })
-            .collect();
-        let total: u64 = totals.iter().sum();
+        let groups = group_usage(&input, period, tab);
+        let points = point_totals(&groups, point_count(&input, period));
+        let total_tokens: u64 = points.iter().map(|point| point.0).sum();
+        let total_money = points
+            .iter()
+            .fold(MoneyTotal::default(), |sum, point| sum + point.1);
         let lit_name = choice.hovered().or(choice.picked());
         let lit = groups
             .iter()
             .find(|group| Some(group.name.as_str()) == lit_name);
 
+        let money_kind = prices.map(|prices| {
+            MoneyKind::at_prices(
+                total_money.is_estimate(),
+                prices,
+                subject.time_zone,
+            )
+        });
         let current = match lit {
             Some(_) => None,
-            None => current_point(period, totals.len(), now, subject.time_zone),
+            None => current_point(period, points.len(), now, subject.time_zone),
         };
         let picked = choice.picked().and_then(|picked| {
             groups.iter().position(|group| group.name == picked)
@@ -130,18 +115,19 @@ impl UsageBlockViewModel {
             .iter()
             .map(|group| UsageTableRowViewModel {
                 name: group.name.clone(),
-                value: amount_text(group.total(), amount),
-                share: share_text(group.total(), total),
+                tokens: short_count(group.total_tokens()),
+                money: money_cell_text(&group.total_money(), prices),
+                share: share_text(group.total_tokens(), total_tokens),
             })
             .collect();
+        let total = tokens_and_money_text(total_tokens, &total_money, prices);
 
         Self {
-            line: Some(total_text(&amount_text(total, amount), period)),
+            line: Some(total_text(&total, period)),
             period,
-            measure,
             tab,
             tabs: subject.tabs.to_vec(),
-            bars: bars(&totals, &labels, lit, amount),
+            bars: bars(&points, &labels, lit, prices),
             current,
             axis: axis(&labels, period),
             rows,
@@ -149,7 +135,7 @@ impl UsageBlockViewModel {
             is_stale: false,
             money_kind,
             failure: None,
-            lists: None,
+            period_picker: PeriodPicker::Menu,
         }
     }
 
@@ -187,52 +173,54 @@ impl UsageBlockViewModel {
         self
     }
 
-    /// The same block in a statistics popup: its drop-downs open their
-    /// lists under them, the one of `choice` open, Money with
-    /// `money_reason` when it is off.
-    pub(crate) fn in_popup(
-        mut self,
-        choice: &UsageChoice,
-        money_reason: Option<String>,
-    ) -> Self {
-        self.lists = Some(UsageListsViewModel {
-            open: choice.open_list(),
-            money_reason,
-        });
+    /// The same block in a statistics popup: its period drop-down opens
+    /// its list under it, open as `choice` has it.
+    pub(crate) fn in_popup(mut self, choice: &UsageChoice) -> Self {
+        self.period_picker = PeriodPicker::List {
+            is_open: choice.is_period_list_open(),
+        };
 
         self
     }
 }
 
-/// The lists of the drop-downs of a usage block in a popup.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UsageListsViewModel {
-    /// The list that is open.
-    pub(crate) open: Option<UsageList>,
-    /// Why Money is off, written after it in its list; `None` when it is
-    /// on.
-    pub(crate) money_reason: Option<String>,
+/// How the period drop-down of a usage block opens its choices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PeriodPicker {
+    /// On a page: the period menu of the mode opens at the pointer.
+    Menu,
+    /// In a statistics popup, where no menu of the mode can open: the
+    /// list of the periods opens under the drop-down.
+    List {
+        /// Whether the list is open.
+        is_open: bool,
+    },
 }
 
-/// One bar: its value, the part of the lit row and its tooltip.
+/// One bar: its tokens, the tokens of the lit row and its tooltip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageBarViewModel {
-    /// The value of the point: tokens or micro-dollars.
+    /// The tokens of the point, which make the bar as tall as it is.
     pub(crate) value: u64,
-    /// The part of the lit row, while a row is lit.
+    /// The tokens of the lit row, while a row is lit.
     pub(crate) lit: Option<u64>,
-    /// What the tooltip says, such as "Nov 13: 2.9M · otty 1.2M".
+    /// What the tooltip says, the tokens and the money, such as "Nov 13:
+    /// 120K tokens · ~$3.10".
     pub(crate) tip: String,
 }
 
-/// One row of the table: its name, its value and its share of the period.
+/// One row of the table: its name, its tokens, their money and its share
+/// of the tokens of the period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageTableRowViewModel {
     /// The project, the profile or the model.
     pub(crate) name: String,
-    /// Its value, such as "1.2M" or "$3.40".
-    pub(crate) value: String,
-    /// Its share of the period, such as "62 %".
+    /// Its tokens, such as "1.2M".
+    pub(crate) tokens: String,
+    /// Their money, such as "$3.40"; "—" for a model with no price and
+    /// "…" while the prices are not read.
+    pub(crate) money: String,
+    /// Its share of the tokens of the period, such as "62 %".
     pub(crate) share: String,
 }
 
@@ -247,63 +235,76 @@ pub(crate) struct UsageSubject<'a> {
     /// The tabs of the block.
     pub(crate) tabs: &'a [UsageTab],
     /// The list prices the agent parts priced the tokens at, with when
-    /// they were fetched, which the mark "at API prices" tells.
+    /// they were fetched, which the mark "at API prices" tells; `None`
+    /// while they are not read, and the money is "…".
     pub(crate) prices: Option<&'a FetchedPrices>,
-    /// Whether the money can be shown: the prices are known.
-    pub(crate) can_show_money: bool,
     /// The home folder, which a project in it is named after.
     pub(crate) home: &'a Path,
     /// The user's time zone; UTC when it is not known.
     pub(crate) time_zone: Option<&'a TimeZone>,
 }
 
-/// What the values of the block are, so they are written right.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Amount {
-    /// Tokens.
-    Tokens,
-    /// Money: what the agents wrote for each answer, or the tokens at API
-    /// prices, which the mark "at API prices" tells.
-    Money,
+/// The tokens and the money of each of `count` points over every row of
+/// `groups`.
+fn point_totals(groups: &[UsageGroup], count: usize) -> Vec<(u64, MoneyTotal)> {
+    (0..count)
+        .map(|index| {
+            let tokens = groups
+                .iter()
+                .filter_map(|group| group.tokens.get(index))
+                .sum();
+            let money = groups
+                .iter()
+                .filter_map(|group| group.money.get(index))
+                .fold(MoneyTotal::default(), |sum, money| sum + *money);
+            (tokens, money)
+        })
+        .collect()
 }
 
-/// The bars of the points with the `totals` and `labels`: each with the
-/// part of the `lit` row, and its tooltip.
+/// The bars of the `points` with their `labels`, as tall as their tokens:
+/// each with the tokens of the `lit` row, and its tooltip with the tokens
+/// and the money at `prices`.
 fn bars(
-    totals: &[u64],
+    points: &[(u64, MoneyTotal)],
     labels: &[String],
     lit: Option<&UsageGroup>,
-    amount: Amount,
+    prices: Option<&FetchedPrices>,
 ) -> Vec<UsageBarViewModel> {
-    totals
+    points
         .iter()
         .zip(labels)
         .enumerate()
-        .map(|(index, (total, label))| {
-            let total_amount = amount_text(*total, amount);
+        .map(|(index, ((tokens, money), label))| {
+            let amount = tokens_and_money_text(*tokens, money, prices);
             let part = lit.map(|group| {
-                let part = group.values.get(index).copied().unwrap_or_default();
-                (group, part)
+                let tokens = group.tokens.get(index).copied();
+                let money = group.money.get(index).copied();
+                (group, tokens.unwrap_or_default(), money.unwrap_or_default())
             });
+
             let tip = match part {
-                Some((group, part)) => i18n::filled(
+                Some((group, tokens, money)) => i18n::filled(
                     Key::TplAgentsBarTipLit,
                     &[
                         ("point", label),
-                        ("amount", &total_amount),
+                        ("amount", &amount),
                         ("name", &group.name),
-                        ("part", &amount_text(part, amount)),
+                        (
+                            "part",
+                            &tokens_and_money_text(tokens, &money, prices),
+                        ),
                     ],
                 ),
                 None => i18n::filled(
                     Key::TplAgentsBarTip,
-                    &[("point", label), ("amount", &total_amount)],
+                    &[("point", label), ("amount", &amount)],
                 ),
             };
 
             UsageBarViewModel {
-                value: *total,
-                lit: part.map(|(_, part)| part),
+                value: *tokens,
+                lit: part.map(|(_, tokens, _)| tokens),
                 tip,
             }
         })
@@ -375,7 +376,8 @@ fn axis(labels: &[String], period: UsagePeriod) -> Option<(String, String)> {
     Some((first, last))
 }
 
-/// The total of the period: "1.2M today" or "1.2M in 7 days".
+/// The total of the period: "400K tokens · ~$12.40 today" or "400K tokens
+/// · ~$12.40 in 7 days".
 fn total_text(amount: &str, period: UsagePeriod) -> String {
     let days = match period {
         UsagePeriod::Today => {
@@ -394,13 +396,48 @@ fn total_text(amount: &str, period: UsagePeriod) -> String {
     )
 }
 
-/// `value` as `amount` writes it: tokens written short, such as "1.2M",
-/// or micro-dollars, such as "$3.40".
-fn amount_text(value: u64, amount: Amount) -> String {
-    match amount {
-        Amount::Tokens => short_count(value),
-        Amount::Money => dollars_text(Dollars::from_micro_dollars(value)),
+/// `tokens` and their `money` in one line, such as "120K tokens · ~$3.10":
+/// the money starts with "~" when some of it is at API prices, is "—"
+/// when none of it has a price and "…" while the `prices` are not read.
+fn tokens_and_money_text(
+    tokens: u64,
+    money: &MoneyTotal,
+    prices: Option<&FetchedPrices>,
+) -> String {
+    let cell = money_cell_text(money, prices);
+    let money = if prices.is_some() && has_price(money) && money.is_estimate() {
+        format!("~{cell}")
+    } else {
+        cell
+    };
+
+    i18n::filled(
+        Key::TplAgentsTokensAndMoney,
+        &[("tokens", &short_count(tokens)), ("money", &money)],
+    )
+}
+
+/// `money` as a cell of the Money column writes it: "$3.40", "—" when
+/// none of it has a price, such as a model the price list does not name,
+/// and "…" while the `prices` are not read.
+fn money_cell_text(
+    money: &MoneyTotal,
+    prices: Option<&FetchedPrices>,
+) -> String {
+    if prices.is_none() {
+        return String::from(NOT_READ_YET);
     }
+    if !has_price(money) {
+        return String::from(UNKNOWN);
+    }
+
+    dollars_text(money.cost())
+}
+
+/// Whether some of `money` has a price: it costs something, or no request
+/// of it went unpriced.
+fn has_price(money: &MoneyTotal) -> bool {
+    money.cost().micro_dollars() > 0 || money.unpriced_requests() == 0
 }
 
 /// The share `value` is of `total`, such as "62 %"; "—" of nothing.
@@ -450,7 +487,8 @@ mod tests {
     }
 
     /// 2026-11-01 to 2026-11-16: `day` tokens of opus in otty each day,
-    /// and 100 of sonnet in docs today, at 13:00.
+    /// and 100 of sonnet in docs today; today by the hour, 16 of opus at
+    /// 09:00 and a million of gpt-5 in docs at 13:00.
     fn spend() -> Spend {
         let days = (1..=16)
             .map(|day| {
@@ -496,7 +534,6 @@ mod tests {
             project: None,
             tabs: &UsageTab::PROFILE_PAGE,
             prices,
-            can_show_money: true,
             home: Path::new("/home/user"),
             time_zone: None,
         }
@@ -509,35 +546,54 @@ mod tests {
         UsageBlockViewModel::of(subject, choice, now())
     }
 
-    fn row(name: &str, value: &str, share: &str) -> UsageTableRowViewModel {
+    fn row(
+        name: &str,
+        tokens: &str,
+        money: &str,
+        share: &str,
+    ) -> UsageTableRowViewModel {
         UsageTableRowViewModel {
             name: String::from(name),
-            value: String::from(value),
+            tokens: String::from(tokens),
+            money: String::from(money),
             share: String::from(share),
         }
     }
 
+    /// "{tokens} tokens · {money}".
+    fn both(tokens: &str, money: &str) -> String {
+        i18n::filled(
+            Key::TplAgentsTokensAndMoney,
+            &[("tokens", tokens), ("money", money)],
+        )
+    }
+
+    fn in_seven_days(amount: &str) -> Option<String> {
+        Some(i18n::filled(
+            Key::TplAgentsAmountInDays,
+            &[("amount", amount), ("count", "7")],
+        ))
+    }
+
+    /// Issue 14 of spec 2026-11-23: before the prices are read the money
+    /// is "…", in the total and in every row.
     #[test]
-    fn it_opens_on_seven_days_of_tokens_by_model() {
+    fn it_opens_on_seven_days_by_model_with_the_money_not_read_yet() {
         let spend = spend();
         let sources = [source(&spend)];
 
         let vm = block(&subject(&sources, None), &UsageChoice::default());
 
         assert_eq!(vm.period, UsagePeriod::SevenDays);
-        assert_eq!(vm.measure, UsageMeasure::Tokens);
         assert_eq!(vm.tab, UsageTab::ByModel);
         assert_eq!(vm.tabs, UsageTab::PROFILE_PAGE);
-        assert_eq!(
-            vm.line,
-            Some(i18n::filled(
-                Key::TplAgentsAmountInDays,
-                &[("amount", "191"), ("count", "7")]
-            ))
-        );
+        assert_eq!(vm.line, in_seven_days(&both("191", "…")));
         assert_eq!(
             vm.rows,
-            [row("sonnet", "100", "52 %"), row("opus", "91", "48 %")]
+            [
+                row("sonnet", "100", "…", "52 %"),
+                row("opus", "91", "…", "48 %")
+            ]
         );
         let values: Vec<u64> = vm.bars.iter().map(|bar| bar.value).collect();
         assert_eq!(values, [10, 11, 12, 13, 14, 15, 116]);
@@ -549,7 +605,12 @@ mod tests {
         );
         assert_eq!(vm.picked, None);
         assert!(!vm.is_stale);
-        assert_eq!(vm.lists, None, "a page opens the menus of the mode");
+        assert_eq!(vm.money_kind, None, "no mark before the prices");
+        assert_eq!(
+            vm.period_picker,
+            PeriodPicker::Menu,
+            "a page opens the menu of the mode"
+        );
     }
 
     #[test]
@@ -578,9 +639,9 @@ mod tests {
                 Key::TplAgentsBarTipLit,
                 &[
                     ("point", "Nov 16"),
-                    ("amount", "116"),
+                    ("amount", &both("116", "…")),
                     ("name", "opus"),
-                    ("part", "16"),
+                    ("part", &both("16", "…")),
                 ]
             )
         );
@@ -602,15 +663,18 @@ mod tests {
         assert_eq!(vm.current, Some(6));
     }
 
+    /// Issue 14: the bars are as tall as their tokens whatever the money,
+    /// and the tooltip of a bar says both.
     #[test]
-    fn today_has_a_bar_per_hour_with_this_hour_in_the_accent() {
+    fn today_has_a_bar_per_hour_as_tall_as_its_tokens() {
         let spend = spend();
         let sources = [source(&spend)];
+        let prices = fetched_prices(now());
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
         choice.show_tab(UsageTab::ByProject);
 
-        let vm = block(&subject(&sources, None), &choice);
+        let vm = block(&subject(&sources, Some(&prices)), &choice);
 
         assert_eq!(vm.bars.len(), 24);
         // The tests look from 13:46 UTC.
@@ -619,44 +683,57 @@ mod tests {
             vm.axis,
             Some((String::from("00:00"), String::from("23:00")))
         );
+        assert_eq!(vm.bars[9].value, 16, "opus has no price, and a bar");
+        assert_eq!(vm.bars[13].value, 1_000_000, "tokens, not money");
         assert_eq!(
             vm.bars[9].tip,
             i18n::filled(
                 Key::TplAgentsBarTip,
-                &[("point", "09:00"), ("amount", "16")]
+                &[("point", "09:00"), ("amount", &both("16", "—"))]
             )
         );
         assert_eq!(
-            vm.line,
-            Some(i18n::filled(Key::TplAgentsAmountToday, &[("amount", "1M")]))
+            vm.bars[13].tip,
+            i18n::filled(
+                Key::TplAgentsBarTip,
+                &[("point", "13:00"), ("amount", &both("1M", "~$1.25"))]
+            )
         );
         assert_eq!(
             vm.rows,
-            [row("docs", "1M", "100 %"), row("otty", "16", "0 %")]
+            [
+                row("docs", "1M", "$1.25", "100 %"),
+                row("otty", "16", "—", "0 %")
+            ]
         );
     }
 
-    /// Spec 2026-11-23, Decision 3: money is the tokens at API prices and
-    /// carries the mark "at API prices" with the time of the prices in its
-    /// tooltip; the sums have no "~".
+    /// Issue 14 and spec 2026-11-23, Decision 3: the total says the
+    /// tokens and the money, which is at API prices and so starts with
+    /// "~" and carries the mark "at API prices" with the time of the
+    /// prices in its tooltip. A model with no price shows "—" in Money.
     #[test]
-    fn money_is_at_api_prices_with_the_mark() {
+    fn the_total_says_the_tokens_and_the_money_at_api_prices_with_the_mark() {
         let spend = spend();
         let sources = [source(&spend)];
         let prices = fetched_prices(now());
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
-        choice.pick_measure(UsageMeasure::Money);
 
         let vm = block(&subject(&sources, Some(&prices)), &choice);
 
-        assert_eq!(vm.measure, UsageMeasure::Money);
-        assert_eq!(vm.rows, [row("gpt-5", "$1.25", "100 %")]);
+        assert_eq!(
+            vm.rows,
+            [
+                row("gpt-5", "1M", "$1.25", "100 %"),
+                row("opus", "16", "—", "0 %")
+            ]
+        );
         assert_eq!(
             vm.line,
             Some(i18n::filled(
                 Key::TplAgentsAmountToday,
-                &[("amount", "$1.25")]
+                &[("amount", &both("1M", "~$1.25"))]
             ))
         );
         let mark = vm.money_kind.as_ref().and_then(MoneyKind::mark);
@@ -668,8 +745,8 @@ mod tests {
     }
 
     /// An agent that writes what each answer cost, such as OpenCode: that
-    /// money is exact, with no mark "at API prices" (issue 01 of spec
-    /// 2026-11-23 keeps it).
+    /// money is exact, with no "~" and no mark "at API prices" (issue 01
+    /// of spec 2026-11-23 keeps it).
     #[test]
     fn money_the_agent_wrote_is_exact() {
         let tokens =
@@ -685,12 +762,19 @@ mod tests {
         let spend = Spend::new(vec![today], Vec::new());
         let sources = [source(&spend)];
         let prices = fetched_prices(now());
-        let mut choice = UsageChoice::default();
-        choice.pick_measure(UsageMeasure::Money);
 
-        let vm = block(&subject(&sources, Some(&prices)), &choice);
+        let vm =
+            block(&subject(&sources, Some(&prices)), &UsageChoice::default());
 
-        assert_eq!(vm.rows, [row("gpt-5", "$0.50", "100 %")]);
+        assert_eq!(vm.rows, [row("gpt-5", "10", "$0.50", "100 %")]);
+        assert_eq!(vm.line, in_seven_days(&both("10", "$0.50")));
+        assert_eq!(
+            vm.bars[0].tip,
+            i18n::filled(
+                Key::TplAgentsBarTip,
+                &[("point", "Nov 16"), ("amount", &both("10", "$0.50"))]
+            )
+        );
         assert_eq!(vm.money_kind, Some(MoneyKind::Exact));
     }
 
@@ -700,31 +784,12 @@ mod tests {
         let spend = spend();
         let sources = [source(&spend)];
         let prices = fetched_prices(now());
-        let mut choice = UsageChoice::default();
-        choice.pick_measure(UsageMeasure::Money);
         let down = SourceError::Network(String::from("down"));
 
-        let vm = block(&subject(&sources, Some(&prices)), &choice)
-            .only_failure(&down);
+        let vm =
+            block(&subject(&sources, Some(&prices)), &UsageChoice::default())
+                .only_failure(&down);
 
-        assert_eq!(vm.money_kind, None);
-    }
-
-    /// Money falls back to tokens while the prices are not known.
-    #[test]
-    fn money_falls_back_to_tokens_with_no_prices() {
-        let spend = spend();
-        let sources = [source(&spend)];
-        let no_prices = UsageSubject {
-            can_show_money: false,
-            ..subject(&sources, None)
-        };
-        let mut choice = UsageChoice::default();
-        choice.pick_measure(UsageMeasure::Money);
-
-        let vm = block(&no_prices, &choice);
-
-        assert_eq!(vm.measure, UsageMeasure::Tokens);
         assert_eq!(vm.money_kind, None);
     }
 
@@ -758,29 +823,21 @@ mod tests {
 
         let vm = block(&otty, &UsageChoice::default());
 
-        assert_eq!(vm.rows, [row("opus", "91", "100 %")]);
+        assert_eq!(vm.rows, [row("opus", "91", "…", "100 %")]);
     }
 
-    /// In a popup no menu of the mode can open: the lists open under
-    /// their fields, Money with its reason when it is off.
+    /// In a popup no menu of the mode can open: the list of the periods
+    /// opens under its field.
     #[test]
-    fn in_a_popup_the_lists_open_under_their_fields() {
+    fn in_a_popup_the_list_of_the_periods_opens_under_its_field() {
         let spend = spend();
         let sources = [source(&spend)];
         let mut choice = UsageChoice::default();
-        choice.toggle_list(UsageList::Measure);
-        let reason = String::from("The list prices are not read yet");
+        choice.toggle_period_list();
 
-        let vm = block(&subject(&sources, None), &choice)
-            .in_popup(&choice, Some(reason.clone()));
+        let vm = block(&subject(&sources, None), &choice).in_popup(&choice);
 
-        assert_eq!(
-            vm.lists,
-            Some(UsageListsViewModel {
-                open: Some(UsageList::Measure),
-                money_reason: Some(reason),
-            })
-        );
+        assert_eq!(vm.period_picker, PeriodPicker::List { is_open: true });
     }
 
     #[test]

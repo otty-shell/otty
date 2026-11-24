@@ -21,12 +21,11 @@ use super::super::types::ProjectStatsFailure;
 use super::super::usage::{UsageChoice, UsageTab};
 use super::money::ShownMoney;
 use super::numbers::{digit_groups, short_count};
-use super::profile_page::money_reason;
 use super::reset_time::{date_time_text, duration_text};
 use super::usage_block::{UsageBlockViewModel, UsageSubject};
 use super::usage_groups::UsageSource;
 use super::window_name::window_name;
-use super::{FactViewModel, UNKNOWN};
+use super::{FactViewModel, NOT_READ_YET, UNKNOWN};
 
 /// The statistics dialog: its title and what it shows under it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,7 +149,6 @@ impl SessionStatsViewModel {
             })
             .collect();
 
-        let money_reason = money_reason(state);
         let sources = [UsageSource {
             name: profile.name(),
             spend: stats.spend(),
@@ -160,12 +158,11 @@ impl SessionStatsViewModel {
             project: None,
             tabs: &UsageTab::SESSION_POPUP,
             prices: profiles.prices().last_good(),
-            can_show_money: money_reason.is_none(),
             home: state.env().home(),
             time_zone,
         };
-        let usage = UsageBlockViewModel::of(&subject, choice, now)
-            .in_popup(choice, money_reason);
+        let usage =
+            UsageBlockViewModel::of(&subject, choice, now).in_popup(choice);
 
         Self {
             facts,
@@ -232,19 +229,17 @@ impl ProjectStatsViewModel {
                 })
             })
             .collect();
-        let money_reason = money_reason(state);
         let folder = state.selected_project().map(|project| project.folder());
         let subject = UsageSubject {
             sources: &sources,
             project: folder,
             tabs: &UsageTab::PROJECT_POPUP,
             prices: profiles.prices().last_good(),
-            can_show_money: money_reason.is_none(),
             home: state.env().home(),
             time_zone,
         };
-        let usage = UsageBlockViewModel::of(&subject, choice, now)
-            .in_popup(choice, money_reason);
+        let usage =
+            UsageBlockViewModel::of(&subject, choice, now).in_popup(choice);
 
         Self { facts, usage }
     }
@@ -276,8 +271,8 @@ fn fact(key: Key, value: String) -> FactViewModel {
 
 /// What a sum of costs reads, in one line of the facts, where there is
 /// room for the mark: the dollars of the requests with a price, followed
-/// by the mark "at API prices" when some are at the list prices; a dash
-/// while there are no prices.
+/// by the mark "at API prices" when some are at the list prices; "…"
+/// while the prices are not read.
 fn sum_text(state: &AgentsState, cost: StatsCost) -> String {
     let profiles = state.profiles();
     let prices = profiles.prices().last_good();
@@ -287,7 +282,7 @@ fn sum_text(state: &AgentsState, cost: StatsCost) -> String {
             ShownMoney::of_total(&total, prices, profiles.time_zone())
                 .line_text()
         },
-        _ => String::from(UNKNOWN),
+        _ => String::from(NOT_READ_YET),
     }
 }
 
@@ -327,7 +322,7 @@ mod tests {
 
     use super::*;
     use crate::event::{AgentsIntent, SessionAction};
-    use crate::model::UsageTableRowViewModel;
+    use crate::model::{PeriodPicker, UsageTableRowViewModel};
     use crate::reducer::reduce;
     use crate::testing::{
         at, chatgpt_login, claude, codex, connected, month_spend, now,
@@ -335,7 +330,7 @@ mod tests {
         with_profiles,
     };
     use crate::types::{LoadedProjectStats, LoadedSessionStats, SpendCount};
-    use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
+    use crate::usage::{UsagePeriod, UsageTab};
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -675,7 +670,11 @@ mod tests {
             .map(|(key, value)| FactViewModel::new(i18n::t(key), value))
         );
         assert_eq!(vm.usage.tabs, [UsageTab::ByModel]);
-        assert!(vm.usage.lists.is_some(), "the lists open in the popup");
+        assert_eq!(
+            vm.usage.period_picker,
+            PeriodPicker::List { is_open: false },
+            "the list of the periods opens in the popup"
+        );
         assert!(vm.limits.is_empty());
     }
 
@@ -698,37 +697,30 @@ mod tests {
         let by_model = session_body(&state).usage;
 
         assert_eq!(names(&by_model.rows), ["opus"]);
-        assert_eq!(by_model.rows[0].value, "6K", "otty and site");
+        assert_eq!(by_model.rows[0].tokens, "6K", "otty and site");
+        assert_eq!(by_model.rows[0].money, "$0.01");
     }
 
-    /// Spec 2026-11-23, Decision 3: money shows for a session of a
-    /// subscription as of a key, once the prices are known.
+    /// Issue 14 of spec 2026-11-23: the money of a session shows next to
+    /// its tokens, "…" before the prices are read, then at API prices.
     #[test]
-    fn money_shows_for_every_session_once_the_prices_are_known() {
+    fn the_money_of_a_session_shows_once_the_prices_are_read() {
         let mut priced = state_with(connected());
         let mut no_prices = state_with_no_prices(connected());
-        let mut plan = state_with(connected());
-        let stats = SessionStats::new(None, None, vec![million_in("opus", 3)]);
-        let money_reason = |state: &mut AgentsState| {
+        let stats =
+            SessionStats::new(None, None, Vec::new()).with_spend(month_spend());
+        let money = |state: &mut AgentsState| {
             session_dialog(state);
             let _ = reduce(state, session_stats_loaded(Ok(stats.clone())));
-            session_body(state)
-                .usage
-                .lists
-                .expect("the lists open in the popup")
-                .money_reason
+            session_body(state).usage.rows[0].money.clone()
         };
 
-        assert_eq!(money_reason(&mut priced), None);
-        assert_eq!(
-            money_reason(&mut no_prices).as_deref(),
-            Some(i18n::t(Key::AgentsMoneyNoPrices))
-        );
-        assert_eq!(money_reason(&mut plan), None);
+        assert_eq!(money(&mut priced), "$0.13");
+        assert_eq!(money(&mut no_prices), NOT_READ_YET);
     }
 
     #[test]
-    fn with_no_prices_a_project_shows_a_dash_for_its_money() {
+    fn before_the_prices_the_cost_of_a_project_is_not_read_yet() {
         let mut state = state_with_no_prices(connected());
         let _ = reduce(&mut state, AgentsIntent::ShowProjectStats);
         let part = ProjectStats::new(None, None, vec![million_in("opus", 1)]);
@@ -745,7 +737,7 @@ mod tests {
             project_body(&state).facts.last(),
             Some(&FactViewModel::new(
                 i18n::t(Key::AgentsColumnCost),
-                String::from(UNKNOWN)
+                String::from(NOT_READ_YET)
             ))
         );
     }
@@ -885,12 +877,14 @@ mod tests {
             [
                 UsageTableRowViewModel {
                     name: String::from("Claude Code"),
-                    value: String::from("1M"),
+                    tokens: String::from("1M"),
+                    money: String::from("$1.00"),
                     share: String::from("100 %"),
                 },
                 UsageTableRowViewModel {
                     name: String::from("Codex"),
-                    value: String::from("2K"),
+                    tokens: String::from("2K"),
+                    money: String::from("$0.00"),
                     share: String::from("0 %"),
                 },
             ]
@@ -907,19 +901,24 @@ mod tests {
 
         let _ =
             reduce(&mut state, AgentsIntent::ShowUsageTab(UsageTab::ByProfile));
-        let _ =
-            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
         let usage = project_body(&state).usage;
 
-        assert_eq!(usage.measure, UsageMeasure::Money);
         assert_eq!(names(&usage.rows), ["Claude Code", "Codex"]);
         let kind = usage.money_kind.expect("the usage is money");
         let mark = kind.mark().expect("the money is marked");
         assert_eq!(mark.label, i18n::t(Key::AgentsApiPricesMark));
     }
 
-    /// The total under the title over `count` days, such as "700K in 7
-    /// days".
+    /// "{tokens} tokens · {money}".
+    fn both(tokens: &str, money: &str) -> String {
+        i18n::filled(
+            Key::TplAgentsTokensAndMoney,
+            &[("tokens", tokens), ("money", money)],
+        )
+    }
+
+    /// The total under the title over `count` days, such as "700K tokens
+    /// · ~$0.88 in 7 days".
     fn in_days(amount: &str, count: &str) -> Option<String> {
         Some(i18n::filled(
             Key::TplAgentsAmountInDays,
@@ -927,7 +926,8 @@ mod tests {
         ))
     }
 
-    /// The total under the title of today, such as "100K today".
+    /// The total under the title of today, such as "100K tokens · ~$0.13
+    /// today".
     fn of_today(amount: &str) -> Option<String> {
         Some(i18n::filled(
             Key::TplAgentsAmountToday,
@@ -935,10 +935,10 @@ mod tests {
         ))
     }
 
-    /// Owner, 2026-11-23: the switches of the session popup change what
-    /// it shows. It opens on Today, the day of its last tokens, with a bar
-    /// per hour; 30 days has a bar per day; Money writes the sums in
-    /// dollars.
+    /// Owner, 2026-11-23: the period switch of the session popup changes
+    /// what it shows. It opens on Today, the day of its last tokens, with
+    /// a bar per hour, and 30 days has a bar per day. The tokens and the
+    /// money show side by side (issue 14).
     #[test]
     fn the_switches_of_the_session_popup_change_its_numbers() {
         let mut state = state_with(connected());
@@ -953,24 +953,20 @@ mod tests {
             AgentsIntent::PickPeriod(UsagePeriod::ThirtyDays),
         );
         let month = session_body(&state).usage;
-        let _ =
-            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
-        let money = session_body(&state).usage;
 
         assert_eq!(opened.period, UsagePeriod::Today);
         assert_eq!(opened.bars.len(), 24);
-        assert_eq!(opened.line, of_today("100K"));
+        assert_eq!(opened.line, of_today(&both("100K", "~$0.13")));
         assert_eq!(month.bars.len(), 30);
-        assert_eq!(month.line, in_days("3M", "30"));
-        assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.line, in_days("$3.75", "30"));
-        assert_eq!(money.rows[0].value, "$3.75");
+        assert_eq!(month.line, in_days(&both("3M", "~$3.75"), "30"));
+        assert_eq!(month.rows[0].tokens, "3M");
+        assert_eq!(month.rows[0].money, "$3.75");
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 
-    /// Owner, 2026-11-23: the switches of the project popup change what
-    /// it shows: 7 days at first, Today with a bar per hour, and Money
-    /// the sums in dollars.
+    /// Owner, 2026-11-23: the period switch of the project popup changes
+    /// what it shows: 7 days at first, then Today with a bar per hour,
+    /// the tokens and the money side by side (issue 14).
     #[test]
     fn the_switches_of_the_project_popup_change_its_numbers() {
         let mut state = state_with(connected());
@@ -988,17 +984,12 @@ mod tests {
         let _ =
             reduce(&mut state, AgentsIntent::PickPeriod(UsagePeriod::Today));
         let today = project_body(&state).usage;
-        let _ =
-            reduce(&mut state, AgentsIntent::PickMeasure(UsageMeasure::Money));
-        let money = project_body(&state).usage;
 
         assert_eq!(opened.period, UsagePeriod::SevenDays);
         assert_eq!(opened.bars.len(), 7);
-        assert_eq!(opened.line, in_days("700K", "7"));
+        assert_eq!(opened.line, in_days(&both("700K", "~$0.88"), "7"));
         assert_eq!(today.bars.len(), 24);
-        assert_eq!(today.line, of_today("100K"));
-        assert_eq!(money.measure, UsageMeasure::Money);
-        assert_eq!(money.line, of_today("$0.13"));
+        assert_eq!(today.line, of_today(&both("100K", "~$0.13")));
         assert_eq!(state.usage(), &crate::usage::UsageChoice::default());
     }
 
@@ -1033,6 +1024,5 @@ mod tests {
             Some(&FactViewModel::new(i18n::t(Key::AgentsColumnCost), cost))
         );
         assert_eq!(vm.facts[1].value, UNKNOWN);
-        assert_eq!(vm.usage.lists.and_then(|lists| lists.money_reason), None);
     }
 }

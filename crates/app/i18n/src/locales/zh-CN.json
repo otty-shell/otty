@@ -717,7 +717,7 @@
     "tpl_agents_bar_tip_lit": "{point}：{amount} · {name} {part}",
     "tpl_agents_share": "{percent} %",
     "agents_column_share": "占比",
-    "agents_money_no_prices": "尚未读取标价",
+    "tpl_agents_tokens_and_money": "{tokens} 令牌 · {money}",
     "tpl_agents_no_sessions_yet": "{agent} 还没有会话。一旦有会话，OTTY 会立即统计。",
     "tpl_agents_installed_not_used": "{agent} 已安装，但还没有会话和登录。开始使用后 OTTY 会自动识别。",
     "agents_profile_info": "配置文件信息",

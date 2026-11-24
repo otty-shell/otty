@@ -23,8 +23,8 @@ use otty_ui_kit::components::context_menu::MenuPlace;
 use crate::event::{AgentsIntent, AgentsOutcome};
 use crate::menus::AgentsMenu;
 use crate::model::{
-    EntryIcon, ShownMoney, UsageBarViewModel, UsageBlockViewModel,
-    UsageTableRowViewModel,
+    EntryIcon, MoneyKind, PeriodPicker, ShownMoney, UsageBarViewModel,
+    UsageBlockViewModel, UsageTableRowViewModel,
 };
 use crate::reducer::reduce;
 use crate::state::AgentsState;
@@ -33,7 +33,7 @@ use crate::types::{
     LoadedPrices, LoadedProfile, LoadedProfiles, LoadedSessions, LoadedSpend,
     SessionsRead, SpendCount,
 };
-use crate::usage::{UsageMeasure, UsagePeriod, UsageTab};
+use crate::usage::{UsagePeriod, UsageTab};
 
 /// The id of Claude Code.
 pub(crate) fn claude_id() -> AgentId {
@@ -1201,19 +1201,19 @@ pub(crate) fn save(saved: SavedProfiles) -> AgentsOutcome {
     }
 }
 
-/// A usage block of 7 days by model with two models, as a page shows it.
+/// A usage block of 7 days by model with two models, one with a price
+/// written by the agent and one with none, as a page shows it.
 pub(crate) fn usage_block() -> UsageBlockViewModel {
     UsageBlockViewModel {
-        line: Some(String::from("191 in 7 days")),
+        line: Some(String::from("191 tokens · $1.25 in 7 days")),
         period: UsagePeriod::SevenDays,
-        measure: UsageMeasure::Tokens,
         tab: UsageTab::ByModel,
         tabs: UsageTab::PROFILE_PAGE.to_vec(),
         bars: (10..=16)
             .map(|day| UsageBarViewModel {
                 value: day,
                 lit: None,
-                tip: format!("Nov {day}: {day}"),
+                tip: format!("Nov {day}: {day} tokens · $0.10"),
             })
             .collect(),
         current: Some(6),
@@ -1221,19 +1221,21 @@ pub(crate) fn usage_block() -> UsageBlockViewModel {
         rows: vec![
             UsageTableRowViewModel {
                 name: String::from("gpt-5.5-codex"),
-                value: String::from("100"),
+                tokens: String::from("100"),
+                money: String::from("$1.25"),
                 share: String::from("52 %"),
             },
             UsageTableRowViewModel {
                 name: String::from("gpt-5.4"),
-                value: String::from("91"),
+                tokens: String::from("91"),
+                money: String::from("—"),
                 share: String::from("48 %"),
             },
         ],
         picked: None,
         is_stale: false,
-        money_kind: None,
+        money_kind: Some(MoneyKind::Exact),
         failure: None,
-        lists: None,
+        period_picker: PeriodPicker::Menu,
     }
 }

@@ -1,7 +1,9 @@
-//! What a usage block shows (spec 2026-11-19, Decision 6): the period,
-//! the measure and the tab the user picked, the row of its table picked or
-//! under the pointer, whose part of each bar is lit, and in a statistics
-//! popup the list of a drop-down that is open. The choices of the profile
+//! What a usage block shows (spec 2026-11-19, Decision 6): the period and
+//! the tab the user picked, the row of its table picked or under the
+//! pointer, whose part of each bar is lit, and in a statistics popup
+//! whether the list of the periods is open. The block shows tokens and
+//! money side by side, so there is nothing to pick between them (issue 14
+//! of spec 2026-11-23-accounts-apart-from-profiles). The choices of the profile
 //! pages are the same for every profile and kept while OTTY runs, not
 //! saved; a popup has its own while it is open.
 
@@ -32,31 +34,6 @@ impl UsagePeriod {
             Self::Today => Key::AgentsToday,
             Self::SevenDays => Key::AgentsSevenDays,
             Self::ThirtyDays => Key::AgentsThirtyDays,
-        };
-
-        i18n::t(key)
-    }
-}
-
-/// What the usage block counts.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum UsageMeasure {
-    /// The tokens; chosen at start.
-    #[default]
-    Tokens,
-    /// The money the tokens cost at API prices.
-    Money,
-}
-
-impl UsageMeasure {
-    /// Both measures, in the order the menu lists them.
-    pub(crate) const ALL: [Self; 2] = [Self::Tokens, Self::Money];
-
-    /// How the measure is named in its menu and over its column.
-    pub(crate) fn label(self) -> &'static str {
-        let key = match self {
-            Self::Tokens => Key::AgentsTokens,
-            Self::Money => Key::AgentsNumberMoney,
         };
 
         i18n::t(key)
@@ -98,37 +75,22 @@ impl fmt::Display for UsageTab {
     }
 }
 
-/// A drop-down of the usage block whose list opens under it in a
-/// statistics popup, where no menu of the mode can open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UsageList {
-    /// The periods.
-    Period,
-    /// The measures.
-    Measure,
-}
-
 /// The choices of the usage block, the row of its table that is picked or
-/// under the pointer, by its name, and the list open in a popup.
+/// under the pointer, by its name, and whether the list of the periods is
+/// open in a popup.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct UsageChoice {
     period: UsagePeriod,
-    measure: UsageMeasure,
     tab: UsageTab,
     picked: Option<String>,
     hovered: Option<String>,
-    open_list: Option<UsageList>,
+    is_period_list_open: bool,
 }
 
 impl UsageChoice {
     /// The period picked.
     pub(crate) fn period(&self) -> UsagePeriod {
         self.period
-    }
-
-    /// The measure picked.
-    pub(crate) fn measure(&self) -> UsageMeasure {
-        self.measure
     }
 
     /// The tab picked.
@@ -146,30 +108,21 @@ impl UsageChoice {
         self.hovered.as_deref()
     }
 
-    /// The list open under its drop-down in a popup.
-    pub(crate) fn open_list(&self) -> Option<UsageList> {
-        self.open_list
+    /// Whether the list of the periods is open under its drop-down in a
+    /// popup.
+    pub(crate) fn is_period_list_open(&self) -> bool {
+        self.is_period_list_open
     }
 
-    /// Look back over `period`; the open list closes.
+    /// Look back over `period`; the list of the periods closes.
     pub(crate) fn pick_period(&mut self, period: UsagePeriod) {
         self.period = period;
-        self.open_list = None;
+        self.is_period_list_open = false;
     }
 
-    /// Count in `measure`; the open list closes.
-    pub(crate) fn pick_measure(&mut self, measure: UsageMeasure) {
-        self.measure = measure;
-        self.open_list = None;
-    }
-
-    /// Open the list of `list`, or close it when it is the open one.
-    pub(crate) fn toggle_list(&mut self, list: UsageList) {
-        if self.open_list == Some(list) {
-            self.open_list = None;
-        } else {
-            self.open_list = Some(list);
-        }
+    /// Open the list of the periods, or close it when it is open.
+    pub(crate) fn toggle_period_list(&mut self) {
+        self.is_period_list_open = !self.is_period_list_open;
     }
 
     /// List the rows of `tab`; a row picked in another tab is forgotten.
@@ -205,11 +158,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_block_opens_on_seven_days_of_tokens_by_model() {
+    fn the_block_opens_on_seven_days_by_model() {
         let choice = UsageChoice::default();
 
         assert_eq!(choice.period(), UsagePeriod::SevenDays);
-        assert_eq!(choice.measure(), UsageMeasure::Tokens);
         assert_eq!(choice.tab(), UsageTab::ByModel);
         assert_eq!(choice.picked(), None);
     }
@@ -251,36 +203,32 @@ mod tests {
     }
 
     #[test]
-    fn a_list_opens_closes_on_a_second_press_and_gives_way_to_the_other() {
+    fn the_list_of_the_periods_opens_and_closes_on_a_second_press() {
         let mut choice = UsageChoice::default();
 
-        choice.toggle_list(UsageList::Period);
-        let period = choice.open_list();
-        choice.toggle_list(UsageList::Measure);
-        let measure = choice.open_list();
-        choice.toggle_list(UsageList::Measure);
+        choice.toggle_period_list();
+        let open = choice.is_period_list_open();
+        choice.toggle_period_list();
 
-        assert_eq!(period, Some(UsageList::Period));
-        assert_eq!(measure, Some(UsageList::Measure));
-        assert_eq!(choice.open_list(), None);
+        assert!(open);
+        assert!(!choice.is_period_list_open());
     }
 
     #[test]
-    fn a_pick_closes_the_open_list() {
+    fn a_pick_closes_the_list_of_the_periods() {
         let mut choice = UsageChoice::default();
-        choice.toggle_list(UsageList::Period);
+        choice.toggle_period_list();
 
         choice.pick_period(UsagePeriod::Today);
 
         assert_eq!(choice.period(), UsagePeriod::Today);
-        assert_eq!(choice.open_list(), None);
+        assert!(!choice.is_period_list_open());
     }
 
     #[test]
-    fn another_tab_forgets_the_rows_but_keeps_the_period_and_measure() {
+    fn another_tab_forgets_the_rows_but_keeps_the_period() {
         let mut choice = UsageChoice::default();
         choice.pick_period(UsagePeriod::Today);
-        choice.pick_measure(UsageMeasure::Money);
         choice.pick_row(String::from("opus"));
         choice.hover_row(Some(String::from("sonnet")));
 
@@ -290,6 +238,5 @@ mod tests {
         assert_eq!(choice.picked(), None);
         assert_eq!(choice.hovered(), None);
         assert_eq!(choice.period(), UsagePeriod::Today);
-        assert_eq!(choice.measure(), UsageMeasure::Money);
     }
 }
