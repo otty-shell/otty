@@ -16,6 +16,25 @@ its title inside; "Needs from you" is a card tinted in the warning colour
 with a warning border. The card must be a component of the UI kit with
 parameters, to be reused everywhere.
 
+## Owner's choices after the prototype (2026-11-25)
+
+- **Needs:** every need row is its heading, its text across the whole
+  width of the card, then one line under the text with the plugin label
+  (a muted tag) and the button(s), the same in every row and at every
+  width; a thin divider between need rows inside the card. This replaces
+  issue 21's "label and buttons at the right, under the text only when
+  narrow".
+- **Data cards (Money, Limits, Credits):** each figure is its own row: the
+  label at the left with its own small muted explanation under it, the
+  value at the right, a thin divider between rows. "at API prices" is a
+  small tag next to the amount, its tooltip with the note and the money
+  by kind. Money of an organization has two rows: "Your spend this month"
+  (from your Claude Code sessions on this computer) and "Organization
+  bill" ("—", shows once OTTY has an admin key). Limits and Credits rows
+  keep their bar under the row.
+- Prototype: website repo `src/lite/prototype-blocks/` variant A
+  (`/lite/prototype-blocks/?variant=a&page=org`).
+
 ## What to build
 
 1. **Kit `Card`** (`crates/ui/kit/src/components/card.rs`), in the kit's
