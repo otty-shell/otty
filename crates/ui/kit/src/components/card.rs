@@ -295,7 +295,7 @@ fn rule_color(tone: CardTone, palette: &UiPalette) -> Color {
 
 /// The surface of a default card: `surface-canvas` raised [`RAISE`] of
 /// the way toward `surface-overlay`.
-fn raised(palette: &UiPalette) -> Color {
+pub(crate) fn raised(palette: &UiPalette) -> Color {
     let canvas = palette.surface_canvas();
     let overlay = palette.surface_overlay();
     let mix = |from: f32, to: f32| from + (to - from) * RAISE;

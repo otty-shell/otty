@@ -11,12 +11,18 @@ pub const DEFAULT_WIDTH: f32 = 160.0;
 pub const HEIGHT: f32 = 4.0;
 /// Corner radius of the track and the fill (`border-radius: 2px`).
 const RADIUS: f32 = 2.0;
+/// How much of `text-muted` the empty track takes.
+const TRACK_ALPHA: f32 = 0.28;
+/// The least contrast of the empty track against the surface under it, so
+/// the part of a limit not used yet still shows.
+#[cfg(test)]
+const TRACK_MIN: f32 = 1.3;
 /// How many shares the width of a bar as wide as its parent is cut into:
 /// a tenth of a percent each.
 const PORTIONS: u16 = 1000;
 
 /// Thin bar for work that takes a while, such as an image pull: an
-/// `accent` fill on a `surface-raised` track. It does not react to the
+/// `accent` fill on a track of `text-muted` at a low alpha. It does not react to the
 /// pointer; put a text next to it that says what runs and how far it is.
 ///
 /// # Example
@@ -87,9 +93,29 @@ impl ProgressBar {
     }
 }
 
+/// The empty track: `text-muted` at [`TRACK_ALPHA`], so it shows on the
+/// canvas, on a card and on a dialog alike (a solid surface color matched
+/// one of them and vanished there).
+fn track_color(palette: &UiPalette) -> iced::Color {
+    palette.text_muted().scale_alpha(TRACK_ALPHA)
+}
+
+/// The color the empty track shows on `surface`.
+#[cfg(test)]
+fn track_on(palette: &UiPalette, surface: iced::Color) -> iced::Color {
+    let track = track_color(palette);
+    let mix = |under: f32, over: f32| under + (over - under) * track.a;
+
+    iced::Color::from_rgb(
+        mix(surface.r, track.r),
+        mix(surface.g, track.g),
+        mix(surface.b, track.b),
+    )
+}
+
 impl<'a, Message: 'a> From<ProgressBar> for Element<'a, Message> {
     fn from(value: ProgressBar) -> Self {
-        let track_color = value.palette.surface_raised();
+        let track_color = track_color(&value.palette);
         let fill_color = value.fill_color();
         let shape = Border {
             radius: border::radius(RADIUS),
@@ -228,6 +254,31 @@ mod tests {
         assert_eq!(ProgressBar::new(-0.2, &palette).fraction, 0.0);
         assert_eq!(ProgressBar::new(f32::NAN, &palette).fraction, 0.0);
         assert_eq!(ProgressBar::new(0.4, &palette).fraction, 0.4);
+    }
+
+    /// The empty part of the bar shows on every surface a bar sits on: the
+    /// canvas, a card and a dialog.
+    #[test]
+    fn given_each_theme_when_drawn_then_the_track_shows_on_cards_and_dialogs() {
+        for (theme, palette) in [
+            ("OTTY Dark", UiPalette::otty_dark()),
+            ("OTTY Light", UiPalette::otty_light()),
+        ] {
+            let surfaces = [
+                ("canvas", palette.surface_canvas()),
+                ("card", super::super::card::raised(&palette)),
+                ("dialog", palette.surface_overlay()),
+            ];
+            for (name, surface) in surfaces {
+                let track = track_on(&palette, surface);
+                let ratio = contrast_ratio(track, surface);
+
+                assert!(
+                    ratio >= TRACK_MIN,
+                    "{theme}: track on {name} is {ratio:.2}:1"
+                );
+            }
+        }
     }
 
     #[test]
