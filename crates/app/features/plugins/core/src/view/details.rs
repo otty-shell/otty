@@ -221,37 +221,20 @@ fn news<'a>(
     has_lines.then(|| lines.into())
 }
 
-/// Why the plugin is broken, in the error colour, with Reload for a local
-/// plugin or Reinstall for one from a repository, which put the current
-/// version in place of the broken one.
+/// Why the plugin is broken, in the error colour. Reload or Reinstall,
+/// which put the current version in place of the broken one, sits in the
+/// row of actions with the others.
 fn broken<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
 ) -> Option<Element<'a, PluginsIntent>> {
     let reason = page.broken.clone()?;
 
-    let id = page.id.clone();
-    let (label, intent) = if page.is_local {
-        (i18n::t(Key::PluginsReload), PluginsIntent::Reload(id))
-    } else {
-        (i18n::t(Key::PluginsReinstall), PluginsIntent::Reinstall(id))
-    };
-    let fix = Button::new(label, palette)
-        .kind(ButtonKind::Secondary)
-        .size(ButtonSize::Small)
-        .on_press(intent);
-
-    Some(
-        row![small_text(reason, palette.status_error()), fix]
-            .spacing(spacing::SPACE_3)
-            .align_y(Alignment::Center)
-            .into(),
-    )
+    Some(small_text(reason, palette.status_error()).into())
 }
 
-/// Check for updates, or Reload for a local plugin; Show log; Remove. A
-/// broken plugin has Reload or Reinstall on the line of its reason
-/// instead.
+/// Reload for a local plugin, else Check for updates, or Reinstall when
+/// the plugin is broken; Show log; Remove.
 fn actions<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
@@ -269,6 +252,12 @@ fn actions<'a>(
             i18n::t(Key::PluginsReload),
             ButtonKind::Secondary,
             PluginsIntent::Reload(id.clone()),
+        )
+    } else if page.broken.is_some() {
+        small(
+            i18n::t(Key::PluginsReinstall),
+            ButtonKind::Secondary,
+            PluginsIntent::Reinstall(id.clone()),
         )
     } else {
         small(
@@ -288,14 +277,7 @@ fn actions<'a>(
         PluginsIntent::AskRemove(id.clone()),
     );
 
-    let mut buttons: Vec<Element<'a, PluginsIntent>> = Vec::new();
-    if page.broken.is_none() {
-        buttons.push(first.into());
-    }
-    buttons.push(log.into());
-    buttons.push(remove.into());
-
-    Row::with_children(buttons)
+    Row::with_children([first.into(), log.into(), remove.into()])
         .spacing(spacing::SPACE_2)
         .wrap()
         .vertical_spacing(spacing::SPACE_2)
