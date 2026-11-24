@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.16, install it from `assets/plugins/anthropic/` of the OTTY repository with
+Official, version 0.2.17, install it from `assets/plugins/anthropic/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
 repository will be `github.com/otty-shell/otty-plugin-anthropic`.
 
@@ -65,7 +65,7 @@ during that call.
 | Login in a folder                 | Account                                                                    |
 | --------------------------------- | -------------------------------------------------------------------------- |
 | A Claude login (`.credentials.json` and the account in `.claude.json`) | A subscription, named by its email and, after a comma, its organization (unless it is the personal one Claude makes for every account), such as `you@example.com, Example Org`, with its plan. It stays the same account when Claude Code renews its tokens. |
-| A login to a Console organization that pays per token | That organization.                                          |
+| A login to a Console organization that pays per token | That organization, named by its name. A part of the name in parentheses goes after a comma, such as `Example Org, Claude API Platform` for "Example Org (Claude API Platform)", so the name never nests parentheses in "Anthropic (…)". |
 | A Console key or an Anthropic key of `settings.json` | A key, named by the end of its fingerprint, such as `key ••••a1f3`. An admin key is an organization. |
 | A key `settings.json` sends to another server, such as DeepSeek's | No account.                                      |
 
@@ -114,7 +114,7 @@ Each need carries the label "Anthropic plugin". Its texts come in all ten langua
 | Needs login                      | Claude Code | Nobody is logged in with the profile's folder, such as a new folder that is still empty. | **Run claude auth login --claudeai**, with `CLAUDE_CONFIG_DIR` set to the profile's folder. |
 | The login expired                | Claude Code, Anthropic | The Claude login of the folder expired with no way to renew it (both parts, on the profile and on its account), or Anthropic refused it, or `/usage` asked to log in (Anthropic, on the account). | **Run claude** in that folder: Claude Code renews the login or asks you to log in again. Acting on either page fixes both. |
 | Log in again                     | Anthropic   | Anthropic refused OTTY's own login, or Claude Code could not renew it there. Shown on the account only. | **Run claude auth login --claudeai** in OTTY's own folder. |
-| The real bill needs an admin key | Anthropic   | An organization has no admin key of its own in its folders.          | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
+| The real bill needs an admin key | Anthropic   | An organization has no admin key of its own in its folders. Until it has one, the organization shows no money: OTTY counts no money from the tokens. | **Admin key…**: a key that starts with `sk-ant-admin`, made on `console.anthropic.com/settings/admin-keys`. |
 | The admin key was refused        | Anthropic   | Anthropic refused the admin key the bill was read with.              | **Admin key…**, to give a new one. The next bill reads with it. |
 
 ## What it changes

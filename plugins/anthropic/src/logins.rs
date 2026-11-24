@@ -215,26 +215,45 @@ fn is_past_its_time(login: &OauthLogin) -> bool {
 /// and the name of its organization when it is not the personal one
 /// Claude makes for every account, `<email>'s Organization`, such as
 /// "you@example.com, Example Org". OTTY puts the name in parentheses after
-/// the provider, so a comma keeps them from nesting.
+/// the provider, so a comma keeps them from nesting, and the organization
+/// keeps no parentheses of its own.
 fn subscription_name(account: &OauthAccount) -> String {
     let email = account.email().or(account.account_id()).unwrap_or_default();
 
     match account.organization_name() {
         Some(organization) if !organization.contains(email) => {
+            let organization = without_parentheses(organization);
             format!("{email}, {organization}")
         },
         _ => email.to_string(),
     }
 }
 
-/// What the user knows a Console organization by: its name, else the
-/// email of the login, else its id.
+/// What the user knows a Console organization by: its name, with no
+/// parentheses, else the email of the login, else its id.
 fn organization_name(account: &OauthAccount, organization_id: &str) -> String {
-    account
+    let name = account
         .organization_name()
         .or(account.email())
-        .unwrap_or(organization_id)
-        .to_string()
+        .unwrap_or(organization_id);
+
+    without_parentheses(name)
+}
+
+/// `name` with each part in parentheses set off by commas instead, such
+/// as "Example Org, Claude API Platform" for Anthropic's "Example Org
+/// (Claude API Platform)". OTTY names an account "Anthropic (…)", and
+/// parentheses inside would nest (issue 21 of spec
+/// 2026-11-23-accounts-apart-from-profiles). Every word stays, so two
+/// organizations that differ only in the part in parentheses stay apart.
+fn without_parentheses(name: &str) -> String {
+    let parts: Vec<&str> = name
+        .split(['(', ')'])
+        .map(|part| part.trim().trim_matches(',').trim())
+        .filter(|part| !part.is_empty())
+        .collect();
+
+    parts.join(", ")
 }
 
 /// The Console key of the global config file `config`, when it holds one.
@@ -396,6 +415,48 @@ mod tests {
         assert_eq!(found[0].name, "Example Org");
         assert_eq!(found[0].kind, AccountKind::Organization);
         assert_eq!(found[0].plan, None);
+    }
+
+    /// The account of a login whose organization Anthropic names
+    /// `organization`.
+    fn account_of(organization: &str) -> OauthAccount {
+        let account = serde_json::json!({
+            "emailAddress": "dev@example.com",
+            "organizationName": organization,
+        });
+
+        serde_json::from_value(account).expect("an account")
+    }
+
+    /// Issue 21 of spec 2026-11-23-accounts-apart-from-profiles: OTTY puts
+    /// the name in parentheses after the provider, so the parentheses of
+    /// the organization's own name become commas and never nest.
+    #[test]
+    fn an_organization_is_named_with_no_parentheses() {
+        for (given, name) in [
+            (
+                "Example Org (Claude API Platform)",
+                "Example Org, Claude API Platform",
+            ),
+            ("Example Org, (Team) Ltd", "Example Org, Team, Ltd"),
+            ("(Example Org)", "Example Org"),
+            ("Example Org", "Example Org"),
+        ] {
+            let account = account_of(given);
+
+            assert_eq!(organization_name(&account, "org"), name, "{given}");
+        }
+    }
+
+    /// Issue 21: the organization after the email of a subscription keeps
+    /// no parentheses either.
+    #[test]
+    fn a_subscription_is_named_with_no_parentheses() {
+        let account = account_of("Example Org (Claude Team)");
+
+        let name = subscription_name(&account);
+
+        assert_eq!(name, "dev@example.com, Example Org, Claude Team");
     }
 
     #[test]

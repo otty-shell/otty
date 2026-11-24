@@ -142,6 +142,12 @@ the account or profile, and in the **Needs you** list. Two kinds of needs come f
   kind to read a bill. OTTY shows the need as the plugin wrote it, with a small label naming the
   plugin, such as "OpenAI plugin", so you see who asks.
 
+A need reads as one line of the list: the place and the title, such as "Anthropic (Example Org,
+Claude API Platform), the real bill needs an admin key", and the text under them, wrapping in the
+width they get. The plugin's label and the button sit at the right of the text. On a narrow page
+they go to their own line under the text, at the right. The label always stays on one line and the
+button stays whole: a label that still does not fit ends with "…" and shows whole on hover.
+
 ### What OTTY asks
 
 | Need                                   | When                                                                  | Button                  |
@@ -323,7 +329,8 @@ The money of a profile comes from its plugin, for each answer of the agent:
 This holds on a subscription too: there the money answers "what would this work cost me on the
 API". The money of an account is only what its provider tells: the bill of an organization (with an
 admin key), the money left, the key limit or what was spent this month. OTTY never counts an
-account's money from the tokens of a profile.
+account's money from the tokens of a profile: an organization with no admin key shows no money,
+and its need asks for the key.
 
 The price of a model depends on who served it: the maker itself, a cloud or a reseller such as
 OpenRouter. Each plugin knows who served each answer, as the agent wrote it, and OTTY gives the

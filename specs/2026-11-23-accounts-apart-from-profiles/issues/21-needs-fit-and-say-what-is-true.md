@@ -1,6 +1,6 @@
 # 21 A need fits any width and says what is true now
 
-Status: ready
+Status: done
 Blocked by: 20
 
 ## Why
@@ -63,3 +63,31 @@ must do something about it."
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25, done. The need row (`view/needs.rs`, used by the account
+and profile pages, All accounts, All profiles and Found by OTTY) lays out
+for the width it gets: the heading and the line take the width and wrap,
+then the plugin's label on one line and the buttons whole at their
+right. When the text would keep less than 320 px beside them, the label
+and the buttons go to their own line under the text, at the right, and
+there a label that still does not fit ends with "…" and its tooltip
+shows it whole. The kit `Button` got `width()`, the width it takes, so
+the row can tell what fits. Tests pin the geometry at 900, 360 and
+200 px. Pictures before and after at 900, 620 and 360 px were checked.
+
+Names: the Anthropic plugin sets off each part of an organization's name
+in parentheses with a comma, "Example Org (Claude API Platform)" becomes
+"Example Org, Claude API Platform", for a Console organization and after
+the email of a subscription. Every word stays, so two organizations that
+differ only in that part stay apart, and the plugin needs no list of the
+kinds Anthropic writes there. The OpenAI plugin builds no name from a
+provider's text (an email, "ChatGPT ••••…" or "key ••••…"), so it needed
+no change.
+
+Words: the admin-key need of the Anthropic, OpenAI and template plugins
+now says "OTTY shows no money for this organization until it has an
+admin key, which reads the real bill. No agent keeps one." in all ten
+languages. No locale of OTTY spoke of the estimate. Anthropic 0.2.17,
+OpenAI 0.2.16 and the template 0.1.10 are rebuilt into `assets/plugins`.
+The plugin pages, Overview (Needs, The money) and the Anthropic README
+follow.

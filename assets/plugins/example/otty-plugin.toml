@@ -4,7 +4,7 @@
 [plugin]
 id = "example"
 name = "Example"
-version = "0.1.9"
+version = "0.1.10"
 description = "A made-up agent and a made-up provider, the start of a new plugin."
 repository = "https://github.com/otty-shell/otty-plugin-example"
 license = "Apache-2.0"

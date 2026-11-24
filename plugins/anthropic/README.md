@@ -18,7 +18,10 @@ named by its email (and its organization, unless it is the personal one
 Claude makes for every account), with its plan; it stays the same account
 when Claude Code renews its tokens, and one account logged in to two
 profiles is one account found in two places. A login to an Anthropic
-Console organization that pays per token is that organization. A Console
+Console organization that pays per token is that organization. An
+organization's name keeps no parentheses, since OTTY writes the name in
+parentheses after "Anthropic": "Example Org (Claude API Platform)" is
+named "Example Org, Claude API Platform". A Console
 key and an Anthropic key of `settings.json` are keys, named by the end of
 their fingerprint; an admin key is an organization. A key that
 `settings.json` sends to another server, such as DeepSeek's, is no

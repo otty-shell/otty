@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.15, install it from `assets/plugins/openai/` of the OTTY repository with
+Official, version 0.2.16, install it from `assets/plugins/openai/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
 repository will be `github.com/otty-shell/otty-plugin-openai`.
 
@@ -103,7 +103,7 @@ Each need carries the label "OpenAI plugin". Its texts come in all ten languages
 | Needs login                      | Codex  | Nobody is logged in with the profile's folder, such as a new folder that is still empty. | **Run codex login**, with `CODEX_HOME` set to the profile's folder. |
 | The login expired                | Codex, OpenAI | The access token of the folder's ChatGPT login says it expired (both parts, on the profile and on its account), or OpenAI refused it (OpenAI, on the account). | **Run codex login**, with `CODEX_HOME` set to that folder. Acting on either page fixes both. |
 | Log in again                     | OpenAI | OpenAI refused OTTY's own login and Codex could not renew it there. Shown on the account only. | **Run codex login** in OTTY's own folder. |
-| The real bill needs an admin key | OpenAI | An organization has no admin key of its own in its folders.          | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
+| The real bill needs an admin key | OpenAI | An organization has no admin key of its own in its folders. Until it has one, the organization shows no money: OTTY counts no money from the tokens. | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
 | The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. The next bill reads with it. |
 
 ## What it changes

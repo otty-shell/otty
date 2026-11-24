@@ -260,59 +260,64 @@ const BILL_KEY_TITLE: &[(&str, &str)] = &[
     ("ru", "Для настоящего счёта нужен ключ администратора"),
 ];
 
-/// The text of [`bill_key`].
+/// The text of [`bill_key`]: since issue 01 of spec
+/// 2026-11-23-accounts-apart-from-profiles OTTY shows no estimate from the
+/// tokens, so an organization shows no money until it has an admin key.
 const BILL_KEY_TEXT: &[(&str, &str)] = &[
     (
         "en",
-        "OTTY shows an estimate from the tokens. The bill of the whole \
-         organization needs an admin key, and no agent keeps one.",
+        "OTTY shows no money for this organization until it has an admin \
+         key, which reads the real bill. No agent keeps one.",
     ),
     (
         "zh-CN",
-        "OTTY 显示的是根据令牌估算的金额。整个组织的账单需要管理员密钥，而没有智能体保存该密钥。",
+        "在有管理员密钥之前，OTTY 不显示此组织的金额。管理员密钥读取真实账单，\
+         而没有智能体保存该密钥。",
     ),
     (
         "zh-TW",
-        "OTTY 顯示的是依權杖估算的金額。整個組織的帳單需要管理員金鑰，而沒有代理程式保存該金鑰。",
+        "在有管理員金鑰之前，OTTY 不會顯示此組織的金額。管理員金鑰讀取實際帳單，\
+         而沒有代理程式保存該金鑰。",
     ),
     (
         "ja",
-        "OTTY はトークンから見積もりを表示しています。組織全体の請求には管理者キーが\
-         必要ですが、どのエージェントも保持していません。",
+        "管理者キーが渡されるまで、OTTY はこの組織の金額を表示しません。\
+         管理者キーで実際の請求を読み取りますが、どのエージェントも保持していません。",
     ),
     (
         "ko",
-        "OTTY는 토큰으로 추정한 금액을 보여 줍니다. 조직 전체의 청구서에는 관리자 \
-         키가 필요하지만, 어떤 에이전트도 이를 보관하지 않습니다.",
+        "관리자 키가 있기 전까지 OTTY는 이 조직의 금액을 표시하지 않습니다. \
+         관리자 키로 실제 청구서를 읽으며, 어떤 에이전트도 이를 보관하지 않습니다.",
     ),
     (
         "fr",
-        "OTTY affiche une estimation à partir des jetons. La facture de toute \
-         l'organisation demande une clé d'administration, et aucun agent \
-         n'en garde.",
+        "OTTY n'affiche aucun montant pour cette organisation tant qu'elle \
+         n'a pas de clé d'administration, qui lit la vraie facture. Aucun \
+         agent n'en garde.",
     ),
     (
         "de",
-        "OTTY zeigt eine Schätzung aus den Tokens. Die Rechnung der ganzen \
-         Organisation braucht einen Admin-Schlüssel, und kein Agent bewahrt \
-         einen auf.",
+        "OTTY zeigt für diese Organisation keinen Betrag, bis sie einen \
+         Admin-Schlüssel hat, der die echte Rechnung liest. Kein Agent \
+         bewahrt einen auf.",
     ),
     (
         "es",
-        "OTTY muestra una estimación a partir de los tokens. La factura de \
-         toda la organización necesita una clave de administrador, y ningún \
-         agente guarda una.",
+        "OTTY no muestra ningún importe de esta organización hasta que tenga \
+         una clave de administrador, que lee la factura real. Ningún agente \
+         guarda una.",
     ),
     (
         "pt-BR",
-        "O OTTY mostra uma estimativa a partir dos tokens. A fatura de toda \
-         a organização precisa de uma chave de administrador, e nenhum \
-         agente guarda uma.",
+        "O OTTY não mostra nenhum valor desta organização até que ela tenha \
+         uma chave de administrador, que lê a fatura real. Nenhum agente \
+         guarda uma.",
     ),
     (
         "ru",
-        "OTTY показывает оценку по токенам. Для счёта всей организации нужен \
-         ключ администратора, а ни один агент его не хранит.",
+        "OTTY не показывает деньги этой организации, пока у неё нет ключа \
+         администратора, который читает настоящий счёт. Ни один агент его не \
+         хранит.",
     ),
 ];
 
@@ -561,6 +566,24 @@ mod tests {
                 log_in_again(claude()),
             ]
         })
+    }
+
+    /// Issue 21 of spec 2026-11-23-accounts-apart-from-profiles: since
+    /// issue 01 OTTY shows no estimate from the tokens, so the need of the
+    /// admin key says the organization shows no money until it has one, in
+    /// every language.
+    #[test]
+    fn the_admin_key_need_promises_no_estimate() {
+        let estimate =
+            ["estimat", "估算", "見積", "추정", "Schätzung", "оценк"];
+
+        for (tag, text) in BILL_KEY_TEXT {
+            for word in estimate {
+                assert!(!text.contains(word), "{tag}: {text}");
+            }
+        }
+        let english = pick_language("en", BILL_KEY_TEXT);
+        assert!(english.contains("shows no money"), "{english}");
     }
 
     #[test]
