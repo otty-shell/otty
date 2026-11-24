@@ -241,10 +241,12 @@ fn credits_window(
         .map(|renews_at| resets_text(now, renews_at, time_zone));
 
     let value = used.or_else(|| left.clone()).unwrap_or_default();
+    // After the comma "resets" starts in lower case (issue 17 of spec
+    // 2026-11-23-accounts-apart-from-profiles).
     let line = match (left, renews) {
         (Some(left), Some(renews)) => Some(i18n::filled(
             Key::TplAgentsCreditsLeftRenews,
-            &[("left", &left), ("renews", &renews)],
+            &[("left", &left), ("renews", &i18n::after_comma(&renews))],
         )),
         (Some(left), None) => Some(left),
         (None, renews) => renews,
@@ -344,7 +346,12 @@ mod tests {
                         &[("amount", left)],
                     ),
                 ),
-                ("renews", &resets_at(renews_at).unwrap_or_default()),
+                (
+                    "renews",
+                    &i18n::after_comma(
+                        &resets_at(renews_at).unwrap_or_default(),
+                    ),
+                ),
             ],
         ))
     }
@@ -618,7 +625,12 @@ mod tests {
                 Key::TplAgentsCreditsLeftRenews,
                 &[
                     ("left", i18n::t(Key::AgentsCreditsAvailable)),
-                    ("renews", &resets_at(renews_at).unwrap_or_default()),
+                    (
+                        "renews",
+                        &i18n::after_comma(
+                            &resets_at(renews_at).unwrap_or_default()
+                        ),
+                    ),
                 ]
             ))
         );
@@ -645,6 +657,14 @@ mod tests {
 
         let vm = limits_of(&state).expect("the credits show");
 
+        // Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: after
+        // the comma "resets" starts in lower case.
+        let line = vm
+            .credits
+            .as_ref()
+            .and_then(|credits| credits.line.clone())
+            .unwrap_or_default();
+        assert!(!line.contains(", Resets"), "{line}");
         assert_eq!(
             vm.credits,
             Some(CreditsViewModel {

@@ -7,7 +7,9 @@ use otty_plugin_releases::{
     InstallError, InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport,
 };
 
-use crate::types::{ListedPlugin, PartsToLoad, RunningPlugin};
+use crate::types::{
+    ListedPlugin, PartsToLoad, PluginLoadFailure, RunningPlugin,
+};
 
 /// The installed plugins after a change, as `otty-app-plugins-io` read
 /// them again, or why the change did not happen.
@@ -68,6 +70,8 @@ pub enum PluginsIntent {
     CheckForUpdates(String),
     /// Reload of a local plugin.
     Reload(String),
+    /// Reinstall of a broken plugin from a repository: its source again.
+    Reinstall(String),
     /// Review of a plugin whose update waits: the update dialog.
     Review(String),
     /// Update of the update dialog.
@@ -109,10 +113,25 @@ pub enum PluginsIntent {
         /// The installed plugins after it.
         plugins: Vec<ListedPlugin>,
     },
+    /// Reinstall of a broken plugin finished.
+    Reinstalled {
+        /// The plugin id.
+        plugin: String,
+        /// What it did, or why not.
+        outcome: Result<UpdateOutcome, InstallError>,
+        /// The installed plugins after it.
+        plugins: Vec<ListedPlugin>,
+    },
     /// The timer of the daily update check.
     UpdateTick,
-    /// The parts that run now, after the binary loaded them.
-    Running(Vec<RunningPlugin>),
+    /// The binary loaded the parts that are on: the parts that run now,
+    /// and the plugins it could not load, which are broken.
+    Running {
+        /// The plugins that run.
+        running: Vec<RunningPlugin>,
+        /// The plugins that were not loaded, with why.
+        failed: Vec<PluginLoadFailure>,
+    },
 }
 
 /// What Plugins mode reports to the binary.
@@ -153,6 +172,9 @@ pub enum PluginsOutcome {
     /// Read the folder of a local plugin again; answer
     /// [`PluginsIntent::Reloaded`].
     Reload(String),
+    /// Install the source of a broken plugin again; answer
+    /// [`PluginsIntent::Reinstalled`].
+    Reinstall(String),
     /// Install a waiting update the user agreed to; answer
     /// [`PluginsIntent::Changed`].
     ApplyUpdate {

@@ -95,6 +95,9 @@ fn plugin_page<'a>(
     if let Some(error) = page.error.clone() {
         blocks = blocks.push(small_text(error, palette.status_error()));
     }
+    if let Some(broken) = broken(&page, palette) {
+        blocks = blocks.push(broken);
+    }
     if let Some(news) = news(&page, palette) {
         blocks = blocks.push(news);
     }
@@ -127,15 +130,21 @@ fn header<'a>(
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
     let strong = palette.text_strong();
-    let icon: Element<'a, PluginsIntent> = match page.icon.clone() {
-        Some(bytes) => svg(svg::Handle::from_memory(bytes))
+    let warn = palette.status_warn();
+    let tinted = |bytes: Vec<u8>, color| -> Element<'a, PluginsIntent> {
+        svg(svg::Handle::from_memory(bytes))
             .width(ICON_EDGE)
             .height(ICON_EDGE)
-            .style(move |_, _| svg::Style {
-                color: Some(strong),
-            })
-            .into(),
-        None => letter_icon(&page.name, ICON_EDGE, strong, palette),
+            .style(move |_, _| svg::Style { color: Some(color) })
+            .into()
+    };
+    let icon = if page.broken.is_some() {
+        tinted(icons::PLUGIN_BROKEN.to_vec(), warn)
+    } else {
+        match page.icon.clone() {
+            Some(bytes) => tinted(bytes, strong),
+            None => letter_icon(&page.name, ICON_EDGE, strong, palette),
+        }
     };
     let name = EllipsisText::new(
         page.name.clone(),
@@ -212,7 +221,37 @@ fn news<'a>(
     has_lines.then(|| lines.into())
 }
 
-/// Check for updates, or Reload for a local plugin; Show log; Remove.
+/// Why the plugin is broken, in the error colour, with Reload for a local
+/// plugin or Reinstall for one from a repository, which put the current
+/// version in place of the broken one.
+fn broken<'a>(
+    page: &PluginPageViewModel,
+    palette: &UiPalette,
+) -> Option<Element<'a, PluginsIntent>> {
+    let reason = page.broken.clone()?;
+
+    let id = page.id.clone();
+    let (label, intent) = if page.is_local {
+        (i18n::t(Key::PluginsReload), PluginsIntent::Reload(id))
+    } else {
+        (i18n::t(Key::PluginsReinstall), PluginsIntent::Reinstall(id))
+    };
+    let fix = Button::new(label, palette)
+        .kind(ButtonKind::Secondary)
+        .size(ButtonSize::Small)
+        .on_press(intent);
+
+    Some(
+        row![small_text(reason, palette.status_error()), fix]
+            .spacing(spacing::SPACE_3)
+            .align_y(Alignment::Center)
+            .into(),
+    )
+}
+
+/// Check for updates, or Reload for a local plugin; Show log; Remove. A
+/// broken plugin has Reload or Reinstall on the line of its reason
+/// instead.
 fn actions<'a>(
     page: &PluginPageViewModel,
     palette: &UiPalette,
@@ -249,7 +288,14 @@ fn actions<'a>(
         PluginsIntent::AskRemove(id.clone()),
     );
 
-    Row::with_children([first.into(), log.into(), remove.into()])
+    let mut buttons: Vec<Element<'a, PluginsIntent>> = Vec::new();
+    if page.broken.is_none() {
+        buttons.push(first.into());
+    }
+    buttons.push(log.into());
+    buttons.push(remove.into());
+
+    Row::with_children(buttons)
         .spacing(spacing::SPACE_2)
         .wrap()
         .vertical_spacing(spacing::SPACE_2)
@@ -279,7 +325,7 @@ fn parts<'a>(
         .parts
         .iter()
         .cloned()
-        .map(|part| part_card(&page.id, part, page.is_busy, palette))
+        .map(|part| part_card(page, part, palette))
         .collect();
 
     Column::with_children(parts)
@@ -287,16 +333,19 @@ fn parts<'a>(
         .into()
 }
 
-/// One part as a card: a header with its name, the tag of its kind, its
-/// health badge, Try again while it is paused and its switch at the right
-/// end; its description with Can access (5) at the right end, or "Asks for
-/// no permissions"; its last failed call with Copy report.
+/// One part of `page` as a card: a header with its name, the tag of its
+/// kind, its health badge, Try again while it is paused and its switch at
+/// the right end; its description with Can access (5) at the right end, or
+/// "Asks for no permissions"; its last failed call with Copy report. A
+/// part that is on of a broken plugin has the badge in the error colour.
 fn part_card<'a>(
-    plugin: &str,
+    page: &PluginPageViewModel,
     part: PartRowViewModel,
-    is_busy: bool,
     palette: &UiPalette,
 ) -> Element<'a, PluginsIntent> {
+    let plugin = page.id.as_str();
+    let is_busy = page.is_busy;
+
     let mut switch = Switch::new(part.is_on, palette);
     if !is_busy {
         let plugin = plugin.to_string();
@@ -309,6 +358,8 @@ fn part_card<'a>(
     }
     let tone = if !part.is_on {
         StatusTone::Neutral
+    } else if page.broken.is_some() {
+        StatusTone::Error
     } else if part.is_paused {
         StatusTone::Warn
     } else {
@@ -454,10 +505,57 @@ mod tests {
             }],
             waiting: None,
             too_new: None,
+            broken: None,
             is_local: true,
             error: None,
             is_busy: false,
         }
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a broken
+    /// local plugin shows why and Reload, once.
+    #[test]
+    fn a_broken_local_plugin_shows_why_and_reloads() {
+        let palette = UiPalette::otty_dark();
+        let mut page = example();
+        page.broken = Some(String::from(
+            "The manifest of version 0.1.9 can not be read: unknown field `api`",
+        ));
+        let mut ui = simulator(page_view(page, &palette));
+
+        assert!(
+            ui.find(
+                "The manifest of version 0.1.9 can not be read: unknown field `api`"
+            )
+            .is_ok()
+        );
+        let _ = ui.click(i18n::t(Key::PluginsReload));
+
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [PluginsIntent::Reload(id)] if id == "example"
+        ));
+    }
+
+    /// Issue 17: a broken plugin from a repository offers Reinstall in
+    /// place of Check for updates.
+    #[test]
+    fn a_broken_plugin_from_a_repository_reinstalls() {
+        let palette = UiPalette::otty_dark();
+        let mut page = example();
+        page.is_local = false;
+        page.broken = Some(String::from("The plugin failed to load: no file"));
+        let mut ui = simulator(page_view(page, &palette));
+
+        assert!(ui.find(i18n::t(Key::PluginsCheckForUpdates)).is_err());
+        let _ = ui.click(i18n::t(Key::PluginsReinstall));
+
+        let sent: Vec<PluginsIntent> = ui.into_messages().collect();
+        assert!(matches!(
+            sent.as_slice(),
+            [PluginsIntent::Reinstall(id)] if id == "example"
+        ));
     }
 
     fn page_view<'a>(

@@ -64,6 +64,11 @@ pub const MODE_AGENTS: &[u8] =
 /// Also the icon of its card when nothing is selected.
 pub const MODE_PLUGINS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-plugins.svg");
+/// A plugin that is broken, as its manifest can not be read or it failed
+/// to load: the plug of Plugins mode with a small warning mark in the
+/// lower right corner, drawn in the warn colour where it shows.
+pub const PLUGIN_BROKEN: &[u8] =
+    include_bytes!("../../../../assets/svg/plugin-broken.svg");
 /// All accounts in Agents mode: two cards, one behind the other.
 pub const ALL_ACCOUNTS: &[u8] =
     include_bytes!("../../../../assets/svg/all-accounts.svg");
@@ -172,6 +177,25 @@ mod tests {
             "{svg}"
         );
         assert!(svg.contains(r#"<path d="M12 16v5"/>"#), "{svg}");
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a broken
+    /// plugin is the plug of Plugins mode, moved up and left, with a
+    /// small warning mark in the lower right corner.
+    #[test]
+    fn the_broken_plugin_icon_is_the_plug_with_a_warning_mark() {
+        let svg = std::str::from_utf8(PLUGIN_BROKEN).expect("an SVG text");
+
+        assert!(svg.contains(r#"<g transform="translate(-2 -1)">"#), "{svg}");
+        assert!(svg.contains(r#"<path d="M9 3v4M15 3v4"/>"#), "{svg}");
+        assert!(
+            svg.contains(r#"<path d="M6 7h12v3a6 6 0 0 1-12 0z"/>"#),
+            "{svg}"
+        );
+        assert!(svg.contains(r#"<path d="M12 16v5"/>"#), "{svg}");
+        assert!(svg.contains(r#"stroke-width="1.7""#), "{svg}");
+        assert!(svg.contains(r#"fill-rule="evenodd""#), "{svg}");
+        assert_ne!(PLUGIN_BROKEN, MODE_PLUGINS);
     }
 
     #[test]

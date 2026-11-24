@@ -1,10 +1,13 @@
 //! The left panel of Plugins mode (issue 30): the installed plugins whose
 //! names hold the search, each with its icon, name, the mark of who
 //! reviewed it and a sign when it is off, waits for an update or failed.
+//! A broken plugin has the broken plugin icon (issue 17 of spec
+//! 2026-11-23-accounts-apart-from-profiles).
 
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::session_row::SessionTone;
 
+use super::broken_reason;
 use crate::state::{PluginNews, PluginsState};
 use crate::types::ListedPlugin;
 use crate::words::trust_text;
@@ -58,6 +61,8 @@ pub(crate) struct PluginListRowViewModel {
     pub(crate) trust: &'static str,
     /// The SVG of its icon, or `None` for a letter icon.
     pub(crate) icon: Option<Vec<u8>>,
+    /// Whether it is broken: the broken plugin icon in place of its own.
+    pub(crate) is_broken: bool,
     /// What needs a look, if anything.
     pub(crate) sign: Option<PluginSign>,
     /// Whether the main area shows its page.
@@ -87,8 +92,8 @@ impl PluginListRowViewModel {
 /// of failed, update waiting and off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PluginSign {
-    /// A part is paused after three failures, or the latest check or
-    /// change failed.
+    /// The plugin is broken, a part is paused after three failures, or
+    /// the latest check or change failed.
     Failed,
     /// A newer version waits for the user's OK.
     UpdateWaits,
@@ -128,19 +133,25 @@ fn name_holds(name: &str, search: &str) -> bool {
 
 fn row(state: &PluginsState, plugin: &ListedPlugin) -> PluginListRowViewModel {
     let id = plugin.id();
+    let is_broken = broken_reason(state, plugin).is_some();
 
     PluginListRowViewModel {
         id: id.to_string(),
         name: plugin.installed.name().to_string(),
         trust: trust_text(plugin.installed.trust()),
         icon: plugin.icon.clone(),
-        sign: sign(state, plugin),
+        is_broken,
+        sign: sign(state, plugin, is_broken),
         is_selected: state.selected() == Some(id),
     }
 }
 
-/// What needs a look on `plugin`, if anything.
-fn sign(state: &PluginsState, plugin: &ListedPlugin) -> Option<PluginSign> {
+/// What needs a look on `plugin`, if anything; a broken one failed.
+fn sign(
+    state: &PluginsState,
+    plugin: &ListedPlugin,
+    is_broken: bool,
+) -> Option<PluginSign> {
     let id = plugin.id();
 
     let is_paused = state.running_plugin(id).is_some_and(|running| {
@@ -148,7 +159,7 @@ fn sign(state: &PluginsState, plugin: &ListedPlugin) -> Option<PluginSign> {
     });
     let has_failed_news =
         matches!(state.news_of(id), Some(PluginNews::Failed(_)));
-    if is_paused || has_failed_news {
+    if is_broken || is_paused || has_failed_news {
         return Some(PluginSign::Failed);
     }
     if state.waiting_update(id).is_some() {
@@ -301,5 +312,35 @@ mod tests {
         assert_eq!(vm.rows[0].sign, Some(PluginSign::Failed));
         assert_eq!(vm.rows[1].sign, Some(PluginSign::Failed));
         assert_eq!(vm.rows[1].tone(), SessionTone::Failed);
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a plugin
+    /// whose installed manifest can not be read, or that failed to load,
+    /// has the broken plugin icon and is signed failed; a healthy one
+    /// keeps its own icon.
+    #[test]
+    fn a_broken_plugin_has_the_broken_icon_and_is_signed_failed() {
+        let mut healthy = fork();
+        healthy.icon = Some(b"<svg/>".to_vec());
+        let unread = PluginsState::new(vec![
+            crate::testing::broken_local_example(),
+            healthy,
+        ]);
+        let mut unloaded = PluginsState::new(vec![released_example()]);
+        unloaded.set_load_failures(vec![crate::testing::load_failure(
+            "example",
+            "The plugin's .wasm can not be read: no file",
+        )]);
+
+        let unread = SidePanelViewModel::from_state(&unread);
+        let unloaded = SidePanelViewModel::from_state(&unloaded);
+
+        assert!(unread.rows[0].is_broken);
+        assert_eq!(unread.rows[0].sign, Some(PluginSign::Failed));
+        assert!(!unread.rows[1].is_broken);
+        assert_eq!(unread.rows[1].sign, None);
+        assert_eq!(unread.rows[1].icon, Some(b"<svg/>".to_vec()));
+        assert!(unloaded.rows[0].is_broken);
+        assert_eq!(unloaded.rows[0].sign, Some(PluginSign::Failed));
     }
 }

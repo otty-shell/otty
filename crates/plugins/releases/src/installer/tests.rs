@@ -724,6 +724,75 @@ fn reload_of_a_local_plugin_that_asks_for_more_waits() {
     );
 }
 
+/// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: Reinstall of
+/// a plugin from a repository whose installed manifest can not be read
+/// puts the newest release in its place, even the installed version, and
+/// keeps a part turned off by hand off.
+#[test]
+fn reinstall_puts_the_newest_release_in_place_of_a_broken_copy() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    github.publish(REPO, vec![FakeRelease::example("v0.1.0", "0.1.0")]);
+    let mut installer = test_installer(folder.path(), &github);
+    install_from(&mut installer, REPO);
+    installer
+        .set_part_on("example", &agent(), false)
+        .expect("off");
+    let manifest = folder
+        .path()
+        .join("data/plugins/example/0.1.0")
+        .join(MANIFEST_FILE);
+    std::fs::write(&manifest, "[api]\nlanguage = \"0.1\"\n").expect("broken");
+
+    let same = installer.reinstall("example");
+    let repaired = std::fs::read(&manifest).expect("the manifest");
+    github.publish(
+        REPO,
+        vec![
+            FakeRelease::example("v0.1.0", "0.1.0"),
+            FakeRelease::example("v0.2.0", "0.2.0"),
+        ],
+    );
+    let newer = installer.reinstall("example");
+
+    assert_eq!(
+        same,
+        Ok(UpdateOutcome::Updated {
+            from: PluginVersion::parse("0.1.0").expect("version"),
+            to: PluginVersion::parse("0.1.0").expect("version"),
+        })
+    );
+    assert_eq!(repaired, example_files("0.1.0")[MANIFEST_FILE]);
+    assert!(matches!(newer, Ok(UpdateOutcome::Updated { .. })));
+    assert_eq!(version_of(&installer, "example"), "0.2.0");
+    assert!(!part_is_on(&installer, "example", &agent()));
+    assert!(part_is_on(&installer, "example", &provider()));
+}
+
+/// Reinstall of a local plugin reads its folder again, as Reload does; a
+/// plugin that is not installed is refused.
+#[test]
+fn reinstall_of_a_local_plugin_reads_its_folder_again() {
+    let folder = TempDir::new();
+    let github = FakeGithub::new();
+    let local = TempDir::new();
+    write_folder(local.path(), &example_files("0.1.0"));
+    let mut installer = test_installer(folder.path(), &github);
+    let plan = installer.find_local(local.path()).expect("a plan");
+    installer.install(&plan).expect("installed");
+    write_folder(local.path(), &example_files("0.1.1"));
+
+    let reinstalled = installer.reinstall("example");
+    let missing = installer.reinstall("nothing");
+
+    assert!(matches!(reinstalled, Ok(UpdateOutcome::Updated { .. })));
+    assert_eq!(version_of(&installer, "example"), "0.1.1");
+    assert_eq!(
+        missing,
+        Err(InstallError::NotInstalled("nothing".to_string()))
+    );
+}
+
 #[test]
 fn a_local_plugin_is_never_updated_on_its_own() {
     let folder = TempDir::new();

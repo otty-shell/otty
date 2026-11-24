@@ -645,6 +645,12 @@ pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
     Arc::new(test_registry().without_provider(&ProviderId::new("deepseek")))
 }
 
+/// The registry of the tests without the Codex entry, as when the plugin
+/// that serves Codex is broken.
+pub(crate) fn registry_without_codex() -> Arc<Registry> {
+    Arc::new(test_registry().without_agent(&codex_id()))
+}
+
 /// The registry of the tests with `entry`, the provider part of one more
 /// plugin, after its own: two plugins then read what both serve (issues
 /// 29 and 31).

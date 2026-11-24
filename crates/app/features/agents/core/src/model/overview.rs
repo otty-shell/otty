@@ -436,7 +436,7 @@ mod tests {
 
         let titles: Vec<&str> =
             page.needs.iter().map(|need| need.title.as_str()).collect();
-        assert_eq!(titles, ["Needs login"]);
+        assert_eq!(titles, ["needs login"]);
         assert_eq!(all_profiles.needs, page.needs);
         assert_eq!(
             (
@@ -474,10 +474,10 @@ mod tests {
             .iter()
             .map(|need| (need.place.as_str(), need.title.as_str()))
             .collect();
-        assert_eq!(on_profile, [("Codex", "The login expired")]);
+        assert_eq!(on_profile, [("Codex", "the login expired")]);
         assert_eq!(
             on_account,
-            [("OpenAI (you@example.com)", "The login expired")]
+            [("OpenAI (you@example.com)", "the login expired")]
         );
         assert_eq!(
             command_of(&all_profiles.needs[0]),

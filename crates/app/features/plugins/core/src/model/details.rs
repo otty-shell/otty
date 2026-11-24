@@ -2,7 +2,9 @@
 //! plugin, with what it is (its name, version, authors and source), a tag
 //! of who reviewed it (issue 36), its parts as cards with a switch each,
 //! their kind, description, health, last failed call and how many places
-//! they can access (issues 35, 36), an update that waits and its actions;
+//! they can access (issues 35, 36), an update that waits and its actions,
+//! why it is broken with Reload or Reinstall (issue 17 of spec
+//! 2026-11-23-accounts-apart-from-profiles);
 //! or a short line that says what to do when nothing is selected or
 //! nothing is installed. What Reload and Check for updates did is a
 //! notification, not a line of the page (issue 35).
@@ -14,6 +16,7 @@ use otty_plugin_host::{LastFailure, PluginFailureKind};
 use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{Source, Trust};
 
+use super::broken_reason;
 use super::permissions::granted_groups;
 use crate::state::{PluginNews, PluginsState};
 use crate::types::{ListedPlugin, part_description};
@@ -79,6 +82,10 @@ pub(crate) struct PluginPageViewModel {
     pub(crate) waiting: Option<String>,
     /// "0.6.0 needs a newer OTTY".
     pub(crate) too_new: Option<String>,
+    /// Why it is broken, in the error colour with Reload or Reinstall,
+    /// such as "The manifest of version 0.1.9 can not be read: unknown
+    /// field `api`"; its header shows the broken plugin icon then.
+    pub(crate) broken: Option<String>,
     /// Whether it is a local plugin: Reload in place of Check for updates.
     pub(crate) is_local: bool,
     /// Why the latest switch failed.
@@ -122,7 +129,7 @@ pub(crate) struct PartRowViewModel {
     pub(crate) description: Option<String>,
     /// Whether it is on.
     pub(crate) is_on: bool,
-    /// Its health badge: "Working", "Paused" or "Off".
+    /// Its health badge: "Working", "Paused", "Failed" or "Off".
     pub(crate) health: &'static str,
     /// Whether it is paused after three failures in a row: Try again.
     pub(crate) is_paused: bool,
@@ -159,7 +166,8 @@ fn page(
 ) -> PluginPageViewModel {
     let installed = &plugin.installed;
     let id = plugin.id();
-    let manifest = plugin.manifest.as_ref();
+    let manifest = plugin.manifest();
+    let broken = broken_reason(state, plugin);
 
     let parts = installed
         .parts()
@@ -176,7 +184,7 @@ fn page(
                 kind: kind_text(&reference),
                 description: part_description(manifest, &reference),
                 is_on: part.is_on(),
-                health: health_text(part.is_on(), is_paused),
+                health: health_text(part.is_on(), is_paused, broken.is_some()),
                 is_paused,
                 places,
                 name,
@@ -223,6 +231,7 @@ fn page(
         parts,
         waiting,
         too_new,
+        broken,
         is_local: installed.trust() == Trust::Local,
         error,
         is_busy: state.is_busy(),
@@ -239,11 +248,13 @@ fn source_of(source: &Source) -> SourceViewModel {
     }
 }
 
-/// The health badge of a part: off, paused after three failures, or
-/// working.
-fn health_text(is_on: bool, is_paused: bool) -> &'static str {
+/// The health badge of a part: off, failed with its broken plugin, paused
+/// after three failures, or working.
+fn health_text(is_on: bool, is_paused: bool, is_broken: bool) -> &'static str {
     let key = if !is_on {
         Key::PluginsHealthOff
+    } else if is_broken {
+        Key::PluginsHealthFailed
     } else if is_paused {
         Key::PluginsHealthPaused
     } else {
@@ -485,7 +496,7 @@ mod tests {
             "",
         );
         let mut plugin = official_example();
-        plugin.manifest = Some(Manifest::parse(&text).expect("valid"));
+        plugin.manifest = Ok(Manifest::parse(&text).expect("valid"));
         let state = selected(vec![plugin]);
 
         let page = page_of(&state, SystemTime::now());
@@ -613,6 +624,82 @@ mod tests {
             Some(i18n::filled(Key::TplPluginsTooNew, &[("version", "0.6.0")]))
         );
         assert_eq!(page.waiting, None);
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a local
+    /// plugin whose installed manifest still holds `[api]` is shown
+    /// broken, with the reason and Reload, and its parts are not
+    /// "Working".
+    #[test]
+    fn a_plugin_whose_manifest_can_not_be_read_is_shown_broken() {
+        let state = selected(vec![crate::testing::broken_local_example()]);
+
+        let page = page_of(&state, SystemTime::now());
+
+        assert_eq!(
+            page.broken,
+            Some(i18n::filled(
+                Key::TplPluginsManifestUnreadable,
+                &[("version", "0.1.0"), ("reason", "unknown field `api`")],
+            ))
+        );
+        assert!(page.is_local);
+        assert_eq!(page.description, None);
+        assert!(page.parts.iter().all(|part| {
+            part.health == i18n::t(Key::PluginsHealthFailed)
+                && part.health != i18n::t(Key::PluginsHealthWorking)
+        }));
+    }
+
+    /// Issue 17: a plugin the binary could not load is shown broken with
+    /// the host's reason; a part that is off stays "Off".
+    #[test]
+    fn a_plugin_that_failed_to_load_is_shown_broken() {
+        let mut plugin = official_example();
+        plugin.installed = with_part_on(plugin.installed, &agent(), false);
+        let mut state = selected(vec![plugin]);
+        state.set_load_failures(vec![crate::testing::load_failure(
+            "example",
+            "The .wasm exports the `language` contract twice",
+        )]);
+
+        let page = page_of(&state, SystemTime::now());
+
+        assert_eq!(
+            page.broken,
+            Some(i18n::filled(
+                Key::TplPluginsLoadFailed,
+                &[(
+                    "reason",
+                    "The .wasm exports the `language` contract twice"
+                )],
+            ))
+        );
+        assert!(!page.is_local);
+        assert_eq!(page.parts[0].health, i18n::t(Key::PluginsHealthOff));
+        assert_eq!(page.parts[1].health, i18n::t(Key::PluginsHealthFailed));
+    }
+
+    /// Issue 17: a plugin that reads and loads fine is not broken and
+    /// keeps its own icon; a failure of another plugin does not touch it.
+    #[test]
+    fn a_healthy_plugin_is_not_broken_and_keeps_its_icon() {
+        let mut plugin = official_example();
+        plugin.icon = Some(b"<svg/>".to_vec());
+        let mut state = selected(vec![plugin]);
+        state.set_load_failures(vec![crate::testing::load_failure(
+            "other", "no file",
+        )]);
+
+        let page = page_of(&state, SystemTime::now());
+
+        assert_eq!(page.broken, None);
+        assert_eq!(page.icon, Some(b"<svg/>".to_vec()));
+        assert!(
+            page.parts
+                .iter()
+                .all(|part| part.health == i18n::t(Key::PluginsHealthWorking))
+        );
     }
 
     /// The error of an open dialog shows in the dialog, not on the page.

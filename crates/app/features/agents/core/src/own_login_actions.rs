@@ -403,7 +403,7 @@ mod tests {
 
         let titles: Vec<&str> =
             page.needs.iter().map(|need| need.title.as_str()).collect();
-        assert_eq!(titles, ["Log in again"]);
+        assert_eq!(titles, ["log in again"]);
         assert_eq!(accounts.needs.len(), 1);
         assert!(profiles.needs.is_empty(), "{:?}", profiles.needs);
     }

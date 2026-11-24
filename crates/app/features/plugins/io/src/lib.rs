@@ -9,7 +9,8 @@
 //! and [`find_local`] find a plugin for the install dialog; [`install`],
 //! [`set_part_on`], [`remove`] and [`apply_update`] change the installed
 //! plugins; [`check_update`] and [`check_updates_if_due`] check for newer
-//! versions; [`reload`] reads the folder of a local plugin again. OTTY
+//! versions; [`reload`] reads the folder of a local plugin again and
+//! [`reinstall`] installs the source of a broken plugin again. OTTY
 //! installs no plugin by itself. The binary only calls them and wraps
 //! the intent into its message.
 
@@ -19,5 +20,5 @@ mod work;
 pub use installed::{SharedInstaller, places};
 pub use work::{
     apply_update, check_update, check_updates_if_due, find_local, find_release,
-    install, reload, remove, set_part_on,
+    install, reinstall, reload, remove, set_part_on,
 };

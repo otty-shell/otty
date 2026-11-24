@@ -12,7 +12,7 @@ use otty_app_explorer::Explorer;
 use otty_app_modes::Modes;
 use otty_app_notifications::{Notifications, NotificationsIntent};
 use otty_app_palette::Palette;
-use otty_app_plugins::{PartsToLoad, Plugins, PluginsIntent};
+use otty_app_plugins::{PartsToLoad, Plugins};
 use otty_app_plugins_io::SharedInstaller;
 use otty_app_quick_launch::{QuickLaunchFile, QuickLaunches};
 use otty_app_settings::{Settings, SettingsData};
@@ -176,9 +176,8 @@ impl App {
         // and the health and logs of the parts are left to give.
         app.plugin_providers = loaded.providers;
         app.language_receivers = loaded.language_receivers;
-        let running = dispatch::running_plugins(loaded.running);
-        let _none =
-            dispatch::deliver(&mut app, PluginsIntent::Running(running));
+        let running = dispatch::running_plugins(loaded.running, loaded.failed);
+        let _none = dispatch::deliver(&mut app, running);
         let told = app.tell_start_problems(problems);
         let first =
             startup::run(shell, app.config_dir.clone()).map(Message::Internal);

@@ -7,7 +7,7 @@ use otty_plugin_manifest::{Manifest, PartRef};
 use otty_plugin_releases::fixtures::{example_manifest, installed};
 use otty_plugin_releases::{OFFICIAL_ORGANIZATION, Source};
 
-use crate::types::ListedPlugin;
+use crate::types::{ListedPlugin, PluginLoadFailure};
 
 /// The agent part of the template plugin.
 pub(crate) fn agent() -> PartRef {
@@ -25,7 +25,7 @@ pub(crate) fn example_from(source: Source, version: &str) -> ListedPlugin {
 
     ListedPlugin {
         installed: installed(&text, source),
-        manifest: Some(Manifest::parse(&text).expect("valid")),
+        manifest: Ok(Manifest::parse(&text).expect("valid")),
         folder: PathBuf::from(format!("/plugins/example/{version}")),
         icon: None,
     }
@@ -64,6 +64,25 @@ pub(crate) fn released_example() -> ListedPlugin {
     )
 }
 
+/// The template plugin installed from a local folder, whose installed
+/// manifest still holds `[api]`: it can not be read (issue 17 of spec
+/// 2026-11-23-accounts-apart-from-profiles).
+pub(crate) fn broken_local_example() -> ListedPlugin {
+    let mut plugin = local_example();
+    plugin.manifest = Err(String::from("unknown field `api`"));
+
+    plugin
+}
+
+/// What the binary says when it could not load the plugin `plugin`: the
+/// host's `reason`.
+pub(crate) fn load_failure(plugin: &str, reason: &str) -> PluginLoadFailure {
+    PluginLoadFailure {
+        plugin: plugin.to_string(),
+        reason: reason.to_string(),
+    }
+}
+
 /// Another plugin, `example-fork`, with the same parts as the template.
 pub(crate) fn fork() -> ListedPlugin {
     let text = example_manifest("0.1.0")
@@ -75,7 +94,7 @@ pub(crate) fn fork() -> ListedPlugin {
 
     ListedPlugin {
         installed: installed(&text, source),
-        manifest: Some(Manifest::parse(&text).expect("valid")),
+        manifest: Ok(Manifest::parse(&text).expect("valid")),
         folder: PathBuf::from("/plugins/example-fork/0.1.0"),
         icon: None,
     }

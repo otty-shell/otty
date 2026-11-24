@@ -5,7 +5,7 @@ use otty_plugin_manifest::PartRef;
 use otty_plugin_releases::{InstallPlan, PendingUpdate};
 use otty_ui_kit::components::context_menu::MenuPlace;
 
-use crate::types::{ListedPlugin, RunningPlugin};
+use crate::types::{ListedPlugin, PluginLoadFailure, RunningPlugin};
 
 /// A dialog of Plugins mode, over the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +93,7 @@ pub(crate) struct PluginsState {
     menu: Option<PluginMenu>,
     plugins: Vec<ListedPlugin>,
     running: Vec<RunningPlugin>,
+    load_failures: BTreeMap<String, String>,
     news: BTreeMap<String, PluginNews>,
     too_new: BTreeMap<String, String>,
     selected: Option<String>,
@@ -126,6 +127,12 @@ impl PluginsState {
     /// The running plugin `id`.
     pub(crate) fn running_plugin(&self, id: &str) -> Option<&RunningPlugin> {
         self.running.iter().find(|running| running.plugin == id)
+    }
+
+    /// Why the binary could not load the plugin `id`, in the host's words,
+    /// when it could not.
+    pub(crate) fn load_failure_of(&self, id: &str) -> Option<&str> {
+        self.load_failures.get(id).map(String::as_str)
     }
 
     /// What the checks said about the plugin `id`.
@@ -180,6 +187,7 @@ impl PluginsState {
             menu: None,
             plugins,
             running: Vec::new(),
+            load_failures: BTreeMap::new(),
             news: BTreeMap::new(),
             too_new: BTreeMap::new(),
             selected: None,
@@ -242,6 +250,18 @@ impl PluginsState {
 
     pub(crate) fn set_running(&mut self, running: Vec<RunningPlugin>) {
         self.running = running;
+    }
+
+    /// Keeps the plugins the binary could not load in its latest load;
+    /// the ones it loaded are no longer broken.
+    pub(crate) fn set_load_failures(
+        &mut self,
+        failures: Vec<PluginLoadFailure>,
+    ) {
+        self.load_failures = failures
+            .into_iter()
+            .map(|failure| (failure.plugin, failure.reason))
+            .collect();
     }
 
     pub(crate) fn set_news(&mut self, plugin: &str, news: PluginNews) {

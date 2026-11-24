@@ -29,8 +29,8 @@ needs with their plugin selected.
   header, a `+` with a chevron like the New session and New launch buttons of Terminal mode: `+`
   opens **Add plugin…**, and the chevron opens a menu with **Add plugin…** (from a repository) and
   **Add plugin from folder…**. A right click on a plugin opens a menu with the actions of its page:
-  **Check for updates** (or **Reload** for a local plugin), **Review update…** while an update
-  waits, **Show log** and **Remove…**, which asks first as on the page. The right click does not
+  **Check for updates** (or **Reload** for a local plugin, **Reinstall** for a broken one from a
+  repository), **Review update…** while an update waits, **Show log** and **Remove…**, which asks first as on the page. The right click does not
   change which plugin is selected, and **Review update…** shows the plugin's page with the update
   dialog, as **Review** does.
 - **In the main area**, the page of the selected plugin: its version with a small tag of who
@@ -47,7 +47,7 @@ A plugin has one or more **parts**. Each part belongs to a domain of OTTY, the p
 it fills; the plugins of Agents mode have parts of the **Agents** domain: an **agent part** reads one
 agent's folders, a **provider part** reads the accounts of one provider. On the page of a plugin
 each part is a card: its name, a small tag with its kind (**Agent** or **Provider**), its health
-(**Working**, **Paused** or **Off**), its switch at the right end, and under them one sentence
+(**Working**, **Paused**, **Failed** or **Off**), its switch at the right end, and under them one sentence
 from the plugin on what the part does, such as "Finds Codex profiles, sessions, tokens and
 their money.", with **Can access (N)** (N is the number of places it can reach), which opens what it can
 access. Each part has its own permissions and its own switch.
@@ -93,7 +93,7 @@ After the mark, a sign says when a plugin needs a look:
 
 | Sign       | Means                                                                       |
 | ---------- | --------------------------------------------------------------------------- |
-| **failed** | A part is paused after three failures, or the latest check or change failed. |
+| **failed** | The plugin is broken, a part is paused after three failures, or the latest check or change failed. |
 | **update** | A newer version waits for your OK.                                          |
 | **off**    | Every part of the plugin is off.                                            |
 
@@ -197,6 +197,24 @@ kind: "Last failure 5 min ago: numbers, the plugin did not finish in time". It n
 value, a key or session text. **Copy report** copies the report for the plugin's author. This is the
 place to look when a plugin gives no numbers.
 
+## A broken plugin
+
+A plugin is **broken** when OTTY can not read the manifest of its installed version, or the plugin
+fails to load, as when its `.wasm` does not match its manifest. No part of it runs then. On the left
+its icon is a plug with a small warning mark, in the warning color, and it is signed **failed**.
+Its page shows the same icon, its parts are **Failed** (a part you turned off stays **Off**), and
+the reason in the error color, such as "The manifest of version 0.1.9 can not be read: unknown
+field `api`", with a button that puts the current version in place of the broken one:
+
+| The plugin              | Button        | What it does                                                                 |
+| ----------------------- | ------------- | ---------------------------------------------------------------------------- |
+| Local                   | **Reload**    | Reads its folder again, as **Reload** always does.                           |
+| From a repository       | **Reinstall** | Installs the newest release of its repository again, even the same version. A notification says "Plugin OpenAI reinstalled", or "Plugin OpenAI updated to 0.5.0" for a newer one. When the release asks for more, the update dialog shows first. |
+
+Parts keep their on or off state. In Agents mode a profile or an account whose plugin is broken
+shows the same icon in place of its own, with "Plugin OpenAI failed, see Plugins" when you point at
+it. A plugin that reads and loads fine keeps its own icon.
+
 ## Updates
 
 Once a day, and when you press **Check for updates**, OTTY looks for a newer release of each plugin
@@ -242,6 +260,7 @@ the provider part that finds it.
 | A plugin is updated               | Nothing moves. "Read by" shows the new version.                                       |
 | A part fails                      | The last good numbers stay, greyed. Need "*Plugin version* could not read …" with **Copy report**. |
 | A plugin needs a newer OTTY       | At install: "Needs a newer OTTY (agents.agent contract 0.2)". Installed plugins keep running. |
+| A plugin is broken                | Its profiles and accounts that still show have the broken plugin icon. See [A broken plugin](#a-broken-plugin). |
 
 <Aside title="Where plugins are kept">
 The installed files are in `~/.local/share/otty/plugins/<id>/<version>/`, OTTY's own logins made

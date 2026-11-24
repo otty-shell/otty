@@ -31,6 +31,9 @@ enum Request {
     /// Reload of a local plugin: "Plugin Example reloaded" when its
     /// version stays.
     Reload,
+    /// Reinstall of a broken plugin: "Plugin Example reinstalled" when
+    /// its version stays.
+    Reinstall,
 }
 
 /// Reduce `intent` into state changes and outcomes; the menu of a plugin
@@ -116,6 +119,9 @@ pub(crate) fn reduce(
             vec![PluginsOutcome::CheckUpdate(plugin)]
         },
         PluginsIntent::Reload(plugin) => vec![PluginsOutcome::Reload(plugin)],
+        PluginsIntent::Reinstall(plugin) => {
+            vec![PluginsOutcome::Reinstall(plugin)]
+        },
         PluginsIntent::Review(plugin) => {
             open(state, PluginsPlace::Review(plugin))
         },
@@ -169,10 +175,25 @@ pub(crate) fn reduce(
             outcomes.extend(told);
             outcomes
         },
+        PluginsIntent::Reinstalled {
+            plugin,
+            outcome,
+            plugins,
+        } => {
+            let told =
+                note_outcome(state, &plugin, outcome, Request::Reinstall);
+
+            let mut outcomes = take_plugins(state, plugins);
+            outcomes.extend(told);
+            outcomes
+        },
         PluginsIntent::UpdateTick => vec![PluginsOutcome::CheckUpdatesIfDue],
-        PluginsIntent::Running(running) => {
+        // A plugin that failed to load is broken: Agents mode draws the
+        // broken plugin icon for its parts.
+        PluginsIntent::Running { running, failed } => {
             state.set_running(running);
-            Vec::new()
+            state.set_load_failures(failed);
+            vec![PluginsOutcome::Notes(notes(state))]
         },
     }
 }
@@ -182,6 +203,7 @@ fn is_menu_item(intent: &PluginsIntent) -> bool {
     matches!(
         intent,
         PluginsIntent::Reload(_)
+            | PluginsIntent::Reinstall(_)
             | PluginsIntent::CheckForUpdates(_)
             | PluginsIntent::Review(_)
             | PluginsIntent::ShowLog(_)
@@ -417,8 +439,8 @@ fn note_report(
 /// What `outcome` of `request` says of the plugin `plugin`: an update that
 /// waits stays on its page, a failure signs its row failed; the rest is
 /// the notification returned. A reload that kept the version says
-/// "reloaded", a new version "updated to", and Check for updates with
-/// nothing newer "up to date".
+/// "reloaded", a reinstall that kept it "reinstalled", a new version
+/// "updated to", and Check for updates with nothing newer "up to date".
 fn note_outcome(
     state: &mut PluginsState,
     plugin: &str,
@@ -433,7 +455,8 @@ fn note_outcome(
             None
         },
         Ok(UpdateOutcome::Updated { from, to })
-            if request != Request::Reload || from != to =>
+            if from != to
+                || !matches!(request, Request::Reload | Request::Reinstall) =>
         {
             state.forget_news(plugin);
             Some(updated(state, plugin, &to.to_string()))
@@ -442,6 +465,7 @@ fn note_outcome(
             let reason = error_text(&error);
             let key = match request {
                 Request::Reload => Key::TplPluginsReloadFailed,
+                Request::Reinstall => Key::TplPluginsReinstallFailed,
                 _ => Key::TplPluginsCheckFailed,
             };
             state.set_news(plugin, failed(&error));
@@ -456,6 +480,7 @@ fn note_outcome(
             }
             let key = match request {
                 Request::Reload => Key::TplPluginsReloaded,
+                Request::Reinstall => Key::TplPluginsReinstalled,
                 Request::Check => Key::TplPluginsUpToDate,
                 Request::DailyCheck => return None,
             };

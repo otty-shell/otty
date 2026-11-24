@@ -452,14 +452,17 @@ fn try_again_starts_a_paused_part() {
     let health = paused_health();
     let _ = reduce(
         &mut state,
-        PluginsIntent::Running(vec![RunningPlugin {
-            plugin: String::from("example"),
-            log: PluginLog::new(),
-            parts: vec![
-                (agent(), health.clone()),
-                (provider(), PartHealth::default()),
-            ],
-        }]),
+        PluginsIntent::Running {
+            running: vec![RunningPlugin {
+                plugin: String::from("example"),
+                log: PluginLog::new(),
+                parts: vec![
+                    (agent(), health.clone()),
+                    (provider(), PartHealth::default()),
+                ],
+            }],
+            failed: Vec::new(),
+        },
     );
     let paused = page(&state).parts[0].is_paused;
 
@@ -536,6 +539,7 @@ fn the_checks_tell_updates_and_note_waiting_updates() {
                 from: String::from("0.1.0"),
                 to: String::from("0.2.0"),
             }],
+            broken_parts: Vec::new(),
         })]
     );
     assert!(page(&state).waiting.is_some());
@@ -731,6 +735,110 @@ fn reload_of_a_local_plugin_that_asks_for_more_waits() {
         outcome,
         PluginsOutcome::Done(_) | PluginsOutcome::Failed(_)
     )));
+}
+
+/// What Reinstall of `example` said, with the plugins after it.
+fn reinstalled(
+    state: &mut PluginsState,
+    outcome: Result<UpdateOutcome, InstallError>,
+) -> Vec<PluginsOutcome> {
+    reduce(
+        state,
+        PluginsIntent::Reinstalled {
+            plugin: String::from("example"),
+            outcome,
+            plugins: vec![released_example()],
+        },
+    )
+}
+
+/// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: Reinstall
+/// of a broken plugin asks the I/O to install its source again, and says
+/// "reinstalled" when the version stays, "updated to" when it is newer.
+#[test]
+fn reinstall_asks_for_the_source_again_and_says_what_it_did() {
+    let mut state = open_state(vec![released_example()]);
+
+    let asked = reduce(
+        &mut state,
+        PluginsIntent::Reinstall(String::from("example")),
+    );
+    let same = reinstalled(
+        &mut state,
+        Ok(UpdateOutcome::Updated {
+            from: version("0.1.0"),
+            to: version("0.1.0"),
+        }),
+    );
+    let newer = reinstalled(
+        &mut state,
+        Ok(UpdateOutcome::Updated {
+            from: version("0.1.0"),
+            to: version("0.2.0"),
+        }),
+    );
+
+    assert_eq!(asked, [PluginsOutcome::Reinstall(String::from("example"))]);
+    assert_eq!(
+        same.last(),
+        Some(&done(Key::TplPluginsReinstalled, &[("name", "Example")]))
+    );
+    assert_eq!(
+        newer.last(),
+        Some(&done(
+            Key::TplPluginsUpdated,
+            &[("name", "Example"), ("version", "0.2.0")]
+        ))
+    );
+}
+
+/// Issue 17: a failed Reinstall is an error notification that says why,
+/// and its row is signed failed.
+#[test]
+fn a_failed_reinstall_is_an_error_notification() {
+    let mut state = open_state(vec![released_example()]);
+
+    let outcomes = reinstalled(&mut state, Err(InstallError::NoRelease));
+
+    let reason = error_text(&InstallError::NoRelease);
+    assert_eq!(
+        outcomes.last(),
+        Some(&PluginsOutcome::Failed(i18n::filled(
+            Key::TplPluginsReinstallFailed,
+            &[("name", "Example"), ("reason", &reason)]
+        )))
+    );
+    assert!(matches!(
+        state.news_of("example"),
+        Some(PluginNews::Failed(_))
+    ));
+}
+
+/// Issue 17: the binary tells the mode which plugins it could not load,
+/// with the parts that run; Agents mode is told their parts are broken.
+#[test]
+fn the_plugins_that_failed_to_load_are_kept() {
+    let mut state = open_state(vec![released_example()]);
+
+    let outcomes = reduce(
+        &mut state,
+        PluginsIntent::Running {
+            running: Vec::new(),
+            failed: vec![crate::testing::load_failure("example", "no file")],
+        },
+    );
+
+    let [PluginsOutcome::Notes(notes)] = outcomes.as_slice() else {
+        panic!("the notes: {outcomes:?}");
+    };
+    assert_eq!(notes.broken_parts.len(), 2);
+    assert_eq!(
+        page(&state).broken,
+        Some(i18n::filled(
+            Key::TplPluginsLoadFailed,
+            &[("reason", "no file")]
+        ))
+    );
 }
 
 #[test]

@@ -1,11 +1,15 @@
 //! What Agents mode shows of the installed plugins besides the registry
 //! (spec 2026-11-19-agent-plugins, "What the UI shows"): the parts that
 //! are off, for "Read by: … (off)" and the need "<Part> of the <Plugin>
-//! plugin is off [Turn on]", and the updates that wait for the user's OK.
+//! plugin is off [Turn on]", the updates that wait for the user's OK, and
+//! the parts of broken plugins, which get the broken plugin icon there.
 
-use otty_app_domain::plugins::{OffPart, PartSide, PluginNotes, WaitingUpdate};
+use otty_app_domain::plugins::{
+    BrokenPart, OffPart, PartSide, PluginNotes, WaitingUpdate,
+};
 use otty_plugin_manifest::PartKind;
 
+use crate::model::broken_reason;
 use crate::state::PluginsState;
 
 /// The notes of the installed plugins of `state`.
@@ -19,10 +23,7 @@ pub(crate) fn notes(state: &PluginsState) -> PluginNotes {
                 plugin: installed.id().to_string(),
                 plugin_name: installed.name().to_string(),
                 version: installed.version().to_string(),
-                side: match reference.kind() {
-                    PartKind::Agent => PartSide::Agent,
-                    PartKind::Provider => PartSide::Provider,
-                },
+                side: side_of(reference.kind()),
                 part: reference.id().to_string(),
                 part_name: plugin.part_name(&reference),
                 hosts: part.hosts().to_vec(),
@@ -44,9 +45,33 @@ pub(crate) fn notes(state: &PluginsState) -> PluginNotes {
         })
         .collect();
 
+    let broken_parts = state
+        .plugins()
+        .iter()
+        .filter(|plugin| broken_reason(state, plugin).is_some())
+        .flat_map(|plugin| {
+            let installed = &plugin.installed;
+            installed.parts().iter().map(|part| BrokenPart {
+                plugin: installed.id().to_string(),
+                plugin_name: installed.name().to_string(),
+                side: side_of(part.part().kind()),
+                part: part.part().id().to_string(),
+            })
+        })
+        .collect();
+
     PluginNotes {
         off_parts,
         waiting_updates,
+        broken_parts,
+    }
+}
+
+/// Whether a part of `kind` serves an agent or a provider.
+fn side_of(kind: PartKind) -> PartSide {
+    match kind {
+        PartKind::Agent => PartSide::Agent,
+        PartKind::Provider => PartSide::Provider,
     }
 }
 
@@ -81,6 +106,37 @@ mod tests {
             }]
         );
         assert!(notes.waiting_updates.is_empty());
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: each part
+    /// of a broken plugin is noted, from `plugins.json`, so Agents mode
+    /// draws the broken plugin icon for it; a healthy plugin has none.
+    #[test]
+    fn the_parts_of_a_broken_plugin_are_noted() {
+        let state = PluginsState::new(vec![
+            crate::testing::broken_local_example(),
+            crate::testing::fork(),
+        ]);
+
+        let notes = notes(&state);
+
+        assert_eq!(
+            notes.broken_parts,
+            [
+                BrokenPart {
+                    plugin: String::from("example"),
+                    plugin_name: String::from("Example"),
+                    side: PartSide::Agent,
+                    part: String::from("example-agent"),
+                },
+                BrokenPart {
+                    plugin: String::from("example"),
+                    plugin_name: String::from("Example"),
+                    side: PartSide::Provider,
+                    part: String::from("example-cloud"),
+                },
+            ]
+        );
     }
 
     #[test]

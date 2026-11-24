@@ -27,6 +27,7 @@ pub(crate) use side_panel::PluginSign;
 pub(crate) use side_panel::{PluginListRowViewModel, SidePanelViewModel};
 
 use crate::state::{Dialog, PluginsState};
+use crate::types::ListedPlugin;
 
 /// What the open dialog shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,4 +141,27 @@ impl<'a> DialogViewModel<'a> {
 
         Some(dialog)
     }
+}
+
+/// Why `plugin` is broken, in plain words, or `None` when it reads and
+/// loads fine: the manifest of its installed version can not be read, or
+/// the binary could not load it, as when its `.wasm` does not match its
+/// manifest (issue 17 of spec 2026-11-23-accounts-apart-from-profiles).
+pub(crate) fn broken_reason(
+    state: &PluginsState,
+    plugin: &ListedPlugin,
+) -> Option<String> {
+    if let Err(reason) = &plugin.manifest {
+        return Some(i18n::filled(
+            Key::TplPluginsManifestUnreadable,
+            &[
+                ("version", &plugin.installed.version().to_string()),
+                ("reason", reason),
+            ],
+        ));
+    }
+
+    state.load_failure_of(plugin.id()).map(|reason| {
+        i18n::filled(Key::TplPluginsLoadFailed, &[("reason", reason)])
+    })
 }

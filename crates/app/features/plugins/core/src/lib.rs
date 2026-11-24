@@ -86,7 +86,7 @@ use otty_app_slots::{
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::menu::Menu;
 use state::PluginsState;
-pub use types::{ListedPlugin, PartsToLoad, RunningPlugin};
+pub use types::{ListedPlugin, PartsToLoad, PluginLoadFailure, RunningPlugin};
 
 /// The id of the GitHub link field of Add plugin…; the binary moves the
 /// keyboard focus to it when the dialog opens.

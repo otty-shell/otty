@@ -23,8 +23,8 @@ pub(crate) fn view<'a>(
     context_menu(menu(vm, palette), place)
 }
 
-/// Reload for a local plugin or Check for updates for one from a
-/// repository, Review update… while an update waits, Show log, and
+/// Reload for a local plugin, Reinstall for a broken one from a
+/// repository or Check for updates for a healthy one, Review update… while an update waits, Show log, and
 /// Remove…, which asks first. While a change runs the items that change
 /// the plugin are disabled.
 fn menu(vm: PluginMenuViewModel, palette: &UiPalette) -> Menu<PluginsIntent> {
@@ -42,6 +42,11 @@ fn menu(vm: PluginMenuViewModel, palette: &UiPalette) -> Menu<PluginsIntent> {
         changes(
             i18n::t(Key::PluginsReload),
             PluginsIntent::Reload(id.clone()),
+        )
+    } else if vm.is_broken {
+        changes(
+            i18n::t(Key::PluginsReinstall),
+            PluginsIntent::Reinstall(id.clone()),
         )
     } else {
         changes(
@@ -82,6 +87,7 @@ mod tests {
         PluginMenuViewModel {
             id: String::from("example"),
             is_local,
+            is_broken: false,
             has_waiting_update,
             is_busy: false,
             place: MenuPlace::new(
@@ -141,6 +147,32 @@ mod tests {
 
         let reload = click(menu_of(true, false), i18n::t(Key::PluginsReload));
 
+        assert!(matches!(
+            sent_one(&reload),
+            PluginsIntent::Reload(id) if id == "example"
+        ));
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a broken
+    /// plugin from a repository reinstalls in place of Check for updates;
+    /// a broken local one still reloads.
+    #[test]
+    fn a_broken_plugin_from_a_repository_reinstalls() {
+        let broken = |is_local| PluginMenuViewModel {
+            is_broken: true,
+            ..menu_of(is_local, false)
+        };
+        let palette = UiPalette::otty_dark();
+        let mut ui = simulator(view(broken(false), &palette));
+        assert!(ui.find(i18n::t(Key::PluginsCheckForUpdates)).is_err());
+
+        let reinstall = click(broken(false), i18n::t(Key::PluginsReinstall));
+        let reload = click(broken(true), i18n::t(Key::PluginsReload));
+
+        assert!(matches!(
+            sent_one(&reinstall),
+            PluginsIntent::Reinstall(id) if id == "example"
+        ));
         assert!(matches!(
             sent_one(&reload),
             PluginsIntent::Reload(id) if id == "example"

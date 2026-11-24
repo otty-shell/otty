@@ -1487,6 +1487,9 @@ pub enum Key {
     AgentsCopyReport,
     /// The label of a need a plugin part gives, naming the plugin that asks: {plugin} is its name.
     TplAgentsNeedPluginLabel,
+    /// Tooltip of the broken plugin icon of a profile or an account whose
+    /// plugin is broken: {name}.
+    TplAgentsPluginBroken,
     /// The button of a need that runs a command of a plugin part in a terminal tab: {command} as typed, such as `codex login`.
     TplAgentsNeedRun,
     /// The button of a need that asks for a key: {label} is the name of the key the part gives, such as "Admin key".
@@ -1737,6 +1740,9 @@ pub enum Key {
     PluginsHealthOff,
     /// Health of a part paused after three failures in a row.
     PluginsHealthPaused,
+    /// Health of a part that is on of a broken plugin, whose manifest can
+    /// not be read or which failed to load.
+    PluginsHealthFailed,
     /// Mark of an official plugin.
     PluginsOfficial,
     /// Mark of a community plugin.
@@ -1757,6 +1763,9 @@ pub enum Key {
     PluginsCheckForUpdates,
     /// Action of a local plugin that reads its folder again.
     PluginsReload,
+    /// Action of a broken plugin from a repository that installs its
+    /// source again.
+    PluginsReinstall,
     /// Action of a plugin that shows its log.
     PluginsShowLog,
     /// Action and button that remove a plugin.
@@ -1782,6 +1791,16 @@ pub enum Key {
     TplPluginsReloadFailed,
     /// Error notification of Check for updates: {name}, {reason}.
     TplPluginsCheckFailed,
+    /// Notification after Reinstall with the same version: {name}.
+    TplPluginsReinstalled,
+    /// Error notification of Reinstall: {name}, {reason}.
+    TplPluginsReinstallFailed,
+    /// Why a plugin is broken: the manifest of its installed version can
+    /// not be read. Placeholders: `{version}`, `{reason}`.
+    TplPluginsManifestUnreadable,
+    /// Why a plugin is broken: it failed to load. Placeholder: `{reason}`,
+    /// the host's words.
+    TplPluginsLoadFailed,
     /// Title of the Add plugin dialog.
     PluginsAddPluginTitle,
     /// Label of the field of the GitHub link.
@@ -2035,7 +2054,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 949] = [
+    pub(super) const ALL: [Self; 956] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2720,6 +2739,7 @@ impl Key {
         Self::TplAgentsNeedFormatChangedPluginNoNumbers,
         Self::AgentsCopyReport,
         Self::TplAgentsNeedPluginLabel,
+        Self::TplAgentsPluginBroken,
         Self::TplAgentsNeedRun,
         Self::TplAgentsNeedAskKey,
         Self::TplAgentsNeedOpenPage,
@@ -2843,6 +2863,7 @@ impl Key {
         Self::PluginsHealthWorking,
         Self::PluginsHealthOff,
         Self::PluginsHealthPaused,
+        Self::PluginsHealthFailed,
         Self::PluginsOfficial,
         Self::PluginsCommunity,
         Self::TplPluginsTrustAndSign,
@@ -2853,6 +2874,7 @@ impl Key {
         Self::PluginsTryAgain,
         Self::PluginsCheckForUpdates,
         Self::PluginsReload,
+        Self::PluginsReinstall,
         Self::PluginsShowLog,
         Self::PluginsRemove,
         Self::PluginsReview,
@@ -2865,6 +2887,10 @@ impl Key {
         Self::TplPluginsUpToDate,
         Self::TplPluginsReloadFailed,
         Self::TplPluginsCheckFailed,
+        Self::TplPluginsReinstalled,
+        Self::TplPluginsReinstallFailed,
+        Self::TplPluginsManifestUnreadable,
+        Self::TplPluginsLoadFailed,
         Self::PluginsAddPluginTitle,
         Self::PluginsUrlLabel,
         Self::PluginsUrlHint,

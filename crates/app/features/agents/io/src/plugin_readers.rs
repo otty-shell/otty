@@ -18,7 +18,7 @@ use crate::background::wait_for_thread;
 use crate::hidden_terminal::LoginShellTerminals;
 use crate::plugin_language::LanguageReceivers;
 use crate::plugin_parts::{
-    InstalledParts, PluginParts, ProviderList, RunningParts,
+    FailedPlugin, InstalledParts, PluginParts, ProviderList, RunningParts,
 };
 
 /// The folder of `cache_dir` the compiled plugins are kept in.
@@ -34,9 +34,9 @@ const PROBE_FOLDER: &str = "agent-probe";
 pub type ReadVariable = fn(&str) -> Option<OsString>;
 
 /// What Agents mode reads with: the agents and the registry, the provider
-/// parts that read the numbers of the accounts, and the plugins that run
-/// with their logs and the health of their parts. A plain bag of shared
-/// values.
+/// parts that read the numbers of the accounts, the plugins that run
+/// with their logs and the health of their parts, and the plugins that did
+/// not load. A plain bag of shared values.
 #[derive(Clone)]
 pub struct LoadedReaders {
     /// The agents, the registry and the environment of Agents mode.
@@ -47,6 +47,8 @@ pub struct LoadedReaders {
     pub running: Vec<RunningParts>,
     /// The plugins told when the language of OTTY's interface changes.
     pub language_receivers: LanguageReceivers,
+    /// The plugins that did not load, with why.
+    pub failed: Vec<FailedPlugin>,
 }
 
 impl std::fmt::Debug for LoadedReaders {
@@ -57,6 +59,7 @@ impl std::fmt::Debug for LoadedReaders {
             .field("providers", &self.providers.len())
             .field("running", &self.running)
             .field("language_receivers", &self.language_receivers.len())
+            .field("failed", &self.failed)
             .finish()
     }
 }
@@ -168,6 +171,7 @@ fn readers_of(
         providers: Arc::from(readers.providers),
         running: readers.running,
         language_receivers: readers.language_receivers,
+        failed: readers.failed,
     }
 }
 

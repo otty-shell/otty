@@ -5,7 +5,7 @@ use otty_agents::{
     Account, Agent, AgentEnv, AgentId, OwnLogin, Profile, Project,
     ProjectSession, Registry,
 };
-use otty_app_domain::plugins::PluginNotes;
+use otty_app_domain::plugins::{PartSide, PluginNotes};
 use otty_ui_kit::components::context_menu::MenuPlace;
 use otty_ui_kit::components::tag_search::TagSchema;
 
@@ -443,11 +443,14 @@ impl AgentsState {
     }
 
     /// The icon of the agent with the id `id`: the one of its registry
-    /// entry, else the first letter of its name.
+    /// entry, else the broken plugin icon when a broken plugin would serve
+    /// it, else the first letter of its name.
     pub(crate) fn agent_icon(&self, id: &AgentId) -> EntryIcon {
-        let entry = self.registry.agent(id);
+        let Some(entry) = self.registry.agent(id) else {
+            return self.icon_without_entry(PartSide::Agent, id.as_str());
+        };
 
-        EntryIcon::of(entry.and_then(|entry| entry.icon()), self.agent_name(id))
+        EntryIcon::of(entry.icon(), entry.name())
     }
 
     /// The name of the provider part that found `account`, such as
@@ -460,11 +463,31 @@ impl AgentsState {
     }
 
     /// The icon of the provider part that found `account`: the one of its
-    /// registry entry, else the first letter of its id.
+    /// registry entry, else the broken plugin icon when a broken plugin
+    /// would serve it, else the first letter of its id.
     pub(crate) fn account_icon(&self, account: &Account) -> EntryIcon {
+        let provider = account.provider().as_str();
+
         match self.registry.reader_of(account) {
             Some(entry) => EntryIcon::of(entry.icon(), entry.name()),
-            None => EntryIcon::of(None, account.provider().as_str()),
+            None => self.icon_without_entry(PartSide::Provider, provider),
+        }
+    }
+
+    /// The icon of the agent or provider `id` of `side` that no registry
+    /// entry names: the broken plugin icon when a part of a broken plugin
+    /// would serve it, else the first letter of `id` (issue 17 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    fn icon_without_entry(&self, side: PartSide, id: &str) -> EntryIcon {
+        let broken = self
+            .plugin_notes
+            .broken_parts
+            .iter()
+            .find(|part| part.side == side && part.part == id);
+
+        match broken {
+            Some(part) => EntryIcon::Broken(part.plugin_name.clone()),
+            None => EntryIcon::Letter(id.to_string()),
         }
     }
 

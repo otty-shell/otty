@@ -102,9 +102,16 @@ fn plugin_row<'a>(
     let tone = vm.tone();
 
     let row = TreeRow::new(vm.name.clone(), palette);
-    let row = match vm.icon {
-        Some(bytes) => row.icon(svg::Handle::from_memory(bytes), None),
-        None => row.letter_icon(vm.name),
+    let row = if vm.is_broken {
+        row.icon(
+            svg::Handle::from_memory(icons::PLUGIN_BROKEN),
+            Some(palette.status_warn()),
+        )
+    } else {
+        match vm.icon {
+            Some(bytes) => row.icon(svg::Handle::from_memory(bytes), None),
+            None => row.letter_icon(vm.name),
+        }
     };
     let row = row
         .state(note)
@@ -142,6 +149,7 @@ mod tests {
             name: String::from("Example"),
             trust: "Official",
             icon: None,
+            is_broken: false,
             sign: Some(PluginSign::Failed),
             is_selected: false,
         }

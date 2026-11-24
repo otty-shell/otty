@@ -89,7 +89,8 @@ pub use own_login::{
 };
 pub use plugin_language::{LanguageReceivers, tell_language};
 pub use plugin_parts::{
-    InstalledParts, PluginParts, ProviderList, Readers, RunningParts,
+    FailedPlugin, InstalledParts, PluginParts, ProviderList, Readers,
+    RunningParts,
 };
 pub use plugin_readers::{
     LoadedReaders, ReadVariable, agent_env, load_readers, plugin_engine,

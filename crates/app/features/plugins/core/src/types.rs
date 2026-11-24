@@ -9,16 +9,16 @@ use otty_plugin_manifest::{Manifest, PartKind, PartRef};
 use otty_plugin_releases::{InstalledPlugin, Source};
 
 /// One installed plugin as the mode lists it: its record in
-/// `plugins.json`, the manifest of its installed version, the folder of
-/// that version and the icon of its first part. A plain bag the io crate
-/// fills.
+/// `plugins.json`, the manifest of its installed version or why it can not
+/// be read, the folder of that version and the icon of its first part. A
+/// plain bag the io crate fills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListedPlugin {
     /// The record in `plugins.json`.
     pub installed: InstalledPlugin,
-    /// The manifest of the installed version; `None` when its folder can
-    /// not be read.
-    pub manifest: Option<Manifest>,
+    /// The manifest of the installed version, or why it can not be read,
+    /// such as "unknown field `api`": the plugin is broken then.
+    pub manifest: Result<Manifest, String>,
     /// The folder of the installed version.
     pub folder: PathBuf,
     /// The SVG of the icon of its first part, when it can be read.
@@ -31,18 +31,22 @@ impl ListedPlugin {
         self.installed.id()
     }
 
+    /// The manifest of the installed version, when it can be read.
+    pub fn manifest(&self) -> Option<&Manifest> {
+        self.manifest.as_ref().ok()
+    }
+
     /// The name of the part `part` from the manifest, such as "Coder";
     /// its id when the manifest does not name it.
     pub fn part_name(&self, part: &PartRef) -> String {
-        part_name(self.manifest.as_ref(), part)
+        part_name(self.manifest(), part)
     }
 
     /// The repository of the plugin: the one it was installed from, which
     /// its page shows as its source, or the one its manifest names.
     pub fn repository(&self) -> Option<&str> {
         let named = self
-            .manifest
-            .as_ref()
+            .manifest()
             .and_then(|manifest| manifest.plugin().repository());
 
         match self.installed.source() {
@@ -89,6 +93,17 @@ pub struct RunningPlugin {
     pub log: PluginLog,
     /// Each loaded part with its health.
     pub parts: Vec<(PartRef, PartHealth)>,
+}
+
+/// A plugin the binary could not load into Agents mode: its id and the
+/// host's reason, such as a `.wasm` that does not match its manifest. A
+/// plain bag: the plugin is broken until it loads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginLoadFailure {
+    /// The plugin id.
+    pub plugin: String,
+    /// Why it was not loaded, in the host's words.
+    pub reason: String,
 }
 
 /// The name of `part` in `manifest`, or its id.

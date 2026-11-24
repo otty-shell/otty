@@ -179,6 +179,7 @@ mod tests {
             PluginNotes {
                 off_parts: vec![deepseek_part()],
                 waiting_updates: Vec::new(),
+                broken_parts: Vec::new(),
             },
         );
         let label = i18n::t(Key::AgentsFieldReadBy);
@@ -228,6 +229,7 @@ mod tests {
             PluginNotes {
                 off_parts: vec![deepseek_part()],
                 waiting_updates: Vec::new(),
+                broken_parts: Vec::new(),
             },
         );
 

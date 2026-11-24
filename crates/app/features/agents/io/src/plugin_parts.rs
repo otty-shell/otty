@@ -50,6 +50,20 @@ pub struct Readers {
     /// The loaded plugins with a part on that export the language
     /// receiver.
     pub language_receivers: LanguageReceivers,
+    /// The plugins whose manifest reads but which the engine did not
+    /// load, with why: Plugins mode shows them broken.
+    pub failed: Vec<FailedPlugin>,
+}
+
+/// A plugin the engine did not load: its id and the host's reason, such
+/// as a `.wasm` that does not match its manifest (issue 17 of spec
+/// 2026-11-23-accounts-apart-from-profiles). A plain bag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedPlugin {
+    /// The plugin id.
+    pub plugin: String,
+    /// Why it was not loaded, in the host's words.
+    pub reason: String,
 }
 
 /// One loaded plugin: its log and the health of each of its parts that
@@ -73,6 +87,7 @@ pub struct PluginParts {
     providers: Vec<PluginProvider>,
     running: Vec<RunningParts>,
     language_receivers: Vec<Arc<LoadedPlugin>>,
+    failed: Vec<FailedPlugin>,
 }
 
 impl PluginParts {
@@ -90,7 +105,8 @@ impl PluginParts {
     /// `engine`. The parts see the home folder `home` and the variables
     /// they list in `env`, with the values `variable` gives, and the
     /// language the engine gives at each call. A plugin that can not be
-    /// read or loaded is left out, with a warning in the log.
+    /// read or loaded is left out, with a warning in the log; one that
+    /// reads but does not load is named with why.
     pub fn load(
         engine: &PluginEngine,
         installed: &[InstalledParts],
@@ -115,6 +131,10 @@ impl PluginParts {
                 Ok(loaded) => Arc::new(loaded),
                 Err(error) => {
                     log::warn!("the plugin {id} was not loaded: {error}");
+                    parts.failed.push(FailedPlugin {
+                        plugin: id,
+                        reason: error.to_string(),
+                    });
                     continue;
                 },
             };
@@ -141,6 +161,7 @@ impl PluginParts {
             registry,
             running: self.running,
             language_receivers: Arc::from(self.language_receivers),
+            failed: self.failed,
         }
     }
 
@@ -362,6 +383,46 @@ mod tests {
 
         assert!(parts.agents().is_empty());
         assert!(parts.providers().is_empty());
+        assert!(parts.into_readers().failed.is_empty());
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a plugin
+    /// whose manifest reads but whose `.wasm` does not load is left out,
+    /// and the readers say which plugin failed and the host's reason, so
+    /// Plugins mode shows it broken.
+    #[test]
+    fn a_plugin_that_does_not_load_is_named_with_why() {
+        let home = TempDir::new("plugin-parts-failed-home");
+        let cache = TempDir::new("plugin-parts-failed-cache");
+        let folder = home.path().join("example");
+        std::fs::create_dir_all(&folder).expect("the folder");
+        std::fs::copy(
+            template_folder().join(MANIFEST_FILE),
+            folder.join(MANIFEST_FILE),
+        )
+        .expect("the manifest");
+        std::fs::write(folder.join("example.wasm"), b"not a component")
+            .expect("the wasm");
+        let engine =
+            PluginEngine::new(cache.path().to_path_buf()).expect("the engine");
+        let installed = [InstalledParts {
+            folder,
+            on: vec![PartRef::agent("example-agent")],
+        }];
+
+        let readers = PluginParts::load(
+            &engine,
+            &installed,
+            home.path().to_path_buf(),
+            |_| None,
+        )
+        .into_readers();
+
+        assert!(readers.agents.is_empty());
+        assert!(readers.running.is_empty());
+        assert_eq!(readers.failed.len(), 1);
+        assert_eq!(readers.failed[0].plugin, "example");
+        assert!(!readers.failed[0].reason.is_empty());
     }
 
     #[test]

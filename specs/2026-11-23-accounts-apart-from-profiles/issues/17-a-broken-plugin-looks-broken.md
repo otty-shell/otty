@@ -1,6 +1,6 @@
 # 17 A broken plugin looks broken; two small wording fixes
 
-Status: ready
+Status: done
 Blocked by: 16
 
 ## Why
@@ -65,3 +65,67 @@ Also agreed the same day:
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25: Done. A new icon `assets/svg/plugin-broken.svg`
+(`icons::PLUGIN_BROKEN`): the same three paths of the plug of Plugins
+mode, moved up and left, and a small filled warning triangle with the
+exclamation mark cut out in the lower right corner; it is drawn in the
+warn colour.
+
+When a plugin is broken: `ListedPlugin::manifest` is now
+`Result<Manifest, String>`, and `otty-app-plugins-io` keeps the reason
+the installed manifest can not be read (for a shape error the parser's
+own words, such as "unknown field `api`, expected ..."). A plugin whose
+manifest reads but whose `.wasm` the engine does not load (a load error,
+which holds issue 15's `LoadError::Contracts`) is named in the new
+`Readers::failed` / `LoadedReaders::failed` of `otty-app-agents-io`
+(`FailedPlugin`), and the binary passes them to Plugins mode with the
+running parts: `PluginsIntent::Running` became `Running { running,
+failed }` (`PluginLoadFailure`). `model::broken_reason` gives "The
+manifest of version 0.1.9 can not be read: ..." or "The plugin failed to
+load: ...". Then the row has the broken icon and is signed failed, the
+page header has the broken icon, the parts that are on are "Failed"
+(error tone, an off part stays "Off"), and the page shows the reason in
+the error colour with Reload (local) or Reinstall (repository) on its
+line; the first action button is left out then, and the menu of the
+plugin has Reinstall in place of Check for updates.
+
+Reinstall: `Installer::reinstall` takes the newest release of the
+repository with no "newer than installed" limit, so the same version
+replaces the broken copy too, goes through the same diff (asks for more
+-> waits for Review), keeps the parts on or off; for a local plugin it is
+Reload. New `PluginsIntent::Reinstall`, `PluginsOutcome::Reinstall`,
+`PluginsIntent::Reinstalled`, `otty_app_plugins_io::reinstall`;
+notifications "Plugin X reinstalled", "updated to", "could not be
+reinstalled: ...".
+
+Agents mode: the plugin notes carry `broken_parts` (`BrokenPart`, from
+`plugins.json`, so they are known even when the manifest is not), sent
+also after every load. `agent_icon` and `account_icon` give
+`EntryIcon::Broken(<plugin name>)` when no registry entry serves the id
+and a broken part would; a healthy entry keeps its own icon, an unknown
+id keeps the letter. It is drawn in the warn colour with the tooltip
+"Plugin <name> failed, see Plugins" (on the icon of a page, on the whole
+row in the left panel), and as the broken icon where only an SVG can be
+drawn.
+
+Words: the Anthropic plugin names an organization login "<email>,
+<organization>" (anthropic 0.2.15 -> 0.2.16, rebuilt into
+`assets/plugins/anthropic`, its tests and clippy pass), so the full name
+is "Anthropic (you@example.com, Example Org)". New
+`i18n::after_comma`: a phrase of OTTY's own words after a comma starts
+in lower case, except in German, whose phrases there start with a noun
+(the German "resets now" became "Zurücksetzung jetzt" so all four start
+with one). Checked every two-value text of issue 16: the credits line
+"3 760 left, resets ..." and the need heading ("Codex, needs login", own
+titles and the titles plugins give) use it; a need title that starts with
+a name (plugin failed, format changed), "{amount}, at API prices" (lower
+already), "{length}, {model}" (a model name) and the plugin row signs
+(lower already, German nouns) stay. Seven new keys in all ten locales.
+Docs: Plugins.mdx has "A broken plugin" (what it looks like, Reload and
+Reinstall), the Anthropic page its version and the name with a comma.
+
+Tests first, then code: the failing tests were committed first and did
+not build (no `PLUGIN_BROKEN`, `after_comma`, `reinstall`,
+`broken_parts`, `EntryIcon::Broken`, `PluginLoadFailure`, new keys and
+fields) and the Anthropic tests failed on the names.

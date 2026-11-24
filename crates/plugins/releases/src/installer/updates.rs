@@ -99,6 +99,45 @@ impl Installer {
         self.update_or_wait(pending)
     }
 
+    /// Reinstall of a broken plugin, whose installed manifest can not be
+    /// read or which failed to load: the newest release of its repository
+    /// this OTTY can run replaces the installed copy, even when it is the
+    /// same version, or waits for the user when it asks for new
+    /// permissions or parts. A local plugin reads its folder again, as
+    /// Reload does. Parts keep their on or off state.
+    pub fn reinstall(
+        &mut self,
+        plugin_id: &str,
+    ) -> Result<UpdateOutcome, InstallError> {
+        let Some(installed) = self.file.plugin(plugin_id) else {
+            return Err(InstallError::NotInstalled(plugin_id.to_string()));
+        };
+        let Source::Release { url } = installed.source() else {
+            return self.reload_local(plugin_id);
+        };
+        let repository = RepositoryUrl::parse(url)?;
+
+        let releases = list_releases(self.http.as_ref(), &repository)?;
+        let picked = pick_release(
+            self.http.as_ref(),
+            &repository,
+            &releases,
+            None,
+            false,
+        )?;
+
+        let Some(package) = picked.package else {
+            return Err(match picked.too_new {
+                Some(skipped) => {
+                    InstallError::NeedsNewerOtty(skipped.reason().to_string())
+                },
+                None => InstallError::NoRelease,
+            });
+        };
+        let pending = self.pending_update(installed, package)?;
+        self.update_or_wait(pending)
+    }
+
     /// The newest release of the plugin `plugin_id` newer than the
     /// installed one, and the newest release skipped for needing a newer
     /// OTTY.

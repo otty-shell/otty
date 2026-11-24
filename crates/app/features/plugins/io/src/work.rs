@@ -138,6 +138,33 @@ pub fn reload(shared: &SharedInstaller, plugin: String) -> Task<PluginsIntent> {
     )
 }
 
+/// Installs the source of the broken plugin `plugin` again: the newest
+/// release of its repository, or its folder for a local plugin; answers
+/// [`PluginsIntent::Reinstalled`].
+pub fn reinstall(
+    shared: &SharedInstaller,
+    plugin: String,
+) -> Task<PluginsIntent> {
+    let shared = shared.clone();
+    let answer_plugin = plugin.clone();
+
+    on_own_thread(
+        move || {
+            let outcome = shared.with(|installer| installer.reinstall(&plugin));
+            (outcome, shared.plugins())
+        },
+        move || (stopped(), Vec::new()),
+        move |(outcome, plugins): (
+            Result<UpdateOutcome, InstallError>,
+            Vec<ListedPlugin>,
+        )| PluginsIntent::Reinstalled {
+            plugin: answer_plugin,
+            outcome,
+            plugins,
+        },
+    )
+}
+
 /// Runs the change `work` and answers with the installed plugins after it.
 fn change(
     shared: &SharedInstaller,
@@ -313,7 +340,7 @@ mod tests {
             plugins[0].installed.trust(),
             otty_plugin_releases::Trust::Local
         );
-        assert!(plugins[0].manifest.is_some());
+        assert!(plugins[0].manifest.is_ok());
         assert!(plugins[0].icon.is_some());
         let PluginsIntent::Changed(Ok(plugins)) = off else {
             panic!("off: {off:?}");
@@ -404,6 +431,93 @@ mod tests {
                 plugin.installed.id()
             );
         }
+    }
+
+    /// Installs the template from its folder in `assets/plugins/` and
+    /// adds `[api]` to the manifest of the installed copy, as the plugins
+    /// installed before issue 15 of spec
+    /// 2026-11-23-accounts-apart-from-profiles have it.
+    fn broken_template(shared: &SharedInstaller) -> PathBuf {
+        let PluginsIntent::Found(Ok(plan)) =
+            run(find_local(shared, template_folder()))
+        else {
+            panic!("the template is found");
+        };
+        let installed = run(install(shared, *plan));
+        assert!(matches!(installed, PluginsIntent::Changed(Ok(_))));
+        let folder = shared.plugins()[0].folder.clone();
+        let manifest = folder.join(otty_plugin_releases::MANIFEST_FILE);
+        let text = std::fs::read_to_string(&manifest).expect("the manifest");
+        std::fs::write(
+            &manifest,
+            format!("{text}\n[api]\nlanguage = \"0.1\"\n"),
+        )
+        .expect("the broken manifest");
+
+        folder
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: an
+    /// installed manifest that holds `[api]` is listed with the reason it
+    /// can not be read, and no icon.
+    #[test]
+    fn an_installed_manifest_with_api_is_listed_with_why() {
+        let folder = TempDir::new("plugins-io-broken-manifest");
+        let shared = shared_in(&folder);
+        let _ = broken_template(&shared);
+
+        let plugins = shared.plugins();
+
+        let reason = plugins[0].manifest.as_ref().expect_err("not read");
+        assert!(reason.contains("unknown field `api`"), "{reason}");
+        assert!(!reason.starts_with("The manifest"), "{reason}");
+        assert_eq!(plugins[0].icon, None);
+    }
+
+    /// Issue 17: Reload of a local plugin whose installed manifest can not
+    /// be read installs the folder's current version in its place.
+    #[test]
+    fn reload_of_a_broken_local_plugin_installs_the_folder_again() {
+        let folder = TempDir::new("plugins-io-broken-reload");
+        let shared = shared_in(&folder);
+        let _ = broken_template(&shared);
+
+        let reloaded = run(reload(&shared, String::from("example")));
+
+        let PluginsIntent::Reloaded {
+            outcome, plugins, ..
+        } = reloaded
+        else {
+            panic!("reloaded: {reloaded:?}");
+        };
+        assert!(matches!(outcome, Ok(UpdateOutcome::Updated { .. })));
+        assert!(plugins[0].manifest.is_ok());
+        assert!(plugins[0].icon.is_some());
+    }
+
+    /// Issue 17: Reinstall answers with what it did and the plugins after
+    /// it; a plugin that is not installed says why.
+    #[test]
+    fn reinstall_of_a_broken_local_plugin_reads_its_folder_again() {
+        let folder = TempDir::new("plugins-io-broken-reinstall");
+        let shared = shared_in(&folder);
+        let _ = broken_template(&shared);
+
+        let reinstalled = run(reinstall(&shared, String::from("example")));
+        let missing = run(reinstall(&shared, String::from("nothing")));
+
+        assert!(matches!(
+            reinstalled,
+            PluginsIntent::Reinstalled { outcome: Ok(_), plugins, .. }
+                if plugins[0].manifest.is_ok()
+        ));
+        assert!(matches!(
+            missing,
+            PluginsIntent::Reinstalled {
+                outcome: Err(_),
+                ..
+            }
+        ));
     }
 
     #[test]

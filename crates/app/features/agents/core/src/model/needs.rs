@@ -41,7 +41,9 @@ pub(crate) struct NeedViewModel {
     /// The plugin that asks, such as "OpenAI plugin"; `None` for a need of
     /// OTTY itself.
     pub(crate) plugin: Option<String>,
-    /// What is needed, in a few words.
+    /// What is needed, in a few words, as it reads after the place and a
+    /// comma: "Codex, needs login". A title that starts with a name, such
+    /// as the one of a plugin, keeps its capital.
     pub(crate) title: String,
     /// Why, and what the button does.
     pub(crate) line: String,
@@ -200,7 +202,7 @@ fn part_need_view(
             Key::TplAgentsNeedPluginLabel,
             &[("plugin", plugin)],
         )),
-        title: need.title().to_string(),
+        title: i18n::after_comma(need.title()),
         line,
         fix: Some(fix),
         extra: None,
@@ -314,7 +316,7 @@ fn plugin_update_needs(state: &AgentsState) -> Vec<NeedViewModel> {
         .map(|update| NeedViewModel {
             place: i18n::t(Key::AgentsPluginsPlace).to_string(),
             plugin: None,
-            title: i18n::t(Key::AgentsNeedPluginUpdateTitle).to_string(),
+            title: i18n::after_comma(i18n::t(Key::AgentsNeedPluginUpdateTitle)),
             line: i18n::filled(
                 Key::TplAgentsNeedPluginUpdateText,
                 &[
@@ -432,7 +434,7 @@ fn keyring_need(state: &AgentsState) -> Option<NeedViewModel> {
     Some(NeedViewModel {
         place: i18n::t(Key::AgentsKeyringPlace).to_string(),
         plugin: None,
-        title: i18n::t(Key::AgentsNeedKeyringTitle).to_string(),
+        title: i18n::after_comma(i18n::t(Key::AgentsNeedKeyringTitle)),
         line: i18n::filled(
             Key::TplAgentsNeedKeyringText,
             &[("agents", &parts.join(", "))],
@@ -462,7 +464,7 @@ fn profile_need(
     Some(NeedViewModel {
         place: shown.profile().name().to_string(),
         plugin: None,
-        title: need.state().to_string(),
+        title: i18n::after_comma(need.state()),
         line: hint.to_string(),
         fix: None,
         extra: None,
@@ -539,7 +541,7 @@ fn program_not_found_need(
     NeedViewModel {
         place,
         plugin: None,
-        title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
+        title: i18n::after_comma(i18n::t(Key::AgentsStateProgramNotFound)),
         line,
         fix,
         extra,
@@ -732,7 +734,7 @@ mod tests {
             vec![NeedViewModel {
                 place: String::from("Anthropic (dev@example.com)"),
                 plugin: plugin_label("Anthropic"),
-                title: String::from("The real bill needs a key"),
+                title: String::from("the real bill needs a key"),
                 line: String::from("OTTY shows an estimate from the tokens."),
                 fix: Some(NeedFixViewModel {
                     label: i18n::filled(
@@ -754,7 +756,7 @@ mod tests {
                 NeedViewModel {
                     place: String::from("Codex"),
                     plugin: plugin_label("OpenAI"),
-                    title: String::from("Needs login"),
+                    title: String::from("needs login"),
                     line: String::from(
                         "Nobody is logged in with this config folder."
                     ),
@@ -774,7 +776,9 @@ mod tests {
                 NeedViewModel {
                     place: String::from("Codex (Work)"),
                     plugin: None,
-                    title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
+                    title: i18n::after_comma(i18n::t(
+                        Key::AgentsStateProgramNotFound
+                    )),
                     line: i18n::filled(
                         Key::TplAgentsNeedProgramNotFoundText,
                         &[("program", "codex")]
@@ -847,7 +851,9 @@ mod tests {
             vec![NeedViewModel {
                 place: String::from("Codex"),
                 plugin: None,
-                title: i18n::t(Key::AgentsStateProgramNotFound).to_string(),
+                title: i18n::after_comma(i18n::t(
+                    Key::AgentsStateProgramNotFound
+                )),
                 line: format!("{not_found} {runs}"),
                 fix: Some(NeedFixViewModel {
                     label: i18n::filled(
@@ -934,7 +940,7 @@ mod tests {
             vec![NeedViewModel {
                 place: String::from("OpenAI (you@example.com)"),
                 plugin: plugin_label("Openai"),
-                title: String::from("The login expired"),
+                title: String::from("the login expired"),
                 line: String::from("Open Codex: it renews the login."),
                 fix: Some(NeedFixViewModel {
                     label: i18n::filled(
@@ -1001,7 +1007,7 @@ mod tests {
         let needs = needs_of_account(&state, &expired);
 
         assert_eq!(needs.len(), 1, "{needs:?}");
-        assert_eq!(needs[0].title, "The login expired");
+        assert_eq!(needs[0].title, i18n::after_comma("The login expired"));
         assert_eq!(needs[0].plugin, plugin_label("Openai"));
         assert!(matches!(
             needs[0].fix.as_ref().and_then(|fix| fix.action.as_ref()),
@@ -1047,7 +1053,7 @@ mod tests {
         let needs = account_needs(&state);
 
         assert_eq!(needs.len(), 1, "{needs:?}");
-        assert_eq!(needs[0].title, "The login expired");
+        assert_eq!(needs[0].title, i18n::after_comma("The login expired"));
     }
 
     #[test]
@@ -1279,6 +1285,7 @@ mod tests {
                     from: String::from("0.4.0"),
                     to: String::from("0.5.0"),
                 }],
+                broken_parts: Vec::new(),
             }),
         );
 
@@ -1293,7 +1300,9 @@ mod tests {
             vec![NeedViewModel {
                 place: i18n::t(Key::AgentsPluginsPlace).to_string(),
                 plugin: None,
-                title: i18n::t(Key::AgentsNeedPluginUpdateTitle).to_string(),
+                title: i18n::after_comma(i18n::t(
+                    Key::AgentsNeedPluginUpdateTitle
+                )),
                 line: i18n::filled(
                     Key::TplAgentsNeedPluginUpdateText,
                     &[("plugin", "OpenAI"), ("from", "0.4.0"), ("to", "0.5.0")]

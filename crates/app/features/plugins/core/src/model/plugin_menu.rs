@@ -1,11 +1,12 @@
 //! The menu of a plugin in the left panel (issue 37): the actions of its
 //! page, Reload for a local plugin or Check for updates for one from a
-//! repository, Review update… while an update waits, Show log and
+//! repository, Reinstall for a broken one from a repository, Review update… while an update waits, Show log and
 //! Remove….
 
 use otty_plugin_releases::Trust;
 use otty_ui_kit::components::context_menu::MenuPlace;
 
+use super::broken_reason;
 use crate::state::PluginsState;
 
 /// What the open menu of a plugin shows.
@@ -15,6 +16,9 @@ pub(crate) struct PluginMenuViewModel {
     pub(crate) id: String,
     /// Whether it is a local plugin: Reload in place of Check for updates.
     pub(crate) is_local: bool,
+    /// Whether it is broken: one from a repository reinstalls in place of
+    /// Check for updates.
+    pub(crate) is_broken: bool,
     /// Whether an update waits for the user's OK: Review update….
     pub(crate) has_waiting_update: bool,
     /// Whether a change runs: the items that change the plugin do nothing.
@@ -34,6 +38,7 @@ impl PluginMenuViewModel {
         Some(Self {
             id: id.to_string(),
             is_local: plugin.installed.trust() == Trust::Local,
+            is_broken: broken_reason(state, plugin).is_some(),
             has_waiting_update: state.waiting_update(id).is_some(),
             is_busy: state.is_busy(),
             place: menu.place(),
@@ -81,6 +86,23 @@ mod tests {
         assert!(!released.is_local);
         assert_eq!(released.place, place());
         assert!(!released.has_waiting_update);
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: the menu
+    /// knows a broken plugin, which reinstalls.
+    #[test]
+    fn the_menu_knows_a_broken_plugin() {
+        let mut broken =
+            PluginsState::new(vec![crate::testing::broken_local_example()]);
+        with_menu(&mut broken);
+        let mut healthy = PluginsState::new(vec![local_example()]);
+        with_menu(&mut healthy);
+
+        let broken = PluginMenuViewModel::from_state(&broken).expect("menu");
+        let healthy = PluginMenuViewModel::from_state(&healthy).expect("menu");
+
+        assert!(broken.is_broken);
+        assert!(!healthy.is_broken);
     }
 
     #[test]

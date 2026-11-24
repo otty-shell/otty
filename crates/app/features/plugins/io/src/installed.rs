@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use otty_app_plugins::ListedPlugin;
 use otty_plugin_host::PluginEngine;
-use otty_plugin_manifest::{Manifest, PartKind};
+use otty_plugin_manifest::{Manifest, ManifestError, PartKind};
 use otty_plugin_releases::{
     InstallError, Installer, MANIFEST_FILE, Places, UreqClient,
 };
@@ -80,7 +80,7 @@ pub fn places(config_dir: &Path, data_dir: &Path) -> Places {
 }
 
 /// Each installed plugin of `installer` with the manifest and the icon of
-/// its installed version.
+/// its installed version, or why its manifest can not be read.
 pub(crate) fn listed(installer: &Installer) -> Vec<ListedPlugin> {
     installer
         .plugins()
@@ -90,6 +90,7 @@ pub(crate) fn listed(installer: &Installer) -> Vec<ListedPlugin> {
             let manifest = read_manifest(&folder);
             let icon = manifest
                 .as_ref()
+                .ok()
                 .and_then(|manifest| first_icon(manifest, &folder));
 
             ListedPlugin {
@@ -102,23 +103,23 @@ pub(crate) fn listed(installer: &Installer) -> Vec<ListedPlugin> {
         .collect()
 }
 
-/// The manifest in `folder`; `None`, with a warning, when it can not be
-/// read.
-fn read_manifest(folder: &Path) -> Option<Manifest> {
+/// The manifest in `folder`, or why it can not be read, with a warning:
+/// the reason of the file or the parser, such as "unknown field `api`",
+/// which Plugins mode shows after its own words.
+fn read_manifest(folder: &Path) -> Result<Manifest, String> {
     let path = folder.join(MANIFEST_FILE);
 
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(error) => {
-            log::warn!("{} can not be read: {error}", path.display());
-            return None;
-        },
-    };
-    Manifest::parse(&text)
-        .inspect_err(|error| {
-            log::warn!("{} is not a valid manifest: {error}", path.display());
-        })
-        .ok()
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        log::warn!("{} can not be read: {error}", path.display());
+        error.to_string()
+    })?;
+    Manifest::parse(&text).map_err(|error| {
+        log::warn!("{} is not a valid manifest: {error}", path.display());
+        match error {
+            ManifestError::Shape(reason) => reason,
+            other => other.to_string(),
+        }
+    })
 }
 
 /// The SVG of the icon of the first part of `manifest`, in `folder`.

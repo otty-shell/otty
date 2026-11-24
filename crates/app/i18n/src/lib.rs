@@ -405,6 +405,23 @@ pub fn filled(key: Key, values: &[(&str, &str)]) -> String {
     fill_in(current_locale(), key, values)
 }
 
+/// A phrase of OTTY's own words as it reads after a comma, in the active
+/// locale: its first letter in lower case, as "resets" in "3 760 left,
+/// resets in 2 h". Not for a name, which keeps its capital.
+///
+/// # Examples
+///
+/// ```
+/// use otty_app_i18n::{Locale, after_comma, set_locale};
+///
+/// set_locale(Locale::En);
+///
+/// assert_eq!(after_comma("Resets in 2 h"), "resets in 2 h");
+/// ```
+pub fn after_comma(phrase: &str) -> String {
+    after_comma_in(current_locale(), phrase)
+}
+
 /// Build the badge word of a container that exited with `code`, e.g.
 /// "Exited (3)".
 pub fn containers_exited(code: i64) -> String {
@@ -515,6 +532,21 @@ pub fn text_in(locale: Locale, key: Key) -> &'static str {
         .strings
         .get(&key)
         .map_or("", String::as_str)
+}
+
+/// `phrase` as it reads after a comma in `locale`: its first letter in
+/// lower case. German keeps it, as the phrases of its catalog start with a
+/// noun there, and a noun always starts with a capital letter.
+fn after_comma_in(locale: Locale, phrase: &str) -> String {
+    if locale == Locale::De {
+        return phrase.to_string();
+    }
+
+    let mut letters = phrase.chars();
+    match letters.next() {
+        Some(first) => first.to_lowercase().chain(letters).collect(),
+        None => String::new(),
+    }
 }
 
 fn process_exited_in(locale: Locale, exit_code: Option<i32>) -> String {
@@ -665,12 +697,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, agents_month,
-        agents_status_projects, agents_weekday, block_exit_code_in,
-        block_lines_above_in, block_lines_hidden_in, catalog,
-        containers_logs_new_lines_in, fill_in, locale_from_system_preference,
-        modes_pinned_note_in, process_exited_in, status_block_place_in,
-        system_locale, text_in, text_locale_tag,
+        Catalog, Key, Locale, MONTH_KEYS, WEEKDAY_KEYS, after_comma_in,
+        agents_month, agents_status_projects, agents_weekday,
+        block_exit_code_in, block_lines_above_in, block_lines_hidden_in,
+        catalog, containers_logs_new_lines_in, fill_in,
+        locale_from_system_preference, modes_pinned_note_in, process_exited_in,
+        status_block_place_in, system_locale, text_in, text_locale_tag,
     };
 
     #[test]
@@ -739,6 +771,50 @@ mod tests {
 
     /// Issue 16: the kinds of tokens and of money a tooltip lists have
     /// short names, and two values side by side take a comma.
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: after a
+    /// comma a phrase starts in lower case, "3 760 left, resets in 2 h";
+    /// German keeps its capital, which starts a noun; a language with no
+    /// letter case is left as it is.
+    #[test]
+    fn a_phrase_after_a_comma_starts_in_lower_case() {
+        assert_eq!(
+            after_comma_in(Locale::En, "Resets in 2 h"),
+            "resets in 2 h"
+        );
+        assert_eq!(
+            after_comma_in(Locale::Ru, "Сброс через 2 ч"),
+            "сброс через 2 ч"
+        );
+        assert_eq!(
+            after_comma_in(Locale::Fr, "Réinitialisation dans 2 h"),
+            "réinitialisation dans 2 h"
+        );
+        assert_eq!(
+            after_comma_in(Locale::De, "Zurücksetzung in 2 h"),
+            "Zurücksetzung in 2 h"
+        );
+        assert_eq!(
+            after_comma_in(Locale::Ja, "2時間後にリセット"),
+            "2時間後にリセット"
+        );
+        assert_eq!(after_comma_in(Locale::En, ""), "");
+    }
+
+    /// Every way of saying when a window resets starts with a noun in
+    /// German, so it keeps its capital after a comma.
+    #[test]
+    fn the_german_resets_start_with_a_noun() {
+        for key in [
+            Key::AgentsResetsNow,
+            Key::TplAgentsResetsInAt,
+            Key::TplAgentsResetsOnDay,
+            Key::TplAgentsResetsOnDate,
+        ] {
+            let text = text_in(Locale::De, key);
+            assert!(text.starts_with("Zurücksetzung"), "{key:?}: {text}");
+        }
+    }
+
     #[test]
     fn the_kinds_of_a_breakdown_have_short_names() {
         let names = [

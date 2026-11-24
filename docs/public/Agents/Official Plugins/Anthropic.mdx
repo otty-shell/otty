@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.15, install it from `assets/plugins/anthropic/` of the OTTY repository with
+Official, version 0.2.16, install it from `assets/plugins/anthropic/` of the OTTY repository with
 **Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
 repository will be `github.com/otty-shell/otty-plugin-anthropic`.
 
@@ -64,7 +64,7 @@ during that call.
 
 | Login in a folder                 | Account                                                                    |
 | --------------------------------- | -------------------------------------------------------------------------- |
-| A Claude login (`.credentials.json` and the account in `.claude.json`) | A subscription, named by its email and its organization (unless it is the personal one Claude makes for every account), with its plan. It stays the same account when Claude Code renews its tokens. |
+| A Claude login (`.credentials.json` and the account in `.claude.json`) | A subscription, named by its email and, after a comma, its organization (unless it is the personal one Claude makes for every account), such as `you@example.com, Example Org`, with its plan. It stays the same account when Claude Code renews its tokens. |
 | A login to a Console organization that pays per token | That organization.                                          |
 | A Console key or an Anthropic key of `settings.json` | A key, named by the end of its fingerprint, such as `key ••••a1f3`. An admin key is an organization. |
 | A key `settings.json` sends to another server, such as DeepSeek's | No account.                                      |

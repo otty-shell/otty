@@ -18,6 +18,7 @@ use otty_ui_kit::components::panel_height::{
 };
 use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tooltip::tooltip;
 use otty_ui_kit::components::tree_row::TreeRow;
 use otty_ui_kit::components::{divider, scrollbar};
 use otty_ui_kit::palette::UiPalette;
@@ -274,9 +275,11 @@ fn account_row<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
-    let mut row = entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon)
-        .selected(vm.is_selected)
-        .on_press(AgentsIntent::SelectAccount(vm.account));
+    let note = vm.icon.note();
+    let mut row =
+        entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .selected(vm.is_selected)
+            .on_press(AgentsIntent::SelectAccount(vm.account));
     if let Some(number) = &vm.number {
         row = row.count_tone(number.tone()).state(number.text());
     }
@@ -284,7 +287,7 @@ fn account_row<'a>(
         row = row.tag(OWN_LOGIN_TAG);
     }
 
-    mouse_area(row).on_right_press(menu).into()
+    with_note(mouse_area(row).on_right_press(menu).into(), note, palette)
 }
 
 /// A profile: the logo of its agent, its name and its number. A press
@@ -295,15 +298,30 @@ fn profile_row<'a>(
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
     let menu = AgentsIntent::OpenProfileMenu(vm.profile.clone());
-    let mut row = entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon)
-        .count_tone(vm.tone)
-        .selected(vm.is_selected)
-        .on_press(AgentsIntent::SelectProfile(vm.profile));
+    let note = vm.icon.note();
+    let mut row =
+        entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .count_tone(vm.tone)
+            .selected(vm.is_selected)
+            .on_press(AgentsIntent::SelectProfile(vm.profile));
     if let Some(number) = vm.number {
         row = row.state(number);
     }
 
-    mouse_area(row).on_right_press(menu).into()
+    with_note(mouse_area(row).on_right_press(menu).into(), note, palette)
+}
+
+/// `row` with the tooltip `note` of its broken plugin icon, if any: "Plugin
+/// OpenAI failed, see Plugins".
+fn with_note<'a>(
+    row: Element<'a, AgentsIntent>,
+    note: Option<String>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    match note {
+        Some(note) => tooltip(row, note, palette),
+        None => row,
+    }
 }
 
 #[cfg(test)]

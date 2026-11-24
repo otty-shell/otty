@@ -90,7 +90,7 @@ pub(crate) fn can_access_dialog(
 
     Some(CanAccessDialogViewModel {
         title: i18n::filled(Key::TplPluginsCanAccessTitle, &[("part", &name)]),
-        groups: granted_groups(installed.granted(), plugin.manifest.as_ref()),
+        groups: granted_groups(installed.granted(), plugin.manifest()),
     })
 }
 
@@ -146,7 +146,7 @@ pub(crate) fn update_dialog(
     update: &PendingUpdate,
 ) -> UpdateDialogViewModel {
     let new = update.manifest();
-    let old = plugin.manifest.as_ref();
+    let old = plugin.manifest();
 
     let parts = update
         .diff()
@@ -278,10 +278,7 @@ mod tests {
                 &[("part", "Example Cloud")]
             )
         );
-        assert_eq!(
-            dialog.groups,
-            granted_groups(&granted, plugin.manifest.as_ref())
-        );
+        assert_eq!(dialog.groups, granted_groups(&granted, plugin.manifest()));
         assert_eq!(
             dialog.groups[0].label,
             i18n::filled(

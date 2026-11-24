@@ -9,13 +9,16 @@ use std::sync::Arc;
 use iced::Task;
 use iced::widget::operation;
 use otty_app_agents::AgentsIntent;
-use otty_app_agents_io::{self as agents_io, LoadedReaders, RunningParts};
+use otty_app_agents_io::{
+    self as agents_io, FailedPlugin, LoadedReaders, RunningParts,
+};
 use otty_app_domain::mode::Mode;
 use otty_app_domain::plugins::PluginsPlace;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_plugins::{
-    Plugins, PluginsCtx, PluginsIntent, PluginsOutcome, RunningPlugin,
+    PluginLoadFailure, Plugins, PluginsCtx, PluginsIntent, PluginsOutcome,
+    RunningPlugin,
 };
 use otty_app_plugins_io as plugins_io;
 
@@ -77,6 +80,9 @@ impl Delivery for PluginsIntent {
             PluginsOutcome::Reload(plugin) => {
                 plugins_io::reload(installer, plugin).map(AppEvent::Plugins)
             },
+            PluginsOutcome::Reinstall(plugin) => {
+                plugins_io::reinstall(installer, plugin).map(AppEvent::Plugins)
+            },
             PluginsOutcome::ApplyUpdate { update } => {
                 plugins_io::apply_update(installer, *update)
                     .map(AppEvent::Plugins)
@@ -125,33 +131,44 @@ pub(crate) fn open_plugins_mode(
 
 /// The parts of the installed plugins were loaded: Agents mode reads with
 /// them and their provider parts from now on, and Plugins mode shows their
-/// health and logs.
+/// health and logs, and the plugins that did not load as broken.
 pub(crate) fn loaded_plugins(
     app: &mut App,
     loaded: LoadedReaders,
 ) -> Task<AppEvent> {
     app.plugin_providers = loaded.providers;
     app.language_receivers = loaded.language_receivers;
-    let running = running_plugins(loaded.running);
+    let running = running_plugins(loaded.running, loaded.failed);
 
     let agents = deliver(app, AgentsIntent::ReadersChanged(loaded.readers));
-    let plugins = deliver(app, PluginsIntent::Running(running));
+    let plugins = deliver(app, running);
 
     Task::batch([agents, plugins])
 }
 
-/// The loaded plugins as Plugins mode holds them.
+/// The loaded plugins and the ones that did not load, as Plugins mode is
+/// told of them.
 pub(crate) fn running_plugins(
     running: Vec<RunningParts>,
-) -> Vec<RunningPlugin> {
-    running
+    failed: Vec<FailedPlugin>,
+) -> PluginsIntent {
+    let running = running
         .into_iter()
         .map(|running| RunningPlugin {
             plugin: running.plugin,
             log: running.log,
             parts: running.parts,
         })
-        .collect()
+        .collect();
+    let failed = failed
+        .into_iter()
+        .map(|failed| PluginLoadFailure {
+            plugin: failed.plugin,
+            reason: failed.reason,
+        })
+        .collect();
+
+    PluginsIntent::Running { running, failed }
 }
 
 #[cfg(test)]
