@@ -190,6 +190,7 @@ fn table<'a>(
         table = table.row_without_menu(cells(row, vm.tab, vm.is_stale));
     }
 
+    // With no rows the table shows its empty message in one row.
     let rows = vm.rows.len().max(1);
     let hovered = mouse_area(blocks::rows_tall(table, rows))
         .on_move(move |point| {
@@ -313,6 +314,8 @@ mod tests {
 
     /// Width of the block in the tests.
     const WIDTH: f32 = 600.0;
+    /// The least height of a whole line of text of a table cell.
+    const LINE_LEAST: f32 = 12.0;
 
     fn at(ui: &mut Simulator<'_, AgentsIntent>, label: &str) -> Rectangle {
         ui.find(label).expect("the text should show").bounds()
@@ -509,5 +512,48 @@ mod tests {
         let mut ui = ui(vm, &themes, WIDTH);
 
         assert!(ui.find(i18n::t(Key::AgentsApiPricesMark)).is_err());
+    }
+
+    /// Issue 19 of spec 2026-11-23: with no rows the table shows "Nothing
+    /// to show" in one whole row under its header, centred up and down,
+    /// and the block holds the whole row with its bottom line.
+    #[test]
+    fn an_empty_table_shows_its_whole_row_inside_the_block() {
+        let themes = ThemeManager::new();
+        let vm = UsageBlockViewModel {
+            rows: Vec::new(),
+            ..usage_block()
+        };
+        let block = container(view(vm, themes.current().ui()))
+            .id(iced::widget::Id::new("usage-block"))
+            .width(WIDTH);
+        let mut ui = simulator(block);
+
+        let header = at(&mut ui, i18n::t(Key::AgentsColumnModel));
+        let message = at(&mut ui, i18n::t(Key::AgentsTopEmpty));
+        let block = ui
+            .find(iced::widget::Id::new("usage-block"))
+            .expect("the block shows")
+            .bounds();
+
+        let row_top = header.center_y() + size::TABLE_HEADER / 2.0 + size::LINE;
+        let row_bottom = row_top + size::TABLE_ROW;
+        assert!(
+            (message.center_y() - (row_top + row_bottom) / 2.0).abs() < 1.0,
+            "the message is centred in its row: {message:?}, row from \
+             {row_top} to {row_bottom}"
+        );
+        assert!(
+            message.height >= LINE_LEAST,
+            "the message is whole: {message:?}"
+        );
+        assert!(
+            message.y + message.height <= row_bottom,
+            "the message is not cut: {message:?}"
+        );
+        assert!(
+            block.y + block.height >= row_bottom + size::LINE,
+            "the block holds the row and its line: {block:?}"
+        );
     }
 }

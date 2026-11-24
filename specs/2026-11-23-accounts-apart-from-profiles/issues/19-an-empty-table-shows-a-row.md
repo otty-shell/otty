@@ -1,6 +1,6 @@
 # 19 An empty table shows its message as a row, and tables keep their bottom padding
 
-Status: ready
+Status: done
 Blocked by: 18
 
 ## Why
@@ -46,3 +46,18 @@ taller empty message is cut at the bottom.
 - The checks of `AGENTS.md` pass.
 
 ## Comments
+
+2026-11-25: the pictures showed the cause. The kit `DataTable` drew its
+empty message as muted text with 16 px over and under it, not as a row,
+and the usage block gives its table the height of one row, so the
+message was squeezed and cut at the bottom of the table. Now the empty
+message is one row of the table: the row height, the cell padding at the
+left, the text muted like a muted cell and centred up and down, and the
+row's bottom line. It fits the height of one row exactly, so the usage
+block on a profile page and in the statistics popups shows the whole row
+and keeps the room under it as with rows. The tables with no empty
+message (All accounts, All profiles, the found report) and the tables
+that fill their area (Containers, the sessions table) needed no other
+change. Tests pin the place of the message in its row, an empty row that
+draws the same as a blank row, and the room under the usage table with
+and without rows, in the popup and on the profile page.

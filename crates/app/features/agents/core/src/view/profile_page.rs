@@ -138,7 +138,9 @@ mod tests {
     use otty_ui_kit::components::screen_area::ScreenArea;
 
     use super::*;
-    use crate::model::{FactViewModel, NeedFixViewModel, NeedViewModel};
+    use crate::model::{
+        FactViewModel, NeedFixViewModel, NeedViewModel, UsageBlockViewModel,
+    };
     use crate::need::NeedAction;
     use crate::testing::usage_block;
     use crate::usage::UsageTab;
@@ -149,6 +151,8 @@ mod tests {
     const NARROW: f32 = 560.0;
     /// Height of the main area in the tests.
     const HEIGHT: f32 = 1600.0;
+    /// The least height of a whole line of text of a table cell.
+    const LINE_LEAST: f32 = 12.0;
 
     fn work() -> Profile {
         Profile::added(
@@ -390,5 +394,42 @@ mod tests {
         for gone in [Key::AgentsNeedsFromYou, Key::AgentsUsage] {
             assert!(ui.find(i18n::t(gone)).is_err(), "{gone:?}");
         }
+    }
+
+    /// The room between the bottom of the usage table, the line under the
+    /// row with the text `last` included, and the title of Profile info.
+    fn room_under_the_usage_table(vm: ProfilePageViewModel, last: &str) -> f32 {
+        let themes = ThemeManager::new();
+        let mut ui = in_main_area(vm, WIDE, &themes);
+
+        let last = at(&mut ui, last);
+        let info = at(&mut ui, i18n::t(Key::AgentsProfileInfo));
+
+        assert!(last.height >= LINE_LEAST, "the row is whole: {last:?}");
+        info.y - (last.center_y() + size::TABLE_ROW / 2.0 + size::LINE)
+    }
+
+    /// Issue 19 of spec 2026-11-23: with no rows the usage table shows its
+    /// whole empty row, and the room under it before the next block is
+    /// the same as under a table with rows.
+    #[test]
+    fn an_empty_usage_table_keeps_the_room_under_it_as_one_with_rows() {
+        let empty = ProfilePageViewModel {
+            usage: Some(UsageBlockViewModel {
+                rows: Vec::new(),
+                ..usage_block()
+            }),
+            ..page()
+        };
+
+        let with_rows = room_under_the_usage_table(page(), "gpt-5.4");
+        let without =
+            room_under_the_usage_table(empty, i18n::t(Key::AgentsTopEmpty));
+
+        assert!(with_rows >= blocks::BLOCK_GAP, "{with_rows}");
+        assert!(
+            (without - with_rows).abs() < 1.0,
+            "under the empty row {without}, under the rows {with_rows}"
+        );
     }
 }

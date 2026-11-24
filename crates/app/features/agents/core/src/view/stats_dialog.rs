@@ -300,4 +300,67 @@ mod tests {
             "{share:?} ends inside the dialog at {dialog_end}"
         );
     }
+
+    /// The least height of a whole line of text of a table cell.
+    const LINE_LEAST: f32 = 12.0;
+
+    /// The project popup with its usage block by profile, with the rows
+    /// of the usage block or with none.
+    fn project_popup(has_rows: bool) -> StatsDialogViewModel {
+        let mut usage = UsageBlockViewModel {
+            tab: UsageTab::ByProfile,
+            ..popup_usage(&UsageTab::PROJECT_POPUP, false)
+        };
+        if !has_rows {
+            usage.rows.clear();
+        }
+
+        dialog(StatsBodyViewModel::Project(ProjectStatsViewModel {
+            facts: vec![FactViewModel::new("Sessions", String::from("7"))],
+            usage,
+        }))
+    }
+
+    /// The bottom of the table of the popup, the line under its last row
+    /// included, found from the text `last` of that row; and the top of
+    /// the text of Close under it.
+    fn table_bottom_and_close(
+        vm: StatsDialogViewModel,
+        last: &str,
+    ) -> (f32, f32) {
+        let themes = ThemeManager::new();
+        let mut ui = ui(vm, &themes);
+
+        let last = ui.find(last).expect("the last row shows").bounds();
+        let close = ui
+            .find(i18n::t(Key::ButtonClose))
+            .expect("Close shows")
+            .bounds();
+
+        assert!(last.height >= LINE_LEAST, "the row is whole: {last:?}");
+        let bottom = last.center_y() + size::TABLE_ROW / 2.0 + size::LINE;
+
+        (bottom, close.y)
+    }
+
+    /// Issue 19 of spec 2026-11-23: an empty table of the popup shows its
+    /// whole row, and under it the same room as under a table with rows,
+    /// before Close at the bottom of the card.
+    #[test]
+    fn an_empty_table_keeps_the_room_under_it_as_a_table_with_rows() {
+        let (rows_bottom, rows_close) =
+            table_bottom_and_close(project_popup(true), "gpt-5.4");
+        let (empty_bottom, empty_close) = table_bottom_and_close(
+            project_popup(false),
+            i18n::t(Key::AgentsTopEmpty),
+        );
+
+        let rows_room = rows_close - rows_bottom;
+        let empty_room = empty_close - empty_bottom;
+        assert!(rows_room >= spacing::SPACE_5, "{rows_room}");
+        assert!(
+            (empty_room - rows_room).abs() < 1.0,
+            "under the empty row {empty_room}, under the rows {rows_room}"
+        );
+    }
 }

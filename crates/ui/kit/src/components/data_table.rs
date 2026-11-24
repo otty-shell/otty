@@ -13,7 +13,6 @@ use iced::{Alignment, Color, Element, Font, Length, Padding, Point};
 
 use super::ellipsis_text::EllipsisText;
 use super::icon_hover::IconHover;
-use super::small_text::small_text;
 use super::status_badge::{StatusBadge, StatusTone, TEXT_SIZE};
 use super::table_body::{DoublePress, MenuPress, RightPress, TableBody};
 use super::table_sideways::{SidewaysOffset, SidewaysScroll};
@@ -24,13 +23,6 @@ use crate::{fonts, size, spacing, typography};
 
 /// Horizontal padding of a cell (`.ot-table td { padding: 0 12px }`).
 const CELL_PADDING_X: f32 = spacing::SPACE_4;
-/// Padding of the empty-table message (`padding: 16px 12px`).
-const EMPTY_PADDING: Padding = Padding {
-    top: spacing::SPACE_5,
-    right: spacing::SPACE_4,
-    bottom: spacing::SPACE_5,
-    left: spacing::SPACE_4,
-};
 /// Width of the "⋯" button column: the small button and 6px on each side.
 const MENU_COLUMN_WIDTH: f32 = size::CONTROL_SM + 2.0 * spacing::SPACE_2;
 /// Edge of the "⋯" dots inside their button, as in a small `IconButton`.
@@ -383,7 +375,8 @@ impl TableCell {
 }
 
 /// Table with a fixed header and rows that scroll under it. One row can be
-/// selected. When there are no rows, the empty message shows instead.
+/// selected. When there are no rows, the empty message shows instead, in
+/// one row of the table.
 ///
 /// The table fills the space it gets. Columns share the width by their
 /// shares but never go below their [`TableColumn::min_width`]; when the
@@ -547,8 +540,8 @@ impl<'a, Message> DataTable<'a, Message> {
         self
     }
 
-    /// Sets the line shown under the header when there are no rows, such as
-    /// "No containers" or "Nothing matches “web”".
+    /// Sets the message shown in one row under the header when there are
+    /// no rows, such as "No containers" or "Nothing matches “web”".
     pub fn empty_message(mut self, message: impl Into<String>) -> Self {
         self.empty_message = Some(message.into());
         self
@@ -1149,7 +1142,10 @@ fn cell_frame<'a, Message: 'a>(
         .into()
 }
 
-/// Draws the muted line shown when the table has no rows (`.ot-hint`).
+/// Draws the row shown when the table has no rows: `message` muted at the
+/// cell padding and centred up and down, in a row as tall as the others
+/// and over the same rule, so the table reads as one row that says why it
+/// is empty. Nothing when there is no message.
 fn empty_view<'a, Message: 'a>(
     message: Option<String>,
     palette: &UiPalette,
@@ -1158,10 +1154,16 @@ fn empty_view<'a, Message: 'a>(
         return Space::new().into();
     };
 
-    container(small_text(message, palette.text_muted()))
+    let text =
+        EllipsisText::new(message, TEXT_SIZE, fonts::UI, palette.text_muted());
+    let row = container(text)
         .width(Length::Fill)
-        .padding(EMPTY_PADDING)
-        .into()
+        .height(size::TABLE_ROW)
+        .padding(Padding::from([0.0, CELL_PADDING_X]))
+        .align_y(Alignment::Center)
+        .clip(true);
+
+    column![row, rule(palette.surface_raised())].into()
 }
 
 /// Returns the least width `columns` can have: the sum of their minimums.
@@ -1528,6 +1530,61 @@ mod tests {
 
         assert!(ui.find("Name").is_ok());
         assert!(ui.find("No containers").is_ok());
+    }
+
+    /// Issue 19 of spec 2026-11-23: the empty message is one row of the
+    /// table, its text at the cell padding and centred up and down.
+    #[test]
+    fn given_no_rows_when_laid_out_then_the_message_sits_in_one_row() {
+        let mut ui = simulator(table(0, 300.0));
+
+        let message = ui.find("No containers").expect("message").bounds();
+
+        assert!(
+            (message.x - CELL_PADDING_X).abs() < 0.5,
+            "the text starts at the cell padding: {message:?}"
+        );
+        assert!(
+            (message.center_y() - (BODY_TOP + size::TABLE_ROW / 2.0)).abs()
+                < 1.0,
+            "the text is centred in the row: {message:?}"
+        );
+        assert!(message.y >= BODY_TOP, "{message:?}");
+        assert!(
+            message.y + message.height <= BODY_TOP + size::TABLE_ROW,
+            "the text stays inside the row: {message:?}"
+        );
+    }
+
+    /// A table of [`columns`], 120 px tall, with `blank_row` or with no
+    /// rows and the empty message `""`.
+    fn blank_table(blank_row: bool) -> Element<'static, ()> {
+        let palette = UiPalette::otty_dark();
+        let mut table = DataTable::new(columns(), &palette).empty_message("");
+        if blank_row {
+            table = table.row_without_menu(Vec::new());
+        }
+
+        container(table).width(WIDTH).height(120.0).into()
+    }
+
+    /// Issue 19: the empty row is as tall as a row and ends with the line
+    /// the rows have, so with no words it draws the same as a blank row.
+    #[test]
+    fn given_no_rows_when_drawn_then_the_empty_row_looks_like_a_blank_row() {
+        let folder = TempDir::new("table-empty-row");
+        let reference = folder.path().join("blank-row");
+        let window = iced::Size::new(WIDTH + 80.0, 200.0);
+
+        assert!(
+            draws(&|| blank_table(true), window, None, &reference),
+            "save"
+        );
+
+        assert!(
+            draws(&|| blank_table(false), window, None, &reference),
+            "the empty row must have the row height and its bottom line"
+        );
     }
 
     #[test]
