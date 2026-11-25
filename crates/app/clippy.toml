@@ -16,6 +16,12 @@ disallowed-methods = [
     { path = "iced::Task::run", reason = "a helper crate starts no background work" },
     { path = "iced::Task::stream", reason = "a helper crate starts no background work" },
 
+    # The user's time zone comes from the `TZ` variable and the system's
+    # files; an io crate or the binary reads it and passes the `TimeZone`.
+    { path = "jiff::tz::TimeZone::system", reason = "a helper crate reads no time zone" },
+    { path = "jiff::tz::TimeZone::try_system", reason = "a helper crate reads no time zone" },
+    { path = "jiff::Zoned::now", reason = "a helper crate reads no time zone" },
+
     # Processes run in an io crate.
     { path = "std::process::Command::new", reason = "a helper crate runs no processes" },
 

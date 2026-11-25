@@ -1,0 +1,46 @@
+[package]
+name = "otty-plugin-sdk"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Write OTTY plugins: the contracts, their traits, the host operations and a test host"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# The bindings of the WIT contracts in `wit/` (approved by the owner
+# 2026-11-20). `realloc` and `std` are what a `wasm32-wasip2` component
+# needs; the other default features are left out.
+wit-bindgen = { version = "0.57.1", default-features = false, features = ["macros", "realloc", "std"] }
+
+# The test host: plugin tests run natively, so these are never built for
+# `wasm32-wasip2` and never end up in a plugin.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Reads the middle part of a made-up JWT for `Key::jwt_claims`, as the host
+# does.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# Matches the globs of `files::list` against the fixture files.
+globset = { version = "0.4.21", default-features = false }
+# The marker search of `files::read_lines`, as the host searches; the
+# version the host uses.
+memchr = "2.7.6"
+# The manifest of the plugin under test and the permissions of its parts,
+# the same checks as the host makes.
+otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
+# SQLite fixture files, opened read-only as the host opens them. `hooks`
+# (approved by the owner 2026-11-20) gives the authorizer that refuses
+# `ATTACH` and reads key columns as NULL; `column_metadata` (approved by
+# the owner) tells which result columns are key columns, as the host
+# tells them.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks", "column_metadata"] }
+# Decodes zstd fixture files for `files::read_lines`, as the host does; the
+# version the host and otty-agents use.
+ruzstd = "0.9.1"
+# JSON key files and canned answers of the fixtures.
+serde_json = { workspace = true }
+# The fingerprint of a made-up key, SHA-256 as the host computes it.
+sha2 = { version = "0.11.1", default-features = false }

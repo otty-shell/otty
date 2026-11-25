@@ -3,6 +3,7 @@
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Element, Length, Padding};
 
+use super::small_text::small_text;
 use crate::palette::UiPalette;
 use crate::{fonts, spacing, typography};
 
@@ -71,7 +72,6 @@ impl<'a, Message: 'a> From<SettingRow<'a, Message>> for Element<'a, Message> {
     fn from(value: SettingRow<'a, Message>) -> Self {
         let palette = value.palette;
         let body = typography::BODY;
-        let small = typography::SMALL;
 
         let mut texts = column![
             text(value.title)
@@ -82,12 +82,7 @@ impl<'a, Message: 'a> From<SettingRow<'a, Message>> for Element<'a, Message> {
         .spacing(TEXT_GAP)
         .width(Length::Fill);
         if let Some(description) = value.description {
-            texts = texts.push(
-                text(description)
-                    .size(small.size())
-                    .font(fonts::UI)
-                    .color(palette.text_muted()),
-            );
+            texts = texts.push(small_text(description, palette.text_muted()));
         }
 
         let mut line = row![texts]

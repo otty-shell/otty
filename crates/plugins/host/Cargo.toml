@@ -1,0 +1,82 @@
+[package]
+name = "otty-plugin-host"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Runs OTTY plugins, WebAssembly components, with wasmtime"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# Reads the middle part of a JWT for `key.jwt-claims`. The same major
+# version and features as ureq and otty-agents use, so no second copy is
+# built.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# Matches the globs of `files.list` against the folders it walks.
+globset = { version = "0.4.21", default-features = false }
+# `clock.local-offset-minutes`: the offset of the system's time zone at a
+# time. The crate and the features otty-app-agents-io already reads the
+# user's time zone with, so no new crate is built.
+jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
+# `keyring.read` and key handles in a keyring entry, only after the user
+# allowed it. The features otty-agents uses: the Secret Service over zbus
+# on Linux, the Keychain on macOS. OTTY never writes an entry.
+keyring = "4.2.0"
+# A warning when a compiled plugin can not be kept in the cache.
+log = { workspace = true }
+# The marker search of `files.read-lines` (`memmem`, spec Decision 6); the
+# version otty-escape uses, approved by the owner.
+memchr = "2.7.6"
+# The manifest and the permissions of each part.
+otty-plugin-manifest = { path = "../manifest", version = "0.1.0" }
+# The read-only queries of `sqlite.query` and key handles in a SQLite
+# column, built as otty-agents builds it: SQLite from its C source, no
+# statement cache. `hooks` (approved by the owner 2026-11-20) gives the
+# authorizer that refuses `ATTACH` and reads key columns as NULL;
+# `column_metadata` (approved by the owner) tells which result columns
+# are key columns, to give them back as key handles.
+rusqlite = { version = "0.43.0", default-features = false, features = ["bundled", "hooks", "column_metadata"] }
+# Decodes zstd files for `files.read-lines`; the version otty-agents uses
+# (spec "Crates and dependencies": moved from otty-agents, approved).
+ruzstd = "0.9.1"
+# The contract versions a component exports, semver (approved by the owner
+# 2026-11-20).
+semver = "1.0.28"
+# The SHA-256 that names a compiled plugin in the cache. The version
+# otty-agents uses, so no second copy is built.
+sha2 = { version = "0.11.1", default-features = false }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# `http.send`: HTTPS with rustls, ring and the webpki roots, as otty-agents
+# sends its requests; no OpenSSL, no gzip.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+# wasmtime 48 (LTS) with the compiler, the component model and nothing else
+# from its default features (spec Decision 8). The spike measured the
+# binary at +16.5 MB stripped with these features. `reexport-wasmparser`
+# adds no crate: it gives the parser wasmtime is built with, which reads
+# the contracts a release's `.wasm` exports without compiling it.
+wasmtime = { version = "48.0.10", default-features = false, features = [
+    "runtime",
+    "cranelift",
+    "component-model",
+    "std",
+    "reexport-wasmparser",
+] }
+# WASI 0.2 linked with an empty context, so the standard library of a
+# `wasm32-wasip2` plugin works but sees no file, network or variable.
+wasmtime-wasi = { version = "48.0.10", default-features = false, features = ["p2"] }
+
+[features]
+# `otty_plugin_host::fixtures`: values for the tests of the crates that use
+# this one, such as the health of a paused part.
+fixtures = []
+
+[dev-dependencies]
+# Mocks of the HTTPS client, the system keyring and the app's program and
+# terminal starters, so no test reaches the network, the keyring or a real
+# agent.
+mockall = { workspace = true }

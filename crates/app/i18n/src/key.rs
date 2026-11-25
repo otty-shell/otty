@@ -80,8 +80,10 @@ pub enum Key {
     WindowToggleMaximize,
     /// Tooltip of the title bar minimize button.
     WindowMinimize,
-    /// Tooltip of the title bar button that shows or hides the files panel.
-    WindowFilesPanel,
+    /// Tooltip of the title bar button that shows or hides the right panel.
+    WindowRightPanel,
+    /// Tooltip of the right panel button in a mode without that panel.
+    WindowRightPanelNotUsed,
     /// Tooltip of the title bar button that shows or hides the left panel.
     WindowLeftPanel,
     /// Tooltip of the title bar focus mode button.
@@ -93,10 +95,62 @@ pub enum Key {
     /// Tooltip of the title bar button that closes the window.
     WindowClose,
 
+    // Words several features share.
+    /// Tooltip of the button that reads the lists of a mode again.
+    Refresh,
+    /// Tooltip of a "⋯" button that holds the actions that do not fit,
+    /// and of the "⋯" button at the end of a table row.
+    MoreActions,
+    /// Tooltip of the cross of a tag of a tag search field.
+    TagRemove,
+    /// Button at the end of the tags of a tag search field that removes
+    /// them all.
+    TagsClearAll,
+    /// When something happened less than a minute ago.
+    JustNow,
+    /// How long ago something happened, in whole minutes. Placeholder:
+    /// `{count}`.
+    TplMinutesAgo,
+    /// How long ago something happened, in whole hours. Placeholder:
+    /// `{count}`.
+    TplHoursAgo,
+    /// How long ago something happened, in whole days. Placeholder:
+    /// `{count}`.
+    TplDaysAgo,
+    /// How long ago something happened, in whole weeks. Placeholder:
+    /// `{count}`.
+    TplWeeksAgo,
+    /// How long ago something happened, in whole months. Placeholder:
+    /// `{count}`.
+    TplMonthsAgo,
+    /// How long ago something happened, in whole years. Placeholder:
+    /// `{count}`.
+    TplYearsAgo,
+    /// An age under a minute, as the Age column of a table writes it.
+    UnderAMinute,
+    /// Label of the name field of a dialog that creates something: a
+    /// profile, a volume, a network or a container.
+    FieldName,
+    /// An age or a time span in whole minutes, such as "5 min".
+    /// Placeholder: `{count}`.
+    TplMinutes,
+    /// An age or a time span in whole hours, such as "3 h". Placeholder:
+    /// `{count}`.
+    TplHours,
+    /// An age in whole days, such as "3 d". Placeholder: `{count}`.
+    TplDays,
+    /// An age in whole weeks, such as "2 w". Placeholder: `{count}`.
+    TplWeeks,
+    /// An age in whole months, such as "4 mo". Placeholder: `{count}`.
+    TplMonths,
+    /// An age in whole years, such as "2 y". Placeholder: `{count}`.
+    TplYears,
+
     // Quick launch context menu.
     /// Terminate a running quick launch.
     Kill,
-    /// Edit the selected quick launch.
+    /// Edit the selected quick launch, and the item of the menu of an
+    /// Agents mode profile that opens the dialog that edits it.
     Edit,
     /// Rename the selected entry.
     Rename,
@@ -186,6 +240,10 @@ pub enum Key {
     ModeTerminal,
     /// Name of the Containers mode.
     ModeContainers,
+    /// Name of the Agents mode.
+    ModeAgents,
+    /// Name of Plugins mode in the mode switcher and the All modes menu.
+    ModePlugins,
     /// Tooltip of the "⋯" button that opens the All modes menu.
     ModesAllModes,
     /// Label of the menu section with Terminal and the pinned modes.
@@ -221,17 +279,8 @@ pub enum Key {
     ContainersCreateVolume,
     /// Create button above the networks table.
     ContainersCreateNetwork,
-    /// Tooltip of the button that loads every list again.
-    ContainersRefresh,
-    /// Tooltip of the "⋯" button that holds the header actions that do not
-    /// fit, and of the "⋯" button at the end of a table row.
-    ContainersMoreActions,
     /// Placeholder of the tag search above the table.
     ContainersSearchPlaceholder,
-    /// Tooltip of the cross of a tag above the table.
-    ContainersTagRemove,
-    /// Button at the end of the tags above the table.
-    ContainersTagsClearAll,
     /// Running containers next to Containers in the tree. Placeholder:
     /// `{count}`.
     TplContainersRunning,
@@ -403,20 +452,6 @@ pub enum Key {
     /// Inspector status of a network with several containers. Placeholder:
     /// `{count}`.
     TplContainersContainersConnected,
-    /// Age of an item created less than a minute ago.
-    ContainersAgeUnderMinute,
-    /// Age in minutes. Placeholder: `{count}`.
-    TplContainersAgeMinutes,
-    /// Age in hours. Placeholder: `{count}`.
-    TplContainersAgeHours,
-    /// Age in days. Placeholder: `{count}`.
-    TplContainersAgeDays,
-    /// Age in weeks. Placeholder: `{count}`.
-    TplContainersAgeWeeks,
-    /// Age in months. Placeholder: `{count}`.
-    TplContainersAgeMonths,
-    /// Age in years. Placeholder: `{count}`.
-    TplContainersAgeYears,
     /// Name of Containers mode in the status bar while no engine is shown.
     ContainersStatusMode,
     /// Status bar text while OTTY looks for engines.
@@ -564,8 +599,6 @@ pub enum Key {
     ContainersFieldImage,
     /// Label of the tag field of the pull dialog.
     ContainersFieldTag,
-    /// Label of the name field of the create volume and create network dialogs.
-    ContainersFieldName,
     /// Label of the driver field of the create volume and create network dialogs.
     ContainersFieldDriver,
     /// Placeholder of the image field of the pull dialog.
@@ -785,12 +818,16 @@ pub enum Key {
     CloseSession,
     /// Action that shows or hides the left panel.
     PaletteToggleLeftPanel,
-    /// Action that shows or hides the files panel.
-    PaletteToggleFilesPanel,
+    /// Action that shows or hides the right panel.
+    PaletteToggleRightPanel,
     /// Action that switches to Terminal mode.
     PaletteSwitchToTerminalMode,
     /// Action that switches to Containers mode.
     PaletteSwitchToContainersMode,
+    /// Palette entry that switches to Agents mode.
+    PaletteSwitchToAgentsMode,
+    /// Palette entry that switches to Plugins mode.
+    PaletteSwitchToPluginsMode,
 
     // Quick launch wizard.
     /// Title of the form that creates a launch.
@@ -1005,12 +1042,6 @@ pub enum Key {
     NotificationRemove,
     /// Line of the notifications list while it is empty.
     NotificationsEmpty,
-    /// Age of a notification that came less than a minute ago.
-    NotificationJustNow,
-    /// Age of a notification in whole minutes. Placeholder: `{count}`.
-    TplNotificationMinutesAgo,
-    /// Age of a notification in whole hours. Placeholder: `{count}`.
-    TplNotificationHoursAgo,
     /// Notification when a launch could not start.
     /// Placeholders: `{title}`, `{error}`.
     TplLaunchFailed,
@@ -1050,12 +1081,990 @@ pub enum Key {
     /// Notification when a file or a folder in Files could not be created,
     /// renamed, moved or deleted. Placeholders: `{name}`, `{error}`.
     TplFilesChangeFailed,
+    // Agents mode: profiles, projects, sessions and the status bar.
+    /// Title of the section of the profiles in the Agents mode left panel,
+    /// "Profiles".
+    AgentsSectionProfiles,
+    /// Label of the projects in the Agents mode left panel.
+    AgentsProjects,
+    /// Shown while the profiles are read for the first time.
+    AgentsLoading,
+    /// Shown in the left panel when no session was found.
+    AgentsNoProjects,
+    /// State of a profile whose program was not found.
+    AgentsStateProgramNotFound,
+    /// State of a profile whose config folder does not exist.
+    AgentsStateConfigDirNotFound,
+    /// Note under a profile whose sessions could not be read. Placeholder:
+    /// `{error}`, why each way of reading them failed.
+    TplAgentsSessionsFailed,
+    /// Word after a project whose folder no longer exists.
+    AgentsProjectMissing,
+    /// Title of the card shown when no agent was found.
+    AgentsNoAgentTitle,
+    /// Text of the card shown when no agent was found.
+    AgentsNoAgentText,
+    /// Title of the card shown when no agent part of a plugin is on.
+    AgentsNoAgentPartTitle,
+    /// Text of the card shown when no agent part of a plugin is on.
+    AgentsNoAgentPartText,
+    /// Title of the card shown while no project is selected.
+    AgentsStartTitle,
+    /// Text of the card shown while no project is selected.
+    AgentsStartText,
+    /// Button that continues a session in a terminal tab.
+    AgentsContinue,
+    /// Title of the column of the session titles in the sessions table.
+    AgentsColumnTitle,
+    /// The word "Agent": the column of the agents in the sessions table,
+    /// the label of the agent of a profile and the heading of the agents in
+    /// the funnel menu of the projects.
+    AgentsAgent,
+    /// The word "Profile": the column of the profiles in the sessions
+    /// table, the title of the facts of a profile on its dashboard and the
+    /// label of the profile select of the New session dialog.
+    AgentsProfile,
+    /// Title of the column of the last change in the sessions table.
+    AgentsColumnUpdated,
+    /// Placeholder of the search field over the sessions table.
+    AgentsSessionsSearchPlaceholder,
+    /// Tooltip of the button that reads the sessions again.
+    AgentsRefreshSessions,
+    /// Tooltip of the button that opens the project folder in a terminal tab.
+    AgentsOpenFolderTerminal,
+    /// Tooltip of the "⋯" button of a session row.
+    AgentsSessionActions,
+    /// Menu item that continues a session in a new pane of the terminal tab in front.
+    AgentsContinueInSplit,
+    /// Menu item that copies the command that continues a session.
+    AgentsCopyResumeCommand,
+    /// Menu item that copies the id of a session.
+    AgentsCopySessionId,
+    /// Line under the sessions table that says how to continue a session.
+    AgentsSessionsHint,
+    /// Shown in the sessions table when no session passes the search.
+    AgentsSessionsNothingMatches,
+    /// Button that starts a new session in the project folder.
+    AgentsNewSession,
+    /// Notice of a project whose folder no longer exists.
+    AgentsFolderMissing,
+    /// Status bar count of one project.
+    AgentsStatusOneProject,
+    /// Status bar count of projects. Placeholder: `{count}`.
+    TplAgentsStatusProjects,
+    /// Status bar count of one agent session.
+    AgentsStatusOneSession,
+    /// Status bar count of agent sessions. Placeholder: `{count}`.
+    TplAgentsStatusSessions,
+    /// Toast when `agents.json` could not be read. Placeholder: `{error}`.
+    TplAgentsProfilesReadFailed,
+    /// Toast when a config or session folder of a profile is there but
+    /// could not be read. Placeholders: `{name}`, the profile; `{error}`,
+    /// why.
+    TplAgentsFolderUnreadable,
+    /// Toast when every source of a profile's usage failed and one gave an
+    /// answer OTTY does not expect: the agent probably changed. Placeholders:
+    /// `{name}`, the profile; `{error}`, why each source failed.
+    TplAgentsLimitsChanged,
+    /// Tooltip of the `+` of the Profiles section, which opens the
+    /// dialog that adds a profile, and the title of that dialog.
+    AgentsAddProfile,
+    /// Label of the account a profile is logged in with.
+    AgentsFieldAccount,
+    /// Label of the plan of the account of a profile.
+    AgentsFieldPlan,
+    /// Label of the config folder of a profile.
+    AgentsFieldConfigDir,
+    /// Button of a profile that is not logged in: opens a tab where the agent logs in.
+    AgentsLogIn,
+    /// Note of a profile whose config folder was not found.
+    AgentsConfigDirNotFoundHint,
+    /// Title of the dialog that edits a profile.
+    AgentsEditProfileTitle,
+    /// Choice of a config folder the user types, "Type a path".
+    AgentsFolderTyped,
+    /// Choice of a new config folder OTTY creates.
+    AgentsFolderCreate,
+    /// Hint under the path of a new config folder.
+    AgentsCreateFolderHint,
+    /// Check of the name of a profile: it is empty.
+    AgentsErrorEmptyName,
+    /// Check of the name of a profile: another profile has it.
+    AgentsErrorNameTaken,
+    /// Check of the config folder of a profile: no path.
+    AgentsErrorFolderEmpty,
+    /// Check of the config folder of a profile: the path is not a full path.
+    AgentsErrorFolderNotFull,
+    /// Check of the config folder of a profile: another profile of the agent uses it.
+    AgentsErrorFolderTaken,
+    /// The profiles could not be saved. Placeholder: `{error}`.
+    TplAgentsSaveFailed,
+    /// Why a change of the profiles is not saved: `agents.json` could not be read.
+    AgentsSavedFileUnread,
+    /// Title of the dialog that asks before a profile is removed. Placeholder: `{name}`.
+    TplAgentsRemoveTitle,
+    /// Text of the dialog that asks before a profile is removed. Placeholder: `{path}`.
+    TplAgentsRemoveText,
+    /// Label of the credits of a profile's account.
+    AgentsFieldCredits,
+    /// The credits of an account that has no limit on them.
+    AgentsCreditsUnlimited,
+    /// The credits of an account whose plan tells no number of them.
+    AgentsCreditsAvailable,
+    /// Note under credits that have no number: the plan tells no balance.
+    AgentsCreditsNoBalance,
+    /// A limit window that starts again within the minute.
+    AgentsResetsNow,
+    /// When limits read from a session file were recorded there, such as "30 min ago". Placeholder: `{time}`.
+    TplAgentsLimitsRecorded,
+    /// The limits were never read; the reasons follow. Placeholder: `{error}`.
+    TplAgentsLimitsNotAvailable,
+    /// The last read of the limits failed and older ones show. Placeholder: `{error}`.
+    TplAgentsLimitsReadFailed,
+    /// The tokens could not be counted; the reason follows. Placeholder: `{error}`.
+    TplAgentsTokensFailed,
+    /// A source or a profile and why it failed, such as "Session files: not logged in". Placeholders: `{name}`, `{reason}`.
+    TplAgentsNamedFailure,
+    /// The line under the credits: what is left and when the pool renews, such as "3 760 left, Resets on Thursday at 09:00". Placeholders: `{left}`, `{renews}`.
+    TplAgentsCreditsLeftRenews,
+    /// Tooltip of the Refresh button of the Agents section: reads the profiles, their limits and sessions again.
+    AgentsRefreshAll,
+    /// Tooltip of the search button of the Projects section.
+    AgentsSearchProjects,
+    /// Tooltip of the chevron of New session in the Projects section: lists the profiles.
+    AgentsChooseAgent,
+    /// Placeholder of the search field of the projects.
+    AgentsSearchPlaceholder,
+    /// Tooltip of the cross that clears the search field of the projects.
+    AgentsSearchClear,
+    /// Note under the empty search field of the projects.
+    AgentsSearchHint,
+    /// Note under the search field while text is typed, such as "2 of 7 projects match". Placeholders: `{shown}`, `{total}`.
+    TplAgentsProjectsMatch,
+    /// Note under the empty search field while a filter is on, such as "4 of 7 projects shown". Placeholders: `{shown}`, `{total}`.
+    TplAgentsProjectsShown,
+    /// Tooltip of the funnel next to the search field of the projects, and the name of its menu.
+    AgentsFilterProjects,
+    /// Funnel menu item that shows the projects of every agent.
+    AgentsFilterAllAgents,
+    /// Heading of what to show in the funnel menu of the projects.
+    AgentsFilterShow,
+    /// Funnel menu item that shows only the projects used in the last 30 days.
+    AgentsFilterRecent,
+    /// Funnel menu item that shows only the projects whose folder is gone.
+    AgentsFilterMissing,
+    /// Funnel menu item that sorts the projects by name.
+    AgentsFilterSortByName,
+    /// Funnel menu item that turns every filter off.
+    AgentsFilterClearAll,
+    /// Chip of the agent filter of the projects, such as "Coder only". Placeholder: `{name}`.
+    TplAgentsChipAgentOnly,
+    /// Chip of the filter of the projects used in the last 30 days.
+    AgentsChipRecent,
+    /// Chip of the filter of the projects whose folder is gone.
+    AgentsChipMissing,
+    /// Chip of the sort of the projects by name.
+    AgentsChipSortedByName,
+    /// Tooltip of the cross of a filter chip of the projects.
+    AgentsChipRemove,
+    /// Short number of a credits profile, such as "3 760 left". Placeholder: `{amount}`.
+    TplAgentsCreditsLeft,
+    /// Short number of a profile from what it spent today: the money of an
+    /// API key profile, such as "$12.40 today", or the tokens of a credits
+    /// profile whose plan tells no number, such as "1.8M today".
+    /// Placeholder: `{amount}`.
+    TplAgentsAmountToday,
+    /// State word of a profile row whose agent needs the user to log in.
+    AgentsStateNeedsLogin,
+    /// The number of an account in the left panel while a plugin part asks the user to do something before it can read.
+    AgentsStateNeedsYou,
+    /// How much of a usage window is used, such as "42 % used". Placeholder: `{count}`.
+    TplAgentsPercentUsed,
+    /// Name of the extra usage a subscription bought this month, shown like a usage window.
+    AgentsExtraUsage,
+    /// An amount of money of a limit, such as "$4.20 of $50". Placeholders: `{amount}`, `{limit}`.
+    TplAgentsAmountOf,
+    /// How many credits of the pool are used, such as "1 240 of 5 000 used". Placeholders: `{used}`, `{pool}`.
+    TplAgentsCreditsUsedOf,
+    /// Label of the numbers of today on the profile dashboard, and the last day under the bars per day.
+    AgentsToday,
+    /// Label of the numbers of the last 7 days on the profile dashboard.
+    AgentsLastSevenDays,
+    /// Label of the money of the current month on the dashboard of an API key profile.
+    AgentsThisMonth,
+    /// Tooltip of the mark "at API prices": the tokens priced at the API list prices of LiteLLM fetched at a time. Placeholder: `{time}`.
+    TplAgentsMoneyAtApiPrices,
+    /// Short mark next to money of tokens at the API list prices, on a subscription too.
+    AgentsApiPricesMark,
+    /// An amount at API prices with its mark in one line, such as "$42.10, at API prices" as the Cost of a project. Placeholders: `{amount}`, `{mark}`.
+    TplAgentsAmountAtApiPrices,
+    /// Line under the money of an organization whose bill could not be read with its admin key. Placeholder: `{error}`.
+    TplAgentsBillReadFailed,
+    /// Label of the number of sessions of a profile and the projects they
+    /// ran in, and the column of the top projects table: the sessions of
+    /// the project.
+    AgentsSessions,
+    /// Tab of the top section: the projects.
+    AgentsTopByProject,
+    /// Tab of the top section: the models.
+    AgentsTopByModel,
+    /// Line in place of the table of a tab of the top section that has nothing to list.
+    AgentsTopEmpty,
+    /// Column of the top projects table: the project.
+    AgentsColumnProject,
+    /// Column of the top tables (the tokens of the project or the model),
+    /// and the number a source gives: the tokens spent and the sessions.
+    AgentsTokens,
+    /// Column of the top models table: the model.
+    AgentsColumnModel,
+    /// Column of the top models table: the requests of the model.
+    AgentsColumnRequests,
+    /// Line under the typed path of a new profile: the folder must already exist.
+    AgentsTypedFolderHint,
+    /// Choice of a key field: a file that holds the key.
+    AgentsKeyPlaceFile,
+    /// Choice of a key field: an environment variable that holds the key.
+    AgentsKeyPlaceVariable,
+    /// Error under the path of the admin key file: it is not a full path.
+    AgentsErrorKeyPathNotFull,
+    /// Error under the name of the admin key variable: it is not a variable name.
+    AgentsErrorVariableName,
+    /// Title of the billing block of a profile's dashboard: its usage windows, credits or money.
+    AgentsUsage,
+    /// Line under the Usage title: when the numbers shown were read, such as "2 min ago". Placeholder: `{time}`.
+    TplAgentsUpdated,
+    /// A reset within a day: how long until it and its clock time. Placeholders: `{duration}`, `{time}`.
+    TplAgentsResetsInAt,
+    /// A reset within six days: the day of the week and the clock time. Placeholders: `{day}`, `{time}`.
+    TplAgentsResetsOnDay,
+    /// A reset more than six days ahead: the date and the clock time. Placeholders: `{date}`, `{time}`.
+    TplAgentsResetsOnDate,
+    /// How long until a reset, in hours and minutes. Placeholders: `{hours}`, `{minutes}`.
+    TplAgentsDurationHoursMinutes,
+    /// A date of a reset, such as "Nov 23". Placeholders: `{month}`, `{day}`.
+    TplAgentsMonthDay,
+    /// A clock time in UTC, written when the user's time zone is not known. Placeholder: `{time}`.
+    TplAgentsTimeUtc,
+    /// Monday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayMonday,
+    /// Tuesday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayTuesday,
+    /// Wednesday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayWednesday,
+    /// Thursday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayThursday,
+    /// Friday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdayFriday,
+    /// Saturday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdaySaturday,
+    /// Sunday, as it is written in the reset line "Resets on {day} at {time}".
+    AgentsWeekdaySunday,
+    /// The short name of the month Jan, as it is written in a reset date.
+    AgentsMonthJan,
+    /// The short name of the month Feb, as it is written in a reset date.
+    AgentsMonthFeb,
+    /// The short name of the month Mar, as it is written in a reset date.
+    AgentsMonthMar,
+    /// The short name of the month Apr, as it is written in a reset date.
+    AgentsMonthApr,
+    /// The short name of the month May, as it is written in a reset date.
+    AgentsMonthMay,
+    /// The short name of the month Jun, as it is written in a reset date.
+    AgentsMonthJun,
+    /// The short name of the month Jul, as it is written in a reset date.
+    AgentsMonthJul,
+    /// The short name of the month Aug, as it is written in a reset date.
+    AgentsMonthAug,
+    /// The short name of the month Sep, as it is written in a reset date.
+    AgentsMonthSep,
+    /// The short name of the month Oct, as it is written in a reset date.
+    AgentsMonthOct,
+    /// The short name of the month Nov, as it is written in a reset date.
+    AgentsMonthNov,
+    /// The short name of the month Dec, as it is written in a reset date.
+    AgentsMonthDec,
+    /// Name of the first source of the list prices: the LiteLLM price table, fetched at most once a day.
+    AgentsSourceLitellmPrices,
+    /// Name of the second source of the list prices: the copy of the LiteLLM price table kept from the last good fetch.
+    AgentsSourceKeptPrices,
+    /// Name of a plugin part where a failure names what failed; "Read by" names the plugin.
+    AgentsSourcePlugin,
+    /// Number of the dashboard a source gives: the usage windows or the credits of a subscription.
+    AgentsNumberLimits,
+    /// Number of the dashboard a source gives: the money of an API key profile.
+    AgentsNumberMoney,
+    /// Notification: the LiteLLM price table or its kept copy is broken or not what OTTY expects. Placeholder: `{error}`.
+    TplAgentsPricesUnreadable,
+    /// Item of the menu of a session that opens its statistics.
+    AgentsShowStatistics,
+    /// Tooltip of the button of the project title row that opens the statistics of the project.
+    AgentsProjectStatistics,
+    /// Label of when a session started, in its statistics.
+    AgentsStatsStarted,
+    /// Label of when a session or a project was last active, in its statistics.
+    AgentsStatsLastActivity,
+    /// Label of when a project was first active, in its statistics.
+    AgentsStatsFirstActivity,
+    /// Label of how long a session ran, in its statistics.
+    AgentsStatsLength,
+    /// Label of how many answers the model gave in a session.
+    AgentsStatsAnswers,
+    /// Title of the table of the sessions and tokens of each profile in the statistics of a project.
+    AgentsStatsByProfile,
+    /// Title of the block of the usage windows at the start and the end of a session whose agent writes them.
+    AgentsStatsLimits,
+    /// Shown under the spinner while the statistics are read.
+    AgentsStatsReading,
+    /// Title of the column of the money an API key profile spent, and the label of its sum.
+    AgentsColumnCost,
+    /// Title of the Found by OTTY report: what OTTY found by itself on the first start.
+    AgentsFoundTitle,
+    /// Line under the title of the Found by OTTY report. Placeholders: `{profiles}`, `{accounts}`.
+    TplAgentsFoundIntro,
+    /// Button that closes the Found by OTTY report.
+    AgentsFoundDone,
+    /// Column of the version of an agent's program.
+    AgentsColumnVersion,
+    /// Column of the config folder of a profile.
+    AgentsColumnFolder,
+    /// Column of the places an account was found in.
+    AgentsColumnFoundIn,
+    /// Column of the number of an account now, such as "42 %".
+    AgentsColumnNow,
+    /// Title of the needs of the accounts.
+    AgentsAccountsNeedYou,
+    /// Title of the needs of the profiles.
+    AgentsProfilesNeedYou,
+    /// Title of the Accounts section of the Agents mode left panel.
+    AgentsSectionAccounts,
+    /// The first row of the Accounts section and the title of its page: every account.
+    AgentsAllAccounts,
+    /// The first row of the Profiles section and the title of its page: every profile.
+    AgentsAllProfiles,
+    /// Column of the provider of an account, such as "Example Cloud".
+    AgentsColumnProvider,
+    /// Title of the to-do list of the All accounts and All profiles pages.
+    AgentsNeedsYou,
+    /// The number of a profile whose agent has no sessions in its folder.
+    AgentsNoSessions,
+    /// Money spent this month by the bill, such as "$44.87 this month". Placeholder: `{amount}`.
+    TplAgentsAmountThisMonth,
+    /// Title of the to-do list of an account page: what the account needs from the user.
+    AgentsNeedsFromYou,
+    /// Title of the facts of an account, on its page.
+    AgentsAccountInfo,
+    /// Label of the key of an account paid with a key.
+    AgentsFieldKey,
+    /// Row of the money an account spent this month.
+    AgentsSpentThisMonth,
+    /// Row of what the agent's sessions on this computer spent through an account this month, at API prices.
+    AgentsYourSpendThisMonth,
+    /// Row of the money an organization spent this month, as its bill tells.
+    AgentsOrganizationBill,
+    /// The line under the Organization bill row while OTTY has no admin key to read it.
+    AgentsOrganizationBillWaits,
+    /// Where "Your spend this month" was counted. Placeholder: `{agent}`, the agent's name.
+    TplAgentsSpentFromSessions,
+    /// State of the session files, and the number of a profile, when the agent changed the format of its files and OTTY no longer understands them.
+    AgentsSourceFormatChanged,
+    /// Why the tokens could not be counted: the format of the session files changed. Placeholders: `{understood}`, `{seen}`.
+    TplAgentsFailureFormatChanged,
+    /// Why a plugin part gave no answer, such as "Example 0.1.0 could not read: the plugin did not finish in time". Placeholders: `{plugin}`, `{version}`, `{reason}`.
+    TplAgentsFailurePlugin,
+    /// Reason of a plugin failure: the plugin trapped, used too much memory or could not start.
+    AgentsPluginFailureStopped,
+    /// Reason of a plugin failure: the call ran past its deadline.
+    AgentsPluginFailureTooSlow,
+    /// Reason of a plugin failure: the part is paused after three failed reads in a row.
+    AgentsPluginFailurePaused,
+    /// Reason of a plugin failure: the part answered that it could not read.
+    AgentsPluginFailureCouldNotRead,
+    /// Title of the need of a profile whose agent changed its session files, such as "Coder 2.2.0 changed its session files". Placeholders: `{agent}`, `{version}`.
+    TplAgentsNeedFormatChangedTitle,
+    /// Title of the need of a profile whose agent changed its session files, when the files name no version. Placeholder: `{agent}`.
+    TplAgentsNeedFormatChangedNoVersion,
+    /// Line of the need of a profile whose agent changed its session files, with the time of the last good count. Placeholders: `{agent}`, `{tested}`, `{time}`.
+    TplAgentsNeedFormatChangedText,
+    /// Line of the need of a profile whose agent changed its session files, before any good count. Placeholders: `{agent}`, `{tested}`.
+    TplAgentsNeedFormatChangedNoNumbers,
+    /// Line of the need of a profile whose agent changed its session files, read by a plugin part, with the time of the last good count. Placeholders: `{plugin}`, `{version}`, `{agent}`, `{tested}`, `{time}`.
+    TplAgentsNeedFormatChangedPluginText,
+    /// Line of the need of a profile whose agent changed its session files, read by a plugin part, before any good count. Placeholders: `{plugin}`, `{version}`, `{agent}`, `{tested}`.
+    TplAgentsNeedFormatChangedPluginNoNumbers,
+    /// Button of the need of a changed format: copies a plain text report for the makers of OTTY.
+    AgentsCopyReport,
+    /// The label of a need a plugin part gives, naming the plugin that asks: {plugin} is its name.
+    TplAgentsNeedPluginLabel,
+    /// Tooltip of the broken plugin icon of a profile or an account whose
+    /// plugin is broken: {name}.
+    TplAgentsPluginBroken,
+    /// The button of a need that runs a command of a plugin part in a terminal tab: {command} as typed, such as `codex login`.
+    TplAgentsNeedRun,
+    /// The button of a need that asks for a key: {label} is the name of the key the part gives, such as "Admin key".
+    TplAgentsNeedAskKey,
+    /// The button that opens a page a plugin part names: {host} is its host, such as console.example.com.
+    TplAgentsNeedOpenPage,
+    /// The line of a profile whose program OTTY did not find on the PATH of the login shell: {program} is the name of the program, such as `opencode`.
+    TplAgentsNeedProgramNotFoundText,
+    /// The line of a profile whose program OTTY found neither on the PATH of the login shell nor at the places its agent part names: {program} is its name, {places} the places, such as `~/.opencode/bin/opencode`.
+    TplAgentsNeedProgramNotFoundAtPlacesText,
+    /// Added to the line of a missing program: what its install button runs; {agent} is the agent's name, {command} the command as typed.
+    TplAgentsNeedInstallRuns,
+    /// Added to the line of a need whose program is started by a full path: what its button runs; {command} is the whole command as typed.
+    TplAgentsNeedRunsCommand,
+    /// The button of a missing program that runs its install in a terminal tab: {agent} is the agent's name, such as "OpenCode".
+    TplAgentsInstallAgent,
+    /// A line of the dialog of a key a plugin part asks for: what the key starts with, {prefix}.
+    TplAgentsKeyStartsWith,
+    /// A period of the usage block: the last 7 days.
+    AgentsSevenDays,
+    /// A period of the usage block: the last 30 days.
+    AgentsThirtyDays,
+    /// The total of a period of the usage block, such as "1.2M in 7 days". Placeholders: `{amount}`, `{count}`.
+    TplAgentsAmountInDays,
+    /// Under the title of the usage block when the latest count failed. Placeholder: `{time}`.
+    TplAgentsLastGoodNumbers,
+    /// Tooltip of a bar of the usage block, such as "Nov 13: 2.9M tokens, ~$3.10". Placeholders: `{point}`, `{amount}`.
+    TplAgentsBarTip,
+    /// Tooltip of a bar of the usage block with a lit row, the lit row on a line of its own, such as "Nov 13: 2.9M tokens, ~$3.10" and "otty: 1.2M tokens, ~$1.20". Placeholders: `{point}`, `{amount}`, `{name}`, `{part}`.
+    TplAgentsBarTipLit,
+    /// A share of the usage block, such as "62 %". Placeholder: `{percent}`.
+    TplAgentsShare,
+    /// Column of the usage block: the share of each row.
+    AgentsColumnShare,
+    /// Tokens and their money in one line of the usage block, such as "400K tokens, ~$12.40". Placeholders: `{tokens}`, `{money}`.
+    TplAgentsTokensAndMoney,
+    /// A tooltip line of the usage block: the input tokens not written to the cache, or their money.
+    AgentsKindInput,
+    /// A tooltip line of the usage block: the input tokens written to the cache, or their money.
+    AgentsKindCacheWritten,
+    /// A tooltip line of the usage block: the tokens read from the cache, or their money.
+    AgentsKindCached,
+    /// A tooltip line of the usage block: the output tokens, or their money.
+    AgentsKindOutput,
+    /// A tooltip line of the usage block: the money the agent wrote itself, which has no parts.
+    AgentsMoneyWrittenByAgent,
+    /// The heading of a need: where it is and what it asks, side by side, such as "Codex, needs login". Placeholders: `{place}`, `{title}`.
+    TplAgentsNeedHeading,
+    /// Info line of a profile with no sessions. Placeholder: `{agent}`.
+    TplAgentsNoSessionsYet,
+    /// Info line of a profile with no sessions and no logins. Placeholder: `{agent}`.
+    TplAgentsInstalledNotUsed,
+    /// Title of the facts of a profile, on its page.
+    AgentsProfileInfo,
+    /// Title of the facts of a project, on its page.
+    AgentsProjectInfo,
+    /// Title of the facts of a session, in its statistics popup.
+    AgentsSessionInfo,
+    /// Label of the folder path of a project.
+    AgentsFieldPath,
+    /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
+    TplAgentsStatsFailed,
+    /// How much of a usage window was used at the start and at the end of a session, such as "12 % → 31 %". Placeholders: `{start}`, `{end}`.
+    TplAgentsLimitChange,
+    /// A date with its year and clock time, such as "Nov 16, 2026, 09:00". Placeholders: `{date}` (the month and the day), `{year}`, `{time}`.
+    TplAgentsDateTime,
+    /// Palette entry that opens Agents mode with the New session dialog in the folder of the focused terminal tab.
+    PaletteNewAgentSessionHere,
+    /// Files context menu item that opens Agents mode with the New session dialog in the folder.
+    FilesNewAgentSession,
+    /// Label of the folder field of the New session dialog: the folder the agent starts in.
+    AgentsFieldFolder,
+    /// Button of the New session dialog that starts the agent in the folder.
+    AgentsStart,
+    /// Why the New session dialog can not start: the typed folder does not exist.
+    AgentsErrorFolderNotFound,
+    /// Why the New session dialog can not start: the typed path is not a full path.
+    AgentsErrorFolderNotFullPath,
+    /// Under the profile select of the New session dialog: no profile can start a session.
+    AgentsNoProfileToStart,
+    /// Why a source failed: it can not be used here. Placeholder: `{reason}`.
+    TplAgentsFailureNotAvailable,
+    /// Why a source failed: the server could not be reached. Placeholder: `{error}`, the network library's own reason.
+    TplAgentsFailureNetwork,
+    /// Why a source failed: the answer is not what OTTY expects. Placeholder: `{reason}`.
+    TplAgentsFailureUnexpected,
+    /// Why a source failed: a folder or file could not be read. Placeholders: `{path}`, `{error}`, the system's own reason.
+    TplAgentsFailureUnreadable,
+    /// Why statistics are not available: the agent reads none. Placeholder: `{agent}`.
+    TplAgentsNoStatistics,
+    /// Why the bill is not available: the agent has none.
+    AgentsNoBill,
+    /// Why the limits are not available: the profile holds no login a plugin part could read with.
+    AgentsNoLogin,
+    /// Why the bill is not available: the admin key file is missing. Placeholder: `{path}`.
+    TplAgentsKeyFileMissing,
+    /// Why the bill is not available: the admin key file is empty. Placeholder: `{path}`.
+    TplAgentsKeyFileEmpty,
+    /// Why the bill is not available: the name of the admin key variable is not a variable name.
+    AgentsKeyVariableNotValid,
+    /// Why the bill is not available: the variable of the admin key is not set. Placeholder: `{name}`.
+    TplAgentsVariableNotSet,
+    /// Why the bill is not available: the variable of the admin key is empty. Placeholder: `{name}`.
+    TplAgentsVariableEmpty,
+    /// Why the kept prices are not available: no copy was kept yet.
+    AgentsNoKeptPriceFile,
+    /// Why the statistics of a session are not available: no file has it. Placeholder: `{id}`.
+    TplAgentsNoSessionFile,
+    /// Why the limits are not available: the agent wrote no session file yet.
+    AgentsNoSessionFiles,
+    /// Why a source is not available, or the config folder of a new profile can not be used: the path is not a folder. Placeholder: `{path}`.
+    TplAgentsNotAFolder,
+    /// Why a source is not available: its program is not found. Placeholder: `{program}`.
+    TplAgentsProgramMissing,
+    /// Why a read gave no answer: it stopped before it ended.
+    AgentsReadStopped,
+    /// What is unexpected in an answer: the HTTP status of the server. Placeholder: `{code}`.
+    TplAgentsServerAnswered,
+    /// What is unexpected in an answer: it is not a JSON object.
+    AgentsAnswerNotJsonObject,
+    /// What is unexpected in the price table: it has no price.
+    AgentsPriceFileNoPrices,
+    /// Why a folder could not be created: the folder an agent's program runs in, or the config folder of a new profile. Placeholders: `{path}`, `{error}`.
+    TplAgentsFolderNotCreated,
+    /// Why the config folder of a new profile was not used: it already has files in it. Placeholder: `{path}`.
+    TplAgentsFolderHasFiles,
+    /// Why the profiles were not saved: the save stopped before it ended.
+    AgentsSaveStopped,
+    /// Name of a usage window one hour long.
+    AgentsWindowOneHour,
+    /// Name of a usage window some hours long, such as "5 hours". Placeholder: `{count}`.
+    TplAgentsWindowHours,
+    /// Name of a usage window one day long.
+    AgentsWindowOneDay,
+    /// Name of a usage window some days long, such as "7 days". Placeholder: `{count}`.
+    TplAgentsWindowDays,
+    /// Name of a usage window whose length the source did not tell.
+    AgentsWindowLimit,
+    /// Name of a usage window that counts one model alone, such as "7 days, Opus". Placeholders: `{length}`, the name of the window, and `{model}`.
+    TplAgentsWindowForModel,
+    /// Item of the account and profile menus that opens the Rename dialog.
+    AgentsRename,
+    /// Item of the account menu that opens the provider's usage page in the browser.
+    AgentsOpenUsagePage,
+    /// Row of the Money block of an account page: the money left on the account.
+    AgentsLeft,
+    /// Row of the Money block of an account page: the limit of a key.
+    AgentsKeyLimit,
+    /// Value of the Key limit row: what the key used of its limit. {used} and {limit} are amounts of money.
+    TplAgentsKeyLimitUsed,
+    /// Value of the Key limit row of a key with no limit. {used} is an amount of money.
+    TplAgentsKeyUsedNoLimit,
+    /// Short number of a key with a limit in the lists: the money it used. {amount} is an amount of money.
+    TplAgentsAmountUsed,
+    /// Reason a source can not be used: OTTY reads nothing of the account by itself.
+    AgentsNoAccountSource,
+    /// Reason a source can not be used: the key is no longer where OTTY found it.
+    AgentsKeyGone,
+    /// Item of the account and profile menus: OTTY stops reading it and it leaves the lists.
+    AgentsHide,
+    /// Item of the menu of a hidden account or profile that brings it back.
+    AgentsShowAgain,
+    /// Item of the profile menu that shows its folder in the Files panel.
+    AgentsOpenFolder,
+    /// Item of the All accounts menu that lists the hidden accounts. Placeholder: `{count}`.
+    TplAgentsShowHiddenAccounts,
+    /// Item of the All accounts menu that takes the hidden accounts out of the lists again.
+    AgentsHideHiddenAccounts,
+    /// Item of the All profiles menu that lists the hidden profiles. Placeholder: `{count}`.
+    TplAgentsShowHiddenProfiles,
+    /// Item of the All profiles menu that takes the hidden profiles out of the lists again.
+    AgentsHideHiddenProfiles,
+    /// Item of the All accounts menu that opens the Found by OTTY window again.
+    AgentsShowFoundReport,
+    /// The number of a hidden account or profile in the lists.
+    AgentsHidden,
+    /// Under the title of a hidden account's page.
+    AgentsHiddenAccountNote,
+    /// Under the title of a hidden profile's page.
+    AgentsHiddenProfileNote,
+    /// Title of the dialog that names an account.
+    AgentsRenameAccountTitle,
+    /// Text of the dialog that names an account.
+    AgentsRenameAccountText,
+    /// Title of the dialog that names a profile.
+    AgentsRenameProfileTitle,
+    /// Text of the dialog that names a profile.
+    AgentsRenameProfileText,
+    /// Where the need of the system keyring is, in the needs lists.
+    AgentsKeyringPlace,
+    /// Need of the system keyring the user has not allowed OTTY to read.
+    AgentsNeedKeyringTitle,
+    /// What the need of the system keyring means. Placeholder: `{agents}`.
+    TplAgentsNeedKeyringText,
+    /// Button of the need of the system keyring: opens the keyring dialog.
+    AgentsAllowKeyring,
+    /// Title of the dialog that asks to allow the read of the system keyring.
+    AgentsKeyringDialogTitle,
+    /// Text of the keyring dialog. Placeholder: `{agents}`.
+    TplAgentsKeyringDialogText,
+    /// The keyring services OTTY reads, in the keyring dialog. Placeholder: `{services}`.
+    TplAgentsKeyringService,
+    /// Button of the keyring dialog that reads nothing.
+    AgentsNotNow,
+    /// Button of the keyring dialog that allows the read.
+    AgentsAllow,
+
+    // Plugins mode and the plugins in Agents mode.
+    /// Button of the "No agent plugin" card of Agents mode that opens
+    /// Plugins mode.
+    ButtonManagePlugins,
+    /// Button of Plugins mode that adds a plugin by its GitHub link.
+    PluginsAddPlugin,
+    /// Button of Plugins mode that adds a plugin from a local folder.
+    PluginsAddFromFolder,
+    /// Tooltip of the chevron of Add plugin… in Plugins mode, which opens
+    /// the ways to add a plugin.
+    PluginsAddMenu,
+    /// Title of Plugins mode with no plugin installed.
+    PluginsEmpty,
+    /// Line of Plugins mode with no plugin installed.
+    PluginsEmptyHint,
+    /// Title of the section of the installed plugins in Plugins mode.
+    PluginsSectionInstalled,
+    /// Placeholder of the search field of Plugins mode.
+    PluginsSearchPlaceholder,
+    /// Line of Plugins mode when the search hides every plugin.
+    PluginsNoMatch,
+    /// Title of the main area of Plugins mode with no plugin selected.
+    PluginsNoneSelected,
+    /// Line of the main area of Plugins mode with no plugin selected.
+    PluginsPickHint,
+    /// Sign of a plugin whose parts are all off.
+    PluginsSignOff,
+    /// Sign of a plugin whose update waits for the user's OK.
+    PluginsSignUpdate,
+    /// Sign of a plugin with a paused part or a failed check.
+    PluginsSignFailed,
+    /// Key of the installed version on the page of a plugin.
+    PluginsFieldVersion,
+    /// Key of the authors on the page of a plugin.
+    PluginsFieldAuthors,
+    /// Key of where a plugin came from on its page.
+    PluginsFieldSource,
+    /// Title of the parts on the page of a plugin.
+    PluginsSectionParts,
+    /// Health of a part that is on and not paused.
+    PluginsHealthWorking,
+    /// Health of a part that is off.
+    PluginsHealthOff,
+    /// Health of a part paused after three failures in a row.
+    PluginsHealthPaused,
+    /// Health of a part that is on of a broken plugin, whose manifest can
+    /// not be read or which failed to load.
+    PluginsHealthFailed,
+    /// Mark of an official plugin.
+    PluginsOfficial,
+    /// Mark of a community plugin.
+    PluginsCommunity,
+    /// The words on the right of a row of the plugin list: its mark and its sign side by side, such as "Official, failed". Placeholders: `{trust}`, `{sign}`.
+    TplPluginsTrustAndSign,
+    /// Mark of a plugin installed from a local folder.
+    PluginsLocal,
+    /// Kind of an agent part, as in "Coder (agent)".
+    PluginsPartAgent,
+    /// Kind of a provider part, as in "Example Cloud (provider)".
+    PluginsPartProvider,
+    /// Line next to a part paused after three failures in a row.
+    PluginsPaused,
+    /// Button that starts a paused part again.
+    PluginsTryAgain,
+    /// Action of a plugin that looks for a newer release.
+    PluginsCheckForUpdates,
+    /// Action of a local plugin that reads its folder again.
+    PluginsReload,
+    /// Action of a broken plugin from a repository that installs its
+    /// source again.
+    PluginsReinstall,
+    /// Action of a plugin that shows its log.
+    PluginsShowLog,
+    /// Action and button that remove a plugin.
+    PluginsRemove,
+    /// Button that opens the update dialog of a waiting update.
+    PluginsReview,
+    /// Item of the menu of a plugin that opens the update dialog of its
+    /// waiting update.
+    PluginsMenuReviewUpdate,
+    /// Item of the menu of a plugin that asks before it is removed.
+    PluginsMenuRemove,
+    /// Line of a plugin whose newest release needs a newer OTTY: {version}.
+    TplPluginsTooNew,
+    /// Line of a plugin whose update waits for the user's OK: {version}.
+    TplPluginsUpdateWaits,
+    /// Notification after Reload with the same version: {name}.
+    TplPluginsReloaded,
+    /// Notification after an update: {name}, {version}.
+    TplPluginsUpdated,
+    /// Notification after Check for updates with nothing newer: {name}.
+    TplPluginsUpToDate,
+    /// Error notification of Reload: {name}, {reason}.
+    TplPluginsReloadFailed,
+    /// Error notification of Check for updates: {name}, {reason}.
+    TplPluginsCheckFailed,
+    /// Notification after Reinstall with the same version: {name}.
+    TplPluginsReinstalled,
+    /// Error notification of Reinstall: {name}, {reason}.
+    TplPluginsReinstallFailed,
+    /// Why a plugin is broken: the manifest of its installed version can
+    /// not be read. Placeholders: `{version}`, `{reason}`.
+    TplPluginsManifestUnreadable,
+    /// Why a plugin is broken: it failed to load. Placeholder: `{reason}`,
+    /// the host's words.
+    TplPluginsLoadFailed,
+    /// Title of the Add plugin dialog.
+    PluginsAddPluginTitle,
+    /// Label of the field of the GitHub link.
+    PluginsUrlLabel,
+    /// Placeholder of the field of the GitHub link.
+    PluginsUrlHint,
+    /// Title of the Add plugin from folder dialog.
+    PluginsAddFromFolderTitle,
+    /// Label of the field of the folder of a local plugin.
+    PluginsFolderLabel,
+    /// Placeholder of the field of the folder of a local plugin.
+    PluginsFolderHint,
+    /// Button that looks for the plugin at the typed link or folder.
+    PluginsNext,
+    /// Line while OTTY looks for the plugin.
+    PluginsLooking,
+    /// Title of the install dialog: {name}, {version}.
+    TplPluginsInstallTitle,
+    /// Authors of a plugin in the install dialog: {authors}.
+    TplPluginsAuthors,
+    /// Note of an official plugin: the install dialog, the tooltip of its tag.
+    PluginsOfficialNote,
+    /// Note of a community plugin: the install dialog, the tooltip of its tag.
+    PluginsCommunityNote,
+    /// Note of a local plugin: the install dialog, the tooltip of its tag.
+    PluginsLocalNote,
+    /// Line of a part that asks for no permissions.
+    PluginsNoPermissions,
+    /// Title over the permissions of a part: what it can reach.
+    PluginsCanAccess,
+    /// Muted line under "Can access": everything else is refused.
+    PluginsCanAccessNote,
+    /// Title of the dialog of what a part can access: {part}.
+    TplPluginsCanAccessTitle,
+    /// Button on the card of a part: {count} places it can access.
+    TplPluginsCanAccessButton,
+    /// Group of permissions: files the part reads.
+    PluginsGroupFiles,
+    /// Group of permissions: files the part writes and deletes.
+    PluginsGroupChangesFiles,
+    /// Group of permissions: SQLite databases the part reads.
+    PluginsGroupDatabases,
+    /// Group of permissions: environment variables the part reads.
+    PluginsGroupVariables,
+    /// Group of permissions: programs the part runs.
+    PluginsGroupPrograms,
+    /// Group of permissions: programs the part runs in a hidden terminal.
+    PluginsGroupHiddenTerminal,
+    /// Group of permissions: entries of the system keyring.
+    PluginsGroupKeyring,
+    /// Group of permissions: files, databases and variables with logins or keys.
+    PluginsGroupLogins,
+    /// Group of permissions: sites the part sends requests to.
+    PluginsGroupSites,
+    /// Group of permissions OTTY can not sort, as written in plugins.json.
+    PluginsGroupOther,
+    /// Muted line under Files: read only.
+    PluginsGroupFilesMeaning,
+    /// Muted line under Changes files: may write and delete.
+    PluginsGroupChangesFilesMeaning,
+    /// Muted line under Databases: SQLite, read only.
+    PluginsGroupDatabasesMeaning,
+    /// Muted line under Variables: environment variables, read only.
+    PluginsGroupVariablesMeaning,
+    /// Muted line under Programs: runs them and reads the output.
+    PluginsGroupProgramsMeaning,
+    /// Muted line under Hidden terminal: runs without a visible tab.
+    PluginsGroupHiddenTerminalMeaning,
+    /// Muted line under Keyring: entries given as handles.
+    PluginsGroupKeyringMeaning,
+    /// Muted line under Logins: where logins are kept, given as handles.
+    PluginsGroupLoginsMeaning,
+    /// Muted line under Sites: sends requests only to these.
+    PluginsGroupSitesMeaning,
+    /// Muted words after a keyring entry.
+    PluginsPlaceKeyringNote,
+    /// Group of permissions: what a provider part reads in the profiles of
+    /// an agent part of its plugin, "Logins in {agent} profiles".
+    TplPluginsGroupProfileLogins,
+    /// Muted line under the logins in profiles: only inside the folder of
+    /// each profile OTTY gives the part.
+    PluginsGroupProfileLoginsMeaning,
+    /// Muted words after a login file in profiles: given as handles.
+    PluginsPlaceGivenAsHandles,
+    /// Muted words after a file read in profiles: read only.
+    PluginsPlaceReadOnly,
+    /// Muted words after a file a provider part writes and deletes in
+    /// profiles: may write and delete.
+    PluginsPlaceMayChange,
+    /// Mark of a permission an update asks for.
+    PluginsMarkNew,
+    /// Mark of a permission an update no longer asks for.
+    PluginsMarkNoLonger,
+    /// Button of the install dialog.
+    PluginsInstall,
+    /// Title of the update dialog: {name}, {from}, {to}.
+    TplPluginsUpdateTitle,
+    /// Line of the update dialog.
+    PluginsUpdateAsks,
+    /// Mark of a new part in the update dialog.
+    PluginsNewPart,
+    /// Mark of a part the new version no longer has.
+    PluginsPartRemoved,
+    /// Button of the update dialog.
+    PluginsUpdate,
+    /// Button of the update dialog that keeps the installed version.
+    PluginsNotNow,
+    /// Title of the log of a plugin: {name}.
+    TplPluginsLogTitle,
+    /// Text of the log of a plugin that wrote nothing.
+    PluginsLogEmpty,
+    /// Title of the dialog before Remove: {name}.
+    TplPluginsRemoveTitle,
+    /// Text of the dialog before Remove.
+    PluginsRemoveText,
+    /// Button that goes back to the list of plugins.
+    PluginsBack,
+    /// Error of a plugin that needs a newer OTTY.
+    PluginsNeedsNewerOtty,
+    /// Error: {url}.
+    TplPluginsErrorBadUrl,
+    /// Error when GitHub refuses requests.
+    PluginsErrorRateLimited,
+    /// Error: {url}.
+    TplPluginsErrorNotFound,
+    /// Error: {error}.
+    TplPluginsErrorNetwork,
+    /// Error: {error}.
+    TplPluginsErrorUnexpected,
+    /// Error of a repository with no release OTTY can install.
+    PluginsErrorNoRelease,
+    /// Error: {detail} names the contract, such as "agents.agent contract 0.2".
+    TplPluginsErrorNeedsNewerOtty,
+    /// Error: {error}.
+    TplPluginsErrorManifest,
+    /// Error: {tag}, {version}.
+    TplPluginsErrorVersionIsNotTag,
+    /// Error: {name}.
+    TplPluginsErrorMissingFile,
+    /// Error: {name}, {error}.
+    TplPluginsErrorDownload,
+    /// Error: {name}, {limit}.
+    TplPluginsErrorTooLarge,
+    /// Error: {name}, {error}.
+    TplPluginsErrorBadIcon,
+    /// Error: {id}, {origin}.
+    TplPluginsErrorIdTaken,
+    /// Error: {id}.
+    TplPluginsErrorAlreadyInstalled,
+    /// Error: {tag}, {name}.
+    TplPluginsErrorReleaseChanged,
+    /// Error: {expected}, {found}.
+    TplPluginsErrorOtherPlugin,
+    /// Error: {error}.
+    TplPluginsErrorCompile,
+    /// Error: {id}.
+    TplPluginsErrorNotInstalled,
+    /// Error: {id}, {part}.
+    TplPluginsErrorNoSuchPart,
+    /// Error: {id}.
+    TplPluginsErrorNotLocal,
+    /// The last call of a plugin part that failed, on its card in Plugins mode. Placeholders: `{time}`, `{call}`, `{kind}`.
+    TplPluginsLastFailure,
+    /// Fact of Account info and Profile info: the plugin that reads it.
+    AgentsFieldReadBy,
+    /// Fact of Account info: the name the provider part gives the account, such as an email or a short key.
+    AgentsFieldName,
+    /// Fact of Account info: what kind of account it is.
+    AgentsFieldKind,
+    /// Kind of an account: a subscription, such as a ChatGPT or a Claude plan.
+    AgentsKindSubscription,
+    /// Kind of an account: a key paid per token.
+    AgentsKindKey,
+    /// Kind of an account: an organization whose bill may be read.
+    AgentsKindOrganization,
+    /// Fact of Account info: where the provider part found the account.
+    AgentsFieldSource,
+    /// Source of an account: a profile folder it was found in. Placeholders: `{folder}`.
+    TplAgentsSourceFoundIn,
+    /// Source of an account: OTTY's own login, in its private folder.
+    AgentsSourceOwnLogin,
+    /// Title of the Add account dialog and tooltip of its `+`.
+    AgentsAddAccountTitle,
+    /// First line of the Add account dialog.
+    AgentsAddAccountIntro,
+    /// Caption of the ways to add an account in the Add account dialog.
+    AgentsFieldHow,
+    /// Way to add an account: OTTY's own login with an agent. Placeholders: `{agent}`.
+    TplAgentsLogInWith,
+    /// Line under Log in with. Placeholders: `{command}`.
+    TplAgentsLogInWithText,
+    /// Way to add an account by its key, not offered yet.
+    AgentsPasteKey,
+    /// Line under Paste a key. Placeholders: `{provider}`.
+    TplAgentsPasteKeyText,
+    /// Why Paste a key is off.
+    AgentsComingLater,
+    /// A provider no agent logs in to. Placeholders: `{provider}`.
+    TplAgentsNoAgentLogin,
+    /// The Add account dialog with no provider part on.
+    AgentsNoProviderPart,
+    /// No account was found in OTTY's own login once its tab closed.
+    AgentsLoginNotFinished,
+    /// The provider part gave no login command for OTTY's own login.
+    AgentsNoLogIn,
+    /// The folder of OTTY's own login could not be made. Placeholders: `{path}`, `{error}`.
+    TplAgentsOwnFolderNotMade,
+    /// The folder of OTTY's own login could not be removed. Placeholders: `{path}`, `{error}`.
+    TplAgentsOwnFolderNotRemoved,
+    /// Read by: no plugin serves the provider.
+    AgentsReadByNoPlugin,
+    /// Read by: a part that is off; {plugin} is its plugin and version.
+    TplAgentsReadByOff,
+    /// Place of the need of a plugin update.
+    AgentsPluginsPlace,
+    /// Title of the need of a plugin update that waits.
+    AgentsNeedPluginUpdateTitle,
+    /// Line of the need of a plugin update: {plugin}, {from}, {to}.
+    TplAgentsNeedPluginUpdateText,
+    /// Button of the need of a plugin update.
+    AgentsReview,
+    /// Title of the need of a plugin that could not read: {plugin}, {version}, {what}.
+    TplAgentsNeedPluginFailedTitle,
+    /// Line of the need of a plugin that could not read: {reason}.
+    TplAgentsNeedPluginFailedText,
+    /// What a plugin could not read: the sessions.
+    AgentsPluginReadSessions,
+    /// What a plugin could not read: the tokens.
+    AgentsPluginReadTokens,
+    /// What a plugin could not read: the numbers of an account.
+    AgentsPluginReadNumbers,
+    /// Second button of the need of a format a plugin saw change.
+    AgentsOpenPluginRepository,
+    /// Item of the menu and button of the page of an account with OTTY's
+    /// own login: run its login again in its folder.
+    AgentsLogInAgain,
+    /// Title of the dialog that asks before OTTY's own login of an account
+    /// is removed.
+    AgentsRemoveAccountTitle,
+    /// Line of the dialog that asks before OTTY's own login of an account is
+    /// removed: `{path}` is its private folder, the only one deleted.
+    TplAgentsRemoveAccountText,
+    /// Check of the config folder of a profile: it is inside OTTY's own
+    /// login folders of a plugin, which Remove deletes.
+    AgentsErrorFolderIsOwnLogin,
+    /// Line of the dialog before Remove of a plugin with OTTY's own logins:
+    /// `{count}` is how many go with it.
+    TplPluginsRemoveOwnLogins,
 }
 
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 481] = [
+    pub(super) const ALL: [Self; 961] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -1087,12 +2096,32 @@ impl Key {
         Self::ThisComputer,
         Self::WindowToggleMaximize,
         Self::WindowMinimize,
-        Self::WindowFilesPanel,
+        Self::WindowRightPanel,
+        Self::WindowRightPanelNotUsed,
         Self::WindowLeftPanel,
         Self::WindowFocusMode,
         Self::FocusNoteHidden,
         Self::FocusNoteShow,
         Self::WindowClose,
+        Self::Refresh,
+        Self::MoreActions,
+        Self::TagRemove,
+        Self::TagsClearAll,
+        Self::JustNow,
+        Self::TplMinutesAgo,
+        Self::TplHoursAgo,
+        Self::TplDaysAgo,
+        Self::TplWeeksAgo,
+        Self::TplMonthsAgo,
+        Self::TplYearsAgo,
+        Self::UnderAMinute,
+        Self::FieldName,
+        Self::TplMinutes,
+        Self::TplHours,
+        Self::TplDays,
+        Self::TplWeeks,
+        Self::TplMonths,
+        Self::TplYears,
         Self::Kill,
         Self::Edit,
         Self::Rename,
@@ -1131,6 +2160,8 @@ impl Key {
         Self::TplStatusBlockPlace,
         Self::ModeTerminal,
         Self::ModeContainers,
+        Self::ModeAgents,
+        Self::ModePlugins,
         Self::ModesAllModes,
         Self::ModesPinnedSection,
         Self::TplModesPinnedNote,
@@ -1147,11 +2178,7 @@ impl Key {
         Self::ContainersPullImage,
         Self::ContainersCreateVolume,
         Self::ContainersCreateNetwork,
-        Self::ContainersRefresh,
-        Self::ContainersMoreActions,
         Self::ContainersSearchPlaceholder,
-        Self::ContainersTagRemove,
-        Self::ContainersTagsClearAll,
         Self::TplContainersRunning,
         Self::ContainersListFailedShort,
         Self::ContainersLoading,
@@ -1235,13 +2262,6 @@ impl Key {
         Self::ContainersBuiltInNetwork,
         Self::ContainersOneContainerConnected,
         Self::TplContainersContainersConnected,
-        Self::ContainersAgeUnderMinute,
-        Self::TplContainersAgeMinutes,
-        Self::TplContainersAgeHours,
-        Self::TplContainersAgeDays,
-        Self::TplContainersAgeWeeks,
-        Self::TplContainersAgeMonths,
-        Self::TplContainersAgeYears,
         Self::ContainersStatusMode,
         Self::ContainersStatusSearching,
         Self::ContainersStatusNoEngine,
@@ -1314,7 +2334,6 @@ impl Key {
         Self::ContainersNetworkInUseHint,
         Self::ContainersFieldImage,
         Self::ContainersFieldTag,
-        Self::ContainersFieldName,
         Self::ContainersFieldDriver,
         Self::ContainersImagePlaceholder,
         Self::ContainersVolumeNamePlaceholder,
@@ -1422,9 +2441,11 @@ impl Key {
         Self::PaletteSplitDown,
         Self::CloseSession,
         Self::PaletteToggleLeftPanel,
-        Self::PaletteToggleFilesPanel,
+        Self::PaletteToggleRightPanel,
         Self::PaletteSwitchToTerminalMode,
         Self::PaletteSwitchToContainersMode,
+        Self::PaletteSwitchToAgentsMode,
+        Self::PaletteSwitchToPluginsMode,
         Self::WizardTitleNew,
         Self::WizardTitleEdit,
         Self::WizardSubtitle,
@@ -1521,9 +2542,6 @@ impl Key {
         Self::NotificationsClear,
         Self::NotificationRemove,
         Self::NotificationsEmpty,
-        Self::NotificationJustNow,
-        Self::TplNotificationMinutesAgo,
-        Self::TplNotificationHoursAgo,
         Self::TplLaunchFailed,
         Self::TplSplitPaneFailed,
         Self::NoRoomForPane,
@@ -1537,5 +2555,476 @@ impl Key {
         Self::TplPinnedModesReadFailed,
         Self::TplFilesDeleteTitle,
         Self::TplFilesChangeFailed,
+        Self::AgentsSectionProfiles,
+        Self::AgentsProjects,
+        Self::AgentsLoading,
+        Self::AgentsNoProjects,
+        Self::AgentsStateProgramNotFound,
+        Self::AgentsStateConfigDirNotFound,
+        Self::TplAgentsSessionsFailed,
+        Self::AgentsProjectMissing,
+        Self::AgentsNoAgentTitle,
+        Self::AgentsNoAgentText,
+        Self::AgentsNoAgentPartTitle,
+        Self::AgentsNoAgentPartText,
+        Self::AgentsStartTitle,
+        Self::AgentsStartText,
+        Self::AgentsContinue,
+        Self::AgentsColumnTitle,
+        Self::AgentsAgent,
+        Self::AgentsProfile,
+        Self::AgentsColumnUpdated,
+        Self::AgentsSessionsSearchPlaceholder,
+        Self::AgentsRefreshSessions,
+        Self::AgentsOpenFolderTerminal,
+        Self::AgentsSessionActions,
+        Self::AgentsContinueInSplit,
+        Self::AgentsCopyResumeCommand,
+        Self::AgentsCopySessionId,
+        Self::AgentsSessionsHint,
+        Self::AgentsSessionsNothingMatches,
+        Self::AgentsNewSession,
+        Self::AgentsFolderMissing,
+        Self::AgentsStatusOneProject,
+        Self::TplAgentsStatusProjects,
+        Self::AgentsStatusOneSession,
+        Self::TplAgentsStatusSessions,
+        Self::TplAgentsProfilesReadFailed,
+        Self::TplAgentsFolderUnreadable,
+        Self::TplAgentsLimitsChanged,
+        Self::AgentsAddProfile,
+        Self::AgentsFieldAccount,
+        Self::AgentsFieldPlan,
+        Self::AgentsFieldConfigDir,
+        Self::AgentsLogIn,
+        Self::AgentsConfigDirNotFoundHint,
+        Self::AgentsEditProfileTitle,
+        Self::AgentsFolderTyped,
+        Self::AgentsFolderCreate,
+        Self::AgentsCreateFolderHint,
+        Self::AgentsErrorEmptyName,
+        Self::AgentsErrorNameTaken,
+        Self::AgentsErrorFolderEmpty,
+        Self::AgentsErrorFolderNotFull,
+        Self::AgentsErrorFolderTaken,
+        Self::TplAgentsSaveFailed,
+        Self::AgentsSavedFileUnread,
+        Self::TplAgentsRemoveTitle,
+        Self::TplAgentsRemoveText,
+        Self::AgentsFieldCredits,
+        Self::AgentsCreditsUnlimited,
+        Self::AgentsCreditsAvailable,
+        Self::AgentsCreditsNoBalance,
+        Self::AgentsResetsNow,
+        Self::TplAgentsLimitsRecorded,
+        Self::TplAgentsLimitsNotAvailable,
+        Self::TplAgentsLimitsReadFailed,
+        Self::TplAgentsTokensFailed,
+        Self::TplAgentsNamedFailure,
+        Self::TplAgentsCreditsLeftRenews,
+        Self::AgentsRefreshAll,
+        Self::AgentsSearchProjects,
+        Self::AgentsChooseAgent,
+        Self::AgentsSearchPlaceholder,
+        Self::AgentsSearchClear,
+        Self::AgentsSearchHint,
+        Self::TplAgentsProjectsMatch,
+        Self::TplAgentsProjectsShown,
+        Self::AgentsFilterProjects,
+        Self::AgentsFilterAllAgents,
+        Self::AgentsFilterShow,
+        Self::AgentsFilterRecent,
+        Self::AgentsFilterMissing,
+        Self::AgentsFilterSortByName,
+        Self::AgentsFilterClearAll,
+        Self::TplAgentsChipAgentOnly,
+        Self::AgentsChipRecent,
+        Self::AgentsChipMissing,
+        Self::AgentsChipSortedByName,
+        Self::AgentsChipRemove,
+        Self::TplAgentsCreditsLeft,
+        Self::TplAgentsAmountToday,
+        Self::AgentsStateNeedsLogin,
+        Self::AgentsStateNeedsYou,
+        Self::TplAgentsPercentUsed,
+        Self::AgentsExtraUsage,
+        Self::TplAgentsAmountOf,
+        Self::TplAgentsCreditsUsedOf,
+        Self::AgentsToday,
+        Self::AgentsLastSevenDays,
+        Self::AgentsThisMonth,
+        Self::TplAgentsMoneyAtApiPrices,
+        Self::AgentsApiPricesMark,
+        Self::TplAgentsAmountAtApiPrices,
+        Self::TplAgentsBillReadFailed,
+        Self::AgentsSessions,
+        Self::AgentsTopByProject,
+        Self::AgentsTopByModel,
+        Self::AgentsTopEmpty,
+        Self::AgentsColumnProject,
+        Self::AgentsTokens,
+        Self::AgentsColumnModel,
+        Self::AgentsColumnRequests,
+        Self::AgentsTypedFolderHint,
+        Self::AgentsKeyPlaceFile,
+        Self::AgentsKeyPlaceVariable,
+        Self::AgentsErrorKeyPathNotFull,
+        Self::AgentsErrorVariableName,
+        Self::AgentsUsage,
+        Self::TplAgentsUpdated,
+        Self::TplAgentsResetsInAt,
+        Self::TplAgentsResetsOnDay,
+        Self::TplAgentsResetsOnDate,
+        Self::TplAgentsDurationHoursMinutes,
+        Self::TplAgentsMonthDay,
+        Self::TplAgentsTimeUtc,
+        Self::AgentsWeekdayMonday,
+        Self::AgentsWeekdayTuesday,
+        Self::AgentsWeekdayWednesday,
+        Self::AgentsWeekdayThursday,
+        Self::AgentsWeekdayFriday,
+        Self::AgentsWeekdaySaturday,
+        Self::AgentsWeekdaySunday,
+        Self::AgentsMonthJan,
+        Self::AgentsMonthFeb,
+        Self::AgentsMonthMar,
+        Self::AgentsMonthApr,
+        Self::AgentsMonthMay,
+        Self::AgentsMonthJun,
+        Self::AgentsMonthJul,
+        Self::AgentsMonthAug,
+        Self::AgentsMonthSep,
+        Self::AgentsMonthOct,
+        Self::AgentsMonthNov,
+        Self::AgentsMonthDec,
+        Self::AgentsSourceLitellmPrices,
+        Self::AgentsSourceKeptPrices,
+        Self::AgentsSourcePlugin,
+        Self::AgentsNumberLimits,
+        Self::AgentsNumberMoney,
+        Self::TplAgentsPricesUnreadable,
+        Self::AgentsShowStatistics,
+        Self::AgentsProjectStatistics,
+        Self::AgentsStatsStarted,
+        Self::AgentsStatsLastActivity,
+        Self::AgentsStatsFirstActivity,
+        Self::AgentsStatsLength,
+        Self::AgentsStatsAnswers,
+        Self::AgentsStatsByProfile,
+        Self::AgentsStatsLimits,
+        Self::AgentsStatsReading,
+        Self::AgentsColumnCost,
+        Self::AgentsFoundTitle,
+        Self::TplAgentsFoundIntro,
+        Self::AgentsFoundDone,
+        Self::AgentsColumnVersion,
+        Self::AgentsColumnFolder,
+        Self::AgentsColumnFoundIn,
+        Self::AgentsColumnNow,
+        Self::AgentsAccountsNeedYou,
+        Self::AgentsProfilesNeedYou,
+        Self::AgentsSectionAccounts,
+        Self::AgentsAllAccounts,
+        Self::AgentsAllProfiles,
+        Self::AgentsColumnProvider,
+        Self::AgentsNeedsYou,
+        Self::AgentsNoSessions,
+        Self::TplAgentsAmountThisMonth,
+        Self::AgentsNeedsFromYou,
+        Self::AgentsAccountInfo,
+        Self::AgentsFieldKey,
+        Self::AgentsSpentThisMonth,
+        Self::AgentsYourSpendThisMonth,
+        Self::AgentsOrganizationBill,
+        Self::AgentsOrganizationBillWaits,
+        Self::TplAgentsSpentFromSessions,
+        Self::AgentsSourceFormatChanged,
+        Self::TplAgentsFailureFormatChanged,
+        Self::TplAgentsFailurePlugin,
+        Self::AgentsPluginFailureStopped,
+        Self::AgentsPluginFailureTooSlow,
+        Self::AgentsPluginFailurePaused,
+        Self::AgentsPluginFailureCouldNotRead,
+        Self::TplAgentsNeedFormatChangedTitle,
+        Self::TplAgentsNeedFormatChangedNoVersion,
+        Self::TplAgentsNeedFormatChangedText,
+        Self::TplAgentsNeedFormatChangedNoNumbers,
+        Self::TplAgentsNeedFormatChangedPluginText,
+        Self::TplAgentsNeedFormatChangedPluginNoNumbers,
+        Self::AgentsCopyReport,
+        Self::TplAgentsNeedPluginLabel,
+        Self::TplAgentsPluginBroken,
+        Self::TplAgentsNeedRun,
+        Self::TplAgentsNeedAskKey,
+        Self::TplAgentsNeedOpenPage,
+        Self::TplAgentsNeedProgramNotFoundText,
+        Self::TplAgentsNeedProgramNotFoundAtPlacesText,
+        Self::TplAgentsNeedInstallRuns,
+        Self::TplAgentsNeedRunsCommand,
+        Self::TplAgentsInstallAgent,
+        Self::TplAgentsKeyStartsWith,
+        Self::AgentsSevenDays,
+        Self::AgentsThirtyDays,
+        Self::TplAgentsAmountInDays,
+        Self::TplAgentsLastGoodNumbers,
+        Self::TplAgentsBarTip,
+        Self::TplAgentsBarTipLit,
+        Self::TplAgentsShare,
+        Self::AgentsColumnShare,
+        Self::TplAgentsTokensAndMoney,
+        Self::AgentsKindInput,
+        Self::AgentsKindCacheWritten,
+        Self::AgentsKindCached,
+        Self::AgentsKindOutput,
+        Self::AgentsMoneyWrittenByAgent,
+        Self::TplAgentsNeedHeading,
+        Self::TplAgentsNoSessionsYet,
+        Self::TplAgentsInstalledNotUsed,
+        Self::AgentsProfileInfo,
+        Self::AgentsProjectInfo,
+        Self::AgentsSessionInfo,
+        Self::AgentsFieldPath,
+        Self::TplAgentsStatsFailed,
+        Self::TplAgentsLimitChange,
+        Self::TplAgentsDateTime,
+        Self::PaletteNewAgentSessionHere,
+        Self::FilesNewAgentSession,
+        Self::AgentsFieldFolder,
+        Self::AgentsStart,
+        Self::AgentsErrorFolderNotFound,
+        Self::AgentsErrorFolderNotFullPath,
+        Self::AgentsNoProfileToStart,
+        Self::TplAgentsFailureNotAvailable,
+        Self::TplAgentsFailureNetwork,
+        Self::TplAgentsFailureUnexpected,
+        Self::TplAgentsFailureUnreadable,
+        Self::TplAgentsNoStatistics,
+        Self::AgentsNoBill,
+        Self::AgentsNoLogin,
+        Self::TplAgentsKeyFileMissing,
+        Self::TplAgentsKeyFileEmpty,
+        Self::AgentsKeyVariableNotValid,
+        Self::TplAgentsVariableNotSet,
+        Self::TplAgentsVariableEmpty,
+        Self::AgentsNoKeptPriceFile,
+        Self::TplAgentsNoSessionFile,
+        Self::AgentsNoSessionFiles,
+        Self::TplAgentsNotAFolder,
+        Self::TplAgentsProgramMissing,
+        Self::AgentsReadStopped,
+        Self::TplAgentsServerAnswered,
+        Self::AgentsAnswerNotJsonObject,
+        Self::AgentsPriceFileNoPrices,
+        Self::TplAgentsFolderNotCreated,
+        Self::TplAgentsFolderHasFiles,
+        Self::AgentsSaveStopped,
+        Self::AgentsWindowOneHour,
+        Self::TplAgentsWindowHours,
+        Self::AgentsWindowOneDay,
+        Self::TplAgentsWindowDays,
+        Self::AgentsWindowLimit,
+        Self::TplAgentsWindowForModel,
+        Self::AgentsRename,
+        Self::AgentsOpenUsagePage,
+        Self::AgentsLeft,
+        Self::AgentsKeyLimit,
+        Self::TplAgentsKeyLimitUsed,
+        Self::TplAgentsKeyUsedNoLimit,
+        Self::TplAgentsAmountUsed,
+        Self::AgentsNoAccountSource,
+        Self::AgentsKeyGone,
+        Self::AgentsHide,
+        Self::AgentsShowAgain,
+        Self::AgentsOpenFolder,
+        Self::TplAgentsShowHiddenAccounts,
+        Self::AgentsHideHiddenAccounts,
+        Self::TplAgentsShowHiddenProfiles,
+        Self::AgentsHideHiddenProfiles,
+        Self::AgentsShowFoundReport,
+        Self::AgentsHidden,
+        Self::AgentsHiddenAccountNote,
+        Self::AgentsHiddenProfileNote,
+        Self::AgentsRenameAccountTitle,
+        Self::AgentsRenameAccountText,
+        Self::AgentsRenameProfileTitle,
+        Self::AgentsRenameProfileText,
+        Self::AgentsKeyringPlace,
+        Self::AgentsNeedKeyringTitle,
+        Self::TplAgentsNeedKeyringText,
+        Self::AgentsAllowKeyring,
+        Self::AgentsKeyringDialogTitle,
+        Self::TplAgentsKeyringDialogText,
+        Self::TplAgentsKeyringService,
+        Self::AgentsNotNow,
+        Self::AgentsAllow,
+        Self::ButtonManagePlugins,
+        Self::PluginsAddPlugin,
+        Self::PluginsAddFromFolder,
+        Self::PluginsAddMenu,
+        Self::PluginsEmpty,
+        Self::PluginsEmptyHint,
+        Self::PluginsSectionInstalled,
+        Self::PluginsSearchPlaceholder,
+        Self::PluginsNoMatch,
+        Self::PluginsNoneSelected,
+        Self::PluginsPickHint,
+        Self::PluginsSignOff,
+        Self::PluginsSignUpdate,
+        Self::PluginsSignFailed,
+        Self::PluginsFieldVersion,
+        Self::PluginsFieldAuthors,
+        Self::PluginsFieldSource,
+        Self::PluginsSectionParts,
+        Self::PluginsHealthWorking,
+        Self::PluginsHealthOff,
+        Self::PluginsHealthPaused,
+        Self::PluginsHealthFailed,
+        Self::PluginsOfficial,
+        Self::PluginsCommunity,
+        Self::TplPluginsTrustAndSign,
+        Self::PluginsLocal,
+        Self::PluginsPartAgent,
+        Self::PluginsPartProvider,
+        Self::PluginsPaused,
+        Self::PluginsTryAgain,
+        Self::PluginsCheckForUpdates,
+        Self::PluginsReload,
+        Self::PluginsReinstall,
+        Self::PluginsShowLog,
+        Self::PluginsRemove,
+        Self::PluginsReview,
+        Self::PluginsMenuReviewUpdate,
+        Self::PluginsMenuRemove,
+        Self::TplPluginsTooNew,
+        Self::TplPluginsUpdateWaits,
+        Self::TplPluginsReloaded,
+        Self::TplPluginsUpdated,
+        Self::TplPluginsUpToDate,
+        Self::TplPluginsReloadFailed,
+        Self::TplPluginsCheckFailed,
+        Self::TplPluginsReinstalled,
+        Self::TplPluginsReinstallFailed,
+        Self::TplPluginsManifestUnreadable,
+        Self::TplPluginsLoadFailed,
+        Self::PluginsAddPluginTitle,
+        Self::PluginsUrlLabel,
+        Self::PluginsUrlHint,
+        Self::PluginsAddFromFolderTitle,
+        Self::PluginsFolderLabel,
+        Self::PluginsFolderHint,
+        Self::PluginsNext,
+        Self::PluginsLooking,
+        Self::TplPluginsInstallTitle,
+        Self::TplPluginsAuthors,
+        Self::PluginsOfficialNote,
+        Self::PluginsCommunityNote,
+        Self::PluginsLocalNote,
+        Self::PluginsNoPermissions,
+        Self::PluginsCanAccess,
+        Self::PluginsCanAccessNote,
+        Self::TplPluginsCanAccessTitle,
+        Self::TplPluginsCanAccessButton,
+        Self::PluginsGroupFiles,
+        Self::PluginsGroupChangesFiles,
+        Self::PluginsGroupDatabases,
+        Self::PluginsGroupVariables,
+        Self::PluginsGroupPrograms,
+        Self::PluginsGroupHiddenTerminal,
+        Self::PluginsGroupKeyring,
+        Self::PluginsGroupLogins,
+        Self::PluginsGroupSites,
+        Self::PluginsGroupOther,
+        Self::PluginsGroupFilesMeaning,
+        Self::PluginsGroupChangesFilesMeaning,
+        Self::PluginsGroupDatabasesMeaning,
+        Self::PluginsGroupVariablesMeaning,
+        Self::PluginsGroupProgramsMeaning,
+        Self::PluginsGroupHiddenTerminalMeaning,
+        Self::PluginsGroupKeyringMeaning,
+        Self::PluginsGroupLoginsMeaning,
+        Self::PluginsGroupSitesMeaning,
+        Self::PluginsPlaceKeyringNote,
+        Self::TplPluginsGroupProfileLogins,
+        Self::PluginsGroupProfileLoginsMeaning,
+        Self::PluginsPlaceGivenAsHandles,
+        Self::PluginsPlaceReadOnly,
+        Self::PluginsPlaceMayChange,
+        Self::PluginsMarkNew,
+        Self::PluginsMarkNoLonger,
+        Self::PluginsInstall,
+        Self::TplPluginsUpdateTitle,
+        Self::PluginsUpdateAsks,
+        Self::PluginsNewPart,
+        Self::PluginsPartRemoved,
+        Self::PluginsUpdate,
+        Self::PluginsNotNow,
+        Self::TplPluginsLogTitle,
+        Self::PluginsLogEmpty,
+        Self::TplPluginsRemoveTitle,
+        Self::PluginsRemoveText,
+        Self::PluginsBack,
+        Self::PluginsNeedsNewerOtty,
+        Self::TplPluginsErrorBadUrl,
+        Self::PluginsErrorRateLimited,
+        Self::TplPluginsErrorNotFound,
+        Self::TplPluginsErrorNetwork,
+        Self::TplPluginsErrorUnexpected,
+        Self::PluginsErrorNoRelease,
+        Self::TplPluginsErrorNeedsNewerOtty,
+        Self::TplPluginsErrorManifest,
+        Self::TplPluginsErrorVersionIsNotTag,
+        Self::TplPluginsErrorMissingFile,
+        Self::TplPluginsErrorDownload,
+        Self::TplPluginsErrorTooLarge,
+        Self::TplPluginsErrorBadIcon,
+        Self::TplPluginsErrorIdTaken,
+        Self::TplPluginsErrorAlreadyInstalled,
+        Self::TplPluginsErrorReleaseChanged,
+        Self::TplPluginsErrorOtherPlugin,
+        Self::TplPluginsErrorCompile,
+        Self::TplPluginsErrorNotInstalled,
+        Self::TplPluginsErrorNoSuchPart,
+        Self::TplPluginsErrorNotLocal,
+        Self::TplPluginsLastFailure,
+        Self::AgentsFieldReadBy,
+        Self::AgentsFieldName,
+        Self::AgentsFieldKind,
+        Self::AgentsKindSubscription,
+        Self::AgentsKindKey,
+        Self::AgentsKindOrganization,
+        Self::AgentsFieldSource,
+        Self::TplAgentsSourceFoundIn,
+        Self::AgentsSourceOwnLogin,
+        Self::AgentsAddAccountTitle,
+        Self::AgentsAddAccountIntro,
+        Self::AgentsFieldHow,
+        Self::TplAgentsLogInWith,
+        Self::TplAgentsLogInWithText,
+        Self::AgentsPasteKey,
+        Self::TplAgentsPasteKeyText,
+        Self::AgentsComingLater,
+        Self::TplAgentsNoAgentLogin,
+        Self::AgentsNoProviderPart,
+        Self::AgentsLoginNotFinished,
+        Self::AgentsNoLogIn,
+        Self::TplAgentsOwnFolderNotMade,
+        Self::TplAgentsOwnFolderNotRemoved,
+        Self::AgentsReadByNoPlugin,
+        Self::TplAgentsReadByOff,
+        Self::AgentsPluginsPlace,
+        Self::AgentsNeedPluginUpdateTitle,
+        Self::TplAgentsNeedPluginUpdateText,
+        Self::AgentsReview,
+        Self::TplAgentsNeedPluginFailedTitle,
+        Self::TplAgentsNeedPluginFailedText,
+        Self::AgentsPluginReadSessions,
+        Self::AgentsPluginReadTokens,
+        Self::AgentsPluginReadNumbers,
+        Self::AgentsOpenPluginRepository,
+        Self::AgentsLogInAgain,
+        Self::AgentsRemoveAccountTitle,
+        Self::TplAgentsRemoveAccountText,
+        Self::AgentsErrorFolderIsOwnLogin,
+        Self::TplPluginsRemoveOwnLogins,
     ];
 }

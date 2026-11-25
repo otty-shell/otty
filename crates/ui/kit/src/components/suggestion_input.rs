@@ -1,0 +1,365 @@
+//! A text input with suggestions floating under it: the one way a field of
+//! the kit suggests, whatever it suggests. [`TagSearchField`] suggests keys,
+//! values and names; [`TextField`] suggests what the app gives it, such as
+//! folders. Each gives only its rows, the row that is lit and what a pick
+//! and a move of the light send.
+//!
+//! The piece holds the rest, the same in every field: the keys of the list
+//! (see [`SuggestionInput::on_highlight`]), bound on the focused input so
+//! they do not reach it; the list that opens while there are rows; a press
+//! on a row; a press away, and the field losing the keyboard (Tab to the
+//! next field), which close the list; the lit row kept in view; the cursor
+//! moved to the end when the app replaces the text (a pick). The list
+//! itself, with its look of a menu, is a [`FloatingList`].
+//!
+//! The [`CommandPalette`] shows its list as its own body, not floating
+//! under the input, with group labels and a footer. It takes the keys of
+//! the list ([`ListKeys`]) from here.
+//!
+//! [`TagSearchField`]: super::tag_search_field::TagSearchField
+//! [`TextField`]: super::text_field::TextField
+//! [`CommandPalette`]: super::command_palette::CommandPalette
+
+use iced::Element;
+use iced::keyboard::key::Named;
+use iced::widget::text_input::TextInput;
+
+use super::floating_list::{self, FloatingList};
+use super::input_keys::InputKeys;
+use crate::palette::UiPalette;
+
+/// A text input and the rows suggested for it. The list shows while there
+/// are rows, so the owner closes it by giving none. The input is always
+/// wrapped the same way, with the list open or not, so it keeps the
+/// keyboard while the rows come and go.
+pub(super) struct SuggestionInput<'a, Message> {
+    input: TextInput<'a, Message>,
+    text: &'a str,
+    palette: UiPalette,
+    rows: Vec<Element<'a, Message>>,
+    highlighted: Option<usize>,
+    on_pick: Option<Box<dyn Fn(usize) -> Message + 'a>>,
+    on_highlight: Option<Box<dyn Fn(Option<usize>) -> Message + 'a>>,
+    keys: Vec<(Named, Message)>,
+    on_focus: Option<Message>,
+    on_close: Option<Message>,
+    on_escape: Option<Message>,
+}
+
+impl<'a, Message: Clone + 'a> SuggestionInput<'a, Message> {
+    /// Wraps `input`, which shows `text`, with no rows.
+    pub(super) fn new(
+        input: TextInput<'a, Message>,
+        text: &'a str,
+        palette: &UiPalette,
+    ) -> Self {
+        Self {
+            input,
+            text,
+            palette: palette.clone(),
+            rows: Vec::new(),
+            highlighted: None,
+            on_pick: None,
+            on_highlight: None,
+            keys: Vec::new(),
+            on_focus: None,
+            on_close: None,
+            on_escape: None,
+        }
+    }
+
+    /// Adds a row showing `content`; a press on it is a pick of it.
+    pub(super) fn row(
+        mut self,
+        content: impl Into<Element<'a, Message>>,
+    ) -> Self {
+        self.rows.push(content.into());
+        self
+    }
+
+    /// Lights the row at `highlighted` and keeps it in view. The owner
+    /// keeps the lit row: it clears it when the text changes, on a pick and
+    /// when the list closes.
+    pub(super) fn highlighted(mut self, highlighted: Option<usize>) -> Self {
+        self.highlighted = highlighted;
+        self
+    }
+
+    /// Sends `on_pick` with the place of a row in the list when the row is
+    /// pressed, or when Enter or Tab is pressed while it is lit. Without it
+    /// the rows can not be picked.
+    pub(super) fn on_pick(
+        mut self,
+        on_pick: Option<Box<dyn Fn(usize) -> Message + 'a>>,
+    ) -> Self {
+        self.on_pick = on_pick;
+        self
+    }
+
+    /// Lets ↓ and ↑ move the light while the list shows, by the rules of
+    /// every list under a field: no row is lit until ↓; ↓ lights the first
+    /// row, then the next one, and stops at the last; ↑ lights the row
+    /// above, and from the first row leaves the list (`None`). With a row
+    /// lit, Enter and Tab pick it (see [`Self::on_pick`]); with none, they
+    /// are left to the input and the app (Enter submits, Tab moves the
+    /// focus). `on_highlight` sends the row to light next.
+    pub(super) fn on_highlight(
+        mut self,
+        on_highlight: Option<Box<dyn Fn(Option<usize>) -> Message + 'a>>,
+    ) -> Self {
+        self.on_highlight = on_highlight;
+        self
+    }
+
+    /// Sends `message` when `key` is pressed in the focused input, for a
+    /// key of the field's own; the keys of the list come first.
+    pub(super) fn on_key(mut self, key: Named, message: Message) -> Self {
+        self.keys.push((key, message));
+        self
+    }
+
+    /// Sends `message` on Esc while the list is closed; while it shows, Esc
+    /// closes it (see [`Self::on_close`]).
+    pub(super) fn on_escape(mut self, message: Option<Message>) -> Self {
+        self.on_escape = message;
+        self
+    }
+
+    /// Sends `message` when the input gets the focus.
+    pub(super) fn on_focus(mut self, message: Option<Message>) -> Self {
+        self.on_focus = message;
+        self
+    }
+
+    /// Sends `message` on a press away from the input and its open list,
+    /// and on Esc while the list shows.
+    pub(super) fn on_close(mut self, message: Option<Message>) -> Self {
+        self.on_close = message;
+        self
+    }
+}
+
+impl<'a, Message: Clone + 'a> From<SuggestionInput<'a, Message>>
+    for Element<'a, Message>
+{
+    fn from(value: SuggestionInput<'a, Message>) -> Self {
+        let highlighted =
+            value.highlighted.filter(|row| *row < value.rows.len());
+        let is_open = !value.rows.is_empty();
+        let list_keys = ListKeys {
+            rows: value.rows.len(),
+            highlighted,
+            on_pick: value.on_pick.as_deref(),
+            on_highlight: value.on_highlight.as_deref(),
+            on_close: value.on_close.clone(),
+            on_escape: value.on_escape.clone(),
+        };
+
+        let mut keys =
+            list_keys.bind(InputKeys::new(value.input).follow_text(value.text));
+        for (key, message) in value.keys {
+            keys = keys.on_key(key, message);
+        }
+        if let Some(message) = value.on_focus {
+            keys = keys.on_focus(message);
+        }
+        if is_open && let Some(message) = value.on_close.clone() {
+            keys = keys.on_blur(message);
+        }
+
+        let mut floating = FloatingList::new(keys).on_close(value.on_close);
+        if is_open {
+            let rows: Vec<(Element<'a, Message>, Option<Message>)> = value
+                .rows
+                .into_iter()
+                .enumerate()
+                .map(|(index, content)| {
+                    (
+                        content,
+                        value.on_pick.as_ref().map(|on_pick| on_pick(index)),
+                    )
+                })
+                .collect();
+            floating = floating_list::open_list(
+                floating,
+                rows,
+                highlighted,
+                &value.palette,
+            );
+        }
+
+        floating.into()
+    }
+}
+
+/// The keys of a list of suggestions, by the rules of every list of the
+/// kit: no row is lit until ↓; ↓ lights the first row, then the next one,
+/// and stops at the last; ↑ lights the row above, and from the first row
+/// leaves the list; Enter and Tab pick the lit row; with none lit they are
+/// left to the input and the app (Enter submits, Tab moves to the next
+/// field); Esc closes an open list, then is the field's own Esc. ↓ on a
+/// closed list (no rows) does nothing.
+///
+/// It has no rules of its own to keep: a plain bag of what the owner of the
+/// list gives.
+pub(super) struct ListKeys<'f, Message> {
+    /// How many rows the list shows; none while it is closed.
+    pub(super) rows: usize,
+    /// The lit row, among the rows.
+    pub(super) highlighted: Option<usize>,
+    /// What a pick of a row sends; without it nothing is picked.
+    pub(super) on_pick: Option<&'f dyn Fn(usize) -> Message>,
+    /// What a move of the light sends, with the row to light next; without
+    /// it ↓ and ↑ are not taken.
+    pub(super) on_highlight: Option<&'f dyn Fn(Option<usize>) -> Message>,
+    /// What closes the open list.
+    pub(super) on_close: Option<Message>,
+    /// The field's own Esc, while the list is closed.
+    pub(super) on_escape: Option<Message>,
+}
+
+impl<Message: Clone> ListKeys<'_, Message> {
+    /// Binds the keys of the list on the input of `keys`, before any key
+    /// of the field's own.
+    pub(super) fn bind<'a>(
+        self,
+        mut keys: InputKeys<'a, Message>,
+    ) -> InputKeys<'a, Message> {
+        let is_open = self.rows > 0;
+
+        if is_open && let Some(on_highlight) = self.on_highlight {
+            keys = keys.on_key(
+                Named::ArrowDown,
+                on_highlight(Some(row_below(self.highlighted, self.rows))),
+            );
+            if let Some(row) = self.highlighted {
+                keys =
+                    keys.on_key(Named::ArrowUp, on_highlight(row_above(row)));
+            }
+        }
+        if let (Some(row), Some(on_pick)) = (self.highlighted, self.on_pick) {
+            keys = keys
+                .on_key(Named::Enter, on_pick(row))
+                .on_key(Named::Tab, on_pick(row));
+        }
+
+        let escape = if is_open {
+            self.on_close.or(self.on_escape)
+        } else {
+            self.on_escape
+        };
+        if let Some(message) = escape {
+            keys = keys.on_key(Named::Escape, message);
+        }
+
+        keys
+    }
+}
+
+/// The row ↓ lights in a list of `rows` rows: the first one while none is
+/// lit, else the next one; the last row keeps the light.
+fn row_below(highlighted: Option<usize>, rows: usize) -> usize {
+    match highlighted {
+        Some(row) => (row + 1).min(rows.saturating_sub(1)),
+        None => 0,
+    }
+}
+
+/// The row ↑ lights from `row`: the one above; from the first row the light
+/// leaves the list.
+fn row_above(row: usize) -> Option<usize> {
+    row.checked_sub(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use iced::widget::{Id, text_input};
+    use iced_test::simulator;
+
+    use super::*;
+
+    const INPUT: &str = "input";
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum Message {
+        Typed(String),
+        Submitted,
+        Picked(usize),
+        Lit(Option<usize>),
+        Closed,
+        Escaped,
+    }
+
+    /// Focuses an input under a list of `rows` rows with the row at
+    /// `highlighted` lit, presses `key` and returns what was sent.
+    fn tap(
+        rows: usize,
+        highlighted: Option<usize>,
+        key: Named,
+    ) -> Vec<Message> {
+        let on_pick = Message::Picked;
+        let on_highlight = Message::Lit;
+        let list_keys = ListKeys {
+            rows,
+            highlighted,
+            on_pick: Some(&on_pick),
+            on_highlight: Some(&on_highlight),
+            on_close: Some(Message::Closed),
+            on_escape: Some(Message::Escaped),
+        };
+        let input = text_input("", "")
+            .id(Id::new(INPUT))
+            .on_input(Message::Typed)
+            .on_submit(Message::Submitted);
+        let field: Element<'_, Message> =
+            list_keys.bind(InputKeys::new(input)).into();
+        let mut ui = simulator(field);
+
+        ui.click(Id::new(INPUT)).expect("the input should show");
+        ui.tap_key(key);
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn down_lights_the_first_row_then_the_next_and_stops_at_the_last() {
+        assert_eq!(tap(3, None, Named::ArrowDown), [Message::Lit(Some(0))]);
+        assert_eq!(tap(3, Some(0), Named::ArrowDown), [Message::Lit(Some(1))]);
+        assert_eq!(tap(3, Some(2), Named::ArrowDown), [Message::Lit(Some(2))]);
+    }
+
+    #[test]
+    fn up_lights_the_row_above_and_from_the_first_row_leaves_the_list() {
+        assert_eq!(tap(3, Some(2), Named::ArrowUp), [Message::Lit(Some(1))]);
+        assert_eq!(tap(3, Some(0), Named::ArrowUp), [Message::Lit(None)]);
+        assert!(tap(3, None, Named::ArrowUp).is_empty(), "no row is lit");
+    }
+
+    #[test]
+    fn enter_and_tab_pick_the_lit_row() {
+        assert_eq!(tap(3, Some(1), Named::Enter), [Message::Picked(1)]);
+        assert_eq!(tap(3, Some(1), Named::Tab), [Message::Picked(1)]);
+    }
+
+    /// With no row lit, Enter submits the input and Tab is left to move
+    /// the focus.
+    #[test]
+    fn with_no_row_lit_enter_and_tab_are_left_to_the_input() {
+        assert_eq!(tap(3, None, Named::Enter), [Message::Submitted]);
+        assert!(tap(3, None, Named::Tab).is_empty());
+    }
+
+    #[test]
+    fn esc_closes_an_open_list_first_then_is_the_fields_own() {
+        assert_eq!(tap(3, Some(1), Named::Escape), [Message::Closed]);
+        assert_eq!(tap(3, None, Named::Escape), [Message::Closed]);
+        assert_eq!(tap(0, None, Named::Escape), [Message::Escaped]);
+    }
+
+    /// Issue 43: ↓ on a closed list does not open it; no row lights.
+    #[test]
+    fn the_arrows_do_nothing_on_a_closed_list() {
+        assert!(tap(0, None, Named::ArrowDown).is_empty());
+        assert!(tap(0, None, Named::ArrowUp).is_empty());
+    }
+}

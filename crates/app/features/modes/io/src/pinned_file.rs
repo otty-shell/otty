@@ -196,12 +196,12 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_file_gives_containers_pinned() {
+    fn a_missing_file_gives_containers_and_agents_pinned() {
         let folder = TempDir::new("modes-missing");
 
         let (pinned, _problem) = load_from_path(&modes_file_in(&folder));
 
-        assert_eq!(pinned, vec![Mode::Containers]);
+        assert_eq!(pinned, vec![Mode::Containers, Mode::Agents]);
     }
 
     /// A missing file is the first start: nothing to tell.
@@ -234,7 +234,11 @@ mod tests {
                 Key::TplPinnedModesReadFailed,
                 &format!("{error}"),
             );
-            assert_eq!(pinned, vec![Mode::Containers], "{contents}");
+            assert_eq!(
+                pinned,
+                vec![Mode::Containers, Mode::Agents],
+                "{contents}"
+            );
             assert_eq!(
                 problem.as_deref(),
                 Some(expected.as_str()),
@@ -253,7 +257,7 @@ mod tests {
 
         let (pinned, problem) = load_from_path(&path);
 
-        assert_eq!(pinned, vec![Mode::Containers]);
+        assert_eq!(pinned, vec![Mode::Containers, Mode::Agents]);
         assert!(problem.is_some_and(|text| text.contains("modes file IO")));
     }
 
@@ -276,7 +280,7 @@ mod tests {
     fn broken_json_gives_the_defaults() {
         let pinned = pinned_at_start("{ \"pinned\": [", "modes-broken");
 
-        assert_eq!(pinned, vec![Mode::Containers]);
+        assert_eq!(pinned, vec![Mode::Containers, Mode::Agents]);
     }
 
     #[test]
@@ -293,7 +297,11 @@ mod tests {
             let pinned =
                 pinned_at_start(contents, &format!("modes-shape-{index}"));
 
-            assert_eq!(pinned, vec![Mode::Containers], "{contents}");
+            assert_eq!(
+                pinned,
+                vec![Mode::Containers, Mode::Agents],
+                "{contents}"
+            );
         }
     }
 
@@ -311,7 +319,7 @@ mod tests {
             "modes-unknown",
         );
 
-        assert_eq!(pinned, vec![Mode::Containers]);
+        assert_eq!(pinned, vec![Mode::Containers, Mode::Agents]);
     }
 
     #[test]
@@ -335,7 +343,7 @@ mod tests {
     #[test]
     fn more_than_four_entries_keep_at_most_four_pinned() {
         let pinned = pinned_at_start(
-            "{\"pinned\": [\"containers\", \"kubernetes\", \"agents\", \
+            "{\"pinned\": [\"containers\", \"kubernetes\", \"databases\", \
              \"postgres\", \"aws\", \"containers\"]}",
             "modes-many",
         );

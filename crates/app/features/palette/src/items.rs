@@ -110,14 +110,19 @@ fn action_items(ctx: &PaletteCtx<'_>) -> Vec<PaletteItem<PaletteTarget>> {
             Some(AppShortcut::CloseSession),
         ),
         (
+            AppCommand::NewAgentSessionHere,
+            Key::PaletteNewAgentSessionHere,
+            None,
+        ),
+        (
             AppCommand::ToggleLeftPanel,
             Key::PaletteToggleLeftPanel,
             Some(AppShortcut::LeftPanel),
         ),
         (
-            AppCommand::ToggleFilesPanel,
-            Key::PaletteToggleFilesPanel,
-            Some(AppShortcut::FilesPanel),
+            AppCommand::ToggleRightPanel,
+            Key::PaletteToggleRightPanel,
+            Some(AppShortcut::RightPanel),
         ),
         (
             AppCommand::ToggleFocusMode,
@@ -162,6 +167,8 @@ fn switch_mode_title(mode: Mode) -> Key {
     match mode {
         Mode::Terminal => Key::PaletteSwitchToTerminalMode,
         Mode::Containers => Key::PaletteSwitchToContainersMode,
+        Mode::Agents => Key::PaletteSwitchToAgentsMode,
+        Mode::Plugins => Key::PaletteSwitchToPluginsMode,
     }
 }
 
@@ -208,6 +215,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             },
         }
     }
@@ -307,6 +315,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: true,
             },
             ..empty_ctx()
         };
@@ -365,14 +374,19 @@ mod tests {
                     Some(AppShortcut::CloseSession),
                 ),
                 action(
+                    PaletteTarget::Command(AppCommand::NewAgentSessionHere),
+                    Key::PaletteNewAgentSessionHere,
+                    None,
+                ),
+                action(
                     PaletteTarget::Command(AppCommand::ToggleLeftPanel),
                     Key::PaletteToggleLeftPanel,
                     Some(AppShortcut::LeftPanel),
                 ),
                 action(
-                    PaletteTarget::Command(AppCommand::ToggleFilesPanel),
-                    Key::PaletteToggleFilesPanel,
-                    Some(AppShortcut::FilesPanel),
+                    PaletteTarget::Command(AppCommand::ToggleRightPanel),
+                    Key::PaletteToggleRightPanel,
+                    Some(AppShortcut::RightPanel),
                 ),
                 action(
                     PaletteTarget::Command(AppCommand::ToggleFocusMode),
@@ -393,6 +407,20 @@ mod tests {
                     Key::PaletteSwitchToContainersMode,
                     Some(AppShortcut::PinnedMode1),
                 ),
+                action(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Agents
+                    )),
+                    Key::PaletteSwitchToAgentsMode,
+                    None,
+                ),
+                action(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Plugins
+                    )),
+                    Key::PaletteSwitchToPluginsMode,
+                    None,
+                ),
             ]
         );
     }
@@ -410,12 +438,14 @@ mod tests {
                 PaletteTarget::Command(AppCommand::OpenSettings),
                 PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
-                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleRightPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
                 PaletteTarget::Command(AppCommand::SwitchMode(
                     Mode::Containers
                 )),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Plugins)),
             ]
         );
     }
@@ -431,7 +461,7 @@ mod tests {
 
         let group = i18n::t(Key::PaletteGroupActions);
         assert_eq!(
-            items[items.len() - 2..],
+            items[items.len() - 4..],
             [
                 PaletteItem::new(
                     PaletteTarget::Command(AppCommand::SwitchMode(
@@ -447,6 +477,20 @@ mod tests {
                     )),
                     group,
                     i18n::t(Key::PaletteSwitchToContainersMode),
+                ),
+                PaletteItem::new(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Agents
+                    )),
+                    group,
+                    i18n::t(Key::PaletteSwitchToAgentsMode),
+                ),
+                PaletteItem::new(
+                    PaletteTarget::Command(AppCommand::SwitchMode(
+                        Mode::Plugins
+                    )),
+                    group,
+                    i18n::t(Key::PaletteSwitchToPluginsMode),
                 ),
             ]
         );
@@ -466,6 +510,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: false,
+                has_local_folder: false,
             },
             ..empty_ctx()
         };
@@ -498,6 +543,7 @@ mod tests {
                 is_terminal_mode: false,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: true,
             },
             ..empty_ctx()
         };
@@ -513,12 +559,14 @@ mod tests {
                 PaletteTarget::Command(AppCommand::OpenSettings),
                 PaletteTarget::Command(AppCommand::OpenNotifications),
                 PaletteTarget::Command(AppCommand::ToggleLeftPanel),
-                PaletteTarget::Command(AppCommand::ToggleFilesPanel),
+                PaletteTarget::Command(AppCommand::ToggleRightPanel),
                 PaletteTarget::Command(AppCommand::ToggleFocusMode),
                 PaletteTarget::Command(AppCommand::SwitchMode(Mode::Terminal)),
                 PaletteTarget::Command(AppCommand::SwitchMode(
                     Mode::Containers
                 )),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Agents)),
+                PaletteTarget::Command(AppCommand::SwitchMode(Mode::Plugins)),
             ]
         );
     }

@@ -6,12 +6,20 @@
 //! the shell reports its commands and current folder to the terminal. The
 //! binary writes the files with [`integrate`], in the background, at start
 //! and when the shell changes in Settings; quick launch adds them to a
-//! launch of a plain zsh or bash.
+//! launch of a plain zsh or bash. A program OTTY starts by name, such as a
+//! coding agent, runs through the user's login shell
+//! ([`ShellSession::command_session`]), so a program installed by a version
+//! manager is found. [`is_executable_file`] tells whether a file can be
+//! run as a program, such as the shell itself or a program a launch names.
 
 mod integration;
+mod login;
+mod program_file;
 mod session;
 
 pub use integration::{
     integrate, integrated_shell_session, with_shell_integration,
 };
+pub use login::{command_line, exec_script, login_shell_args, quote_word};
+pub use program_file::is_executable_file;
 pub use session::{ShellSession, shell_session_options};

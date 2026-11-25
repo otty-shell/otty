@@ -88,7 +88,7 @@ mod tests {
         let theme = app.theme_manager.current().clone();
         let shown = match app.quick_launch.main_area(ThemeProps::new(&theme)) {
             MainContent::Screen { id, .. } => Some(id),
-            MainContent::ScrollsOnItsOwn(_) => None,
+            _ => None,
         };
         assert_eq!(shown, Some(QuickLaunchScreen::Editor(tab_id)));
         assert!(snaps_to_end(task, &SESSION_LIST_SCROLL_ID.into()));

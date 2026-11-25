@@ -250,12 +250,13 @@ fn buttons_width(count: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use iced::widget::{Space, container};
-    use iced::{Event, Point, keyboard, mouse};
+    use iced::{Point, Size, keyboard};
     use iced_test::{Simulator, simulator};
 
     use super::*;
     use crate::components::glyph;
-    use crate::testing::TempDir;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -379,35 +380,26 @@ mod tests {
         assert_eq!(messages, vec![Message::Refresh, Message::Run]);
     }
 
-    /// Draws a wide toolbar whose middle button is labeled `label`, with
-    /// the pointer over that button, and checks it against the picture
-    /// saved in `reference`; the first call saves the picture. Tooltips are
-    /// overlays that widget queries do not reach.
-    fn hovered_button_matches(
-        label: &str,
-        reference: &std::path::Path,
-    ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let toolbar = Toolbar::new("More actions", &palette)
-            .item(ToolbarItem::new(glyph::plus(), "Run").on_press(Message::Run))
-            .item(
-                ToolbarItem::new(glyph::plus(), label).on_press(Message::Prune),
-            )
-            .item(
-                ToolbarItem::new(glyph::plus(), "Refresh")
-                    .on_press(Message::Refresh),
-            );
-        let mut ui = simulator(container(toolbar).width(400.0).height(100.0));
-        let middle = button_center(400.0, 1);
-        ui.point_at(middle);
-        let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-            position: middle,
-        })]);
+    /// A wide toolbar whose middle button is labeled `label`.
+    fn wide_toolbar(label: &'static str) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let toolbar = Toolbar::new("More actions", &UiPalette::otty_dark())
+                .item(
+                    ToolbarItem::new(glyph::plus(), "Run")
+                        .on_press(Message::Run),
+                )
+                .item(
+                    ToolbarItem::new(glyph::plus(), label)
+                        .on_press(Message::Prune),
+                )
+                .item(
+                    ToolbarItem::new(glyph::plus(), "Refresh")
+                        .on_press(Message::Refresh),
+                );
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("toolbar should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            Element::from(container(toolbar).width(400.0).height(100.0))
+                .map(|_| ())
+        }
     }
 
     #[test]
@@ -415,9 +407,17 @@ mod tests {
         let folder = TempDir::new("toolbar");
         let reference = folder.path().join("tooltip");
 
-        assert!(hovered_button_matches("Prune", &reference));
-        assert!(!hovered_button_matches("Prune unused", &reference));
-        assert!(hovered_button_matches("Prune", &reference));
+        let window = Size::new(480.0, 240.0);
+        let middle = Some(button_center(400.0, 1));
+
+        assert!(draws(&wide_toolbar("Prune"), window, middle, &reference));
+        assert!(!draws(
+            &wide_toolbar("Prune unused"),
+            window,
+            middle,
+            &reference
+        ));
+        assert!(draws(&wide_toolbar("Prune"), window, middle, &reference));
     }
 
     #[test]

@@ -10,17 +10,13 @@ use crate::model::ContextMenuViewModel;
 use crate::types::{ContextMenuAction, ContextMenuTarget};
 
 /// Render the quick launch context menu at the pointer, kept inside the
-/// main area it opened in. A press away from it closes it.
+/// main area it opened in. A press away from it reaches what lies under
+/// it, and the frame closes the menu.
 pub(crate) fn view(
     vm: ContextMenuViewModel,
     theme: ThemeProps<'_>,
 ) -> Element<'_, QuickLaunchIntent> {
-    context_menu(
-        menu(&vm.target, vm.is_running, theme.theme.ui()),
-        vm.cursor,
-        vm.area_size,
-        QuickLaunchIntent::ContextMenuDismiss,
-    )
+    context_menu(menu(&vm.target, vm.is_running, theme.theme.ui()), vm.place)
 }
 
 /// The menu of `target`: a launch is edited, renamed, duplicated or
@@ -72,8 +68,8 @@ mod tests {
     use iced::{Point, Size};
     use iced_test::simulator;
     use otty_app_i18n::{self as i18n, Key};
-    use otty_app_testing::mouse::middle_click;
     use otty_app_theme::theme::{ThemeManager, ThemeProps};
+    use otty_ui_kit::components::context_menu::MenuPlace;
 
     use super::view;
     use crate::event::QuickLaunchIntent;
@@ -87,8 +83,10 @@ mod tests {
     ) -> Vec<QuickLaunchIntent> {
         let vm = ContextMenuViewModel {
             target,
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
+            place: MenuPlace::new(
+                Point::new(40.0, 40.0),
+                Size::new(1024.0, 768.0),
+            ),
             is_running,
         };
         let themes = ThemeManager::new();
@@ -216,57 +214,32 @@ mod tests {
         ));
     }
 
-    /// A right press away from the menu closes it, as a left press does,
-    /// instead of falling through to the tree or the terminal under it.
+    /// A right or a middle press away from the menu sends nothing of the
+    /// menu: it reaches what lies under it, and the frame closes the menu.
     #[test]
-    fn a_right_press_outside_the_menu_closes_it() {
-        let vm = ContextMenuViewModel {
-            target: command(),
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
-            is_running: false,
-        };
+    fn a_right_or_middle_press_outside_the_menu_sends_nothing_of_it() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(vm, ThemeProps::new(themes.current())));
 
-        ui.point_at(Point::new(900.0, 700.0));
-        let _ = ui.simulate([
-            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
-                iced::mouse::Button::Right,
-            )),
-            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
-                iced::mouse::Button::Right,
-            )),
-        ]);
+        for button in [iced::mouse::Button::Right, iced::mouse::Button::Middle]
+        {
+            let vm = ContextMenuViewModel {
+                target: command(),
+                place: MenuPlace::new(
+                    Point::new(40.0, 40.0),
+                    Size::new(1024.0, 768.0),
+                ),
+                is_running: false,
+            };
+            let mut ui = simulator(view(vm, ThemeProps::new(themes.current())));
 
-        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
-        assert!(matches!(
-            messages.as_slice(),
-            [QuickLaunchIntent::ContextMenuDismiss]
-        ));
-    }
+            ui.point_at(Point::new(900.0, 700.0));
+            let _ = ui.simulate([
+                iced::Event::Mouse(iced::mouse::Event::ButtonPressed(button)),
+                iced::Event::Mouse(iced::mouse::Event::ButtonReleased(button)),
+            ]);
 
-    /// A middle press away from the menu closes it too, instead of falling
-    /// through to the Sessions row or the terminal under it.
-    #[test]
-    fn a_middle_press_outside_the_menu_closes_it() {
-        let vm = ContextMenuViewModel {
-            target: command(),
-            cursor: Point::new(40.0, 40.0),
-            area_size: Size::new(1024.0, 768.0),
-            is_running: false,
-        };
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(vm, ThemeProps::new(themes.current())));
-
-        ui.point_at(Point::new(900.0, 700.0));
-        let _ = ui.simulate(middle_click());
-
-        let messages: Vec<QuickLaunchIntent> = ui.into_messages().collect();
-        assert!(matches!(
-            messages.as_slice(),
-            [QuickLaunchIntent::ContextMenuDismiss]
-        ));
+            assert_eq!(ui.into_messages().count(), 0, "{button:?}");
+        }
     }
 
     #[test]

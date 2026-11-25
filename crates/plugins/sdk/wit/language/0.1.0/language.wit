@@ -1,0 +1,18 @@
+// The language receiver: an optional contract of a plugin whose texts are
+// in several languages. It knows no agent and no provider. A plugin
+// without it is never called when the language changes; its texts stay
+// as they were given.
+package otty:language@0.1.0;
+
+interface language {
+  /// The user changed the language of OTTY's interface to `tag`, such as
+  /// `en`, `ru` or `pt-BR`, which `env.language` gives from now on. True
+  /// when the plugin's texts depend on the language: OTTY then reads its
+  /// parts again at once to show them in the new language.
+  language-changed: func(tag: string) -> bool;
+}
+
+/// What a component with the language receiver exports.
+world language-receiver {
+  export language;
+}

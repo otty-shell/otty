@@ -37,8 +37,8 @@ pub enum AppShortcut {
     CommandPalette,
     /// Show or hide the left panel.
     LeftPanel,
-    /// Show or hide the files panel.
-    FilesPanel,
+    /// Show or hide the right panel.
+    RightPanel,
     /// Enter or leave focus mode.
     FocusMode,
     /// Open the Settings popup over the active mode.
@@ -76,7 +76,7 @@ impl AppShortcut {
     pub const ALL: [AppShortcut; 17] = [
         AppShortcut::CommandPalette,
         AppShortcut::LeftPanel,
-        AppShortcut::FilesPanel,
+        AppShortcut::RightPanel,
         AppShortcut::FocusMode,
         AppShortcut::Settings,
         AppShortcut::NewTerminal,
@@ -129,8 +129,8 @@ impl AppShortcut {
             (Self::LeftPanel, Platform::Linux) => (character('b'), ctrl_shift),
             (Self::LeftPanel, Platform::MacOs) => (character('b'), cmd),
             // Not Ctrl Shift E: GNOME's IBus takes it for emoji input.
-            (Self::FilesPanel, Platform::Linux) => (character('o'), ctrl_shift),
-            (Self::FilesPanel, Platform::MacOs) => (character('e'), cmd_shift),
+            (Self::RightPanel, Platform::Linux) => (character('o'), ctrl_shift),
+            (Self::RightPanel, Platform::MacOs) => (character('e'), cmd_shift),
             (Self::FocusMode, Platform::Linux) => (character('f'), ctrl_shift),
             (Self::FocusMode, Platform::MacOs) => (character('f'), cmd_shift),
             (Self::Settings, Platform::Linux) => (character(','), ctrl),
@@ -199,7 +199,7 @@ impl AppShortcut {
         match self {
             Self::CommandPalette => AppCommand::OpenPalette,
             Self::LeftPanel => AppCommand::ToggleLeftPanel,
-            Self::FilesPanel => AppCommand::ToggleFilesPanel,
+            Self::RightPanel => AppCommand::ToggleRightPanel,
             Self::FocusMode => AppCommand::ToggleFocusMode,
             Self::Settings => AppCommand::OpenSettings,
             Self::NewTerminal => AppCommand::NewTerminal,
@@ -313,7 +313,7 @@ mod tests {
             vec![
                 (AppShortcut::CommandPalette, String::from("Ctrl Shift K")),
                 (AppShortcut::LeftPanel, String::from("Ctrl Shift B")),
-                (AppShortcut::FilesPanel, String::from("Ctrl Shift O")),
+                (AppShortcut::RightPanel, String::from("Ctrl Shift O")),
                 (AppShortcut::FocusMode, String::from("Ctrl Shift F")),
                 (AppShortcut::Settings, String::from("Ctrl ,")),
                 (AppShortcut::NewTerminal, String::from("Ctrl Shift T")),
@@ -344,7 +344,7 @@ mod tests {
             vec![
                 (AppShortcut::CommandPalette, String::from("Cmd K")),
                 (AppShortcut::LeftPanel, String::from("Cmd B")),
-                (AppShortcut::FilesPanel, String::from("Cmd Shift E")),
+                (AppShortcut::RightPanel, String::from("Cmd Shift E")),
                 (AppShortcut::FocusMode, String::from("Cmd Shift F")),
                 (AppShortcut::Settings, String::from("Cmd ,")),
                 (AppShortcut::NewTerminal, String::from("Cmd T")),
@@ -452,7 +452,7 @@ mod tests {
         let expected = [
             (AppShortcut::CommandPalette, AppCommand::OpenPalette),
             (AppShortcut::LeftPanel, AppCommand::ToggleLeftPanel),
-            (AppShortcut::FilesPanel, AppCommand::ToggleFilesPanel),
+            (AppShortcut::RightPanel, AppCommand::ToggleRightPanel),
             (AppShortcut::FocusMode, AppCommand::ToggleFocusMode),
             (AppShortcut::Settings, AppCommand::OpenSettings),
             (AppShortcut::NewTerminal, AppCommand::NewTerminal),

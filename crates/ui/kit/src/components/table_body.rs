@@ -11,11 +11,16 @@
 //! press needs the button's place too, which a plain `button` cannot send.
 //! [`TableBody`] finds the button in the row layout and sends its corner.
 //!
+//! A double click on a row opens what the row stands for. A `button` sends
+//! one press per click, so [`TableBody`] keeps the last click and sends the
+//! double press itself.
+//!
 //! [`DataTable`]: super::data_table::DataTable
 
 use std::rc::Rc;
 
 use iced::advanced::layout::{self, Layout};
+use iced::advanced::mouse::{Click, click};
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
 use iced::{
@@ -33,6 +38,9 @@ pub(super) type RightPress<'a, Message> =
 /// the button. Shared like [`RightPress`].
 pub(super) type MenuPress<'a, Message> =
     Rc<dyn Fn(usize, Point) -> Message + 'a>;
+/// Message builder for a double press: row index. Shared like
+/// [`RightPress`].
+pub(super) type DoublePress<'a, Message> = Rc<dyn Fn(usize) -> Message + 'a>;
 
 /// Wraps the column of table rows. Each child of the column is one row.
 pub(super) struct TableBody<'a, Message> {
@@ -40,6 +48,7 @@ pub(super) struct TableBody<'a, Message> {
     on_right_press: Option<RightPress<'a, Message>>,
     menu_rows: Vec<bool>,
     on_menu_press: Option<MenuPress<'a, Message>>,
+    on_double_press: Option<DoublePress<'a, Message>>,
     sideways: Option<SidewaysOffset>,
 }
 
@@ -54,8 +63,19 @@ impl<'a, Message> TableBody<'a, Message> {
             on_right_press,
             menu_rows: Vec::new(),
             on_menu_press: None,
+            on_double_press: None,
             sideways: None,
         }
+    }
+
+    /// Sends `on_double_press` with the row index when a row is clicked
+    /// twice in a row.
+    pub(super) fn on_double_press(
+        mut self,
+        on_double_press: DoublePress<'a, Message>,
+    ) -> Self {
+        self.on_double_press = Some(on_double_press);
+        self
     }
 
     /// Takes back the sideways scroll of a table that scrolls in a
@@ -150,7 +170,11 @@ impl<Message> Widget<Message, Theme, Renderer> for TableBody<'_, Message> {
     }
 
     fn tag(&self) -> tree::Tag {
-        tree::Tag::stateless()
+        tree::Tag::of::<LastClick>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(LastClick::default())
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -218,6 +242,24 @@ impl<Message> Widget<Message, Theme, Renderer> for TableBody<'_, Message> {
             return;
         }
 
+        // The row button sends its own press on the release, so the event
+        // goes on to the rows.
+        if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) =
+            event
+            && let Some(on_double_press) = &self.on_double_press
+            && let Some(position) = cursor.position_over(layout.bounds())
+            && let Some(index) = layout
+                .children()
+                .position(|row| row.bounds().contains(position))
+        {
+            let last = tree.state.downcast_mut::<LastClick>();
+            let is_double = last.click(index, position);
+
+            if is_double {
+                shell.publish(on_double_press(index));
+            }
+        }
+
         self.rows.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -274,6 +316,29 @@ impl<Message> Widget<Message, Theme, Renderer> for TableBody<'_, Message> {
 impl<'a, Message: 'a> From<TableBody<'a, Message>> for Element<'a, Message> {
     fn from(value: TableBody<'a, Message>) -> Self {
         Element::new(value)
+    }
+}
+
+/// The last left click on a row: which row and the click itself, to tell a
+/// double click.
+#[derive(Debug, Default)]
+struct LastClick {
+    row: Option<(usize, Click)>,
+}
+
+impl LastClick {
+    /// Takes a click on the row `index` at `position`; `true` when it is the
+    /// second click of a double click on that row.
+    fn click(&mut self, index: usize, position: Point) -> bool {
+        let previous = self
+            .row
+            .filter(|(row, _)| *row == index)
+            .map(|(_, click)| click);
+        let click = Click::new(position, mouse::Button::Left, previous);
+
+        self.row = Some((index, click));
+
+        click.kind() == click::Kind::Double
     }
 }
 

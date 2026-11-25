@@ -3,7 +3,7 @@
 
 use iced::{Element, Size};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 
 use super::super::event::ActionsIntent;
@@ -18,7 +18,8 @@ pub(crate) struct RowMenuProps<'a> {
 }
 
 /// Render the row menu at the pointer, kept inside the window. A press of
-/// any button away from it closes it.
+/// any button away from it reaches what lies under it, and the frame
+/// closes the menu.
 pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
     let mut menu = Menu::new(props.theme.theme.ui());
     for item in props.vm.items {
@@ -29,12 +30,7 @@ pub(crate) fn view(props: RowMenuProps<'_>) -> Element<'_, ActionsIntent> {
         menu = menu.item(entry);
     }
 
-    context_menu(
-        menu,
-        props.vm.position,
-        props.area,
-        ActionsIntent::CloseRowMenu,
-    )
+    context_menu(menu, MenuPlace::new(props.vm.position, props.area))
 }
 
 #[cfg(test)]
@@ -100,36 +96,24 @@ mod tests {
         assert!(intents.is_empty());
     }
 
+    /// A press of any button away from the menu sends nothing of the
+    /// menu: it reaches what lies under it, and the frame closes the menu.
     #[test]
-    fn a_press_outside_the_menu_closes_it() {
+    fn a_press_outside_the_menu_sends_nothing_of_it() {
         let themes = ThemeManager::new();
-        let mut ui = simulator(view(RowMenuProps {
-            vm: menu(vec![item(RowAction::Start, true)]),
-            area: Size::new(800.0, 600.0),
-            theme: ThemeProps::new(themes.current()),
-        }));
 
-        ui.point_at(Point::new(700.0, 500.0));
-        let _ = ui.simulate(iced_test::simulator::click());
+        let left: Vec<iced::Event> = iced_test::simulator::click().collect();
+        for click in [left, middle_click().to_vec()] {
+            let mut ui = simulator(view(RowMenuProps {
+                vm: menu(vec![item(RowAction::Start, true)]),
+                area: Size::new(800.0, 600.0),
+                theme: ThemeProps::new(themes.current()),
+            }));
 
-        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ActionsIntent::CloseRowMenu]);
-    }
+            ui.point_at(Point::new(700.0, 500.0));
+            let _ = ui.simulate(click);
 
-    /// A middle press away from the menu closes it, as a left press does.
-    #[test]
-    fn a_middle_press_outside_the_menu_closes_it() {
-        let themes = ThemeManager::new();
-        let mut ui = simulator(view(RowMenuProps {
-            vm: menu(vec![item(RowAction::Start, true)]),
-            area: Size::new(800.0, 600.0),
-            theme: ThemeProps::new(themes.current()),
-        }));
-
-        ui.point_at(Point::new(700.0, 500.0));
-        let _ = ui.simulate(middle_click());
-
-        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
-        assert_eq!(intents, vec![ActionsIntent::CloseRowMenu]);
+            assert_eq!(ui.into_messages().count(), 0);
+        }
     }
 }

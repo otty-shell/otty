@@ -1,0 +1,40 @@
+[package]
+name = "otty-app-plugins"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Plugins mode of the OTTY app: the installed plugins and their parts, Add plugin, the install and update dialogs"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A feature crate: helper crates, otty-ui-* and libraries only. No other
+# feature, no binary, no io crate and no tokio. The bans of
+# crates/app/features/clippy.toml apply: otty-app-plugins-io installs,
+# updates and removes plugins through `otty-plugin-releases`, whose data
+# types (the installed plugins, the install plan, the waiting update and
+# its permission diff) the mode shows. `otty-plugin-manifest` names the
+# parts and their permissions; `otty-plugin-host` gives the log of a
+# running plugin and the health of a running part, which the mode reads
+# and Try again starts again. It must not depend on `otty-agents`: the
+# mode lists the parts of any domain (a crate dependency limit in
+# deny.toml, issue 21). iced's `tokio` feature gives the
+# timer of the daily update check, `iced::time::every`; it adds no crate.
+[dependencies]
+iced = { workspace = true, features = ["svg", "tokio"] }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
+otty-plugin-manifest = { path = "../../../../plugins/manifest", version = "0.1.0" }
+otty-plugin-releases = { path = "../../../../plugins/releases", version = "0.1.0" }
+otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
+
+[dev-dependencies]
+iced_test = "0.14"
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }
+otty-plugin-releases = { path = "../../../../plugins/releases", version = "0.1.0", features = ["fixtures"] }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0", features = ["fixtures"] }

@@ -2,13 +2,14 @@
 //! switch ("Stop it first", "Force"), Cancel and the action.
 
 use iced::Element;
-use iced::widget::{column, text};
+use iced::widget::column;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
 use otty_ui_kit::components::dialog::Dialog;
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::switch::Switch;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::spacing;
 
 use super::super::event::ActionsIntent;
 use super::super::model::ConfirmDialogViewModel;
@@ -25,16 +26,8 @@ pub(crate) fn view(
 ) -> Element<'_, ActionsIntent> {
     let palette = props.theme.theme.ui();
     let vm = props.vm;
-    let hint = typography::SMALL;
-
-    let mut body = column![
-        text(vm.text)
-            .size(hint.size())
-            .line_height(iced::Pixels(hint.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-    ]
-    .spacing(spacing::SPACE_4);
+    let mut body = column![small_text(vm.text, palette.text_muted())]
+        .spacing(spacing::SPACE_4);
     if let Some((label, is_on)) = vm.switch {
         body = body.push(
             Switch::new(is_on, palette)
@@ -51,6 +44,7 @@ pub(crate) fn view(
         .on_press(ActionsIntent::ConfirmAccepted);
 
     Dialog::new(vm.title, palette)
+        .on_close(ActionsIntent::ConfirmCancelled, i18n::t(Key::ButtonClose))
         .body(body)
         .action(cancel)
         .action(confirm)
@@ -113,6 +107,31 @@ mod tests {
                 ActionsIntent::ConfirmAccepted
             ]
         );
+    }
+
+    /// Issue 18: the cross at the end of the title cancels, as Cancel, Esc
+    /// and a press on the dimmed area do.
+    #[test]
+    fn the_cross_of_the_title_cancels() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(view(ConfirmDialogProps {
+            vm: remove_dialog(None),
+            theme: ThemeProps::new(themes.current()),
+        }));
+        let title = ui
+            .find("Remove container web-1?")
+            .expect("title should show")
+            .bounds();
+
+        // The title fills its row up to the cross.
+        ui.point_at(iced::Point::new(
+            title.x + title.width + spacing::SPACE_3 + size::CONTROL_MD / 2.0,
+            title.center_y(),
+        ));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        let intents: Vec<ActionsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![ActionsIntent::ConfirmCancelled]);
     }
 
     #[test]

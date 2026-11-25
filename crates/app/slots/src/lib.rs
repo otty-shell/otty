@@ -23,8 +23,8 @@
 //! - [`MainArea`]: the place trait of a feature that fills the main area.
 //! - [`StatusBar`]: the place trait of a feature that fills the left side of
 //!   the status bar.
-//! - [`MainContent`]: what fills the main area, a screen or content that
-//!   scrolls on its own.
+//! - [`MainContent`]: what fills the main area, a screen, a screen with a
+//!   table, or a terminal that scrolls on its own.
 //! - [`focus`]: the ids the frame moves the keyboard focus to.
 //!
 //! A trait for each place (left panel, main area, ...) is added here when the

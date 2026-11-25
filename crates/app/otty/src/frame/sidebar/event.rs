@@ -31,6 +31,8 @@ pub(crate) enum SidebarIntent {
     WorkspaceCursorMoved { position: iced::Point },
     /// A panel edge was dragged; the split tells which side.
     Resized(iced::widget::pane_grid::ResizeEvent),
+    /// The active mode changed: a mode without a right panel hides it.
+    ModeChanged(otty_app_domain::mode::Mode),
     /// A new frame was drawn while the focus mode note is shown.
     FocusNoteFrame(iced::time::Instant),
 }

@@ -7,6 +7,11 @@ members = [
     "crates/surface",
     "crates/libterm",
     "crates/containers",
+    "crates/agents",
+    "crates/plugins/host",
+    "crates/plugins/manifest",
+    "crates/plugins/releases",
+    "crates/plugins/sdk",
     "crates/ui/*",
     "crates/app/domain",
     "crates/app/i18n",
@@ -28,6 +33,10 @@ members = [
     "crates/app/features/containers/io",
     "crates/app/features/modes/core",
     "crates/app/features/modes/io",
+    "crates/app/features/agents/core",
+    "crates/app/features/agents/io",
+    "crates/app/features/plugins/core",
+    "crates/app/features/plugins/io",
     "crates/app/otty",
 ]
 
@@ -48,3 +57,6 @@ signal-hook = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.149"
 mockall = "0.15.0"
+# Dates, times and time zones. Only `std` here: the crate that reads the
+# user's time zone turns on the features for it.
+jiff = { version = "0.2.17", default-features = false, features = ["std"] }

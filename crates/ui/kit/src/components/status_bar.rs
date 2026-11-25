@@ -217,6 +217,40 @@ impl<Message> StatusBar<Message> {
         self
     }
 
+    /// Adds `items` to the left group, from the first, while the bar fits
+    /// in `available` width with a gap between its groups. The first item
+    /// that does not fit and all after it are left out, whole, so in a
+    /// narrow bar the left side gives way and the right side keeps its
+    /// size. Add the right items first, so their room is kept.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::status_bar::{StatusBar, StatusItem};
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let bar: StatusBar<()> = StatusBar::new(&palette)
+    ///     .right(StatusItem::text("OTTY 0.4.0"))
+    ///     .left_that_fit([StatusItem::text("~/otty")], 200.0);
+    ///
+    /// assert!(bar.width() <= 200.0);
+    /// ```
+    pub fn left_that_fit(
+        mut self,
+        items: impl IntoIterator<Item = StatusItem<Message>>,
+        available: f32,
+    ) -> Self {
+        for item in items {
+            if self.width() + ITEM_GAP + item.width() > available {
+                break;
+            }
+            self.left.push(item);
+        }
+
+        self
+    }
+
     /// Adds an item to the right group.
     pub fn right(mut self, item: StatusItem<Message>) -> Self {
         self.right.push(item);
@@ -422,5 +456,45 @@ mod tests {
 
         let messages: Vec<Message> = ui.into_messages().collect();
         assert_eq!(messages, vec![Message::OpenSettings]);
+    }
+
+    /// The bar of the fitting tests: the version on the right, then the
+    /// left texts that fit in `room`.
+    fn fitted_bar(room: f32) -> StatusBar<Message> {
+        let palette = UiPalette::otty_dark();
+        let left = [
+            StatusItem::text("2 projects"),
+            StatusItem::text("5 sessions"),
+        ];
+
+        StatusBar::new(&palette)
+            .right(StatusItem::text("OTTY 0.4.0"))
+            .left_that_fit(left, room)
+    }
+
+    /// In a narrow bar the left side gives way first: its last texts are
+    /// left out, whole, and the right side stays.
+    #[test]
+    fn the_left_items_that_do_not_fit_are_left_out_from_the_last() {
+        let palette = UiPalette::otty_dark();
+        let right = StatusBar::<Message>::new(&palette)
+            .right(StatusItem::text("OTTY 0.4.0"))
+            .width();
+        let first = StatusItem::<Message>::text("2 projects").width();
+        let room = right + ITEM_GAP + first + 1.0;
+
+        let mut ui = simulator(fitted_bar(room));
+
+        assert!(ui.find("2 projects").is_ok());
+        assert!(ui.find("5 sessions").is_err());
+        assert!(ui.find("OTTY 0.4.0").is_ok());
+    }
+
+    #[test]
+    fn with_room_for_all_every_left_item_shows() {
+        let mut ui = simulator(fitted_bar(1000.0));
+
+        assert!(ui.find("2 projects").is_ok());
+        assert!(ui.find("5 sessions").is_ok());
     }
 }

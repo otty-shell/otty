@@ -58,6 +58,7 @@ pub(crate) fn view(props: FormDialogProps<'_>) -> Element<'_, CreateIntent> {
     }
 
     Dialog::new(vm.title, palette)
+        .on_close(CreateIntent::Cancelled, i18n::t(Key::ButtonClose))
         .body(body)
         .action(cancel)
         .action(submit)

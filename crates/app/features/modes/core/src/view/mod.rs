@@ -9,6 +9,8 @@ fn name_key(mode: Mode) -> Key {
     match mode {
         Mode::Terminal => Key::ModeTerminal,
         Mode::Containers => Key::ModeContainers,
+        Mode::Agents => Key::ModeAgents,
+        Mode::Plugins => Key::ModePlugins,
     }
 }
 
@@ -20,5 +22,7 @@ mod tests {
     fn every_mode_has_its_own_name() {
         assert_eq!(name_key(Mode::Terminal), Key::ModeTerminal);
         assert_eq!(name_key(Mode::Containers), Key::ModeContainers);
+        assert_eq!(name_key(Mode::Agents), Key::ModeAgents);
+        assert_eq!(name_key(Mode::Plugins), Key::ModePlugins);
     }
 }

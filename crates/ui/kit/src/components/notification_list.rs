@@ -6,6 +6,7 @@ use iced::{Alignment, Border, Element, Length, Padding};
 
 use super::icon_button::{IconButton, IconButtonSize};
 use super::icon_hover::IconHover;
+use super::notice::NoticeTone;
 use super::{glyph, menu, scrollbar};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing};
@@ -18,24 +19,20 @@ const LIST_MAX_HEIGHT: f32 = 420.0;
 const LIST_PADDING: f32 = menu::MENU_PADDING;
 /// Text size of the title.
 const TITLE_SIZE: f32 = 13.0;
-/// Text size of a notification.
-const TEXT_SIZE: f32 = 12.5;
 /// Text size of the age under a notification.
 const AGE_SIZE: f32 = 12.0;
-/// Edge of the error icon of a row.
+/// Edge of the icon of a row.
 const ICON_SIZE: f32 = 14.0;
 /// Gap between the icon and the text of a row.
 const ROW_GAP: f32 = 10.0;
-/// Left padding of a row and of the header (`padding: 0 10px`, as menu
-/// items).
-const ROW_PADDING_X: f32 = 10.0;
 /// Right padding of a row and of the header, the same for both so that the
 /// crosses of the rows line up under the broom.
 const ROW_PADDING_RIGHT: f32 = spacing::SPACE_1;
 
-/// One past notification: its text, how long ago it came, and the message
-/// its cross sends.
+/// One past notification: what it told, its text, how long ago it came,
+/// and the message its cross sends.
 struct Row<Message> {
+    tone: NoticeTone,
     text: String,
     age: String,
     on_remove: Message,
@@ -49,14 +46,17 @@ struct Clear<Message> {
 }
 
 /// Popup list of past notifications: a header with the title and a Clear
-/// all icon button, then one row per notification with the error icon, its
-/// text, a muted age such as "3 min ago" and a cross that removes it. The
+/// all icon button, then one row per notification with its icon, its text,
+/// a muted age such as "3 min ago" and a cross that removes it. An error
+/// row shows the error icon in `status-error`; a row of a finished action
+/// ([`NotificationList::success_row`]) shows the check in `status-ok`. The
 /// caller adds the rows newest first. A row lights up while the pointer is
 /// over it, but a press on it sends nothing; only its cross does. Many rows
 /// scroll; no rows show the empty text.
 ///
-/// Components never bundle icons, so the caller passes the error icon and
-/// the Clear all icon, such as a broom.
+/// Components never bundle icons, so the caller passes the error icon, the
+/// check of [`NotificationList::success_icon`] and the Clear all icon, such
+/// as a broom.
 ///
 /// # Example
 ///
@@ -74,12 +74,19 @@ struct Clear<Message> {
 ///
 /// let palette = UiPalette::otty_dark();
 /// let error = svg::Handle::from_memory(&b"<svg/>"[..]);
+/// let check = svg::Handle::from_memory(&b"<svg/>"[..]);
 /// let broom = svg::Handle::from_memory(&b"<svg/>"[..]);
 /// let list: Element<'_, Message> =
 ///     NotificationList::new("Notifications", error, &palette)
+///         .success_icon(check)
 ///         .clear(broom, "Clear all", Some(Message::Clear))
 ///         .remove_label("Remove")
 ///         .empty("No notifications")
+///         .success_row(
+///             "Plugin OpenCode reloaded",
+///             "just now",
+///             Message::Remove(2),
+///         )
 ///         .row(
 ///             "Could not save the pinned modes: disk full",
 ///             "just now",
@@ -95,6 +102,7 @@ struct Clear<Message> {
 pub struct NotificationList<Message> {
     title: String,
     icon: svg::Handle,
+    success_icon: Option<svg::Handle>,
     palette: UiPalette,
     clear: Option<Clear<Message>>,
     remove_label: String,
@@ -113,12 +121,20 @@ impl<Message> NotificationList<Message> {
         Self {
             title: title.into(),
             icon,
+            success_icon: None,
             palette: palette.clone(),
             clear: None,
             remove_label: String::new(),
             empty: String::new(),
             rows: Vec::new(),
         }
+    }
+
+    /// Sets the check the rows of finished actions show. Without it they
+    /// show the icon given to [`NotificationList::new`].
+    pub fn success_icon(mut self, icon: svg::Handle) -> Self {
+        self.success_icon = Some(icon);
+        self
     }
 
     /// Shows a Clear all icon button with `icon` in the header; `label` is
@@ -150,8 +166,8 @@ impl<Message> NotificationList<Message> {
         self
     }
 
-    /// Appends a row with the notification `text` and its `age`, such as
-    /// "just now". Its cross sends `on_remove`.
+    /// Appends a row with the error `text` and its `age`, such as "just
+    /// now". Its cross sends `on_remove`.
     pub fn row(
         mut self,
         text: impl Into<String>,
@@ -159,6 +175,25 @@ impl<Message> NotificationList<Message> {
         on_remove: Message,
     ) -> Self {
         self.rows.push(Row {
+            tone: NoticeTone::Error,
+            text: text.into(),
+            age: age.into(),
+            on_remove,
+        });
+        self
+    }
+
+    /// Appends a row of a finished action, such as "Plugin OpenCode
+    /// reloaded", with its `age`: the check in `status-ok` in place of the
+    /// error icon. Its cross sends `on_remove`.
+    pub fn success_row(
+        mut self,
+        text: impl Into<String>,
+        age: impl Into<String>,
+        on_remove: Message,
+    ) -> Self {
+        self.rows.push(Row {
+            tone: NoticeTone::Success,
             text: text.into(),
             age: age.into(),
             on_remove,
@@ -177,24 +212,37 @@ impl<'a, Message: Clone + 'a> From<NotificationList<Message>>
         let body = if value.rows.is_empty() {
             empty_view(value.empty, &palette)
         } else {
-            rows_view(value.rows, &value.icon, &value.remove_label, &palette)
+            let icons = RowIcons {
+                success: value
+                    .success_icon
+                    .unwrap_or_else(|| value.icon.clone()),
+                error: value.icon,
+            };
+            rows_view(value.rows, &icons, &value.remove_label, &palette)
         };
 
-        let background = palette.surface_overlay();
-        let shadow = palette.shadow_popover();
         container(column![header, body].width(Length::Fill))
             .width(LIST_WIDTH)
             .padding(LIST_PADDING)
-            .style(move |_| container::Style {
-                background: Some(background.into()),
-                border: Border {
-                    radius: radius::RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                shadow,
-                ..container::Style::default()
-            })
+            .style(menu::surface_style(&palette))
             .into()
+    }
+}
+
+/// The icons of the rows: the error mark and the check.
+struct RowIcons {
+    error: svg::Handle,
+    success: svg::Handle,
+}
+
+impl RowIcons {
+    /// Returns the icon of a row that tells `tone`: the check of a
+    /// success, else the mark of the list.
+    fn of(&self, tone: NoticeTone) -> svg::Handle {
+        match tone {
+            NoticeTone::Success => self.success.clone(),
+            _ => self.error.clone(),
+        }
     }
 }
 
@@ -226,7 +274,7 @@ fn header_view<'a, Message: Clone + 'a>(
             top: 0.0,
             right: ROW_PADDING_RIGHT,
             bottom: spacing::SPACE_1,
-            left: ROW_PADDING_X,
+            left: menu::ITEM_PADDING_X,
         })
         .into()
 }
@@ -238,12 +286,12 @@ fn empty_view<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     container(
         text(empty)
-            .size(TEXT_SIZE)
+            .size(menu::ITEM_TEXT_SIZE)
             .font(fonts::UI)
             .color(palette.text_muted())
             .wrapping(Wrapping::Word),
     )
-    .padding(Padding::from([spacing::SPACE_3, ROW_PADDING_X]))
+    .padding(Padding::from([spacing::SPACE_3, menu::ITEM_PADDING_X]))
     .into()
 }
 
@@ -251,18 +299,14 @@ fn empty_view<'a, Message: 'a>(
 /// [`LIST_MAX_HEIGHT`].
 fn rows_view<'a, Message: Clone + 'a>(
     rows: Vec<Row<Message>>,
-    icon: &svg::Handle,
+    icons: &RowIcons,
     remove_label: &str,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
     let mut list = column![].width(Length::Fill);
     for notification in rows {
-        list = list.push(row_view(
-            notification,
-            icon.clone(),
-            remove_label,
-            palette,
-        ));
+        let icon = icons.of(notification.tone);
+        list = list.push(row_view(notification, icon, remove_label, palette));
     }
 
     container(
@@ -275,16 +319,16 @@ fn rows_view<'a, Message: Clone + 'a>(
     .into()
 }
 
-/// Builds one row: the error icon, then the text with its age under it,
-/// then the cross, centered on them. Long text wraps before the cross. The
-/// row lights up while the pointer is over it.
+/// Builds one row: the icon of its tone, then the text with its age under it,
+/// then the cross, the icon and the cross centered on the text. Long text
+/// wraps before the cross. The row lights up while the pointer is over it.
 fn row_view<'a, Message: Clone + 'a>(
     notification: Row<Message>,
     icon: svg::Handle,
     remove_label: &str,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let icon_color = palette.status_error();
+    let icon_color = notification.tone.icon_color(palette);
     let icon =
         svg(icon)
             .width(ICON_SIZE)
@@ -294,7 +338,7 @@ fn row_view<'a, Message: Clone + 'a>(
             });
     let words = column![
         text(notification.text)
-            .size(TEXT_SIZE)
+            .size(menu::ITEM_TEXT_SIZE)
             .font(fonts::UI)
             .color(palette.text_body())
             .wrapping(Wrapping::WordOrGlyph),
@@ -307,7 +351,7 @@ fn row_view<'a, Message: Clone + 'a>(
     .width(Length::Fill);
     let content = row![icon, words]
         .spacing(ROW_GAP)
-        .align_y(Alignment::Start)
+        .align_y(Alignment::Center)
         .width(Length::Fill);
 
     // No hover background on the cross: the lit row already has one, and
@@ -328,7 +372,7 @@ fn row_view<'a, Message: Clone + 'a>(
             top: spacing::SPACE_2,
             right: ROW_PADDING_RIGHT,
             bottom: spacing::SPACE_2,
-            left: ROW_PADDING_X,
+            left: menu::ITEM_PADDING_X,
         })
         .style(pointer.container_style(
             row_style(palette, false),
@@ -353,14 +397,15 @@ fn row_style(palette: &UiPalette, is_lit: bool) -> container::Style {
 
 #[cfg(test)]
 mod tests {
-    use iced::{Event, Point, mouse};
+    use iced::{Point, Size};
     use iced_test::selector::Candidate;
     use iced_test::{Simulator, simulator};
 
     use super::*;
     use crate::components::glyph;
     use crate::size;
-    use crate::testing::TempDir;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {
@@ -406,6 +451,36 @@ mod tests {
 
         ui.point_at(Point::new(controls_x(), title.center_y()));
         let _ = ui.simulate(simulator::click());
+    }
+
+    /// Issue 35: a finished action joins the list with the check of its
+    /// tone, an error with the error icon.
+    #[test]
+    fn given_success_row_then_it_shows_the_check() {
+        let palette = UiPalette::otty_dark();
+        let check = glyph::cross();
+
+        let list =
+            NotificationList::new("Notifications", glyph::plus(), &palette)
+                .success_icon(check.clone())
+                .success_row(
+                    "Plugin OpenCode reloaded",
+                    "just now",
+                    Message::Clear,
+                )
+                .row("disk full", "just now", Message::Clear);
+        let icons = RowIcons {
+            error: list.icon.clone(),
+            success: list.success_icon.clone().expect("the check"),
+        };
+        let tones: Vec<NoticeTone> =
+            list.rows.iter().map(|row| row.tone).collect();
+
+        assert_eq!(tones, [NoticeTone::Success, NoticeTone::Error]);
+        assert_eq!(icons.of(NoticeTone::Success), check);
+        assert_eq!(icons.of(NoticeTone::Error), glyph::plus());
+        let mut ui = simulator(list);
+        assert!(ui.find("Plugin OpenCode reloaded").is_ok());
     }
 
     #[test]
@@ -525,25 +600,12 @@ mod tests {
         ]
     }
 
-    /// Draws the hover list with the pointer at `pointer`, or with no
-    /// pointer, and checks it against the picture saved in `reference`;
-    /// the first call saves the picture.
-    fn drawn_list_matches(
-        pointer: Option<Point>,
-        reference: &std::path::Path,
-    ) -> bool {
-        let mut ui = simulator(hover_list());
-        if let Some(position) = pointer {
-            ui.point_at(position);
-            let _ = ui.simulate([Event::Mouse(mouse::Event::CursorMoved {
-                position,
-            })]);
-        }
+    /// A window for the list, as [`draws`] places it.
+    const WINDOW: Size = Size::new(LIST_WIDTH + 80.0, LIST_MAX_HEIGHT + 80.0);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("list should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+    /// The hover list, for [`draws`].
+    fn drawn_hover_list() -> Element<'static, ()> {
+        Element::from(hover_list()).map(|_| ())
     }
 
     /// A row lights up wherever the pointer is on it, the padding too, and
@@ -556,12 +618,16 @@ mod tests {
         let idle = folder.path().join("idle");
         let [on_text, on_padding, on_second_row, on_title] = pointer_spots();
 
-        assert!(drawn_list_matches(Some(on_text), &lit));
-        assert!(drawn_list_matches(Some(on_padding), &lit));
-        assert!(!drawn_list_matches(Some(on_second_row), &lit));
-        assert!(drawn_list_matches(None, &idle));
-        assert!(drawn_list_matches(Some(on_title), &idle));
-        assert!(!drawn_list_matches(None, &lit));
+        let matches = |pointer: Option<Point>, reference: &std::path::Path| {
+            draws(&drawn_hover_list, WINDOW, pointer, reference)
+        };
+
+        assert!(matches(Some(on_text), &lit));
+        assert!(matches(Some(on_padding), &lit));
+        assert!(!matches(Some(on_second_row), &lit));
+        assert!(matches(None, &idle));
+        assert!(matches(Some(on_title), &idle));
+        assert!(!matches(None, &lit));
     }
 
     /// A lit row has the hover surface of menu items, as the other rows of

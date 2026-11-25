@@ -1,0 +1,16 @@
+// What the test plugins of `otty-plugin-host` export besides the agent
+// contract of `otty-plugin-sdk`: calls that misbehave on purpose.
+package otty:test@0.1.0;
+
+/// Calls that break the engine's limits.
+interface misbehave {
+  /// Never returns: a loop with no end.
+  spin: func() -> u64;
+  /// Allocates and touches `mib` MiB, and gives how many bytes it holds.
+  hold: func(mib: u32) -> u64;
+}
+
+/// The calls a misbehaving plugin exports next to its agent contract.
+world misbehave-plugin {
+  export misbehave;
+}

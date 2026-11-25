@@ -110,7 +110,7 @@ mod tests {
     use crate::components::action_tile::ActionTile;
     use crate::components::glyph;
     use crate::components::screen_area::ScreenArea;
-    use crate::testing::TempDir;
+    use crate::testing::temp_dir::TempDir;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Message {

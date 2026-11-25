@@ -3,7 +3,7 @@ use iced::{Element, Point, Size};
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::context_menu::context_menu;
+use otty_ui_kit::components::context_menu::{MenuPlace, context_menu};
 use otty_ui_kit::components::menu::{Menu, MenuItem};
 use otty_ui_term::BlockCommand;
 
@@ -25,20 +25,15 @@ pub(crate) struct PaneContextMenuProps<'a> {
 }
 
 /// Render the context menu of a terminal pane at the pointer, kept inside
-/// the pane grid. A press away from it closes it.
+/// the pane grid. A press away from it reaches what lies under it, and
+/// the frame closes the menu.
 pub(crate) fn view<'a>(
     props: PaneContextMenuProps<'a>,
 ) -> Element<'a, TerminalIntent> {
     let tab_id = props.tab_id;
-    let cursor = props.cursor;
-    let grid_size = props.grid_size;
+    let place = MenuPlace::new(props.cursor, props.grid_size);
 
-    let layer = context_menu(
-        menu(props),
-        cursor,
-        grid_size,
-        TerminalIntent::CloseContextMenu { tab_id },
-    );
+    let layer = context_menu(menu(props), place);
 
     // The layer covers the pane grid, so it reports where the pointer is
     // in place of the grid: the next menu opens at the right spot.
@@ -323,10 +318,10 @@ mod tests {
         assert!(ui.find(i18n::t(Key::RunAgain)).is_err());
     }
 
-    /// A middle press away from the menu closes it, as a left press does,
-    /// instead of reaching the terminal under it.
+    /// A middle press away from the menu sends nothing of the menu: it
+    /// reaches what lies under it, and the frame closes the menu.
     #[test]
-    fn a_middle_press_outside_the_menu_closes_it() {
+    fn a_middle_press_outside_the_menu_sends_nothing_of_it() {
         let (_, pane) = pane_grid::State::new(());
         let themes = ThemeManager::new();
         let mut ui = simulator(view(PaneContextMenuProps {
@@ -349,10 +344,7 @@ mod tests {
                 !matches!(intent, TerminalIntent::PaneGridCursorMoved { .. })
             })
             .collect();
-        assert!(matches!(
-            intents.as_slice(),
-            [TerminalIntent::CloseContextMenu { tab_id: 7 }]
-        ));
+        assert!(intents.is_empty(), "{intents:?}");
     }
 
     /// The open menu covers the pane grid, so it reports the pointer in

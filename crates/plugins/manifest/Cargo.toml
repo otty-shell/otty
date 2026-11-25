@@ -1,0 +1,24 @@
+[package]
+name = "otty-plugin-manifest"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "The manifest of an OTTY plugin and the permissions of its parts"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# The permission globs of each plugin part (spec 2026-11-19-agent-plugins,
+# Decision 7), matched against the paths a plugin asks for.
+globset = { version = "0.4.21", default-features = false }
+# The plugin version of the manifest and the contract versions a plugin
+# exports, semver (approved by the owner 2026-11-20).
+semver = "1.0.28"
+serde = { workspace = true }
+thiserror = { workspace = true }
+# The plugin manifest, `otty-plugin.toml`: only reading, no writing.
+toml = { version = "1.2.1", default-features = false, features = ["std", "parse", "serde"] }

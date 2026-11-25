@@ -300,7 +300,10 @@ mod tests {
             let task = deliver(&mut app, intent);
 
             assert!(focuses_nothing(task));
-            assert!(app.containers.has_row_menu());
+            assert_eq!(
+                app.containers.top_overlay(),
+                Some(otty_app_containers::ContainersOverlay::RowMenu)
+            );
             assert!(!app.sidebar.vm().is_right_open);
         }
     }
@@ -328,10 +331,9 @@ mod tests {
             }),
         );
 
-        let text = otty_app_i18n::containers_action_failed(
+        let text = otty_app_i18n::filled(
             otty_app_i18n::Key::TplContainersStopFailed,
-            "web-1",
-            "busy",
+            &[("name", "web-1"), ("error", "busy")],
         );
         assert_eq!(app.notifications.unseen_count(), 1);
         let mut ui = simulator(crate::view::view(&app));

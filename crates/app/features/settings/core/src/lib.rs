@@ -128,8 +128,8 @@ impl Component for Settings {
 
 impl Overlays for Settings {
     /// The open dialog: wide, in the middle of the area the frame gives,
-    /// over a dimmed layer. Unlike the other dialogs, a press on the dimmed
-    /// layer closes it, like Esc and the close cross.
+    /// over a dimmed layer. A press on the dimmed layer closes it, like Esc
+    /// and the close cross, as for every dialog.
     fn overlay<'a>(
         &'a self,
         theme: ThemeProps<'a>,

@@ -6,12 +6,11 @@ use otty_app_i18n::{self as i18n, Key};
 use otty_containers::{
     Container, EngineAddress, EngineInfo, EngineKind, Image, Network, Volume,
 };
+use otty_ui_kit::components::data_table::ColumnSort;
 use otty_ui_kit::components::tag_search::TagSearch;
 use thiserror::Error;
 
-use super::sort::{
-    TableSort, sort_containers, sort_images, sort_networks, sort_volumes,
-};
+use super::sort::{sort_containers, sort_images, sort_networks, sort_volumes};
 use super::table_search::{
     container_row, image_row, keys, network_row, volume_row,
 };
@@ -597,7 +596,7 @@ pub(crate) fn shown_containers<'a>(
     containers: &'a [Container],
     search: &TagSearch,
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> Vec<&'a Container> {
     let keys = keys(ResourceKind::Containers);
     let filters_rows = search.filters_rows(&keys);
@@ -618,7 +617,7 @@ pub(crate) fn shown_images<'a>(
     images: &'a [Image],
     search: &TagSearch,
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> Vec<&'a Image> {
     let keys = keys(ResourceKind::Images);
     let filters_rows = search.filters_rows(&keys);
@@ -639,7 +638,7 @@ pub(crate) fn shown_volumes<'a>(
     volumes: &'a [Volume],
     search: &TagSearch,
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> Vec<&'a Volume> {
     let keys = keys(ResourceKind::Volumes);
     let filters_rows = search.filters_rows(&keys);
@@ -660,7 +659,7 @@ pub(crate) fn shown_networks<'a>(
     networks: &'a [Network],
     search: &TagSearch,
     now: i64,
-    sort: TableSort,
+    sort: ColumnSort,
 ) -> Vec<&'a Network> {
     let keys = keys(ResourceKind::Networks);
     let filters_rows = search.filters_rows(&keys);
@@ -716,6 +715,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::sort::default_sort;
 
     const NOW: i64 = 1_793_557_960;
 
@@ -747,7 +747,7 @@ mod tests {
 
     fn container_names(search: &TagSearch) -> Vec<String> {
         let resources = fixtures::resources(EngineKind::Docker);
-        let sort = TableSort::default_for(ResourceKind::Containers);
+        let sort = default_sort(ResourceKind::Containers);
 
         shown_containers(resources.containers(), search, NOW, sort)
             .iter()
@@ -833,19 +833,19 @@ mod tests {
             resources.images(),
             &search(&[("repository", "busybox")], ""),
             NOW,
-            TableSort::default_for(ResourceKind::Images),
+            default_sort(ResourceKind::Images),
         );
         let volumes = shown_volumes(
             resources.volumes(),
             &search(&[], "fx-data"),
             NOW,
-            TableSort::default_for(ResourceKind::Volumes),
+            default_sort(ResourceKind::Volumes),
         );
         let networks = shown_networks(
             resources.networks(),
             &search(&[("driver", "null")], ""),
             NOW,
-            TableSort::default_for(ResourceKind::Networks),
+            default_sort(ResourceKind::Networks),
         );
 
         assert_eq!(images.len(), 1);
@@ -874,7 +874,7 @@ mod tests {
             &[],
             &[],
         );
-        let sort = TableSort::default_for(ResourceKind::Images);
+        let sort = default_sort(ResourceKind::Images);
 
         let shown = shown_images(
             &images,
@@ -892,7 +892,7 @@ mod tests {
     fn plain_text_finds_an_image_by_repository_and_tag_together() {
         let images =
             fixtures::image_rows("sha256:app", &["a:1", "a:2"], &[], &[]);
-        let sort = TableSort::default_for(ResourceKind::Images);
+        let sort = default_sort(ResourceKind::Images);
 
         let shown = shown_images(&images, &search(&[], "a:2"), NOW, sort);
 

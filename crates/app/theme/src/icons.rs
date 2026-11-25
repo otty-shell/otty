@@ -26,6 +26,8 @@ pub const ADD_TAB_HEADER: &[u8] =
     include_bytes!("../../../../assets/svg/add-tab.svg");
 /// A file in the Files tree.
 pub const FILE: &[u8] = include_bytes!("../../../../assets/svg/file.svg");
+/// Three bars on the Project statistics button.
+pub const CHART: &[u8] = include_bytes!("../../../../assets/svg/chart.svg");
 /// Run mark on the empty state's New launch action.
 pub const PLAY: &[u8] = include_bytes!("../../../../assets/svg/play.svg");
 /// Title bar button that opens Settings.
@@ -44,6 +46,8 @@ pub const FOCUS_MODE: &[u8] =
     include_bytes!("../../../../assets/svg/focus-mode.svg");
 /// Magnifier in the title search and the command palette input.
 pub const SEARCH: &[u8] = include_bytes!("../../../../assets/svg/search.svg");
+/// A funnel: the button that opens the filters of the Agents mode projects.
+pub const FILTER: &[u8] = include_bytes!("../../../../assets/svg/filter.svg");
 /// Terminal mode in the mode switcher and the All modes menu: a window
 /// with a prompt.
 pub const MODE_TERMINAL: &[u8] =
@@ -52,10 +56,30 @@ pub const MODE_TERMINAL: &[u8] =
 /// on a base.
 pub const MODE_CONTAINERS: &[u8] =
     include_bytes!("../../../../assets/svg/mode-containers.svg");
-/// Containers mode button that loads every list again: two turning arrows.
+/// Agents mode in the mode switcher and the All modes menu: a robot head.
+/// Also the icon of a session table row whose agent has no entry.
+pub const MODE_AGENTS: &[u8] =
+    include_bytes!("../../../../assets/svg/mode-agents.svg");
+/// Plugins mode in the mode switcher and the All modes menu: a plug.
+/// Also the icon of its card when nothing is selected.
+pub const MODE_PLUGINS: &[u8] =
+    include_bytes!("../../../../assets/svg/mode-plugins.svg");
+/// A plugin that is broken, as its manifest can not be read or it failed
+/// to load: the plug of Plugins mode with a small warning mark in the
+/// lower right corner, drawn in the warn colour where it shows.
+pub const PLUGIN_BROKEN: &[u8] =
+    include_bytes!("../../../../assets/svg/plugin-broken.svg");
+/// All accounts in Agents mode: two cards, one behind the other.
+pub const ALL_ACCOUNTS: &[u8] =
+    include_bytes!("../../../../assets/svg/all-accounts.svg");
+/// All profiles in Agents mode: the robot of the mode in front of another.
+pub const ALL_PROFILES: &[u8] =
+    include_bytes!("../../../../assets/svg/all-profiles.svg");
+/// Button that reads the lists of a mode again, in Containers and Agents
+/// mode: two turning arrows.
 pub const REFRESH: &[u8] = include_bytes!("../../../../assets/svg/refresh.svg");
-/// Containers create buttons (Run container, Create volume, Create network): a
-/// plus.
+/// Button that adds or starts something, such as Run container, Add profile
+/// or New session: a plus.
 pub const PLUS: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 /// Containers Pull image and Pull again: an arrow down into a tray.
 pub const PULL: &[u8] = include_bytes!("../../../../assets/svg/pull.svg");
@@ -84,6 +108,12 @@ pub const EXTERNAL_LINK: &[u8] =
 /// Error mark of a notice: an exclamation mark in a circle.
 pub const NOTICE_ERROR: &[u8] =
     include_bytes!("../../../../assets/svg/notice-error.svg");
+/// Mark of a warning notice: an exclamation mark in a triangle.
+pub const NOTICE_WARN: &[u8] =
+    include_bytes!("../../../../assets/svg/notice-warn.svg");
+/// Mark of a notice that says an action finished: a check in a circle.
+pub const NOTICE_DONE: &[u8] =
+    include_bytes!("../../../../assets/svg/notice-done.svg");
 /// Product logo shown on the empty state. Drawn in its own colors.
 ///
 /// A PNG, not the SVG: `logo-small.svg` only wraps a large raster image,
@@ -99,6 +129,8 @@ pub const APP_ICON_DATA: &[u8] =
 pub fn mode_icon(mode: Mode) -> &'static [u8] {
     match mode {
         Mode::Containers => MODE_CONTAINERS,
+        Mode::Agents => MODE_AGENTS,
+        Mode::Plugins => MODE_PLUGINS,
         _ => MODE_TERMINAL,
     }
 }
@@ -116,5 +148,60 @@ mod tests {
     #[test]
     fn given_two_modes_when_icons_compared_then_they_differ() {
         assert_ne!(mode_icon(Mode::Terminal), mode_icon(Mode::Containers));
+    }
+
+    #[test]
+    fn agents_mode_has_its_own_icon() {
+        assert_eq!(mode_icon(Mode::Agents), MODE_AGENTS);
+        assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Terminal));
+        assert_ne!(mode_icon(Mode::Agents), mode_icon(Mode::Containers));
+    }
+
+    #[test]
+    fn plugins_mode_has_its_own_icon() {
+        assert_eq!(mode_icon(Mode::Plugins), MODE_PLUGINS);
+        for mode in [Mode::Terminal, Mode::Containers, Mode::Agents] {
+            assert_ne!(mode_icon(Mode::Plugins), mode_icon(mode));
+        }
+    }
+
+    /// Issue 13 of spec 2026-11-23-accounts-apart-from-profiles: the owner
+    /// chose a plug for Plugins mode: two prongs, the body and the cord.
+    #[test]
+    fn the_plugins_mode_icon_is_a_plug() {
+        let svg = std::str::from_utf8(MODE_PLUGINS).expect("an SVG text");
+
+        assert!(svg.contains(r#"<path d="M9 3v4M15 3v4"/>"#), "{svg}");
+        assert!(
+            svg.contains(r#"<path d="M6 7h12v3a6 6 0 0 1-12 0z"/>"#),
+            "{svg}"
+        );
+        assert!(svg.contains(r#"<path d="M12 16v5"/>"#), "{svg}");
+    }
+
+    /// Issue 17 of spec 2026-11-23-accounts-apart-from-profiles: a broken
+    /// plugin is the plug of Plugins mode, moved up and left, with a
+    /// small warning mark in the lower right corner.
+    #[test]
+    fn the_broken_plugin_icon_is_the_plug_with_a_warning_mark() {
+        let svg = std::str::from_utf8(PLUGIN_BROKEN).expect("an SVG text");
+
+        assert!(svg.contains(r#"<g transform="translate(-2 -1)">"#), "{svg}");
+        assert!(svg.contains(r#"<path d="M9 3v4M15 3v4"/>"#), "{svg}");
+        assert!(
+            svg.contains(r#"<path d="M6 7h12v3a6 6 0 0 1-12 0z"/>"#),
+            "{svg}"
+        );
+        assert!(svg.contains(r#"<path d="M12 16v5"/>"#), "{svg}");
+        assert!(svg.contains(r#"stroke-width="1.7""#), "{svg}");
+        assert!(svg.contains(r#"fill-rule="evenodd""#), "{svg}");
+        assert_ne!(PLUGIN_BROKEN, MODE_PLUGINS);
+    }
+
+    #[test]
+    fn the_all_rows_have_icons_of_their_own() {
+        assert_ne!(ALL_ACCOUNTS, ALL_PROFILES);
+        assert_ne!(ALL_ACCOUNTS, MODE_AGENTS);
+        assert_ne!(ALL_PROFILES, MODE_AGENTS);
     }
 }

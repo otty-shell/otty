@@ -1,0 +1,192 @@
+//! The shape of `otty-plugin.toml` as `toml` reads it, before any check.
+//! Unknown fields are refused, so a misspelt permission is never dropped
+//! silently.
+
+use serde::Deserialize;
+
+/// The whole manifest.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawManifest {
+    pub(crate) plugin: RawPlugin,
+    #[serde(default)]
+    pub(crate) agents: RawAgentsDomain,
+}
+
+/// The parts of the `agents` domain: `[[agents.agent]]` and
+/// `[[agents.provider]]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawAgentsDomain {
+    #[serde(default)]
+    pub(crate) agent: Vec<RawAgent>,
+    #[serde(default)]
+    pub(crate) provider: Vec<RawProvider>,
+}
+
+/// `[plugin]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawPlugin {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) version: String,
+    pub(crate) description: Option<String>,
+    pub(crate) repository: Option<String>,
+    pub(crate) license: Option<String>,
+    #[serde(default)]
+    pub(crate) authors: Vec<String>,
+    pub(crate) wasm: String,
+}
+
+/// One `[[agents.agent]]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawAgent {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) icon: Option<String>,
+    pub(crate) program: Option<String>,
+    #[serde(default)]
+    pub(crate) program_places: Vec<String>,
+    pub(crate) tested_version: Option<String>,
+    pub(crate) install: Option<RawInstall>,
+    #[serde(default)]
+    pub(crate) permissions: RawAgentPermissions,
+}
+
+/// `[agents.agent.install]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawInstall {
+    #[serde(default)]
+    pub(crate) command: Vec<String>,
+    pub(crate) page: Option<String>,
+}
+
+/// `[agents.agent.permissions]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawAgentPermissions {
+    #[serde(default)]
+    pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) write: Vec<String>,
+    #[serde(default)]
+    pub(crate) sqlite: Vec<String>,
+    #[serde(default)]
+    pub(crate) env: Vec<String>,
+    #[serde(default)]
+    pub(crate) run: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) terminal: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) keyring: Vec<RawKeyring>,
+    #[serde(default)]
+    pub(crate) keys: Vec<RawKeyPlace>,
+}
+
+/// One `[[agents.agent.permissions.run]]` or
+/// `[[agents.agent.permissions.terminal]]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawProgram {
+    pub(crate) program: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+}
+
+/// One `[[agents.agent.permissions.keyring]]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawKeyring {
+    pub(crate) service: String,
+    pub(crate) user: String,
+    #[serde(default)]
+    pub(crate) fields: Vec<String>,
+}
+
+/// One `[[agents.agent.permissions.keys]]`: JSON fields of files (`files`), a
+/// column of a SQLite table (`sqlite`, `table`, `column`) or environment
+/// variables (`env`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawKeyPlace {
+    pub(crate) files: Option<Vec<String>>,
+    pub(crate) sqlite: Option<Vec<String>>,
+    pub(crate) table: Option<String>,
+    pub(crate) column: Option<String>,
+    pub(crate) fields: Option<Vec<String>>,
+    pub(crate) env: Option<Vec<String>>,
+}
+
+/// One `[[agents.provider]]`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawProvider {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) icon: Option<String>,
+    #[serde(default)]
+    pub(crate) hosts: Vec<String>,
+    pub(crate) usage_page: Option<String>,
+    pub(crate) plan_usage_page: Option<String>,
+    pub(crate) priced_as: Option<String>,
+    #[serde(default)]
+    pub(crate) permissions: RawProviderPermissions,
+    #[serde(default)]
+    pub(crate) logins: Vec<RawLogins>,
+}
+
+/// `[agents.provider.permissions]`. Files, variables, programs and hidden
+/// terminals serve the ways of reading that ask the agent itself (issue
+/// 29); `keys` are JSON fields of files outside every profile folder, such
+/// as `~/.claude.json`. Databases and the keyring are the agent parts'.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawProviderPermissions {
+    #[serde(default)]
+    pub(crate) http: Vec<String>,
+    #[serde(default)]
+    pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) write: Vec<String>,
+    #[serde(default)]
+    pub(crate) env: Vec<String>,
+    #[serde(default)]
+    pub(crate) run: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) terminal: Vec<RawProgram>,
+    #[serde(default)]
+    pub(crate) keys: Vec<RawKeyPlace>,
+}
+
+/// One `[[agents.provider.logins]]`: the profiles of an agent part of the
+/// same plugin whose logins the provider part reads, and what it reads,
+/// writes and deletes inside each profile folder. `log_in` offers Add account → "Log in with"
+/// that agent part, OTTY's own login.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawLogins {
+    pub(crate) agent: String,
+    pub(crate) folder_env: Option<String>,
+    #[serde(default)]
+    pub(crate) log_in: bool,
+    #[serde(default)]
+    pub(crate) read: Vec<String>,
+    #[serde(default)]
+    pub(crate) write: Vec<String>,
+    #[serde(default)]
+    pub(crate) keys: Vec<RawLoginKeys>,
+}
+
+/// One `[[agents.provider.logins.keys]]`: JSON fields of files inside each
+/// profile folder that hold keys.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawLoginKeys {
+    pub(crate) files: Vec<String>,
+    pub(crate) fields: Vec<String>,
+}

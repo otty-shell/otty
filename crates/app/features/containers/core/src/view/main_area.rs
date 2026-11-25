@@ -9,7 +9,7 @@ use iced::{Alignment, Element, Length, Padding, Point};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
 use otty_app_theme::theme::ThemeProps;
-use otty_ui_kit::components::data_table::{DataTable, SortDirection};
+use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::notice::Notice;
 use otty_ui_kit::components::spinner::Spinner;
 use otty_ui_kit::components::tag_row::TagRow;
@@ -22,7 +22,6 @@ use super::super::actions::event::ActionsIntent;
 use super::super::event::ContainersIntent;
 use super::super::model::{MainAreaViewModel, TableViewModel};
 use super::super::resource_rows::PORTS_COLUMN;
-use super::super::sort::SortOrder;
 use super::super::types::ResourceKind;
 use super::no_engine;
 
@@ -34,8 +33,9 @@ const SEARCH_MIN_WIDTH: f32 = 140.0;
 /// Width of the search field when there is room; a typed `key:value` needs
 /// more than a name did.
 const SEARCH_MAX_WIDTH: f32 = 320.0;
-/// Widget id of the search field.
-const SEARCH_ID: &str = "containers_search";
+/// Widget id of the search field over the table, so a test of the whole
+/// window can press it.
+pub const TABLE_SEARCH_ID: &str = "containers_search";
 /// Widget id of the spinner shown while the engines are looked for.
 pub const SEARCHING_SPINNER_ID: &str = "containers_searching_spinner";
 
@@ -75,7 +75,7 @@ fn table_view<'a>(
     let mut content = column![header].width(Length::Fill).height(Length::Fill);
     if let Some(error) = vm.error {
         let notice = Notice::new(
-            i18n::containers_list_failed(error),
+            i18n::with_error(Key::TplContainersListFailed, error),
             svg::Handle::from_memory(icons::NOTICE_ERROR),
             palette,
         );
@@ -83,7 +83,7 @@ fn table_view<'a>(
     }
 
     let mut table = DataTable::new(vm.columns, palette)
-        .sorted_by(vm.sort.column(), sort_direction(vm.sort.order()))
+        .sorted_by(vm.sort)
         .on_sort(ContainersIntent::SortBy)
         .selected(vm.selected)
         .on_row_press(ContainersIntent::SelectRow)
@@ -95,7 +95,7 @@ fn table_view<'a>(
             index,
             position,
         })
-        .on_row_menu(i18n::t(Key::ContainersMoreActions), |index, corner| {
+        .on_row_menu(i18n::t(Key::MoreActions), |index, corner| {
             // The table reports the button's bottom-left corner. The "⋯"
             // column is the last one, so the menu would open to the left of
             // that corner, in the middle of the table. The bottom-right
@@ -116,14 +116,6 @@ fn table_view<'a>(
     }
 
     content.push(table).into()
-}
-
-/// The arrow of a sort order: up for ascending, down for descending.
-fn sort_direction(order: SortOrder) -> SortDirection {
-    match order {
-        SortOrder::Ascending => SortDirection::Ascending,
-        SortOrder::Descending => SortDirection::Descending,
-    }
 }
 
 /// A notice under the header row, inside the page padding.
@@ -152,8 +144,8 @@ fn header<'a>(
     if !vm.search.tags().is_empty() {
         header = header.push(
             TagRow::new(vm.search.tags(), &vm.keys, palette)
-                .remove_label(i18n::t(Key::ContainersTagRemove))
-                .clear_all_label(i18n::t(Key::ContainersTagsClearAll))
+                .remove_label(i18n::t(Key::TagRemove))
+                .clear_all_label(i18n::t(Key::TagsClearAll))
                 .on_action(ContainersIntent::TagSearch),
         );
     }
@@ -196,16 +188,15 @@ fn toolbar<'a>(
         i18n::t(vm.resource.create_key()),
     )
     .on_press_maybe(vm.can_create.then_some(ContainersIntent::OpenCreate));
-    let mut toolbar =
-        Toolbar::new(i18n::t(Key::ContainersMoreActions), palette)
-            .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
-                TagSearchField::new(search, suggestions.clone(), &field_palette)
-                    .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
-                    .id(Id::new(SEARCH_ID))
-                    .on_action(ContainersIntent::TagSearch)
-                    .into()
-            })
-            .item(create);
+    let mut toolbar = Toolbar::new(i18n::t(Key::MoreActions), palette)
+        .field(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH, move || {
+            TagSearchField::new(search, suggestions.clone(), &field_palette)
+                .placeholder(i18n::t(Key::ContainersSearchPlaceholder))
+                .id(Id::new(TABLE_SEARCH_ID))
+                .on_action(ContainersIntent::TagSearch)
+                .into()
+        })
+        .item(create);
     if let Some(prune) = &vm.prune {
         toolbar = toolbar.item(
             ToolbarItem::new(
@@ -224,7 +215,7 @@ fn toolbar<'a>(
         .item(
             ToolbarItem::new(
                 svg::Handle::from_memory(icons::REFRESH),
-                i18n::t(Key::ContainersRefresh),
+                i18n::t(Key::Refresh),
             )
             .on_press(ContainersIntent::Refresh),
         )
@@ -256,7 +247,7 @@ mod tests {
     use otty_app_theme::theme::ThemeManager;
     use otty_containers::{Container, EngineKind, fixtures};
     use otty_ui_kit::components::data_table::{
-        CellPart, TableCell, TableColumn,
+        CellPart, ColumnSort, TableCell, TableColumn,
     };
     use otty_ui_kit::components::screen_area::ScreenArea;
     use otty_ui_kit::components::status_badge::StatusTone;
@@ -269,7 +260,7 @@ mod tests {
     use crate::model::NoEngineViewModel;
     use crate::reducer::reduce;
     use crate::resource_rows;
-    use crate::sort::{TableSort, TableSorts};
+    use crate::sort::{TableSorts, default_sort};
     use crate::state::ContainersState;
     use crate::table_search::{keys, keys_in};
     use crate::types::{LoadedLists, NoEngineCase, Place, ResourceKind};
@@ -310,7 +301,7 @@ mod tests {
             search: &EMPTY_SEARCH,
             keys: keys(ResourceKind::Containers),
             suggestions: Vec::new(),
-            sort: TableSort::default_for(ResourceKind::Containers),
+            sort: default_sort(ResourceKind::Containers),
             columns: vec![
                 TableColumn::new("Name", 3).sortable(true),
                 TableColumn::new("Status", 2).sortable(true),
@@ -453,7 +444,7 @@ mod tests {
         let mut row = vec![TableCell::mono("web-1"); PORTS_COLUMN];
         row.push(ports);
         row.push(TableCell::muted("1 d"));
-        let make = |sort: TableSort, width: f32| {
+        let make = |sort: ColumnSort, width: f32| {
             let row = row.clone();
             area(
                 with(move |mut table| {
@@ -472,10 +463,10 @@ mod tests {
         let mut sorts = TableSorts::default();
         sorts.press(&PAGE, PORTS_COLUMN);
         let by_ports = sorts.get(&PAGE);
-        let by_status = TableSort::default_for(ResourceKind::Containers);
+        let by_status = default_sort(ResourceKind::Containers);
         // The narrowest area that still shows the column without scrolling
         // sideways: only the minimums and the row menu fit.
-        let narrow = 572.0 + ROW_MENU_COLUMN;
+        let narrow = 556.0 + ROW_MENU_COLUMN;
 
         for (sort, width) in [
             (by_status, WIDE),
@@ -497,6 +488,45 @@ mod tests {
                 sent(link),
                 vec![ContainersIntent::OpenPortLink { row: 0, link: 0 }],
                 "{sort:?} at {width}"
+            );
+        }
+    }
+
+    /// Issue 39: every list, its "⋯" column too, fits the smallest screen,
+    /// so its table never scrolls sideways itself: in less room the main
+    /// area keeps the page at that width and scrolls it sideways, as every
+    /// screen, and nothing scrolls twice. The last column, Age, ends
+    /// before the "⋯" column only when no column is pushed out.
+    #[test]
+    fn every_list_fits_the_smallest_screen() {
+        let themes = ThemeManager::new();
+        let smallest = otty_ui_kit::size::SCREEN_MIN;
+        let age_min = 52.0;
+
+        for resource in [
+            ResourceKind::Containers,
+            ResourceKind::Images,
+            ResourceKind::Volumes,
+            ResourceKind::Networks,
+        ] {
+            let vm = with(|mut table| {
+                table.resource = resource;
+                table.columns = resource_rows::columns_in(Locale::En, resource);
+                table.rows = Vec::new();
+                table
+            });
+            let mut ui = simulator(area(
+                vm,
+                smallest,
+                ThemeProps::new(themes.current()),
+            ));
+
+            let age = ui.find("Age").expect("the column shows").bounds();
+
+            let column_end = age.x - spacing::SPACE_4 + age_min;
+            assert!(
+                column_end <= smallest - ROW_MENU_COLUMN + 0.5,
+                "{resource:?}: the Age column ends at {column_end}"
             );
         }
     }
@@ -531,7 +561,7 @@ mod tests {
         from_end: usize,
     ) -> iced::Point {
         let field = ui
-            .find(Id::new(SEARCH_ID))
+            .find(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible")
             .bounds();
 
@@ -578,7 +608,7 @@ mod tests {
             .expect("title should show")
             .bounds();
         let field = ui
-            .find(Id::new(SEARCH_ID))
+            .find(Id::new(TABLE_SEARCH_ID))
             .expect("field should show")
             .bounds();
         let tag = ui
@@ -657,7 +687,7 @@ mod tests {
         ui.click(i18n::t(Key::ContainersPruneStopped))
             .expect("prune should be in the menu");
         click_at(&mut ui, more);
-        ui.click(i18n::t(Key::ContainersRefresh))
+        ui.click(i18n::t(Key::Refresh))
             .expect("refresh should be in the menu");
 
         let intents = sent(ui);
@@ -683,7 +713,7 @@ mod tests {
 
         let create = toolbar_button(&mut ui, NARROW, 1);
         click_at(&mut ui, create);
-        ui.click(Id::new(SEARCH_ID))
+        ui.click(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
@@ -767,7 +797,7 @@ mod tests {
                 tag.y + tag.height / 2.0,
             ),
         );
-        ui.click(i18n::t(Key::ContainersTagsClearAll))
+        ui.click(i18n::t(Key::TagsClearAll))
             .expect("clear all should show");
 
         let intents = sent(ui);
@@ -805,7 +835,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        assert!(ui.find(i18n::t(Key::ContainersTagsClearAll)).is_err());
+        assert!(ui.find(i18n::t(Key::TagsClearAll)).is_err());
     }
 
     #[test]
@@ -816,7 +846,7 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.click(Id::new(SEARCH_ID))
+        ui.click(Id::new(TABLE_SEARCH_ID))
             .expect("field should be visible");
         let _ = ui.typewrite("w");
 
@@ -886,7 +916,7 @@ mod tests {
     fn type_in_field(state: &mut ContainersState, text: &str) {
         for character in text.chars() {
             in_frame(state, |ui| {
-                ui.click(Id::new(SEARCH_ID))
+                ui.click(Id::new(TABLE_SEARCH_ID))
                     .expect("field should be visible");
                 let _ = ui.typewrite(character.to_string().as_str());
             });
@@ -895,7 +925,7 @@ mod tests {
 
     fn tap_in_field(state: &mut ContainersState, key: Named) {
         in_frame(state, |ui| {
-            ui.click(Id::new(SEARCH_ID))
+            ui.click(Id::new(TABLE_SEARCH_ID))
                 .expect("field should be visible");
             ui.tap_key(key);
         });
@@ -917,7 +947,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_a_key_and_a_value_with_tab_gives_a_tag_and_fewer_rows() {
+    fn a_key_and_a_value_picked_with_down_and_tab_give_a_tag_and_fewer_rows() {
         let mut state = loaded_state();
         let before = row_count(&state);
         let search = |state: &ContainersState| {
@@ -926,6 +956,7 @@ mod tests {
 
         type_in_field(&mut state, "sta");
         assert_eq!(row_count(&state), 0, "plain text filters by name");
+        tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::Tab);
         assert_eq!(search(&state).input(), "Status:");
         assert_eq!(
@@ -935,6 +966,7 @@ mod tests {
         );
 
         type_in_field(&mut state, "run");
+        tap_in_field(&mut state, Named::ArrowDown);
         tap_in_field(&mut state, Named::Tab);
 
         let labels = tag_labels(&search(&state));
@@ -983,7 +1015,7 @@ mod tests {
         let mut state = loaded_state();
 
         in_frame(&mut state, |ui| {
-            ui.click(Id::new(SEARCH_ID))
+            ui.click(Id::new(TABLE_SEARCH_ID))
                 .expect("field should be visible");
         });
 
@@ -1136,8 +1168,11 @@ mod tests {
             theme: ThemeProps::new(themes.current()),
         }));
 
-        ui.find(i18n::containers_list_failed("engine said no").as_str())
-            .expect("notice should show the error");
+        ui.find(
+            i18n::with_error(Key::TplContainersListFailed, "engine said no")
+                .as_str(),
+        )
+        .expect("notice should show the error");
     }
 
     #[test]

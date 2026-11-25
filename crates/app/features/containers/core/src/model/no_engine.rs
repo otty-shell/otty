@@ -75,7 +75,10 @@ impl NoEngineViewModel {
         let looked_for = if places.is_empty() {
             i18n::t(Key::ContainersLookedForCommands).to_string()
         } else {
-            i18n::containers_looked_for(&places.join(", "))
+            i18n::filled(
+                Key::TplContainersLookedFor,
+                &[("places", &places.join(", "))],
+            )
         };
 
         match case {
@@ -160,9 +163,15 @@ impl NoEngineViewModel {
             NoEngineCase::NoPermission => NoEngineViewModel {
                 case,
                 title: i18n::t(Key::ContainersDockerNoAccessTitle),
-                description: i18n::containers_docker_no_access_text(socket),
+                description: i18n::filled(
+                    Key::TplContainersDockerNoAccessText,
+                    &[("socket", socket)],
+                ),
                 panel_text: i18n::t(Key::ContainersPanelDockerNoAccess),
-                status_text: i18n::containers_status_no_access(socket),
+                status_text: i18n::filled(
+                    Key::TplContainersStatusNoAccess,
+                    &[("socket", socket)],
+                ),
                 commands: vec![docker_group_command()],
                 installs: Vec::new(),
                 fixes: vec![how_to_fix(
@@ -174,9 +183,15 @@ impl NoEngineViewModel {
             NoEngineCase::PodmanNoPermission => NoEngineViewModel {
                 case,
                 title: i18n::t(Key::ContainersPodmanNoAccessTitle),
-                description: i18n::containers_podman_no_access_text(socket),
+                description: i18n::filled(
+                    Key::TplContainersPodmanNoAccessText,
+                    &[("socket", socket)],
+                ),
                 panel_text: i18n::t(Key::ContainersPanelPodmanNoAccess),
-                status_text: i18n::containers_status_no_access(socket),
+                status_text: i18n::filled(
+                    Key::TplContainersStatusNoAccess,
+                    &[("socket", socket)],
+                ),
                 commands: vec![podman_own_socket_command()],
                 installs: Vec::new(),
                 fixes: vec![how_to_fix(
@@ -189,17 +204,17 @@ impl NoEngineViewModel {
                 NoEngineViewModel {
                     case,
                     title: i18n::t(Key::ContainersDockerNoAccessPodmanOffTitle),
-                    description:
-                        i18n::containers_docker_no_access_podman_off_text(
-                            socket,
-                        ),
+                    description: i18n::filled(
+                        Key::TplContainersDockerNoAccessPodmanOffText,
+                        &[("socket", socket)],
+                    ),
                     panel_text: i18n::t(
                         Key::ContainersPanelDockerNoAccessPodmanOff,
                     ),
-                    status_text:
-                        i18n::containers_status_docker_no_access_podman_off(
-                            socket,
-                        ),
+                    status_text: i18n::filled(
+                        Key::TplContainersStatusDockerNoAccessPodmanOff,
+                        &[("socket", socket)],
+                    ),
                     commands: vec![
                         docker_group_command(),
                         podman_socket_command(
@@ -224,17 +239,17 @@ impl NoEngineViewModel {
                 NoEngineViewModel {
                     case,
                     title: i18n::t(Key::ContainersPodmanNoAccessDockerOffTitle),
-                    description:
-                        i18n::containers_podman_no_access_docker_off_text(
-                            socket,
-                        ),
+                    description: i18n::filled(
+                        Key::TplContainersPodmanNoAccessDockerOffText,
+                        &[("socket", socket)],
+                    ),
                     panel_text: i18n::t(
                         Key::ContainersPanelPodmanNoAccessDockerOff,
                     ),
-                    status_text:
-                        i18n::containers_status_podman_no_access_docker_off(
-                            socket,
-                        ),
+                    status_text: i18n::filled(
+                        Key::TplContainersStatusPodmanNoAccessDockerOff,
+                        &[("socket", socket)],
+                    ),
                     commands: vec![
                         podman_own_socket_command(),
                         docker_start_command(Key::ContainersBothOffDockerLabel),
@@ -553,7 +568,10 @@ mod tests {
         assert_eq!(vm.title, i18n::t(Key::ContainersDockerNoAccessTitle));
         assert_eq!(
             vm.description,
-            i18n::containers_docker_no_access_text("/var/run/docker.sock")
+            i18n::filled(
+                Key::TplContainersDockerNoAccessText,
+                &[("socket", "/var/run/docker.sock")]
+            )
         );
         assert!(vm.description.contains("/var/run/docker.sock"));
         assert_eq!(vm.panel_text, i18n::t(Key::ContainersPanelDockerNoAccess));
@@ -586,11 +604,20 @@ mod tests {
         assert_eq!(vm.title, i18n::t(Key::ContainersPodmanNoAccessTitle));
         assert_eq!(
             vm.description,
-            i18n::containers_podman_no_access_text(socket)
+            i18n::filled(
+                Key::TplContainersPodmanNoAccessText,
+                &[("socket", socket)]
+            )
         );
         assert!(vm.description.contains(socket));
         assert_eq!(vm.panel_text, i18n::t(Key::ContainersPanelPodmanNoAccess));
-        assert_eq!(vm.status_text, i18n::containers_status_no_access(socket));
+        assert_eq!(
+            vm.status_text,
+            i18n::filled(
+                Key::TplContainersStatusNoAccess,
+                &[("socket", socket)]
+            )
+        );
         assert_eq!(
             vm.commands,
             vec![NoEngineCommandViewModel {
@@ -626,7 +653,10 @@ mod tests {
         );
         assert_eq!(
             vm.description,
-            i18n::containers_docker_no_access_podman_off_text(DOCKER_SOCKET)
+            i18n::filled(
+                Key::TplContainersDockerNoAccessPodmanOffText,
+                &[("socket", DOCKER_SOCKET)]
+            )
         );
         assert!(vm.description.contains(DOCKER_SOCKET));
         assert_eq!(
@@ -635,7 +665,10 @@ mod tests {
         );
         assert_eq!(
             vm.status_text,
-            i18n::containers_status_docker_no_access_podman_off(DOCKER_SOCKET)
+            i18n::filled(
+                Key::TplContainersStatusDockerNoAccessPodmanOff,
+                &[("socket", DOCKER_SOCKET)]
+            )
         );
         assert_eq!(
             vm.commands,
@@ -682,7 +715,10 @@ mod tests {
         );
         assert_eq!(
             vm.description,
-            i18n::containers_podman_no_access_docker_off_text(PODMAN_SOCKET)
+            i18n::filled(
+                Key::TplContainersPodmanNoAccessDockerOffText,
+                &[("socket", PODMAN_SOCKET)]
+            )
         );
         assert!(vm.description.contains(PODMAN_SOCKET));
         assert_eq!(
@@ -691,7 +727,10 @@ mod tests {
         );
         assert_eq!(
             vm.status_text,
-            i18n::containers_status_podman_no_access_docker_off(PODMAN_SOCKET)
+            i18n::filled(
+                Key::TplContainersStatusPodmanNoAccessDockerOff,
+                &[("socket", PODMAN_SOCKET)]
+            )
         );
         assert_eq!(
             vm.commands,
@@ -801,8 +840,9 @@ mod tests {
 
         assert_eq!(
             vm.looked_for,
-            i18n::containers_looked_for(
-                "/var/run/docker.sock, /run/podman/podman.sock"
+            i18n::filled(
+                Key::TplContainersLookedFor,
+                &[("places", "/var/run/docker.sock, /run/podman/podman.sock")]
             )
         );
         assert!(vm.looked_for.contains("/run/podman/podman.sock"));

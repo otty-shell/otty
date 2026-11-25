@@ -1,0 +1,45 @@
+[package]
+name = "otty-app-agents"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "Agents mode of the OTTY app: the profiles and projects of the coding agents, the sessions of a project and the status bar"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+# A feature crate: helper crates, otty-ui-* and libraries only. No other
+# feature, no binary, no io crate and no tokio. The bans of
+# crates/app/features/clippy.toml apply: otty-app-agents-io reads
+# agents.json, finds the agents' programs and reads the sessions.
+# `otty-agents` gives the data types and the command that starts an agent;
+# the feature calls none of its reads. `otty-plugin-host` names the plugin
+# part a fact or a failure comes from, and the kind of a failure. iced's `tokio` feature gives the
+# timer of the limits, `iced::time::every`; it adds no crate. `jiff` gives
+# the dates and the user's time zone the dashboard writes its times in;
+# otty-app-agents-io reads the time zone and passes it in.
+[dependencies]
+iced = { workspace = true, features = ["svg", "tokio"] }
+jiff = { workspace = true }
+log = { workspace = true }
+otty-agents = { path = "../../../../agents", version = "0.1.0" }
+otty-app-domain = { path = "../../../domain", version = "0.1.0" }
+otty-app-i18n = { path = "../../../i18n", version = "0.1.0" }
+otty-app-slots = { path = "../../../slots", version = "0.1.0" }
+otty-app-theme = { path = "../../../theme", version = "0.1.0" }
+otty-plugin-host = { path = "../../../../plugins/host", version = "0.1.0" }
+otty-ui-kit = { path = "../../../../ui/kit", version = "0.1.0" }
+
+# `test-ids`: the ids of the widgets the tests of the binary press or type
+# in. Only the dev-dependencies of the binary turn it on.
+[features]
+test-ids = []
+
+# `fixtures` gives the answer of a walk over made-up sources, in the test
+# build only.
+[dev-dependencies]
+iced_test = "0.14"
+otty-agents = { path = "../../../../agents", version = "0.1.0", features = ["fixtures"] }
+otty-app-testing = { path = "../../../testing", version = "0.1.0" }

@@ -1,21 +1,17 @@
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::Path;
 
 use iced::widget::pane_grid;
+use otty_app_domain::folder_path::{folder_name, short_folder_path};
 use otty_ui_kit::components::block_outcome::BlockOutcome;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_term::{BlockKey, BlockSnapshot, SnapshotView};
 
 use super::block_duration::{finished_duration_text, running_duration_text};
-use super::blocks::{running_program_from_blocks, terminal_cwd_from_blocks};
+use super::blocks::running_program_from_blocks;
 use super::pane_fit;
 use super::state::TerminalWorkspaceState;
 use super::types::TerminalEntry;
-
-/// Longest folder path, counted after `~` or `/`, shown in full.
-const SHORT_PATH_FOLDERS: usize = 3;
-/// Folders kept at the end of a longer path.
-const SHORT_PATH_TAIL: usize = 2;
 
 /// View model for a single terminal tab, used by the pane grid view.
 #[derive(Clone, Copy)]
@@ -89,14 +85,14 @@ impl PaneLabel {
         &self.program
     }
 
-    /// Return the last folder of the working directory (`~` for home), if
-    /// the shell has reported one.
+    /// Return the name of the pane's folder (`~` for home), if it is
+    /// known: reported by its shell or the one it was started in.
     pub(crate) fn folder_name(&self) -> Option<&str> {
         self.folder_name.as_deref()
     }
 
-    /// Return the working directory, shortened to its last folders when
-    /// long, if the shell has reported one.
+    /// Return the pane's folder, shortened to its last folders when long,
+    /// if it is known: reported by its shell or the one it was started in.
     pub(crate) fn folder_path(&self) -> Option<&str> {
         self.folder_path.as_deref()
     }
@@ -116,7 +112,7 @@ impl PaneLabel {
         let blocks = view.blocks();
         let program =
             running_program_from_blocks(blocks).unwrap_or(entry.title());
-        let cwd = terminal_cwd_from_blocks(blocks);
+        let cwd = entry.folder();
 
         Self::new(program, cwd.as_deref(), home)
     }
@@ -462,45 +458,6 @@ pub(crate) fn sticky_header(
         command,
         lines_above: top.text_lines_above,
     })
-}
-
-fn folder_name(cwd: &Path, home: Option<&Path>) -> String {
-    if home == Some(cwd) {
-        return String::from("~");
-    }
-
-    match cwd.file_name() {
-        Some(name) => name.to_string_lossy().into_owned(),
-        None => cwd.display().to_string(),
-    }
-}
-
-fn short_folder_path(cwd: &Path, home: Option<&Path>) -> String {
-    let (start, rest) = match home.and_then(|home| cwd.strip_prefix(home).ok())
-    {
-        Some(rest) => ("~", rest),
-        None => ("", cwd),
-    };
-    let folders: Vec<_> = rest
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(name) => Some(name.to_string_lossy()),
-            _ => None,
-        })
-        .collect();
-
-    if folders.is_empty() {
-        return match start {
-            "" => cwd.display().to_string(),
-            _ => String::from(start),
-        };
-    }
-    if folders.len() <= SHORT_PATH_FOLDERS {
-        return format!("{start}/{}", folders.join("/"));
-    }
-
-    let tail = folders[folders.len() - SHORT_PATH_TAIL..].join("/");
-    format!("{start}/…/{tail}")
 }
 
 #[cfg(test)]

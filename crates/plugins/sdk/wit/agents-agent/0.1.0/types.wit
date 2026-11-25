@@ -1,0 +1,25 @@
+package otty:agents-agent@0.1.0;
+
+/// The values of the `agents` domain that its agent and provider
+/// contracts share: why a part could not read. The provider contract
+/// `otty:agents-provider` imports them from here.
+interface types {
+  use otty:host/types@0.1.0.{host-error, need};
+
+  /// Why a part could not give what OTTY asked for.
+  variant read-error {
+    /// The part does not give this; an optional function's answer.
+    not-supported,
+    /// A host operation failed and the part gave up.
+    host(host-error),
+    /// What was read is not in a shape the part understands. The text
+    /// names fields, never values.
+    unexpected(string),
+    /// The part can not read until the user does what `need` asks, such
+    /// as give a key the part asks for, or log in again when the provider
+    /// refused the login or it expired.
+    needs-user(need),
+    /// Anything else, in plain words.
+    failed(string),
+  }
+}

@@ -26,7 +26,7 @@ use otty_app_terminal::{TerminalIntent, TerminalWorkspace};
 use otty_app_testing::terminal::ScriptedTerminals;
 use otty_containers::{EngineKind, fixtures};
 
-use crate::app::App;
+use crate::app::{App, PluginIo};
 use crate::dispatch;
 use crate::message::AppEvent;
 
@@ -371,15 +371,67 @@ fn app_with_terminal(
     launches: QuickLaunchFile,
     terminal: TerminalWorkspace,
 ) -> App {
+    let config_dir = test_config_dir();
+    let cache_dir = test_home().join(".cache").join("otty");
+    let data_dir = test_home().join(".local").join("share").join("otty");
+    let plugin_io = PluginIo::in_folders(
+        &config_dir,
+        &cache_dir,
+        &data_dir,
+        TEST_SHELL_PATH,
+    );
+
     App::with_saved(
         test_settings(),
         &DEFAULT_PINNED,
         launches,
         None,
         String::from(TEST_SHELL_PATH),
-        test_config_dir(),
+        config_dir,
+        cache_dir,
+        data_dir,
+        std::sync::Arc::from(test_agents()),
+        std::sync::Arc::new(test_registry()),
+        otty_agents::AgentEnv::new(test_home()),
         terminal,
+        plugin_io,
     )
+}
+
+/// The agents of a test app: a stand-in for Codex, which a plugin reads.
+fn test_agents() -> Vec<Box<dyn otty_agents::Agent>> {
+    vec![otty_agents::fixtures::codex_stand_in()]
+}
+
+/// The registry of a test app: the stand-in for Codex and a made-up
+/// provider part.
+fn test_registry() -> otty_agents::Registry {
+    let agents = test_agents()
+        .iter()
+        .map(|agent| agent.entry().clone())
+        .collect();
+    let part = otty_plugin_host::PluginPart::new(
+        "example",
+        "Example",
+        "0.1.0",
+        "",
+        "example-cloud",
+    );
+    let cloud = otty_agents::ProviderEntry::new(
+        otty_agents::ProviderId::new("example-cloud"),
+        "Example Cloud",
+        part,
+    )
+    .with_hosts(["example.com"]);
+
+    otty_agents::Registry::new(agents, vec![cloud])
+}
+
+/// The home folder the agents of a test app look at, with OTTY's cache
+/// folder in it: a folder under the system temp folder that nothing
+/// creates, so no test reads the agents' files of the user running it.
+fn test_home() -> PathBuf {
+    std::env::temp_dir().join("otty-app-test-no-home")
 }
 
 /// Send the warnings of the app to the output the test harness keeps per

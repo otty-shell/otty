@@ -4,21 +4,30 @@
 //! arrives on its own, skips them (see `update_internal` in `update.rs`), so
 //! it can not get lost.
 //!
-//! The overlays are the SSH secret prompt, the Settings dialog, the
-//! notifications list, the command palette, the All modes menu, the header
-//! menus, the pane menu of the terminal, the context menu and the name field
+//! The overlays are the SSH secret prompt, the Settings
+//! dialog, the notifications list, the command palette, the All modes menu,
+//! the header menus, the pane menu of the terminal, the context menu and the name field
 //! (the inline edit) of the Launches tree, the context menu, the name field
-//! and the delete dialog of the Files tree, and the create dialogs, the
-//! confirmation dialog and the row menu of Containers mode. A new dialog adds
-//! its answers to [`dialog_guard`].
+//! and the delete dialog of the Files tree, the create dialogs, the
+//! confirmation dialog and the row menu of Containers mode, and the profile
+//! dialog, the remove dialog, the statistics dialog, the New session dialog
+//! and the menus of Agents mode, and the dialogs of Plugins mode.
+//! A new dialog adds its answers to [`dialog_guard`]. A menu adds nothing:
+//! what it sends comes marked as sent from it (see `screens::overlay_layer`)
+//! and reaches it; a new kind of menu adds its trigger to
+//! [`menu_opened_by`].
 
-use otty_app_containers::{ActionsIntent, ContainersIntent, CreateIntent};
+use otty_app_agents::{AgentsIntent, AgentsOverlay};
+use otty_app_containers::{
+    ActionsIntent, ContainersIntent, ContainersOverlay, CreateIntent,
+};
 use otty_app_domain::commands::CommandCtx;
 use otty_app_domain::mode::Mode;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_slots::OverlayKind;
@@ -68,6 +77,35 @@ pub(crate) enum Overlay {
     ContainersConfirm,
     /// The menu of a row in Containers mode.
     ContainersRowMenu,
+    /// The dialog of Agents mode that adds or edits a profile.
+    AgentsProfileDialog,
+    /// The dialog of Agents mode that adds an account by OTTY's own
+    /// login.
+    AgentsAddAccountDialog,
+    /// The dialog of Agents mode of a key a plugin part asks for.
+    AgentsKeyDialog,
+    /// The dialog of Agents mode that names an account or a profile.
+    AgentsRenameDialog,
+    /// The dialog of Agents mode that asks before a profile is removed.
+    AgentsRemoveDialog,
+    /// The dialog of Agents mode that asks to allow the read of the system
+    /// keyring.
+    AgentsKeyringDialog,
+    /// The statistics dialog of a session or a project in Agents mode.
+    AgentsStatsDialog,
+    /// The New session dialog of Agents mode.
+    AgentsNewSessionDialog,
+    /// The Found by OTTY report of the first start, in Agents mode.
+    AgentsFoundReport,
+    /// A menu of Agents mode: the funnel menu of the projects, the
+    /// profiles of New session, the menu of a session, of a profile or of
+    /// an account, or the "⋯" of All accounts or All profiles.
+    AgentsMenu,
+    /// A dialog of Plugins mode: Add plugin…, the install or update
+    /// dialog, the log of a plugin or the question before Remove.
+    PluginsDialog,
+    /// The menu of a plugin in the left panel of Plugins mode.
+    PluginsMenu,
 }
 
 impl Overlay {
@@ -83,7 +121,17 @@ impl Overlay {
             | Overlay::Settings
             | Overlay::FilesDeleteDialog
             | Overlay::ContainersCreate
-            | Overlay::ContainersConfirm => Some(OverlayKind::Dialog),
+            | Overlay::ContainersConfirm
+            | Overlay::AgentsProfileDialog
+            | Overlay::AgentsAddAccountDialog
+            | Overlay::AgentsKeyDialog
+            | Overlay::AgentsRenameDialog
+            | Overlay::AgentsRemoveDialog
+            | Overlay::AgentsKeyringDialog
+            | Overlay::AgentsStatsDialog
+            | Overlay::AgentsNewSessionDialog
+            | Overlay::AgentsFoundReport
+            | Overlay::PluginsDialog => Some(OverlayKind::Dialog),
             Overlay::NotificationsList
             | Overlay::Palette
             | Overlay::ModesMenu
@@ -91,7 +139,9 @@ impl Overlay {
             | Overlay::TerminalContextMenu
             | Overlay::LaunchContextMenu
             | Overlay::FilesContextMenu
-            | Overlay::ContainersRowMenu => Some(OverlayKind::Menu),
+            | Overlay::ContainersRowMenu
+            | Overlay::AgentsMenu
+            | Overlay::PluginsMenu => Some(OverlayKind::Menu),
             Overlay::InlineEdit | Overlay::FilesInlineEdit => None,
         }
     }
@@ -140,6 +190,44 @@ impl Overlay {
             Overlay::ContainersRowMenu => AppEvent::Containers(
                 ContainersIntent::Actions(ActionsIntent::CloseRowMenu),
             ),
+            Overlay::AgentsProfileDialog => {
+                AppEvent::Agents(AgentsIntent::Dialog(
+                    otty_app_agents::ProfileDialogIntent::Cancelled,
+                ))
+            },
+            Overlay::AgentsAddAccountDialog => {
+                AppEvent::Agents(AgentsIntent::AddAccount(
+                    otty_app_agents::AddAccountIntent::Cancelled,
+                ))
+            },
+            Overlay::AgentsKeyDialog => {
+                AppEvent::Agents(AgentsIntent::KeyDialog(
+                    otty_app_agents::KeyDialogIntent::Cancelled,
+                ))
+            },
+            Overlay::AgentsRenameDialog => AppEvent::Agents(
+                AgentsIntent::Rename(otty_app_agents::RenameIntent::Cancelled),
+            ),
+            Overlay::AgentsRemoveDialog => {
+                AppEvent::Agents(AgentsIntent::RemoveCancelled)
+            },
+            Overlay::AgentsKeyringDialog => {
+                AppEvent::Agents(AgentsIntent::KeyringNotNow)
+            },
+            Overlay::AgentsStatsDialog => {
+                AppEvent::Agents(AgentsIntent::CloseStats)
+            },
+            Overlay::AgentsNewSessionDialog => {
+                AppEvent::Agents(AgentsIntent::NewSessionDialog(
+                    otty_app_agents::NewSessionDialogIntent::Cancelled,
+                ))
+            },
+            Overlay::AgentsFoundReport => {
+                AppEvent::Agents(AgentsIntent::CloseFoundReport)
+            },
+            Overlay::AgentsMenu => AppEvent::Agents(AgentsIntent::CloseMenu),
+            Overlay::PluginsDialog => AppEvent::Plugins(PluginsIntent::Back),
+            Overlay::PluginsMenu => AppEvent::Plugins(PluginsIntent::CloseMenu),
         }
     }
 }
@@ -158,98 +246,150 @@ pub(crate) enum MenuGuard {
     DismissAndRun,
 }
 
-/// Classify input from the user when a menu is on top.
-pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
+/// Classify input from the user while the menu `top` is on top. What the
+/// menu itself sends, its items, a hover or a scroll on it, comes marked
+/// as [`AppEvent::FromMenu`] and passes before this check, so no item is
+/// listed here. Everything else is input outside the menu.
+///
+/// A press on the trigger of another menu closes the open menus and opens
+/// that one, with one press; a trigger of the menu on top goes to its
+/// feature, which opens its other menu there or closes the same one (see
+/// [`menu_opened_by`]). The bell and the palette button close their own
+/// menu. A pointer move, a window control and what a
+/// terminal reports leave the menus open. A shortcut, a tab press and
+/// Settings close them and run. Other keys, a press on a pane and one in
+/// the Launches tree do nothing; any other press, also one no widget takes
+/// ([`AppEvent::PressedAway`]), only closes them.
+pub(crate) fn context_menu_guard(top: Overlay, event: &AppEvent) -> MenuGuard {
     use MenuGuard::*;
 
+    if let Some(opened) = menu_opened_by(event) {
+        return match event {
+            // The bell and the palette button close their own menu.
+            AppEvent::TitleBar(_) if opened == top => Dismiss,
+            _ if opened == top => Allow,
+            _ => DismissAndRun,
+        };
+    }
+    if keeps_menus_open(event) {
+        return Allow;
+    }
+
     match event {
-        AppEvent::Sidebar(intent) => match intent {
-            SidebarIntent::HeaderMenuDismiss
-            | SidebarIntent::WorkspaceCursorMoved { .. } => Allow,
-            SidebarIntent::HeaderMenuOpen(_) => Ignore,
-            _ => Dismiss,
-        },
-        // The items and the dismiss layer of the Launches context menu, the
-        // name field and the pointer over the tree pass; other presses in
-        // the Launches section do nothing under a menu.
-        AppEvent::QuickLaunch(intent) => match intent {
-            QuickLaunchIntent::ContextMenuDismiss
-            | QuickLaunchIntent::ContextMenuAction(_)
-            | QuickLaunchIntent::InlineEditChanged(_)
-            | QuickLaunchIntent::InlineEditSubmit
-            | QuickLaunchIntent::CursorMoved { .. } => Allow,
-            _ => Ignore,
-        },
-        // The items of the pane menu and its dismiss layer, and what the
-        // terminals report, pass. A block command passes too: copy, paste
-        // and the block items of the menu send it, and so do the fold arrow
-        // and the sticky header button, which then run and close the menu. A press
-        // on a pane or its header under a menu does nothing; other terminal
-        // input closes the menus.
-        AppEvent::Terminal(intent) => match intent {
-            TerminalIntent::CloseContextMenu { .. }
-            | TerminalIntent::RunBlockCommand { .. }
-            | TerminalIntent::SplitPane { .. }
-            | TerminalIntent::ClosePane { .. }
-            | TerminalIntent::Widget(_)
-            | TerminalIntent::PaneGridCursorMoved { .. } => Allow,
-            TerminalIntent::OpenContextMenu { .. }
-            | TerminalIntent::PaneClicked { .. } => Ignore,
-            _ => Dismiss,
-        },
-        // The items and the dismiss layer of the Containers row menu.
-        AppEvent::Containers(ContainersIntent::Actions(
-            ActionsIntent::Act(_) | ActionsIntent::CloseRowMenu,
-        )) => Allow,
-        // The first press on a panel button, the palette button or the bell
-        // only closes the menu; opening settings closes it and goes on.
-        AppEvent::TitleBar(intent) => match intent {
-            TitleBarIntent::ToggleLeftPanel
-            | TitleBarIntent::ToggleFilesPanel
-            | TitleBarIntent::ToggleFocusMode
-            | TitleBarIntent::OpenCommandPalette
-            | TitleBarIntent::OpenNotifications => Dismiss,
-            TitleBarIntent::OpenSettings => DismissAndRun,
-            _ => Allow,
-        },
-        // The All modes menu is one of the menus: its rows, pin toggles and
-        // dismiss layer send these. Choosing a mode closes every menu.
+        // A press on a pane comes with the right press that opens the pane
+        // menu, and a press in the Launches tree with the right press that
+        // opens its menu: they do nothing under a menu.
+        AppEvent::Terminal(TerminalIntent::PaneClicked { .. })
+        | AppEvent::QuickLaunch(_) => Ignore,
+        // Opening settings closes the menus and goes on; the other header
+        // buttons only close them.
+        AppEvent::TitleBar(TitleBarIntent::OpenSettings) => DismissAndRun,
+        // Choosing a mode closes every menu.
         AppEvent::Modes(ModesIntent::Select(_)) => DismissAndRun,
-        AppEvent::Modes(_) => Allow,
-        // The palette is one of the menus: typing in it, its entries and its
-        // dismiss layer send these.
-        AppEvent::Palette(_) => Allow,
-        // A press on a Sessions row, its cross, the New session button or
-        // the start card closes the menus and runs. A middle press on a row
-        // under a header menu lands on the menu's dismiss layer instead.
+        // A press on a Sessions row, the New session button or the start
+        // card closes the menus and runs. The cross of a row and a middle
+        // press on it only close the menus: the tab stays.
+        AppEvent::Tabs(TabsIntent::CloseTab { .. }) => Dismiss,
         AppEvent::Tabs(_) => DismissAndRun,
-        // The items and the dismiss layer of the Files context menu, the
-        // name field and the pointer over the Files tree pass; a press on a
-        // row closes the menus.
-        AppEvent::Explorer(
-            ExplorerIntent::ContextMenuDismiss
-            | ExplorerIntent::ContextMenuAction(_)
-            | ExplorerIntent::InlineEditChanged(_)
-            | ExplorerIntent::InlineEditSubmit
-            | ExplorerIntent::CursorMoved { .. }
-            | ExplorerIntent::NodeHovered { .. },
-        ) => Allow,
-        // The broom, the row crosses and the dismiss layer of the
-        // notifications list. The cross of a toast under a menu is a press
-        // outside it, so it only closes the menus.
-        AppEvent::Notifications(
-            NotificationsIntent::Clear
-            | NotificationsIntent::Remove(_)
-            | NotificationsIntent::CloseList,
-        ) => Allow,
-        #[cfg(not(target_os = "macos"))]
-        AppEvent::ResizeWindow(_) => Allow,
-        // A shortcut closes the menus and runs. Other keys no widget took do
-        // nothing under a menu.
+        // A shortcut closes the menus and runs. Other keys no widget took
+        // do nothing under a menu.
         AppEvent::Command(_) => DismissAndRun,
         AppEvent::Keyboard(_) => Ignore,
         _ => Dismiss,
     }
+}
+
+/// The menu `event` opens, when it is the trigger of a menu: a "⋯" or a
+/// drop-down of Agents mode, a right press on a row of a tree, a table or
+/// a pane, the chevron of a section header, the "⋯" of the modes, the bell
+/// or the palette button. A new menu adds its trigger here, or it needs a
+/// second press while another menu is open.
+pub(crate) fn menu_opened_by(event: &AppEvent) -> Option<Overlay> {
+    let opened = match event {
+        AppEvent::Agents(
+            AgentsIntent::OpenSessionMenu(_)
+            | AgentsIntent::OpenProfileMenu(_)
+            | AgentsIntent::OpenAccountMenu(_)
+            | AgentsIntent::OpenAllAccountsMenu
+            | AgentsIntent::OpenAllProfilesMenu
+            | AgentsIntent::OpenPeriodMenu
+            | AgentsIntent::OpenFilterMenu
+            | AgentsIntent::OpenNewSessionMenu,
+        ) => Overlay::AgentsMenu,
+        AppEvent::Plugins(PluginsIntent::OpenMenu(_)) => Overlay::PluginsMenu,
+        AppEvent::Containers(
+            ContainersIntent::OpenRowMenu { .. }
+            | ContainersIntent::RowMenuPressed { .. }
+            | ContainersIntent::Actions(ActionsIntent::OpenRowMenu { .. }),
+        ) => Overlay::ContainersRowMenu,
+        AppEvent::QuickLaunch(
+            QuickLaunchIntent::NodeRightClicked { .. }
+            | QuickLaunchIntent::BackgroundRightClicked,
+        ) => Overlay::LaunchContextMenu,
+        AppEvent::Explorer(
+            ExplorerIntent::NodeRightClicked { .. }
+            | ExplorerIntent::BackgroundRightClicked,
+        ) => Overlay::FilesContextMenu,
+        AppEvent::Terminal(TerminalIntent::OpenContextMenu { .. }) => {
+            Overlay::TerminalContextMenu
+        },
+        AppEvent::Sidebar(SidebarIntent::HeaderMenuOpen(_)) => {
+            Overlay::HeaderMenu
+        },
+        AppEvent::Modes(ModesIntent::ToggleMenu) => Overlay::ModesMenu,
+        AppEvent::TitleBar(TitleBarIntent::OpenNotifications) => {
+            Overlay::NotificationsList
+        },
+        AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette) => {
+            Overlay::Palette
+        },
+        _ => return None,
+    };
+
+    Some(opened)
+}
+
+/// Whether `event` leaves the open menus as they are: a pointer move over
+/// the window, its header, a tree, the panes or the rows of a usage block,
+/// a window control or grip, what a terminal reports, typing in the name
+/// field of a tree, and a block command from the fold arrow or the sticky
+/// header button of a block, which runs.
+fn keeps_menus_open(event: &AppEvent) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    if matches!(event, AppEvent::ResizeWindow(_)) {
+        return true;
+    }
+
+    matches!(
+        event,
+        AppEvent::Sidebar(SidebarIntent::WorkspaceCursorMoved { .. })
+            | AppEvent::TitleBar(
+                TitleBarIntent::PressTitleBar
+                    | TitleBarIntent::MoveOnTitleBar
+                    | TitleBarIntent::ReleaseTitleBar
+                    | TitleBarIntent::MinimizeWindow
+                    | TitleBarIntent::ToggleMaximize
+                    | TitleBarIntent::CloseWindow
+            )
+            | AppEvent::QuickLaunch(
+                QuickLaunchIntent::CursorMoved { .. }
+                    | QuickLaunchIntent::NodeHovered { .. }
+                    | QuickLaunchIntent::InlineEditChanged(_)
+                    | QuickLaunchIntent::InlineEditSubmit
+            )
+            | AppEvent::Explorer(
+                ExplorerIntent::CursorMoved { .. }
+                    | ExplorerIntent::NodeHovered { .. }
+                    | ExplorerIntent::InlineEditChanged(_)
+                    | ExplorerIntent::InlineEditSubmit
+            )
+            | AppEvent::Terminal(
+                TerminalIntent::Widget(_)
+                    | TerminalIntent::PaneGridCursorMoved { .. }
+                    | TerminalIntent::RunBlockCommand { .. }
+            )
+            | AppEvent::Agents(AgentsIntent::HoverUsageRow(_))
+    )
 }
 
 /// Classify input from the user while `dialog` is on top: it returns only
@@ -258,8 +398,8 @@ pub(crate) fn context_menu_guard(event: &AppEvent) -> MenuGuard {
 /// presses outside it and other keys do nothing, and a menu under the dialog
 /// stays open.
 ///
-/// Settings is the one dialog that closes on a press on the dimmed area
-/// around it: the press sends its Close, one of its own answers, so it
+/// Every dialog closes on a press on the dimmed area around it: the press
+/// sends what its Cancel or Close sends, one of its own answers, so it
 /// passes here like the close cross.
 pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
     if is_dialog_answer(dialog, event) || passes_every_dialog(event) {
@@ -276,8 +416,11 @@ pub(crate) fn dialog_guard(dialog: Overlay, event: &AppEvent) -> MenuGuard {
 /// then the overlays of the active mode: in Terminal mode the delete dialog
 /// of Files, the pane menu of the terminal, the context menus of the
 /// launches and of Files and the names typed in their trees, in Containers
-/// mode a create dialog, the confirmation dialog and the row
-/// menu. Those of the other mode are not on screen, so they do not count.
+/// mode a create dialog, the confirmation dialog and the row menu, in Agents
+/// mode the profile dialog, the Rename dialog, the remove dialog, the
+/// statistics dialog, the New session dialog, the Found by OTTY report and
+/// a menu, in Plugins mode its dialog and the menu of a plugin. Those of
+/// the other modes are not on screen, so they do not count.
 pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     if app.quick_launch.has_secret_prompt() {
         return Some(Overlay::SecretPrompt);
@@ -301,6 +444,8 @@ pub(crate) fn top_overlay(app: &App) -> Option<Overlay> {
     match app.modes.active() {
         Mode::Terminal => terminal_overlay(app),
         Mode::Containers => containers_overlay(app),
+        Mode::Agents => agents_overlay(app),
+        Mode::Plugins => plugins_overlay(app),
     }
 }
 
@@ -313,28 +458,8 @@ pub(crate) fn command_ctx(app: &App) -> CommandCtx {
         is_terminal_mode: app.modes.active() == Mode::Terminal,
         has_active_tab: app.tabs.active_tab_id().is_some(),
         has_focused_pane: app.terminal.focused_pane().is_some(),
+        has_local_folder: app.terminal.focused_local_folder().is_some(),
     }
-}
-
-/// Return `true` when the event is one of the header menu items: New
-/// terminal, Split and the launches of the New session menu, and New launch
-/// and New folder of the Launches menu. New launch of the New session menu
-/// is a command, which closes the menus and runs anyway.
-///
-/// The frame closes the header menu and runs these instead of asking
-/// [`context_menu_guard`], which would drop a choice that is not a press
-/// outside the menu.
-pub(crate) fn is_header_menu_choice(event: &AppEvent) -> bool {
-    matches!(
-        event,
-        AppEvent::Tabs(TabsIntent::OpenTerminalTab { .. })
-            | AppEvent::Terminal(TerminalIntent::SplitPane { .. })
-            | AppEvent::QuickLaunch(
-                QuickLaunchIntent::LaunchNode { .. }
-                    | QuickLaunchIntent::HeaderCreateCommand
-                    | QuickLaunchIntent::HeaderCreateFolder
-            )
-    )
 }
 
 /// Return `true` when the inline edit of the Launches tree should be
@@ -377,26 +502,51 @@ pub(crate) fn is_terminal_input_kept_out(
     covers_terminals && is_terminal_input(event)
 }
 
-/// Return `true` when the event is a press of the Esc key that no widget
-/// took. The frame closes the overlay on top with it. A held key repeats its
-/// press; the repeats do not count, so one press closes one overlay.
-pub(crate) fn is_escape_press(event: &AppEvent) -> bool {
-    use iced::keyboard::key::Named;
-    use iced::keyboard::{Event, Key};
+/// The open overlay of Containers mode on top, as the containers feature
+/// stacks them.
+pub(crate) fn containers_overlay(app: &App) -> Option<Overlay> {
+    let overlay = match app.containers.top_overlay()? {
+        ContainersOverlay::CreateDialog => Overlay::ContainersCreate,
+        ContainersOverlay::ConfirmDialog => Overlay::ContainersConfirm,
+        ContainersOverlay::RowMenu => Overlay::ContainersRowMenu,
+    };
 
-    matches!(
-        event,
-        AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Named(Named::Escape),
-            repeat: false,
-            ..
-        })
-    )
+    Some(overlay)
+}
+
+/// The open overlay of Plugins mode on top: its dialog lies over the
+/// menu of a plugin.
+fn plugins_overlay(app: &App) -> Option<Overlay> {
+    if app.plugins.has_dialog() {
+        return Some(Overlay::PluginsDialog);
+    }
+
+    app.plugins.has_menu().then_some(Overlay::PluginsMenu)
+}
+
+/// The open overlay of Agents mode on top, as the agents feature stacks
+/// them.
+pub(crate) fn agents_overlay(app: &App) -> Option<Overlay> {
+    let overlay = match app.agents.top_overlay()? {
+        AgentsOverlay::ProfileDialog => Overlay::AgentsProfileDialog,
+        AgentsOverlay::AddAccountDialog => Overlay::AgentsAddAccountDialog,
+        AgentsOverlay::KeyDialog => Overlay::AgentsKeyDialog,
+        AgentsOverlay::RenameDialog => Overlay::AgentsRenameDialog,
+        AgentsOverlay::RemoveDialog => Overlay::AgentsRemoveDialog,
+        AgentsOverlay::KeyringDialog => Overlay::AgentsKeyringDialog,
+        AgentsOverlay::StatsDialog => Overlay::AgentsStatsDialog,
+        AgentsOverlay::NewSessionDialog => Overlay::AgentsNewSessionDialog,
+        AgentsOverlay::FoundReport => Overlay::AgentsFoundReport,
+        AgentsOverlay::Menu => Overlay::AgentsMenu,
+    };
+
+    Some(overlay)
 }
 
 /// Whether `event` leaves a name being typed in a tree alone: a pointer
 /// move or a hover over the window, the Launches tree or the Files tree, a
-/// report of a terminal, or a key press no widget took.
+/// report of a terminal, a key press no widget took, or a press no widget
+/// took.
 fn leaves_inline_edits(event: &AppEvent) -> bool {
     matches!(
         event,
@@ -413,13 +563,13 @@ fn leaves_inline_edits(event: &AppEvent) -> bool {
             )
             | AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar)
             | AppEvent::Keyboard(_)
+            | AppEvent::PressedAway
     )
 }
 
 /// Whether `event` answers `dialog`: typing in it, its buttons and choices,
-/// its close cross, Esc in its fields and, for Settings, a press on the
-/// dimmed area around it. The Containers dialogs send nothing from their
-/// dimmed area: a press there does nothing.
+/// its close cross, Esc in its fields and a press on the dimmed area
+/// around it, which sends what the cross sends.
 fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
     match dialog {
         Overlay::SecretPrompt => matches!(
@@ -443,6 +593,9 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | SettingsIntent::Close
             )
         ),
+        // Every field and button of the dialogs of Plugins mode; the
+        // answers of its I/O arrive on their own.
+        Overlay::PluginsDialog => matches!(event, AppEvent::Plugins(_)),
         Overlay::FilesDeleteDialog => matches!(
             event,
             AppEvent::Explorer(
@@ -465,6 +618,63 @@ fn is_dialog_answer(dialog: Overlay, event: &AppEvent) -> bool {
                     | CreateIntent::Submitted
                     | CreateIntent::Cancelled
             ))
+        ),
+        // Every field, choice and button of the profile dialog.
+        Overlay::AgentsProfileDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::Dialog(_)))
+        },
+        // The select, Continue, Cancel and Manage plugins… of the Add
+        // account dialog.
+        Overlay::AgentsAddAccountDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::AddAccount(_)))
+        },
+        // Every field, choice and button of the key dialog.
+        Overlay::AgentsKeyDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::KeyDialog(_)))
+        },
+        // The name field, Save, Cancel and Esc of the Rename dialog.
+        Overlay::AgentsRenameDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::Rename(_)))
+        },
+        Overlay::AgentsRemoveDialog => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::RemoveConfirmed | AgentsIntent::RemoveCancelled
+            )
+        ),
+        // Allow and Not now; the answer of the read arrives on its own.
+        Overlay::AgentsKeyringDialog => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::AllowKeyring | AgentsIntent::KeyringNotNow
+            )
+        ),
+        // Close, the cross and everything of its usage block: the list of
+        // its period drop-down, its tabs and its rows. The answer of the read
+        // arrives on its own, so it does not pass here.
+        Overlay::AgentsStatsDialog => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::CloseStats
+                    | AgentsIntent::OpenPeriodMenu
+                    | AgentsIntent::PickPeriod(_)
+                    | AgentsIntent::ShowUsageTab(_)
+                    | AgentsIntent::PickUsageRow(_)
+                    | AgentsIntent::HoverUsageRow(_)
+            )
+        ),
+        // Every field, suggestion and button of the New session dialog.
+        // The answer of the folder look-up arrives on its own.
+        Overlay::AgentsNewSessionDialog => {
+            matches!(event, AppEvent::Agents(AgentsIntent::NewSessionDialog(_)))
+        },
+        // Done and the button of each need.
+        Overlay::AgentsFoundReport => matches!(
+            event,
+            AppEvent::Agents(
+                AgentsIntent::CloseFoundReport
+                    | AgentsIntent::FoundReportNeed(_)
+            )
         ),
         _ => false,
     }
@@ -506,22 +716,6 @@ fn passes_every_dialog(event: &AppEvent) -> bool {
     )
 }
 
-/// The open overlay of Containers mode on top: a dialog lies over the row
-/// menu, and a create dialog over the confirmation.
-fn containers_overlay(app: &App) -> Option<Overlay> {
-    if app.containers.has_create_dialog() {
-        return Some(Overlay::ContainersCreate);
-    }
-    if app.containers.has_confirm() {
-        return Some(Overlay::ContainersConfirm);
-    }
-    if app.containers.has_row_menu() {
-        return Some(Overlay::ContainersRowMenu);
-    }
-
-    None
-}
-
 /// The open overlay of Terminal mode on top: the delete dialog of Files
 /// lies over the menus, and a context menu over a name being typed.
 fn terminal_overlay(app: &App) -> Option<Overlay> {
@@ -560,17 +754,27 @@ fn is_terminal_input(event: &AppEvent) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use iced::keyboard::key::{Code, Named, NativeCode, Physical};
-    use iced::keyboard::{Event, Key, Location, Modifiers};
+    use iced::keyboard::Modifiers;
+    use iced::keyboard::key::{Code, Physical};
+    use otty_app_agents::{
+        AddAccountIntent, AgentsCtx, FolderFieldIntent, KeyDialogIntent,
+        NewSessionDialogIntent, ProfileDialogIntent, RenameIntent, UsagePeriod,
+        UsageTab,
+    };
     use otty_app_domain::commands::AppCommand;
-    use otty_app_explorer::{ExplorerIntent, ExplorerMenuAction};
+    use otty_app_explorer::ExplorerIntent;
+    use otty_app_i18n as i18n;
     use otty_app_slots::Component;
-    use otty_ui_kit::components::command_palette::PaletteAction;
     use otty_ui_term::BlockKey;
 
     use super::*;
     use crate::frame::sidebar::types::HeaderMenu;
-    use crate::testing::keyboard::{escape_press, key_press};
+    use crate::testing::agents::{
+        PROJECT, codex_profile, first_start_profiles_loaded,
+        one_session_loaded, profiles_loaded,
+    };
+    use crate::testing::keyboard::key_press;
+    use crate::testing::running::RunningApp;
     use crate::testing::window::{
         app, containers_app_with_lists, open_confirm, open_create_dialog,
         open_files_delete_dialog, open_files_menu, open_launch_menu,
@@ -613,17 +817,45 @@ mod tests {
         (open_row_menu, Overlay::ContainersRowMenu),
     ];
 
+    /// The openers of the overlays of Agents mode, with the overlay each
+    /// one opens. They need the profile of [`agents_app_with_a_profile`].
+    const AGENTS_OVERLAYS: [(Opener, Overlay); 10] = [
+        (open_profile_dialog, Overlay::AgentsProfileDialog),
+        (open_add_account_dialog, Overlay::AgentsAddAccountDialog),
+        (open_key_dialog, Overlay::AgentsKeyDialog),
+        (open_rename_dialog, Overlay::AgentsRenameDialog),
+        (open_remove_dialog, Overlay::AgentsRemoveDialog),
+        (open_keyring_dialog, Overlay::AgentsKeyringDialog),
+        (open_stats_dialog, Overlay::AgentsStatsDialog),
+        (open_new_session_dialog, Overlay::AgentsNewSessionDialog),
+        (open_found_report, Overlay::AgentsFoundReport),
+        (open_agents_menu, Overlay::AgentsMenu),
+    ];
+
     /// The dialogs: they wait for their answer.
-    const DIALOGS: [Overlay; 4] = [
+    const DIALOGS: [Overlay; 13] = [
         Overlay::SecretPrompt,
         Overlay::Settings,
         Overlay::ContainersCreate,
         Overlay::ContainersConfirm,
+        Overlay::AgentsProfileDialog,
+        Overlay::AgentsAddAccountDialog,
+        Overlay::AgentsKeyDialog,
+        Overlay::AgentsRenameDialog,
+        Overlay::AgentsRemoveDialog,
+        Overlay::AgentsKeyringDialog,
+        Overlay::AgentsStatsDialog,
+        Overlay::AgentsNewSessionDialog,
+        Overlay::AgentsFoundReport,
     ];
 
     #[test]
     fn each_overlay_is_a_menu_a_dialog_or_the_inline_edit() {
-        for (_, overlay) in OVERLAYS.into_iter().chain(CONTAINERS_OVERLAYS) {
+        for (_, overlay) in OVERLAYS
+            .into_iter()
+            .chain(CONTAINERS_OVERLAYS)
+            .chain(AGENTS_OVERLAYS)
+        {
             let expected = if DIALOGS.contains(&overlay) {
                 Some(OverlayKind::Dialog)
             } else if overlay == Overlay::InlineEdit {
@@ -720,8 +952,17 @@ mod tests {
         open_row_menu(&mut app);
         open_create_dialog(&mut app);
 
-        assert!(app.containers.has_row_menu());
-        assert_eq!(top_overlay(&app), Some(Overlay::ContainersCreate));
+        let over_the_menu = top_overlay(&app);
+        let _ = app
+            .containers
+            .reduce(ContainersIntent::Create(CreateIntent::Cancelled), ());
+
+        assert_eq!(over_the_menu, Some(Overlay::ContainersCreate));
+        assert_eq!(
+            top_overlay(&app),
+            Some(Overlay::ContainersRowMenu),
+            "the row menu waits under the dialog"
+        );
     }
 
     /// An SSH launch asks for its password while Settings is open.
@@ -786,7 +1027,7 @@ mod tests {
 
     /// Each dialog with what the user answers it: typing, its choices, its
     /// buttons, the close cross and Esc in a field.
-    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 4] {
+    fn dialogs_with_answers() -> [(Overlay, Vec<AppEvent>); 13] {
         use otty_app_containers::FormField;
         use otty_app_i18n::Locale;
         use otty_app_settings::LanguageSetting;
@@ -849,7 +1090,289 @@ mod tests {
                     create(CreateIntent::Cancelled),
                 ],
             ),
+            (
+                Overlay::AgentsProfileDialog,
+                vec![
+                    profile_dialog(ProfileDialogIntent::NameChanged(
+                        String::from("Semrush"),
+                    )),
+                    profile_dialog(ProfileDialogIntent::FolderChoicePicked(
+                        otty_app_agents::FolderChoice::Typed,
+                    )),
+                    profile_folder(FolderFieldIntent::Changed(String::from(
+                        "~/.claude-semrush",
+                    ))),
+                    profile_folder(FolderFieldIntent::SuggestionPicked(0)),
+                    profile_folder(FolderFieldIntent::SuggestionHighlighted(
+                        Some(0),
+                    )),
+                    profile_folder(FolderFieldIntent::SuggestionsClosed),
+                    profile_dialog(ProfileDialogIntent::Submitted),
+                    profile_dialog(ProfileDialogIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsAddAccountDialog,
+                vec![
+                    add_account(AddAccountIntent::ProviderListToggled),
+                    add_account(AddAccountIntent::ProviderPicked(0)),
+                    add_account(AddAccountIntent::Continued),
+                    add_account(AddAccountIntent::PluginsOpened),
+                    add_account(AddAccountIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsKeyDialog,
+                vec![
+                    key_dialog(KeyDialogIntent::KeyChoicePicked(
+                        otty_app_agents::KeyPlaceChoice::Variable,
+                    )),
+                    key_dialog(KeyDialogIntent::KeyChanged(String::from(
+                        "EXAMPLE_ADMIN_KEY",
+                    ))),
+                    key_dialog(KeyDialogIntent::PageOpened),
+                    key_dialog(KeyDialogIntent::Submitted),
+                    key_dialog(KeyDialogIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsRenameDialog,
+                vec![
+                    rename(RenameIntent::NameChanged(String::from("Work"))),
+                    rename(RenameIntent::Submitted),
+                    rename(RenameIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsRemoveDialog,
+                vec![
+                    AppEvent::Agents(AgentsIntent::RemoveConfirmed),
+                    AppEvent::Agents(AgentsIntent::RemoveCancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsKeyringDialog,
+                vec![
+                    AppEvent::Agents(AgentsIntent::AllowKeyring),
+                    AppEvent::Agents(AgentsIntent::KeyringNotNow),
+                ],
+            ),
+            (
+                Overlay::AgentsStatsDialog,
+                vec![
+                    AppEvent::Agents(AgentsIntent::CloseStats),
+                    AppEvent::Agents(AgentsIntent::OpenPeriodMenu),
+                    AppEvent::Agents(AgentsIntent::PickPeriod(
+                        UsagePeriod::Today,
+                    )),
+                    AppEvent::Agents(AgentsIntent::ShowUsageTab(
+                        UsageTab::ByProfile,
+                    )),
+                    AppEvent::Agents(AgentsIntent::PickUsageRow(String::from(
+                        "Codex",
+                    ))),
+                    AppEvent::Agents(AgentsIntent::HoverUsageRow(None)),
+                ],
+            ),
+            (
+                Overlay::AgentsNewSessionDialog,
+                vec![
+                    new_session_folder(FolderFieldIntent::Changed(
+                        String::from("~/projects"),
+                    )),
+                    new_session_folder(FolderFieldIntent::SuggestionPicked(0)),
+                    new_session_folder(
+                        FolderFieldIntent::SuggestionHighlighted(Some(0)),
+                    ),
+                    new_session_folder(FolderFieldIntent::SuggestionsClosed),
+                    new_session_dialog(NewSessionDialogIntent::ProfilePicked(
+                        work_profile(),
+                    )),
+                    new_session_dialog(NewSessionDialogIntent::Submitted),
+                    new_session_dialog(NewSessionDialogIntent::Cancelled),
+                ],
+            ),
+            (
+                Overlay::AgentsFoundReport,
+                vec![
+                    AppEvent::Agents(AgentsIntent::CloseFoundReport),
+                    AppEvent::Agents(AgentsIntent::FoundReportNeed(
+                        otty_app_agents::NeedAction::Run {
+                            title: String::from("Work"),
+                            command: otty_agents::AgentCommand::new("codex")
+                                .with_arg("login"),
+                        },
+                    )),
+                ],
+            ),
         ]
+    }
+
+    fn new_session_dialog(intent: NewSessionDialogIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::NewSessionDialog(intent))
+    }
+
+    fn profile_dialog(intent: ProfileDialogIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::Dialog(intent))
+    }
+
+    fn new_session_folder(intent: FolderFieldIntent) -> AppEvent {
+        new_session_dialog(NewSessionDialogIntent::Folder(intent))
+    }
+
+    fn add_account(intent: AddAccountIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::AddAccount(intent))
+    }
+
+    fn key_dialog(intent: KeyDialogIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::KeyDialog(intent))
+    }
+
+    fn rename(intent: RenameIntent) -> AppEvent {
+        AppEvent::Agents(AgentsIntent::Rename(intent))
+    }
+
+    fn profile_folder(intent: FolderFieldIntent) -> AppEvent {
+        profile_dialog(ProfileDialogIntent::Folder(intent))
+    }
+
+    /// An app in Agents mode with the added profile Codex (Work).
+    fn agents_app_with_a_profile() -> App {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
+        let _ = app.agents.reduce(
+            profiles_loaded(vec![(
+                work_profile(),
+                crate::testing::agents::not_logged_in(),
+            )]),
+            AgentsCtx::default(),
+        );
+
+        app
+    }
+
+    fn work_profile() -> otty_agents::Profile {
+        otty_agents::Profile::added(
+            otty_agents::AgentId::new("codex"),
+            "Codex (Work)",
+            std::path::PathBuf::from("/home/user/.codex-work"),
+        )
+    }
+
+    fn open_profile_dialog(app: &mut App) {
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenAddProfile, AgentsCtx::default());
+    }
+
+    /// Rename… of the menu of Codex (Work).
+    fn open_rename_dialog(app: &mut App) {
+        for intent in [
+            AgentsIntent::OpenProfileMenu(work_profile()),
+            AgentsIntent::ProfileMenu(otty_app_agents::ProfileAction::Rename),
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+    }
+
+    /// The `+` of the Accounts section.
+    fn open_add_account_dialog(app: &mut App) {
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenAddAccount, AgentsCtx::default());
+    }
+
+    /// The button of a need that asks for the admin key of the bill of an
+    /// organization.
+    fn open_key_dialog(app: &mut App) {
+        let organization = otty_agents::Account::new(
+            "example",
+            otty_agents::ProviderId::new("example-cloud"),
+            "org:made-up-org",
+            "Made-up org",
+            otty_agents::AccountKind::Organization,
+            Vec::new(),
+        );
+        let ask = otty_agents::KeyAsk::new(
+            "admin",
+            "Admin key",
+            "Reads the real bill.",
+        );
+
+        let _ = app.agents.reduce(
+            AgentsIntent::FixNeed(otty_app_agents::NeedAction::AskKey {
+                account: Box::new(organization),
+                plugin: String::from("Example"),
+                ask,
+            }),
+            AgentsCtx::default(),
+        );
+    }
+
+    fn open_remove_dialog(app: &mut App) {
+        let _ = app.agents.reduce(
+            AgentsIntent::RemoveProfile(work_profile()),
+            AgentsCtx::default(),
+        );
+    }
+
+    /// Allow keyring of the need of the system keyring.
+    fn open_keyring_dialog(app: &mut App) {
+        let _ = app.agents.reduce(
+            AgentsIntent::FixNeed(otty_app_agents::NeedAction::AllowKeyring),
+            AgentsCtx::default(),
+        );
+    }
+
+    /// The statistics of the project of a session of Codex (Work).
+    fn open_stats_dialog(app: &mut App) {
+        for intent in [
+            one_session_loaded(work_profile(), "w1"),
+            AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),
+            AgentsIntent::ShowProjectStats,
+        ] {
+            let _ = app.agents.reduce(intent, AgentsCtx::default());
+        }
+    }
+
+    fn open_new_session_dialog(app: &mut App) {
+        let _ = app.agents.reduce(
+            AgentsIntent::OpenNewSessionDialog(None),
+            AgentsCtx::default(),
+        );
+    }
+
+    /// A read of the profiles on the first start opens Found by OTTY.
+    fn open_found_report(app: &mut App) {
+        let _ = app.agents.reduce(
+            first_start_profiles_loaded(vec![(
+                work_profile(),
+                crate::testing::agents::not_logged_in(),
+            )]),
+            AgentsCtx::default(),
+        );
+    }
+
+    fn open_agents_menu(app: &mut App) {
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::OpenFilterMenu, AgentsCtx::default());
+    }
+
+    /// The Agents dialogs and menus are found in Agents mode only, and Esc
+    /// cancels or closes them.
+    #[test]
+    fn the_agents_overlays_count_in_agents_mode_and_esc_cancels_them() {
+        for (open, overlay) in AGENTS_OVERLAYS {
+            let mut app = agents_app_with_a_profile();
+            open(&mut app);
+            let found = top_overlay(&app);
+            let _ = app.modes.reduce(ModesIntent::Select(Mode::Terminal), ());
+
+            assert_eq!(found, Some(overlay));
+            assert_eq!(top_overlay(&app), None, "{overlay:?}");
+            assert!(matches!(overlay.escape_event(), AppEvent::Agents(_)));
+        }
     }
 
     #[test]
@@ -866,9 +1389,8 @@ mod tests {
         }
     }
 
-    /// The Containers dialogs send nothing from their dimmed area, and a
-    /// press on the table or the tree under them is no answer: the dialog
-    /// stays open.
+    /// A press on the table or the tree under a Containers dialog is no
+    /// answer: the dialog stays open.
     #[test]
     fn a_containers_dialog_ignores_a_press_outside_it() {
         let presses = [
@@ -928,7 +1450,7 @@ mod tests {
             AppEvent::Command(AppCommand::OpenNotifications),
             AppEvent::Command(AppCommand::SelectModeAt { position: 0 }),
             AppEvent::TitleBar(TitleBarIntent::ToggleLeftPanel),
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
             AppEvent::TitleBar(TitleBarIntent::ToggleFocusMode),
             AppEvent::TitleBar(TitleBarIntent::OpenSettings),
             AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette),
@@ -1124,89 +1646,37 @@ mod tests {
         ));
     }
 
-    /// The items of the pane menu and what the terminals report pass under
-    /// a menu; a press on a pane does nothing, and another terminal press
-    /// closes the menus.
+    /// What the terminals report passes under a menu; a press on a pane
+    /// does nothing, a right press on a pane opens its menu there, and
+    /// another terminal press closes the menus.
     #[test]
     fn the_pane_menu_takes_its_items_and_ignores_a_pane_press() {
         let (_, pane) = iced::widget::pane_grid::State::new(());
-        let items = [
-            TerminalIntent::CloseContextMenu { tab_id: 1 },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::CopySelection,
+        let report = AppEvent::Terminal(TerminalIntent::Widget(
+            otty_ui_term::Event::Redraw { id: 2 },
+        ));
+        let pane_press =
+            AppEvent::Terminal(TerminalIntent::PaneClicked { tab_id: 1, pane });
+        let right_press = AppEvent::Terminal(TerminalIntent::OpenContextMenu {
+            tab_id: 1,
+            pane,
+            terminal_id: 2,
+        });
+        let resized = AppEvent::Terminal(TerminalIntent::PaneResized {
+            tab_id: 1,
+            event: iced::widget::pane_grid::ResizeEvent {
+                split: split_of_two_panes(),
+                ratio: 0.5,
             },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::PasteClipboard,
-            },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::ToggleFold(BlockKey::new(
-                    3,
-                )),
-            },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::RunAgain(BlockKey::new(3)),
-            },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::CopyContent(
-                    BlockKey::new(3),
-                ),
-            },
-            TerminalIntent::RunBlockCommand {
-                tab_id: 1,
-                terminal_id: 2,
-                command: otty_ui_term::BlockCommand::CopyCommand(
-                    BlockKey::new(3),
-                ),
-            },
-            TerminalIntent::SplitPane {
-                tab_id: 1,
-                pane,
-                axis: iced::widget::pane_grid::Axis::Vertical,
-            },
-            TerminalIntent::ClosePane { tab_id: 1, pane },
-            TerminalIntent::Widget(otty_ui_term::Event::Redraw { id: 2 }),
-        ];
-        let ignored = [
-            TerminalIntent::PaneClicked { tab_id: 1, pane },
-            TerminalIntent::OpenContextMenu {
-                tab_id: 1,
-                pane,
-                terminal_id: 2,
-            },
-        ];
+        });
+        let under_pane_menu = |event: &AppEvent| {
+            context_menu_guard(Overlay::TerminalContextMenu, event)
+        };
 
-        for intent in items {
-            let guard = context_menu_guard(&AppEvent::Terminal(intent));
-
-            assert_eq!(guard, MenuGuard::Allow);
-        }
-        for intent in ignored {
-            let guard = context_menu_guard(&AppEvent::Terminal(intent));
-
-            assert_eq!(guard, MenuGuard::Ignore);
-        }
-        assert_eq!(
-            context_menu_guard(&AppEvent::Terminal(
-                TerminalIntent::PaneResized {
-                    tab_id: 1,
-                    event: iced::widget::pane_grid::ResizeEvent {
-                        split: split_of_two_panes(),
-                        ratio: 0.5,
-                    },
-                }
-            )),
-            MenuGuard::Dismiss
-        );
+        assert_eq!(under_pane_menu(&report), MenuGuard::Allow);
+        assert_eq!(under_pane_menu(&pane_press), MenuGuard::Ignore);
+        assert_eq!(under_pane_menu(&right_press), MenuGuard::Allow);
+        assert_eq!(under_pane_menu(&resized), MenuGuard::Dismiss);
     }
 
     /// Owner: under the pane menu, a press on the fold arrow of a block or
@@ -1230,7 +1700,10 @@ mod tests {
         ];
 
         for intent in presses {
-            let guard = context_menu_guard(&AppEvent::Terminal(intent));
+            let guard = context_menu_guard(
+                Overlay::HeaderMenu,
+                &AppEvent::Terminal(intent),
+            );
 
             assert_eq!(guard, MenuGuard::Allow);
         }
@@ -1324,6 +1797,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             }
         );
         assert!(!in_containers.is_terminal_mode);
@@ -1342,15 +1816,23 @@ mod tests {
     }
 
     /// A press on a Sessions row or the New session button under an open
-    /// menu closes the menus and runs.
+    /// menu closes the menus and runs; the cross of a row only closes them.
     #[test]
     fn a_tabs_press_under_a_menu_closes_the_menus_and_goes_on() {
+        let cross = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
+
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &cross),
+            MenuGuard::Dismiss
+        );
         for intent in [
             TabsIntent::ActivateTab { tab_id: 1 },
-            TabsIntent::CloseTab { tab_id: 1 },
             TabsIntent::OpenTerminalTab { folder: None },
         ] {
-            let guard = context_menu_guard(&AppEvent::Tabs(intent));
+            let guard = context_menu_guard(
+                Overlay::HeaderMenu,
+                &AppEvent::Tabs(intent),
+            );
 
             assert_eq!(guard, MenuGuard::DismissAndRun);
         }
@@ -1360,60 +1842,57 @@ mod tests {
     /// it only closes the menus.
     #[test]
     fn the_sessions_title_under_a_menu_only_closes_the_menus() {
-        let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarIntent::ToggleSessions,
-        ));
+        let guard = context_menu_guard(
+            Overlay::HeaderMenu,
+            &AppEvent::Sidebar(SidebarIntent::ToggleSessions),
+        );
 
         assert_eq!(guard, MenuGuard::Dismiss);
     }
 
+    /// Issue 37: under the menu of a plugin, the "⋯" of another plugin
+    /// opens its menu there, a press on another plugin only closes the
+    /// menus, and Esc closes the menu.
     #[test]
-    fn each_header_menu_item_is_a_header_menu_choice() {
-        let open_terminal =
-            AppEvent::Tabs(TabsIntent::OpenTerminalTab { folder: None });
-        let (_, pane) = iced::widget::pane_grid::State::new(());
-        let split = AppEvent::Terminal(TerminalIntent::SplitPane {
-            tab_id: 1,
-            pane,
-            axis: iced::widget::pane_grid::Axis::Vertical,
-        });
-        let launch = AppEvent::QuickLaunch(QuickLaunchIntent::LaunchNode {
-            path: vec![String::from("Demo")],
-        });
-        let new_launch =
-            AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateCommand);
-        let new_folder =
-            AppEvent::QuickLaunch(QuickLaunchIntent::HeaderCreateFolder);
+    fn under_the_menu_of_a_plugin_another_plugin_opens_its_menu() {
+        let id = || String::from("example");
+        let under = |intent| {
+            context_menu_guard(Overlay::PluginsMenu, &AppEvent::Plugins(intent))
+        };
 
-        for choice in [open_terminal, split, launch, new_launch, new_folder] {
-            assert!(is_header_menu_choice(&choice), "{choice:?}");
-        }
+        assert_eq!(under(PluginsIntent::OpenMenu(id())), MenuGuard::Allow);
+        assert_eq!(under(PluginsIntent::Select(id())), MenuGuard::Dismiss);
+        assert_eq!(Overlay::PluginsMenu.kind(), Some(OverlayKind::Menu));
+        assert!(matches!(
+            Overlay::PluginsMenu.escape_event(),
+            AppEvent::Plugins(PluginsIntent::CloseMenu)
+        ));
     }
 
+    /// A choice in a header menu belongs to another feature, which does
+    /// not close the header menu: the frame closes it and runs the choice.
     #[test]
-    fn closing_a_tab_or_pressing_a_launch_is_no_header_menu_choice() {
-        let close_tab = AppEvent::Tabs(TabsIntent::CloseTab { tab_id: 1 });
-        let pressed = AppEvent::QuickLaunch(QuickLaunchIntent::NodePressed {
-            path: vec![String::from("Demo")],
-        });
+    fn a_choice_in_a_header_menu_closes_it_and_runs() {
+        let mut app = app();
+        open_header_menu(&mut app);
 
-        assert!(!is_header_menu_choice(&close_tab));
-        assert!(!is_header_menu_choice(&pressed));
-        assert!(!is_header_menu_choice(&AppEvent::Sidebar(
-            SidebarIntent::HeaderMenuDismiss
-        )));
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::from_menu(AppEvent::QuickLaunch(
+                QuickLaunchIntent::HeaderCreateFolder,
+            )),
+        );
+
+        assert!(!app.sidebar.has_header_menu_open());
+        assert!(app.quick_launch.has_inline_edit(), "New folder runs");
     }
 
-    /// The items and the dismiss layer of the Launches menu, the name field
-    /// and the pointer over the tree pass under a menu; other presses in
-    /// the tree do nothing.
+    /// The name field and the pointer over the tree pass under a menu; a
+    /// right press on a row opens the menu of the Launches tree there, and
+    /// other presses in the tree do nothing.
     #[test]
     fn the_launch_menu_takes_its_items_and_ignores_other_tree_presses() {
         let passing = [
-            QuickLaunchIntent::ContextMenuDismiss,
-            QuickLaunchIntent::ContextMenuAction(
-                otty_app_quick_launch::ContextMenuAction::Rename,
-            ),
             QuickLaunchIntent::InlineEditChanged(String::from("notes")),
             QuickLaunchIntent::InlineEditSubmit,
             QuickLaunchIntent::CursorMoved {
@@ -1425,19 +1904,30 @@ mod tests {
             QuickLaunchIntent::NodePressed {
                 path: vec![String::from("Demo")],
             },
-            QuickLaunchIntent::NodeRightClicked {
-                path: vec![String::from("Demo")],
-            },
         ];
+        let right_press =
+            AppEvent::QuickLaunch(QuickLaunchIntent::NodeRightClicked {
+                path: vec![String::from("Demo")],
+            });
 
         for intent in passing {
-            let guard = context_menu_guard(&AppEvent::QuickLaunch(intent));
+            let event = AppEvent::QuickLaunch(intent);
+            let guard = context_menu_guard(Overlay::LaunchContextMenu, &event);
             assert_eq!(guard, MenuGuard::Allow);
         }
         for intent in ignored {
-            let guard = context_menu_guard(&AppEvent::QuickLaunch(intent));
+            let event = AppEvent::QuickLaunch(intent);
+            let guard = context_menu_guard(Overlay::LaunchContextMenu, &event);
             assert_eq!(guard, MenuGuard::Ignore);
         }
+        assert_eq!(
+            context_menu_guard(Overlay::LaunchContextMenu, &right_press),
+            MenuGuard::Allow
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &right_press),
+            MenuGuard::DismissAndRun
+        );
     }
 
     /// A key that is no shortcut, pointer moves and terminal events keep an
@@ -1470,7 +1960,7 @@ mod tests {
             )),
         ];
         let cancelling = [
-            AppEvent::Command(AppCommand::ToggleFilesPanel),
+            AppEvent::Command(AppCommand::ToggleRightPanel),
             AppEvent::TitleBar(TitleBarIntent::PressTitleBar),
             AppEvent::Sidebar(SidebarIntent::ToggleRight),
             AppEvent::Explorer(ExplorerIntent::NodePressed {
@@ -1485,47 +1975,6 @@ mod tests {
         for event in &cancelling {
             assert!(inline_edit_guard(event), "{event:?}");
         }
-    }
-
-    #[test]
-    fn a_pressed_escape_key_is_an_escape_press() {
-        assert!(is_escape_press(&AppEvent::Keyboard(escape_press())));
-    }
-
-    /// A held Esc closes one overlay, not the next one under it too.
-    #[test]
-    fn a_held_esc_is_not_an_escape_press() {
-        let held = AppEvent::Keyboard(Event::KeyPressed {
-            key: Key::Named(Named::Escape),
-            modified_key: Key::Named(Named::Escape),
-            physical_key: Physical::Code(Code::Escape),
-            location: Location::Standard,
-            modifiers: Modifiers::empty(),
-            text: None,
-            repeat: true,
-        });
-
-        assert!(!is_escape_press(&held));
-    }
-
-    #[test]
-    fn other_keys_and_a_released_escape_are_not_an_escape_press() {
-        let letter = AppEvent::Keyboard(key_press(
-            Physical::Unidentified(NativeCode::Unidentified),
-            "a",
-            Modifiers::empty(),
-        ));
-        let released = AppEvent::Keyboard(Event::KeyReleased {
-            key: Key::Named(Named::Escape),
-            modified_key: Key::Named(Named::Escape),
-            physical_key: Physical::Code(Code::Escape),
-            location: Location::Standard,
-            modifiers: Modifiers::empty(),
-        });
-
-        assert!(!is_escape_press(&letter));
-        assert!(!is_escape_press(&released));
-        assert!(!is_escape_press(&AppEvent::HostNameRead(None)));
     }
 
     #[test]
@@ -1582,57 +2031,550 @@ mod tests {
         ));
     }
 
-    /// The items of the row menu and its dismiss layer go to the open menu.
+    /// Owner, 2026-11-23: under the menu of an Agents session, a right
+    /// press on another row opens that row's menu with the one press.
     #[test]
-    fn the_row_menu_s_items_and_dismiss_pass() {
-        use otty_app_containers::RowAction;
+    fn under_an_agents_menu_another_row_opens_its_menu() {
+        let other_row = AppEvent::Agents(AgentsIntent::OpenSessionMenu(1));
 
-        let events = [
-            ActionsIntent::Act(RowAction::Stop),
-            ActionsIntent::Act(RowAction::Remove),
-            ActionsIntent::CloseRowMenu,
-        ]
-        .map(|intent| AppEvent::Containers(ContainersIntent::Actions(intent)));
+        assert_eq!(
+            context_menu_guard(Overlay::AgentsMenu, &other_row),
+            MenuGuard::Allow
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::PluginsMenu, &other_row),
+            MenuGuard::DismissAndRun
+        );
+    }
 
-        for event in events {
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+    /// Where the menus of Agents mode open in the tests, inside a main area
+    /// big enough for each of them.
+    fn agents_menu_ctx() -> AgentsCtx {
+        AgentsCtx {
+            cursor: iced::Point::new(40.0, 40.0),
+            screen_size: iced::Size::new(1000.0, 700.0),
+            has_local_pane: false,
+            local_folder: None,
         }
     }
 
-    /// Typing, choosing an entry and the palette's own dismiss layer go to
-    /// the open palette.
-    #[test]
-    fn the_palette_s_own_input_passes() {
-        let intents = [
-            PaletteIntent::Action(PaletteAction::QueryChanged(String::from(
-                "spl",
-            ))),
-            PaletteIntent::Action(PaletteAction::MoveDown),
-            PaletteIntent::Action(PaletteAction::RunActive),
-            PaletteIntent::FocusInput,
-            PaletteIntent::Dismiss,
-        ];
-
-        for intent in intents {
-            let event = AppEvent::Palette(intent);
-
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
-        }
-    }
-
-    /// The broom, the cross of a row and the list's own dismiss layer go to
-    /// the open list.
-    #[test]
-    fn the_notification_list_s_own_input_passes() {
+    /// An app in Agents mode with the default Codex, logged in, with
+    /// one session in `/work/otty`, and the added Codex (Work), not
+    /// logged in; the project `/work/otty` is selected. So every item of
+    /// every menu of the mode can be pressed.
+    fn agents_app_with_a_session() -> App {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
+        let connected = otty_agents::ProfileStatus::Connected;
         for intent in [
-            NotificationsIntent::Clear,
-            NotificationsIntent::Remove(1),
-            NotificationsIntent::CloseList,
+            profiles_loaded(vec![
+                (codex_profile(), connected),
+                (work_profile(), crate::testing::agents::not_logged_in()),
+            ]),
+            one_session_loaded(codex_profile(), "c1"),
+            AgentsIntent::SelectProject(std::path::PathBuf::from(PROJECT)),
         ] {
-            let event = AppEvent::Notifications(intent);
-
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+            let _ = app.agents.reduce(intent, agents_menu_ctx());
         }
+
+        app
+    }
+
+    /// Open a menu of Agents mode with `intent`.
+    fn open_agents_menu_with(app: &mut App, intent: AgentsIntent) {
+        let _ = app.agents.reduce(intent, agents_menu_ctx());
+        assert_eq!(top_overlay(app), Some(Overlay::AgentsMenu));
+    }
+
+    /// What a press on `label` in the open menu of Agents mode sends. Only
+    /// the menu layer is drawn, so the label can not be found in the left
+    /// panel or the main area under it.
+    fn pressed_in_agents_menu(app: &App, label: &str) -> Vec<AppEvent> {
+        let theme = otty_app_theme::theme::AppTheme::default();
+        let layer = iced::widget::Column::with_children(
+            crate::screens::agents::overlays(
+                app,
+                otty_app_theme::theme::ThemeProps::new(&theme),
+            ),
+        );
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(1000.0, 700.0),
+            layer,
+        );
+
+        ui.click(label)
+            .unwrap_or_else(|_| panic!("the item {label} should show"));
+
+        ui.into_messages().collect()
+    }
+
+    /// Press each of `labels` in the open menu of Agents mode and check
+    /// that each press sends an item marked as sent from the menu, which
+    /// the frame lets through to it with no list of its items.
+    fn assert_items_pass(app: &App, labels: &[&str]) {
+        for label in labels {
+            let sent = pressed_in_agents_menu(app, label);
+
+            assert!(!sent.is_empty(), "{label} sends an item");
+            for event in &sent {
+                assert!(
+                    matches!(event, AppEvent::FromMenu(_)),
+                    "{label}: {event:?}"
+                );
+            }
+        }
+    }
+
+    /// Owner, issue 26: Edit and Remove of "⋯" did nothing, the frame took
+    /// them for a press outside the menu. Every item of the profile menu
+    /// now goes to it.
+    #[test]
+    fn every_item_of_the_agents_profile_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(
+            &mut app,
+            AgentsIntent::OpenProfileMenu(work_profile()),
+        );
+
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsRename),
+                i18n::t(i18n::Key::AgentsOpenFolder),
+                i18n::t(i18n::Key::Edit),
+                i18n::t(i18n::Key::AgentsLogIn),
+                i18n::t(i18n::Key::AgentsHide),
+                i18n::t(i18n::Key::ButtonRemove),
+            ],
+        );
+    }
+
+    /// Spec 2026-11-19, Decision 7: every item of the menu of an account
+    /// goes to it.
+    #[test]
+    fn every_item_of_the_agents_account_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        let account = otty_agents::Account::new(
+            "openai",
+            otty_agents::ProviderId::new("openai"),
+            "chatgpt:made-up-account",
+            "you@example.com",
+            otty_agents::AccountKind::Subscription,
+            Vec::new(),
+        );
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAccountMenu(account));
+
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsRename),
+                i18n::t(i18n::Key::AgentsOpenUsagePage),
+                i18n::t(i18n::Key::AgentsHide),
+            ],
+        );
+    }
+
+    /// The "⋯" of All accounts and of All profiles: their items go to
+    /// them.
+    #[test]
+    fn every_item_of_the_agents_overview_menus_passes() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllAccountsMenu);
+        assert_items_pass(&app, &[i18n::t(i18n::Key::AgentsShowFoundReport)]);
+
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ShowHiddenProfiles(true), agents_menu_ctx());
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
+        assert_items_pass(
+            &app,
+            &[i18n::t(i18n::Key::AgentsHideHiddenProfiles)],
+        );
+        let _ = app
+            .agents
+            .reduce(AgentsIntent::ShowHiddenAccounts(true), agents_menu_ctx());
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllAccountsMenu);
+        assert_items_pass(
+            &app,
+            &[i18n::t(i18n::Key::AgentsHideHiddenAccounts)],
+        );
+    }
+
+    #[test]
+    fn every_item_of_the_agents_session_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenSessionMenu(0));
+
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsContinue),
+                i18n::t(i18n::Key::AgentsContinueInSplit),
+                i18n::t(i18n::Key::AgentsCopyResumeCommand),
+                i18n::t(i18n::Key::AgentsCopySessionId),
+                i18n::t(i18n::Key::AgentsShowStatistics),
+            ],
+        );
+    }
+
+    #[test]
+    fn every_item_of_the_agents_new_session_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenNewSessionMenu);
+
+        assert_items_pass(&app, &["Codex", "Codex (Work)"]);
+    }
+
+    /// A choice that is on lets Clear all filters be pressed too.
+    #[test]
+    fn every_item_of_the_agents_funnel_menu_passes() {
+        let mut app = agents_app_with_a_session();
+        let _ = app.agents.reduce(
+            AgentsIntent::ProjectFilter(
+                otty_app_agents::ProjectFilterChange::RecentOnly(true),
+            ),
+            agents_menu_ctx(),
+        );
+        open_agents_menu_with(&mut app, AgentsIntent::OpenFilterMenu);
+
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsFilterAllAgents),
+                "Codex",
+                "Codex",
+                i18n::t(i18n::Key::AgentsFilterRecent),
+                i18n::t(i18n::Key::AgentsFilterMissing),
+                i18n::t(i18n::Key::AgentsFilterSortByName),
+                i18n::t(i18n::Key::AgentsFilterClearAll),
+            ],
+        );
+    }
+
+    /// Owner, issue 26: Edit and Remove of the profile menu reach the
+    /// feature through the frame and open their dialogs.
+    #[test]
+    fn edit_and_remove_of_the_profile_menu_open_their_dialogs() {
+        let mut app = agents_app_with_a_session();
+        let open_menu = AgentsIntent::OpenProfileMenu(work_profile());
+        let _ = app.agents.reduce(open_menu.clone(), agents_menu_ctx());
+
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::from_menu(AppEvent::Agents(AgentsIntent::EditProfile(
+                work_profile(),
+            ))),
+        );
+        let edits = app.agents.top_overlay()
+            == Some(otty_app_agents::AgentsOverlay::ProfileDialog);
+        let _ = app.agents.reduce(
+            AgentsIntent::Dialog(ProfileDialogIntent::Cancelled),
+            agents_menu_ctx(),
+        );
+        let _ = app.agents.reduce(open_menu, agents_menu_ctx());
+        let _ = crate::update::update_input(
+            &mut app,
+            AppEvent::from_menu(AppEvent::Agents(AgentsIntent::RemoveProfile(
+                work_profile(),
+            ))),
+        );
+
+        assert!(edits, "Edit opens the profile dialog");
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::RemoveDialog),
+            "Remove asks first"
+        );
+    }
+
+    /// Owner, 2026-11-23: Today, 7 days and 30 days of the usage block of
+    /// a profile page did nothing, the frame took them for a press outside
+    /// the menu. Every item of the menu now goes to it.
+    #[test]
+    fn every_item_of_the_agents_period_menu_passes() {
+        let mut app = agents_app_with_a_session();
+
+        open_agents_menu_with(&mut app, AgentsIntent::OpenPeriodMenu);
+        assert_items_pass(
+            &app,
+            &[
+                i18n::t(i18n::Key::AgentsToday),
+                i18n::t(i18n::Key::AgentsSevenDays),
+                i18n::t(i18n::Key::AgentsThirtyDays),
+            ],
+        );
+    }
+
+    /// The pointer moving over the rows of a usage block is no press: a
+    /// menu stays open, as it does over the Files tree.
+    #[test]
+    fn the_pointer_over_the_usage_rows_keeps_a_menu_open() {
+        for event in [
+            AgentsIntent::HoverUsageRow(Some(String::from("gpt-5"))),
+            AgentsIntent::HoverUsageRow(None),
+        ] {
+            assert_eq!(
+                context_menu_guard(
+                    Overlay::HeaderMenu,
+                    &AppEvent::Agents(event)
+                ),
+                MenuGuard::Allow
+            );
+        }
+    }
+
+    /// Codex, its 400 000 tokens of gpt-5 counted today at 09:00 and
+    /// priced by the Codex part at the made-up list price of $1.25 per
+    /// million input tokens, the prices read, and its page shown.
+    fn agents_app_with_a_counted_profile() -> App {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Agents), ());
+        let api_key = otty_agents::ProfileStatus::Connected;
+        let tokens = otty_agents::ModelTokens::new(
+            Some("gpt-5"),
+            otty_agents::TokenCount::new(400_000, 0, 0),
+            1,
+        )
+        .with_money(otty_agents::MoneyTotal::at_api_prices(
+            otty_agents::MoneyByKind::new(
+                otty_agents::Dollars::from_micro_dollars(500_000),
+                otty_agents::Dollars::default(),
+                otty_agents::Dollars::default(),
+                otty_agents::Dollars::default(),
+            ),
+            1,
+        ));
+        let parts = vec![otty_agents::ProjectModelTokens::new(
+            Some(std::path::PathBuf::from(PROJECT)),
+            tokens.clone(),
+        )];
+        let hours = (0..24)
+            .map(|hour| match hour {
+                9 => otty_agents::HourSpend::new(hour, parts.clone()),
+                _ => otty_agents::HourSpend::new(hour, Vec::new()),
+            })
+            .collect();
+        let today = otty_agents::DaySpend::new(
+            jiff::civil::date(2026, 11, 16),
+            vec![tokens],
+        )
+        .with_parts(parts);
+        let spend =
+            otty_agents::Spend::new(vec![today], Vec::new()).with_hours(hours);
+        let gpt_5 = otty_agents::TokenPrices {
+            input: otty_agents::Dollars::from_micro_dollars(1_250_000),
+            ..otty_agents::TokenPrices::default()
+        };
+        let prices = otty_agents::FetchedPrices::new(
+            otty_agents::PriceTable::new(vec![otty_agents::ModelPrice::new(
+                "gpt-5", gpt_5,
+            )]),
+            std::time::SystemTime::UNIX_EPOCH,
+        );
+
+        for intent in [
+            profiles_loaded(vec![(codex_profile(), api_key)]),
+            AgentsIntent::SpendLoaded(otty_app_agents::LoadedSpend {
+                profile: codex_profile(),
+                spend: otty_app_agents::SpendCount::Counted(spend),
+                counted_at: std::time::SystemTime::UNIX_EPOCH,
+            }),
+            AgentsIntent::PricesLoaded(otty_app_agents::LoadedPrices {
+                prices: otty_agents::fixtures::walked(std::iter::once((
+                    otty_agents::SourceId::LiteLlmPrices,
+                    Ok(prices),
+                ))),
+                read_at: std::time::SystemTime::UNIX_EPOCH,
+            }),
+            AgentsIntent::SelectProfile(codex_profile()),
+        ] {
+            let _ = app.agents.reduce(intent, agents_menu_ctx());
+        }
+
+        app
+    }
+
+    /// Open the menu of the usage block with `open` and press `label` in
+    /// it, through the frame as the user does.
+    fn pick_in_usage_menu(app: &mut App, open: AgentsIntent, label: &str) {
+        open_agents_menu_with(app, open);
+
+        for event in pressed_in_agents_menu(app, label) {
+            let _ = crate::update::update_input(app, event);
+        }
+    }
+
+    /// Whether the main area of Agents mode shows `text`.
+    fn main_area_shows(app: &App, text: &str) -> bool {
+        let theme = otty_app_theme::theme::AppTheme::default();
+        let main = crate::screens::agents::main(
+            app,
+            otty_app_theme::theme::ThemeProps::new(&theme),
+        );
+        let mut ui = iced_test::Simulator::with_size(
+            iced::Settings::default(),
+            iced::Size::new(1000.0, 700.0),
+            main,
+        );
+
+        ui.find(text).is_ok()
+    }
+
+    /// Owner, 2026-11-23: a period picked in its menu shows on the
+    /// profile page: the menu closes and the total under Usage follows.
+    /// Issue 14 of spec 2026-11-23: the total says the tokens and their
+    /// money at API prices, with no switch between them.
+    #[test]
+    fn a_period_picked_in_its_menu_shows_on_the_page() {
+        let mut app = agents_app_with_a_counted_profile();
+        let both = i18n::filled(
+            i18n::Key::TplAgentsTokensAndMoney,
+            &[("tokens", "400K"), ("money", "~$0.50")],
+        );
+        let total = |amount: &str, key: i18n::Key| {
+            i18n::filled(key, &[("amount", amount), ("count", "7")])
+        };
+        let week = main_area_shows(
+            &app,
+            &total(&both, i18n::Key::TplAgentsAmountInDays),
+        );
+
+        pick_in_usage_menu(
+            &mut app,
+            AgentsIntent::OpenPeriodMenu,
+            i18n::t(i18n::Key::AgentsToday),
+        );
+        let today = main_area_shows(
+            &app,
+            &total(&both, i18n::Key::TplAgentsAmountToday),
+        );
+        let is_closed = top_overlay(&app).is_none();
+
+        assert!(week, "the page opens on 7 days of tokens and money");
+        assert!(today, "Today shows the tokens and the money of today");
+        assert!(is_closed, "the menu closes");
+    }
+
+    /// Issue 42: the pointer moving over a disabled item of an open menu,
+    /// whose reason then shows, and a press on it go through the window
+    /// and the input checks and keep the menu open.
+    #[test]
+    fn hovering_and_pressing_a_disabled_item_keeps_the_menu_open() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
+        let mut window = RunningApp::new(app);
+        let show_hidden = i18n::filled(
+            i18n::Key::TplAgentsShowHiddenProfiles,
+            &[("count", "0")],
+        );
+        let off = window
+            .find(&show_hidden)
+            .expect("Show hidden profiles shows, off with none hidden");
+
+        for point in [
+            off.center(),
+            iced::Point::new(off.x + 1.0, off.y + 1.0),
+            iced::Point::new(off.x + off.width, off.center_y()),
+        ] {
+            window.move_to(point);
+        }
+        let hovered = top_overlay(window.app());
+        window.click(iced::mouse::Button::Left);
+
+        assert_eq!(hovered, Some(Overlay::AgentsMenu));
+        assert_eq!(top_overlay(window.app()), Some(Overlay::AgentsMenu));
+    }
+
+    /// Owner, 2026-11-23: with the period menu of a profile page open, one
+    /// press on the Tokens drop-down closes it and opens the measure menu,
+    /// through the window and the input checks; a press on the drop-down
+    /// of the open menu closes it, and a press away closes a menu too.
+    #[test]
+    fn one_press_on_another_drop_down_switches_the_menu() {
+        let mut window = RunningApp::new(agents_app_with_a_counted_profile());
+        let thirty_days = i18n::t(i18n::Key::AgentsThirtyDays);
+        let money = i18n::t(i18n::Key::AgentsNumberMoney);
+
+        window.click_text(i18n::t(i18n::Key::AgentsSevenDays));
+        let period_open = window.find(thirty_days).is_some();
+        window.click_text(i18n::t(i18n::Key::AgentsTokens));
+        let switched =
+            window.find(money).is_some() && window.find(thirty_days).is_none();
+        window.click_text(i18n::t(i18n::Key::AgentsTokens));
+        let closed = top_overlay(window.app()).is_none();
+        window.click_text(i18n::t(i18n::Key::AgentsSevenDays));
+        window.move_to(iced::Point::new(1000.0, 740.0));
+        window.click(iced::mouse::Button::Left);
+
+        assert!(period_open, "the period menu opens");
+        assert!(switched, "one press opens the measure menu in its place");
+        assert!(closed, "the drop-down of the open menu closes it");
+        assert_eq!(top_overlay(window.app()), None, "a press away closes");
+    }
+
+    /// Owner, 2026-11-23: the open-menu guard keeps no list of the items
+    /// of a menu. A new item of a menu, sending what no menu sent before,
+    /// reaches its feature with no change to the guard.
+    #[test]
+    fn a_new_item_of_a_menu_works_without_touching_the_guard() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
+        let palette = otty_ui_kit::palette::UiPalette::otty_dark();
+        let menu = otty_ui_kit::components::menu::Menu::new(&palette).item(
+            otty_ui_kit::components::menu::MenuItem::new("A new item")
+                .on_press(AgentsIntent::OpenAddProfile),
+        );
+        let layer = crate::screens::overlay_layer(
+            otty_app_slots::Overlay::menu(
+                otty_ui_kit::components::context_menu::context_menu(
+                    menu,
+                    agents_menu_ctx_place(),
+                ),
+            ),
+            AppEvent::Agents,
+        );
+        let mut ui = iced_test::simulator(layer);
+
+        ui.click("A new item").expect("the new item shows");
+        for event in ui.into_messages().collect::<Vec<_>>() {
+            let _ = crate::update::update_input(&mut app, event);
+        }
+
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::ProfileDialog)
+        );
+    }
+
+    /// Where the menus of Agents mode open in the tests.
+    fn agents_menu_ctx_place()
+    -> otty_ui_kit::components::context_menu::MenuPlace {
+        let ctx = agents_menu_ctx();
+
+        otty_ui_kit::components::context_menu::MenuPlace::new(
+            ctx.cursor,
+            ctx.screen_size,
+        )
+    }
+
+    /// A press no widget took closes the open menu, and is no answer to a
+    /// dialog.
+    #[test]
+    fn a_press_away_closes_the_menus() {
+        let mut app = agents_app_with_a_session();
+        open_agents_menu_with(&mut app, AgentsIntent::OpenAllProfilesMenu);
+
+        let guard =
+            context_menu_guard(Overlay::AgentsMenu, &AppEvent::PressedAway);
+        let _ = crate::update::update_input(&mut app, AppEvent::PressedAway);
+
+        assert_eq!(guard, MenuGuard::Dismiss);
+        assert_eq!(top_overlay(&app), None);
+        assert_eq!(
+            dialog_guard(Overlay::AgentsProfileDialog, &AppEvent::PressedAway),
+            MenuGuard::Ignore
+        );
     }
 
     /// The cross of a toast under a menu is a click outside the menu: it
@@ -1642,19 +2584,10 @@ mod tests {
         let event =
             AppEvent::Notifications(NotificationsIntent::DismissToast(1));
 
-        assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
-    }
-
-    #[test]
-    fn given_menu_open_when_modes_events_arrive_then_they_are_allowed() {
-        let events = [
-            AppEvent::Modes(ModesIntent::CloseMenu),
-            AppEvent::Modes(ModesIntent::Pin(Mode::Containers)),
-        ];
-
-        for event in events {
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
-        }
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &event),
+            MenuGuard::Dismiss
+        );
     }
 
     #[test]
@@ -1665,25 +2598,55 @@ mod tests {
         ];
 
         for event in events {
-            assert_eq!(context_menu_guard(&event), MenuGuard::DismissAndRun);
+            assert_eq!(
+                context_menu_guard(Overlay::HeaderMenu, &event),
+                MenuGuard::DismissAndRun
+            );
         }
     }
 
     #[test]
-    fn a_panel_or_palette_button_only_closes_the_menus() {
+    fn a_panel_button_only_closes_the_menus() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
-            TitleBarIntent::OpenCommandPalette,
-            TitleBarIntent::OpenNotifications,
         ];
 
         for press in presses {
             let event = AppEvent::TitleBar(press);
 
-            assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
+            assert_eq!(
+                context_menu_guard(Overlay::HeaderMenu, &event),
+                MenuGuard::Dismiss
+            );
         }
+    }
+
+    /// Owner, 2026-11-23: the bell and the palette button open their menu
+    /// with the one press that closes another menu; under their own menu
+    /// they close it.
+    #[test]
+    fn the_bell_and_the_palette_button_close_another_menu_and_open() {
+        let bell = AppEvent::TitleBar(TitleBarIntent::OpenNotifications);
+        let palette = AppEvent::TitleBar(TitleBarIntent::OpenCommandPalette);
+
+        assert_eq!(
+            context_menu_guard(Overlay::AgentsMenu, &bell),
+            MenuGuard::DismissAndRun
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::AgentsMenu, &palette),
+            MenuGuard::DismissAndRun
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::NotificationsList, &bell),
+            MenuGuard::Dismiss
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::Palette, &palette),
+            MenuGuard::Dismiss
+        );
     }
 
     #[test]
@@ -1695,7 +2658,10 @@ mod tests {
         ] {
             let event = AppEvent::TitleBar(press);
 
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+            assert_eq!(
+                context_menu_guard(Overlay::HeaderMenu, &event),
+                MenuGuard::Allow
+            );
         }
     }
 
@@ -1703,32 +2669,50 @@ mod tests {
     fn moving_over_the_title_bar_keeps_the_menus() {
         let event = AppEvent::TitleBar(TitleBarIntent::MoveOnTitleBar);
 
-        assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &event),
+            MenuGuard::Allow
+        );
     }
 
+    /// The chevron of a section header opens its menu with one press under
+    /// another menu, and goes to the sidebar under a header menu.
     #[test]
-    fn given_menu_open_when_menu_open_intent_arrives_then_it_is_ignored() {
-        let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+    fn the_chevron_of_a_header_opens_its_menu_under_another_menu() {
+        let chevron = AppEvent::Sidebar(SidebarIntent::HeaderMenuOpen(
+            HeaderMenu::Sessions,
         ));
 
-        assert_eq!(guard, MenuGuard::Ignore);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &chevron),
+            MenuGuard::Allow
+        );
+        assert_eq!(
+            context_menu_guard(Overlay::ModesMenu, &chevron),
+            MenuGuard::DismissAndRun
+        );
     }
 
+    /// The title of the always open Installed section sends the dismiss of
+    /// the header menu: from outside the menu it closes the menus.
     #[test]
-    fn given_menu_open_when_menu_dismiss_intent_arrives_then_it_is_allowed() {
-        let guard = context_menu_guard(&AppEvent::Sidebar(
-            SidebarIntent::HeaderMenuDismiss,
-        ));
+    fn the_header_menu_dismiss_from_outside_closes_the_menus() {
+        let guard = context_menu_guard(
+            Overlay::HeaderMenu,
+            &AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
+        );
 
-        assert_eq!(guard, MenuGuard::Allow);
+        assert_eq!(guard, MenuGuard::Dismiss);
     }
 
     #[test]
     fn the_right_panel_toggle_closes_the_menus() {
         let toggle = AppEvent::Sidebar(SidebarIntent::ToggleRight);
 
-        assert_eq!(context_menu_guard(&toggle), MenuGuard::Dismiss);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &toggle),
+            MenuGuard::Dismiss
+        );
     }
 
     #[test]
@@ -1741,7 +2725,10 @@ mod tests {
             let event =
                 AppEvent::Explorer(ExplorerIntent::NodeHovered { path });
 
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+            assert_eq!(
+                context_menu_guard(Overlay::HeaderMenu, &event),
+                MenuGuard::Allow
+            );
         }
     }
 
@@ -1751,7 +2738,10 @@ mod tests {
             path: vec![String::from("src")],
         });
 
-        assert_eq!(context_menu_guard(&event), MenuGuard::Dismiss);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &event),
+            MenuGuard::Dismiss
+        );
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -1759,14 +2749,20 @@ mod tests {
     fn a_window_grip_leaves_the_menus_open() {
         let grip = AppEvent::ResizeWindow(iced::window::Direction::East);
 
-        assert_eq!(context_menu_guard(&grip), MenuGuard::Allow);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &grip),
+            MenuGuard::Allow
+        );
     }
 
     #[test]
     fn a_command_under_an_open_menu_closes_the_menus_and_goes_on() {
         let event = AppEvent::Command(AppCommand::ToggleFocusMode);
 
-        assert_eq!(context_menu_guard(&event), MenuGuard::DismissAndRun);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &event),
+            MenuGuard::DismissAndRun
+        );
     }
 
     #[test]
@@ -1777,7 +2773,10 @@ mod tests {
             Modifiers::empty(),
         ));
 
-        assert_eq!(context_menu_guard(&event), MenuGuard::Ignore);
+        assert_eq!(
+            context_menu_guard(Overlay::HeaderMenu, &event),
+            MenuGuard::Ignore
+        );
     }
 
     /// A press in the engine tree, the lists, the inspector tabs or on Prune
@@ -1799,7 +2798,10 @@ mod tests {
         .map(AppEvent::Containers);
 
         for event in clicks {
-            assert!(matches!(context_menu_guard(&event), MenuGuard::Dismiss));
+            assert!(matches!(
+                context_menu_guard(Overlay::HeaderMenu, &event),
+                MenuGuard::Dismiss
+            ));
             assert!(inline_edit_guard(&event));
         }
     }
@@ -1887,30 +2889,37 @@ mod tests {
         }
     }
 
-    /// Under a menu, the items of the Files menu, its name field and the
-    /// pointer over the tree pass; a press on a Files row only closes the
-    /// menus.
+    /// Under a menu, the name field of Files and the pointer over the tree
+    /// pass; a right press on a row opens the Files menu there, and a
+    /// press on a Files row only closes the menus.
     #[test]
     fn under_a_menu_the_files_menu_passes_and_a_files_press_closes_it() {
         let passing = [
-            ExplorerIntent::ContextMenuDismiss,
-            ExplorerIntent::ContextMenuAction(ExplorerMenuAction::Rename),
             ExplorerIntent::InlineEditChanged(String::from("a")),
             ExplorerIntent::InlineEditSubmit,
             ExplorerIntent::CursorMoved {
                 position: iced::Point::ORIGIN,
             },
             ExplorerIntent::NodeHovered { path: None },
+            ExplorerIntent::NodeRightClicked {
+                path: vec![String::from("notes.txt")],
+            },
         ];
 
         for intent in passing {
             let event = AppEvent::Explorer(intent);
-            assert_eq!(context_menu_guard(&event), MenuGuard::Allow);
+            assert_eq!(
+                context_menu_guard(Overlay::FilesContextMenu, &event),
+                MenuGuard::Allow
+            );
         }
         let press = AppEvent::Explorer(ExplorerIntent::NodePressed {
             path: vec![String::from("notes.txt")],
         });
-        assert_eq!(context_menu_guard(&press), MenuGuard::Dismiss);
+        assert_eq!(
+            context_menu_guard(Overlay::FilesContextMenu, &press),
+            MenuGuard::Dismiss
+        );
     }
 
     /// Typing in the Files name field and moving the pointer leave it; a
@@ -1945,5 +2954,231 @@ mod tests {
         // Typing in the Files name field cancels a Launches one.
         let typing = AppEvent::Explorer(ExplorerIntent::InlineEditSubmit);
         assert!(inline_edit_guard(&typing));
+    }
+
+    /// An app with a dialog open: what makes the app, what opens the dialog
+    /// on it and the dialog.
+    type OpenDialog = (fn() -> App, Opener, Overlay);
+
+    /// Add plugin… of Plugins mode, one of its dialogs.
+    fn open_add_plugin(app: &mut App) {
+        for event in [
+            AppEvent::Modes(ModesIntent::Select(Mode::Plugins)),
+            AppEvent::Plugins(PluginsIntent::AddPlugin),
+        ] {
+            let _ = crate::dispatch::dispatch(app, event);
+        }
+    }
+
+    /// Every dialog of the app, each on the app it opens on.
+    const EVERY_DIALOG: [OpenDialog; 15] = [
+        (app, open_secret_prompt, Overlay::SecretPrompt),
+        (app, open_settings, Overlay::Settings),
+        (app, open_files_delete_dialog, Overlay::FilesDeleteDialog),
+        (
+            containers_app_with_lists,
+            open_create_dialog,
+            Overlay::ContainersCreate,
+        ),
+        (
+            containers_app_with_lists,
+            open_confirm,
+            Overlay::ContainersConfirm,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_profile_dialog,
+            Overlay::AgentsProfileDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_add_account_dialog,
+            Overlay::AgentsAddAccountDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_key_dialog,
+            Overlay::AgentsKeyDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_rename_dialog,
+            Overlay::AgentsRenameDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_remove_dialog,
+            Overlay::AgentsRemoveDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_keyring_dialog,
+            Overlay::AgentsKeyringDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_stats_dialog,
+            Overlay::AgentsStatsDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_new_session_dialog,
+            Overlay::AgentsNewSessionDialog,
+        ),
+        (
+            agents_app_with_a_profile,
+            open_found_report,
+            Overlay::AgentsFoundReport,
+        ),
+        (app, open_add_plugin, Overlay::PluginsDialog),
+    ];
+
+    /// The title each dialog of [`EVERY_DIALOG`] shows. The confirmation of
+    /// Containers mode names a container of the fixture engine, so it has
+    /// none here: its own view tests press its cross.
+    fn title_of(dialog: Overlay) -> Option<String> {
+        use i18n::Key;
+
+        let title = match dialog {
+            Overlay::SecretPrompt => i18n::filled(
+                Key::TplSecretPromptPasswordTitle,
+                &[("target", "ubuntu@192.168.1.20:22")],
+            ),
+            Overlay::Settings => i18n::t(Key::SettingsTitle).to_string(),
+            Overlay::FilesDeleteDialog => {
+                i18n::filled(Key::TplFilesDeleteTitle, &[("name", "notes.txt")])
+            },
+            Overlay::ContainersCreate => {
+                i18n::t(Key::ContainersPullImage).to_string()
+            },
+            Overlay::AgentsProfileDialog => {
+                i18n::t(Key::AgentsAddProfile).to_string()
+            },
+            Overlay::AgentsAddAccountDialog => {
+                i18n::t(Key::AgentsAddAccountTitle).to_string()
+            },
+            Overlay::AgentsKeyDialog => String::from("Admin key"),
+            Overlay::AgentsRenameDialog => {
+                i18n::t(Key::AgentsRenameProfileTitle).to_string()
+            },
+            Overlay::AgentsRemoveDialog => i18n::filled(
+                Key::TplAgentsRemoveTitle,
+                &[("name", "Codex (Work)")],
+            ),
+            Overlay::AgentsKeyringDialog => {
+                i18n::t(Key::AgentsKeyringDialogTitle).to_string()
+            },
+            // The folder name of the project.
+            Overlay::AgentsStatsDialog => String::from("otty"),
+            Overlay::AgentsNewSessionDialog => {
+                i18n::t(Key::AgentsNewSession).to_string()
+            },
+            Overlay::AgentsFoundReport => {
+                i18n::t(Key::AgentsFoundTitle).to_string()
+            },
+            Overlay::PluginsDialog => {
+                i18n::t(Key::PluginsAddPluginTitle).to_string()
+            },
+            _ => return None,
+        };
+
+        Some(title)
+    }
+
+    /// A point on the dimmed area of every dialog: left of the widest card,
+    /// in the main area.
+    const ON_THE_SCRIM: iced::Point = iced::Point::new(40.0, 400.0);
+
+    /// The middle of the close cross at the end of the row of `title`: the
+    /// title fills its row up to the cross.
+    fn cross_after(title: iced::Rectangle) -> iced::Point {
+        iced::Point::new(
+            title.x
+                + title.width
+                + otty_ui_kit::spacing::SPACE_3
+                + otty_ui_kit::size::CONTROL_MD / 2.0,
+            title.center_y(),
+        )
+    }
+
+    /// Opens `open` on a new app from `make`, in a window.
+    fn window_with(make: fn() -> App, open: Opener) -> RunningApp {
+        let mut app = make();
+        open(&mut app);
+
+        RunningApp::new(app)
+    }
+
+    /// Owner, issue 18: a press on the dimmed area around any dialog closes
+    /// it, as its Cancel or Close does, through the window and the input
+    /// checks.
+    #[test]
+    fn a_press_on_the_dimmed_area_closes_every_dialog() {
+        for (make, open, dialog) in EVERY_DIALOG {
+            let mut window = window_with(make, open);
+            let opened = top_overlay(window.app());
+
+            window.move_to(ON_THE_SCRIM);
+            window.click(iced::mouse::Button::Left);
+
+            assert_eq!(opened, Some(dialog));
+            assert_ne!(top_overlay(window.app()), Some(dialog), "{dialog:?}");
+        }
+    }
+
+    /// Issue 18: a press of the right or the middle button on the dimmed
+    /// area closes a dialog too.
+    #[test]
+    fn any_button_on_the_dimmed_area_closes_a_dialog() {
+        for button in [iced::mouse::Button::Right, iced::mouse::Button::Middle]
+        {
+            let mut window = window_with(app, open_add_plugin);
+
+            window.move_to(ON_THE_SCRIM);
+            window.click(button);
+
+            assert!(!window.app().plugins.has_dialog(), "{button:?}");
+        }
+    }
+
+    /// Issue 18: Esc closes every dialog, as its cross does.
+    #[test]
+    fn esc_closes_every_dialog() {
+        for (make, open, dialog) in EVERY_DIALOG {
+            let mut app = make();
+            open(&mut app);
+
+            let _ = crate::update::update_input(
+                &mut app,
+                AppEvent::Keyboard(crate::testing::keyboard::escape_press()),
+            );
+
+            assert_ne!(top_overlay(&app), Some(dialog), "{dialog:?}");
+        }
+    }
+
+    /// Issue 18: every dialog ends its title with a close cross that closes
+    /// it, and a press on the title, on the card, closes nothing.
+    #[test]
+    fn the_cross_closes_every_dialog_and_a_press_on_the_card_does_not() {
+        let with_titles = EVERY_DIALOG
+            .into_iter()
+            .filter_map(|open| title_of(open.2).map(|title| (open, title)));
+
+        for ((make, open, dialog), title) in with_titles {
+            let mut window = window_with(make, open);
+            let title = window
+                .find_last(&title)
+                .unwrap_or_else(|| panic!("{dialog:?} shows {title:?}"));
+
+            window.move_to(title.center());
+            window.click(iced::mouse::Button::Left);
+            let kept = top_overlay(window.app());
+            window.move_to(cross_after(title));
+            window.click(iced::mouse::Button::Left);
+
+            assert_eq!(kept, Some(dialog), "a press on the title keeps it");
+            assert_ne!(top_overlay(window.app()), Some(dialog), "{dialog:?}");
+        }
     }
 }

@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iced::Task;
+use otty_app_domain::folder_path::expand_home;
 use otty_app_domain::quick_launch::{
     CommandSpec, CustomCommand, NodePath, QuickLaunch, SshCommand,
 };
@@ -17,7 +18,7 @@ use otty_app_quick_launch::{
     LaunchRequest, QuickLaunchIntent, QuickLaunchSetupOutcome, SshSecretKind,
     SshSecretRequest,
 };
-use otty_app_shell::with_shell_integration;
+use otty_app_shell::{is_executable_file, with_shell_integration};
 use otty_libterm::pty::{self, SSHAuth, Session, SessionError};
 use otty_ui_term::settings::{
     LocalSessionOptions, SSHSessionOptions, SessionKind, Settings,
@@ -40,34 +41,34 @@ enum LaunchError {
     #[error("{}", i18n::t(Key::ErrSshPortPositive))]
     SshPortNotPositive,
     /// An SSH connection attempt failed.
-    #[error("{}", i18n::ssh_connection_failed(.0))]
+    #[error("{}", i18n::with_error(Key::TplSshConnectionFailed, .0))]
     SshConnectionFailed(String),
     /// An SSH connection needs a passphrase or password from the user.
     #[error("{}", secret_prompt_title(.0.kind()))]
     SshSecretRequired(SshSecretRequest),
     /// A configured working directory does not exist.
-    #[error("{}", i18n::working_directory_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplWorkingDirectoryNotFound, &[("path", .0)]))]
     WorkingDirectoryNotFound(String),
     /// A configured working path is not a directory.
-    #[error("{}", i18n::working_directory_not_directory(.0))]
+    #[error("{}", i18n::filled(Key::TplWorkingDirectoryNotDirectory, &[("path", .0)]))]
     WorkingDirectoryNotDirectory(String),
     /// A configured SSH identity file does not exist.
-    #[error("{}", i18n::identity_file_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplIdentityFileNotFound, &[("path", .0)]))]
     IdentityFileNotFound(String),
     /// A configured SSH identity path is not a file.
-    #[error("{}", i18n::identity_file_not_file(.0))]
+    #[error("{}", i18n::filled(Key::TplIdentityFileNotFile, &[("path", .0)]))]
     IdentityFileNotFile(String),
     /// A program name could not be resolved through `PATH`.
-    #[error("{}", i18n::program_not_found_in_path(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotFoundInPath, &[("program", .0)]))]
     ProgramNotFoundInPath(String),
     /// An explicit program path does not exist.
-    #[error("{}", i18n::program_not_found(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotFound, &[("program", .0)]))]
     ProgramNotFound(String),
     /// An explicit program path points to a directory.
-    #[error("{}", i18n::program_is_directory(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramIsDirectory, &[("program", .0)]))]
     ProgramIsDirectory(String),
     /// An explicit program path is not executable.
-    #[error("{}", i18n::program_not_executable(.0))]
+    #[error("{}", i18n::filled(Key::TplProgramNotExecutable, &[("program", .0)]))]
     ProgramNotExecutable(String),
 }
 
@@ -420,7 +421,7 @@ fn find_program_path(program: &str) -> Result<PathBuf, LaunchError> {
 
     for dir in paths {
         let candidate = dir.join(&program);
-        if is_executable_path(&candidate) {
+        if is_executable_file(&candidate) {
             return Ok(candidate);
         }
     }
@@ -440,30 +441,11 @@ fn validate_program_path(
         return Err(LaunchError::ProgramIsDirectory(label.to_string()));
     }
 
-    if !is_executable_path(path) {
+    if !is_executable_file(path) {
         return Err(LaunchError::ProgramNotExecutable(label.to_string()));
     }
 
     Ok(path.to_path_buf())
-}
-
-fn is_executable_path(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|meta| meta.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        true
-    }
 }
 
 /// Replace a leading `~`, `$HOME` or `${HOME}` with the user's home
@@ -473,22 +455,24 @@ fn expand_home_dir(path: &str) -> String {
     expand_home_prefix(path, home.as_deref())
 }
 
+/// Replace a leading `~`, `$HOME` or `${HOME}` in `path` with `home`. The
+/// two variables stand for the home folder as `~` does, so they are read
+/// as `~` first.
 fn expand_home_prefix(path: &str, home: Option<&str>) -> String {
     let Some(home) = home else {
         return path.to_string();
     };
 
-    for prefix in ["~", "$HOME", "${HOME}"] {
-        let Some(rest) = path.strip_prefix(prefix) else {
-            continue;
-        };
+    let variable_as_tilde = ["$HOME", "${HOME}"].iter().find_map(|variable| {
+        let rest = path.strip_prefix(variable)?;
+        (rest.is_empty() || rest.starts_with('/')).then(|| format!("~{rest}"))
+    });
+    let path_from_tilde = variable_as_tilde.as_deref().unwrap_or(path);
 
-        if rest.is_empty() || rest.starts_with('/') {
-            return format!("{home}{rest}");
-        }
+    match expand_home(path_from_tilde, Path::new(home)) {
+        Some(expanded) => expanded.to_string_lossy().into_owned(),
+        None => path.to_string(),
     }
-
-    path.to_string()
 }
 
 /// Return `base` with the session the launch starts. The binary builds
@@ -1065,8 +1049,10 @@ mod tests {
             TempDir::new("launch-prepare").path(),
         );
 
-        let expected =
-            i18n::program_not_found_in_path("otty-v3-test-bin-does-not-exist");
+        let expected = i18n::filled(
+            Key::TplProgramNotFoundInPath,
+            &[("program", "otty-v3-test-bin-does-not-exist")],
+        );
         assert!(matches!(
             outcome,
             QuickLaunchSetupOutcome::Failed { error, .. } if error == expected

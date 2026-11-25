@@ -234,10 +234,6 @@ pub enum SuggestionKind {
     Name,
     /// A value of the typed key: it becomes a tag and the field clears.
     Value,
-    /// The text as typed, always the first entry when there is any: plain
-    /// text stays as a name filter and the list closes; `key:text` becomes a
-    /// tag and the field clears.
-    Typed,
 }
 
 /// One entry of the suggestion list.
@@ -277,16 +273,15 @@ impl Suggestion {
 pub enum TagSearchAction {
     /// The text in the field changed.
     InputChanged(String),
-    /// ↑ was pressed.
-    MoveUp,
-    /// ↓ was pressed.
-    MoveDown,
-    /// Enter was pressed: applies the highlighted entry.
+    /// ↓ or ↑ lit the suggestion at this position, or left the list with
+    /// `None`. Where they go is the rule of the field, not of the search.
+    Highlight(Option<usize>),
+    /// Enter was pressed with no suggestion lit: applies the text as typed.
+    /// Plain text stays as a name filter and the list closes; `key:text`
+    /// becomes a tag and the field clears.
     Apply,
-    /// Tab was pressed: completes to the first real suggestion below the
-    /// typed text, and does what Enter does if there is none.
-    Complete,
-    /// The suggestion at this position was pressed.
+    /// The suggestion at this position was pressed, or Enter or Tab was
+    /// pressed while it was lit.
     Pick(usize),
     /// Esc or a press outside closed the suggestions.
     Close,
@@ -337,9 +332,9 @@ pub enum TagSearchChange {
 ///
 /// for action in [
 ///     TagSearchAction::InputChanged("sta".to_owned()),
-///     TagSearchAction::Complete,
+///     TagSearchAction::Pick(0),
 ///     TagSearchAction::InputChanged("Status:run".to_owned()),
-///     TagSearchAction::Complete,
+///     TagSearchAction::Pick(0),
 /// ] {
 ///     search.perform(action, &schema);
 /// }
@@ -354,7 +349,7 @@ pub enum TagSearchChange {
 pub struct TagSearch {
     input: String,
     tags: Vec<Tag>,
-    highlighted: usize,
+    highlighted: Option<usize>,
     is_open: bool,
 }
 
@@ -406,11 +401,8 @@ impl TagSearch {
         self.passes_tags_except(row, None)
     }
 
-    /// The suggestions for the typed text; none while they are closed.
-    ///
-    /// The first entry is the typed text itself ([`SuggestionKind::Typed`]),
-    /// except for an empty field, a bare `key:`, or text that equals another
-    /// entry, ignoring case.
+    /// The suggestions for the typed text; none while they are closed. None
+    /// is lit until a [`TagSearchAction::Highlight`] lights one.
     ///
     /// With no key yet: the keys whose shown name matches, in column order,
     /// then the matching names of the rows the tags leave (an empty field
@@ -430,12 +422,11 @@ impl TagSearch {
                 self.value_suggestions(key.name(), text, schema)
             },
         };
-        if let Some(typed) = self.typed_suggestion(&found, &schema.keys) {
-            found.insert(0, typed);
-        }
 
-        if let Some(last) = found.len().checked_sub(1) {
-            found[self.highlighted.min(last)].is_highlighted = true;
+        if let Some(lit) =
+            self.highlighted.and_then(|index| found.get_mut(index))
+        {
+            lit.is_highlighted = true;
         }
 
         found
@@ -451,14 +442,10 @@ impl TagSearch {
 
         match action {
             TagSearchAction::InputChanged(text) => self.set_input(text),
-            TagSearchAction::MoveUp => self.move_highlight(schema, Step::Up),
-            TagSearchAction::MoveDown => {
-                self.move_highlight(schema, Step::Down);
-            },
-            TagSearchAction::Apply => self.apply(schema),
-            TagSearchAction::Complete => self.complete(schema),
+            TagSearchAction::Highlight(row) => self.highlight(row),
+            TagSearchAction::Apply => self.apply_typed_text(&schema.keys),
             TagSearchAction::Pick(index) => self.pick(index, schema),
-            TagSearchAction::Close => self.is_open = false,
+            TagSearchAction::Close => self.close_suggestions(),
             TagSearchAction::Focused => self.is_open = true,
             TagSearchAction::RemoveLastTag => self.remove_last_tag(),
             TagSearchAction::RemoveTag(index) => self.remove_tag(index),
@@ -490,15 +477,14 @@ impl TagSearch {
     /// Empties the field and closes the suggestions.
     pub fn clear_input(&mut self) {
         self.input.clear();
-        self.highlighted = 0;
-        self.is_open = false;
+        self.close_suggestions();
     }
 
     /// Closes the suggestions and keeps the text and the tags. Use it when the
-    /// field goes off screen with its text kept: the list opens again from its
-    /// first row once the field gets the focus.
+    /// field goes off screen with its text kept: the list opens again, with
+    /// no row lit, once the field gets the focus.
     pub fn close_suggestions(&mut self) {
-        self.highlighted = 0;
+        self.highlighted = None;
         self.is_open = false;
     }
 
@@ -511,41 +497,6 @@ impl TagSearch {
         self.tags.clear();
 
         TagSearchChange::Filter
-    }
-
-    /// The entry for the text as typed. There is none for an empty field or a
-    /// bare `key:`, nor when `others` already has an entry with the same text
-    /// (the case ignored): that entry stands for it.
-    fn typed_suggestion(
-        &self,
-        others: &[Suggestion],
-        keys: &[TagKey],
-    ) -> Option<Suggestion> {
-        let (shown, compared) = match parse(&self.input, keys) {
-            ParsedInput::Plain(text) => (text.to_owned(), text),
-            ParsedInput::Tag { key, text } => {
-                let key = key.shown();
-
-                (format!("{key}:{text}"), text)
-            },
-        };
-        if compared.is_empty() {
-            return None;
-        }
-
-        let is_listed = others
-            .iter()
-            .any(|other| other.text.to_lowercase() == compared.to_lowercase());
-        if is_listed {
-            return None;
-        }
-
-        Some(Suggestion {
-            kind: SuggestionKind::Typed,
-            text: shown,
-            ranges: Vec::new(),
-            is_highlighted: false,
-        })
     }
 
     /// The matching keys in column order, then, once something is typed, the
@@ -628,60 +579,37 @@ impl TagSearch {
             .any(|tag| tag.key == key && tag.value.to_lowercase() == value)
     }
 
-    /// Takes the new text: the list opens with its first entry highlighted.
+    /// Takes the new text: the list opens with no row lit.
     fn set_input(&mut self, text: String) {
         self.input = text;
-        self.highlighted = 0;
+        self.highlighted = None;
         self.is_open = true;
     }
 
-    /// Moves the highlight one entry, wrapping at both ends. A closed list
-    /// only opens.
-    fn move_highlight(&mut self, schema: &TagSchema, step: Step) {
-        if !self.is_open {
-            self.is_open = true;
-            return;
-        }
-
-        let found = self.suggestions(schema);
-        let Some(current) = found.iter().position(Suggestion::is_highlighted)
-        else {
-            return;
-        };
-
-        self.highlighted = match step {
-            Step::Up if current == 0 => found.len() - 1,
-            Step::Up => current - 1,
-            Step::Down => (current + 1) % found.len(),
-        };
-    }
-
-    /// Enter or Tab: applies the highlighted suggestion; with none, adds the
-    /// typed `key:text` as a tag; otherwise does nothing.
-    fn apply(&mut self, schema: &TagSchema) {
-        let found = self.suggestions(schema);
-
-        match found.iter().find(|entry| entry.is_highlighted) {
-            Some(entry) => self.apply_suggestion(entry, &schema.keys),
-            None => self.add_typed_tag(&schema.keys),
+    /// Lights the row at `row`, or none; only while the list is open.
+    fn highlight(&mut self, row: Option<usize>) {
+        if self.is_open {
+            self.highlighted = row;
         }
     }
 
-    /// Tab: applies the highlighted suggestion if it is a real one, else the
-    /// first real one below the typed text. With none, does what Enter does.
-    fn complete(&mut self, schema: &TagSchema) {
-        let found = self.suggestions(schema);
+    /// Enter with no row lit: plain text stays as a name filter and the list
+    /// closes; `key:text` becomes a tag and the field clears. A bare `key:`
+    /// changes nothing.
+    fn apply_typed_text(&mut self, keys: &[TagKey]) {
+        match parse(&self.input, keys) {
+            ParsedInput::Plain(_) => self.close_suggestions(),
+            ParsedInput::Tag { key, text } => {
+                if text.is_empty() {
+                    return;
+                }
 
-        let highlighted = found.iter().find(|entry| {
-            entry.is_highlighted && entry.kind != SuggestionKind::Typed
-        });
-        let first_real = found
-            .iter()
-            .find(|entry| entry.kind != SuggestionKind::Typed);
+                let value = text.to_owned();
+                self.add_tag(key.name(), &value);
 
-        match highlighted.or(first_real) {
-            Some(entry) => self.apply_suggestion(entry, &schema.keys),
-            None => self.apply(schema),
+                self.input.clear();
+                self.highlighted = None;
+            },
         }
     }
 
@@ -695,7 +623,7 @@ impl TagSearch {
     /// A key goes in the field and shows its values; a name fills the field
     /// and closes the list; a value becomes a tag and clears the field.
     fn apply_suggestion(&mut self, entry: &Suggestion, keys: &[TagKey]) {
-        self.highlighted = 0;
+        self.highlighted = None;
 
         match entry.kind {
             SuggestionKind::Key => {
@@ -707,16 +635,6 @@ impl TagSearch {
                 self.input.clone_from(&entry.text);
                 self.is_open = false;
             },
-            SuggestionKind::Typed => {
-                if let ParsedInput::Tag { key, text } = parse(&self.input, keys)
-                {
-                    let value = text.to_owned();
-                    self.add_tag(key.name(), &value);
-                    self.input.clear();
-                } else {
-                    self.is_open = false;
-                }
-            },
             SuggestionKind::Value => {
                 if let ParsedInput::Tag { key, .. } = parse(&self.input, keys) {
                     self.add_tag(key.name(), &entry.text);
@@ -724,23 +642,6 @@ impl TagSearch {
                 self.input.clear();
             },
         }
-    }
-
-    /// Adds the field's `key:text` as a tag and clears the field. Anything
-    /// else in the field stays there.
-    fn add_typed_tag(&mut self, keys: &[TagKey]) {
-        let ParsedInput::Tag { key, text } = parse(&self.input, keys) else {
-            return;
-        };
-        if text.is_empty() {
-            return;
-        }
-
-        let value = text.to_owned();
-        self.add_tag(key.name(), &value);
-
-        self.input.clear();
-        self.highlighted = 0;
     }
 
     /// Adds a tag unless it exists.
@@ -787,13 +688,6 @@ enum ParsedInput<'text, 'keys> {
         key: &'keys TagKey,
         text: &'text str,
     },
-}
-
-/// A move of the highlight.
-#[derive(Clone, Copy)]
-enum Step {
-    Up,
-    Down,
 }
 
 /// One candidate kept by [`rank`]: its position in the given list and the
@@ -1006,102 +900,54 @@ mod tests {
             .collect()
     }
 
-    fn complete(search: &mut TagSearch) -> TagSearchChange {
-        search.perform(TagSearchAction::Complete, &schema())
+    fn pick(search: &mut TagSearch, index: usize) -> TagSearchChange {
+        search.perform(TagSearchAction::Pick(index), &schema())
+    }
+
+    fn highlight(
+        search: &mut TagSearch,
+        row: Option<usize>,
+    ) -> TagSearchChange {
+        search.perform(TagSearchAction::Highlight(row), &schema())
+    }
+
+    /// The place of the highlighted suggestion, if one is.
+    fn highlighted(search: &TagSearch) -> Option<usize> {
+        search
+            .suggestions(&schema())
+            .iter()
+            .position(Suggestion::is_highlighted)
     }
 
     // The typed text.
 
+    /// Issue 41: the text as typed is no row of its own. Enter with no row
+    /// highlighted applies it, so the first row is a real suggestion.
     #[test]
-    fn plain_text_is_the_first_suggestion_then_keys_then_names() {
+    fn plain_text_suggests_keys_then_names() {
         let found = kinds_and_texts(&typed("sta"));
 
         assert_eq!(
             found,
             vec![
-                (SuggestionKind::Typed, "sta".to_owned()),
                 (SuggestionKind::Key, "status".to_owned()),
                 (SuggestionKind::Name, "status-page".to_owned()),
             ]
         );
-        assert!(typed("sta").suggestions(&schema())[0].is_highlighted());
     }
 
     #[test]
-    fn a_key_and_text_is_the_first_suggestion_then_the_values() {
+    fn a_key_and_text_suggests_the_values() {
         let found = kinds_and_texts(&typed("status:ru"));
 
-        assert_eq!(
-            found,
-            vec![
-                (SuggestionKind::Typed, "status:ru".to_owned()),
-                (SuggestionKind::Value, "Running".to_owned()),
-            ]
-        );
+        assert_eq!(found, vec![(SuggestionKind::Value, "Running".to_owned())]);
     }
 
     #[test]
-    fn the_typed_row_is_trimmed_and_takes_the_schema_spelling_of_the_key() {
-        assert_eq!(texts(&typed("  zzz ")), vec!["zzz"]);
-        assert_eq!(texts(&typed(" STATUS : zzz ")), vec!["status:zzz"]);
-    }
-
-    #[test]
-    fn an_unknown_key_or_a_colon_in_a_name_is_a_typed_name_filter() {
-        for text in ["foo:bar", "redis:7"] {
-            assert_eq!(
-                kinds_and_texts(&typed(text)),
-                vec![(SuggestionKind::Typed, text.to_owned())],
-                "{text:?}"
-            );
+    fn text_that_matches_nothing_suggests_nothing() {
+        for text in ["zzz", "status:zzz", "foo:bar", "redis:7"] {
+            assert!(texts(&typed(text)).is_empty(), "{text:?}");
         }
-    }
-
-    #[test]
-    fn no_typed_row_for_an_empty_field_or_a_bare_key() {
-        for text in ["", "   ", "status:", "STATUS: "] {
-            let mut search = typed(text);
-            let found = search.suggestions(&schema());
-
-            assert!(
-                found.iter().all(|one| one.kind() != SuggestionKind::Typed),
-                "{text:?}"
-            );
-            assert!(found[0].is_highlighted(), "{text:?}");
-            let _ = search.perform(TagSearchAction::Close, &schema());
-        }
-    }
-
-    #[test]
-    fn no_second_row_when_the_text_equals_a_suggestion_ignoring_case() {
-        // (typed text, the row that stands for it)
-        let cases = [
-            ("STATUS", (SuggestionKind::Key, "status")),
-            ("Web-1", (SuggestionKind::Name, "web-1")),
-            ("status:RUNNING", (SuggestionKind::Value, "Running")),
-        ];
-
-        for (text, (kind, shown)) in cases {
-            let found = kinds_and_texts(&typed(text));
-
-            assert_eq!(found[0], (kind, shown.to_owned()), "{text:?}");
-            assert!(
-                found.iter().all(|(kind, _)| *kind != SuggestionKind::Typed),
-                "{text:?}: {found:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn down_moves_from_the_typed_row_to_the_real_ones() {
-        let mut search = typed("sta");
-
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
-
-        let found = search.suggestions(&schema());
-        assert!(!found[0].is_highlighted());
-        assert!(found[1].is_highlighted());
-        assert_eq!(found[1].kind(), SuggestionKind::Key);
     }
 
     #[test]
@@ -1119,6 +965,19 @@ mod tests {
         }
     }
 
+    /// Issue 41: Enter with no row highlighted never takes a suggestion,
+    /// even in an empty field that lists the keys.
+    #[test]
+    fn enter_in_an_empty_field_takes_no_key() {
+        let mut search = TagSearch::default();
+        let _ = search.perform(TagSearchAction::Focused, &schema());
+
+        let _ = apply(&mut search);
+
+        assert_eq!(search.input(), "");
+        assert!(!search.is_open());
+    }
+
     #[test]
     fn enter_on_a_key_and_text_adds_a_substring_tag_and_clears_the_field() {
         let mut search = typed("status:ru");
@@ -1133,47 +992,6 @@ mod tests {
     }
 
     #[test]
-    fn tab_completes_to_the_first_real_suggestion_below_the_typed_row() {
-        let mut key = typed("sta");
-        let _ = complete(&mut key);
-        assert_eq!(key.input(), "status:");
-        assert!(key.tags().is_empty());
-
-        let mut value = typed("status:ru");
-        let _ = complete(&mut value);
-        assert_eq!(labels(&value), vec!["status:Running"]);
-        assert_eq!(value.input(), "");
-
-        let mut name = typed("web");
-        let _ = complete(&mut name);
-        assert_eq!(name.input(), "web-1");
-        assert!(!name.is_open());
-    }
-
-    #[test]
-    fn tab_applies_a_real_row_the_user_moved_to() {
-        let mut search = typed("status:");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
-
-        let _ = complete(&mut search);
-
-        assert_eq!(labels(&search), vec!["status:Exited (3)"]);
-    }
-
-    #[test]
-    fn tab_does_what_enter_does_when_no_real_suggestion_is_below() {
-        let mut plain = typed("zzz");
-        let _ = complete(&mut plain);
-        assert_eq!(plain.input(), "zzz");
-        assert!(!plain.is_open());
-
-        let mut tag = typed("status:zzz");
-        let _ = complete(&mut tag);
-        assert_eq!(labels(&tag), vec!["status:zzz"]);
-        assert_eq!(tag.input(), "");
-    }
-
-    #[test]
     fn closing_the_suggestions_keeps_the_text_and_the_tags() {
         let mut search = typed("status:running");
         let _ = apply(&mut search);
@@ -1181,18 +999,19 @@ mod tests {
             TagSearchAction::InputChanged(String::from("web")),
             &schema(),
         );
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+        let _ = highlight(&mut search, Some(0));
         assert!(search.is_open());
 
         search.close_suggestions();
 
         assert!(!search.is_open());
         assert_eq!(search.input(), "web");
-        assert_eq!(labels(&search), vec!["status:Running"]);
+        assert_eq!(labels(&search), vec!["status:running"]);
 
         let _ = search.perform(TagSearchAction::Focused, &schema());
 
-        assert!(search.suggestions(&schema())[0].is_highlighted());
+        assert!(!texts(&search).is_empty());
+        assert_eq!(highlighted(&search), None);
     }
 
     #[test]
@@ -1236,7 +1055,6 @@ mod tests {
         assert_eq!(
             listed,
             vec![
-                (SuggestionKind::Typed, "s"),
                 (SuggestionKind::Key, "status"),
                 (SuggestionKind::Key, "ports"),
                 (SuggestionKind::Key, "compose"),
@@ -1265,7 +1083,7 @@ mod tests {
             .map(|suggestion| suggestion.text().to_owned())
             .collect();
 
-        assert_eq!(found, vec!["WEB", "web-1", "my-web", "your-web"]);
+        assert_eq!(found, vec!["web-1", "my-web", "your-web"]);
     }
 
     #[test]
@@ -1273,7 +1091,7 @@ mod tests {
         let mut search = typed("-1");
         let _ = search.set_tag("status", "exited");
 
-        assert_eq!(texts(&search), vec!["-1", "db-1"]);
+        assert_eq!(texts(&search), vec!["db-1"]);
     }
 
     #[test]
@@ -1300,10 +1118,10 @@ mod tests {
     fn after_a_key_the_values_of_that_key_are_suggested_and_filtered() {
         let found = typed("status:ex").suggestions(&schema());
 
-        assert_eq!(found.len(), 2, "the typed row, then the value");
-        assert_eq!(found[1].kind(), SuggestionKind::Value);
-        assert_eq!(found[1].text(), "Exited (3)");
-        assert_eq!(found[1].ranges().first(), Some(&(0..2)));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind(), SuggestionKind::Value);
+        assert_eq!(found[0].text(), "Exited (3)");
+        assert_eq!(found[0].ranges().first(), Some(&(0..2)));
     }
 
     #[test]
@@ -1330,15 +1148,18 @@ mod tests {
         assert_eq!(texts(&search), vec!["Exited (3)"]);
     }
 
+    /// Issue 41: no row is highlighted until ↓, as in the folder fields.
     #[test]
-    fn the_first_suggestion_is_highlighted() {
-        let found = typed("s").suggestions(&schema());
+    fn at_first_no_suggestion_is_highlighted() {
+        for text in ["", "s", "status:"] {
+            let found = typed(text).suggestions(&schema());
 
-        assert!(found[0].is_highlighted());
-        assert_eq!(
-            found.iter().filter(|found| found.is_highlighted()).count(),
-            1
-        );
+            assert!(!found.is_empty(), "{text:?}");
+            assert!(
+                found.iter().all(|found| !found.is_highlighted()),
+                "{text:?}"
+            );
+        }
     }
 
     #[test]
@@ -1350,8 +1171,8 @@ mod tests {
 
         let found = search.suggestions(&schema);
 
-        assert_eq!(found[1].text(), "Сервер");
-        assert_eq!(found[1].ranges().first(), Some(&(6..12)));
+        assert_eq!(found[0].text(), "Сервер");
+        assert_eq!(found[0].ranges().first(), Some(&(6..12)));
     }
 
     #[test]
@@ -1430,75 +1251,78 @@ mod tests {
         assert_eq!(found[0].ranges, vec![6..12]);
     }
 
-    // Moving.
+    // Highlighting. Where ↓ and ↑ go is the kit field's rule; the
+    // search only keeps the row it is given.
 
     #[test]
-    fn up_and_down_move_the_highlight_and_wrap_at_both_ends() {
-        // (moves, expected position); `d` is down, `u` is up. "s" has five
-        // suggestions, the typed text first.
-        let cases = [("d", 1), ("dd", 2), ("ddddd", 0), ("u", 4), ("uud", 4)];
+    fn a_highlight_lights_that_row_only() {
+        let mut search = typed("s");
 
-        for (moves, expected) in cases {
-            let mut search = typed("s");
-            for step in moves.chars() {
-                let action = match step {
-                    'd' => TagSearchAction::MoveDown,
-                    _ => TagSearchAction::MoveUp,
-                };
-                assert_eq!(
-                    search.perform(action, &schema()),
-                    TagSearchChange::Suggestions
-                );
-            }
+        let change = highlight(&mut search, Some(2));
 
-            let found = search.suggestions(&schema());
-            let position = found.iter().position(Suggestion::is_highlighted);
-            assert_eq!(position, Some(expected), "moves {moves:?}");
-        }
+        assert_eq!(change, TagSearchChange::Suggestions);
+        assert_eq!(highlighted(&search), Some(2));
+        let lit = search.suggestions(&schema());
+        assert_eq!(
+            lit.iter().filter(|found| found.is_highlighted()).count(),
+            1
+        );
     }
 
     #[test]
-    fn typing_brings_the_highlight_back_to_the_first_suggestion() {
+    fn a_highlight_of_none_leaves_the_list() {
         let mut search = typed("s");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+        let _ = highlight(&mut search, Some(0));
+
+        let _ = highlight(&mut search, None);
+
+        assert_eq!(highlighted(&search), None);
+    }
+
+    #[test]
+    fn typing_clears_the_highlight() {
+        let mut search = typed("s");
+        let _ = highlight(&mut search, Some(1));
 
         let _ = search
             .perform(TagSearchAction::InputChanged("st".to_owned()), &schema());
 
-        assert!(search.suggestions(&schema())[0].is_highlighted());
+        assert_eq!(highlighted(&search), None);
     }
 
     #[test]
-    fn moving_with_no_suggestions_changes_nothing() {
-        let mut search = typed("zzz");
+    fn closing_clears_the_highlight() {
+        let mut search = typed("s");
+        let _ = highlight(&mut search, Some(1));
 
-        let change = search.perform(TagSearchAction::MoveDown, &schema());
+        let _ = search.perform(TagSearchAction::Close, &schema());
+        let _ = search.perform(TagSearchAction::Focused, &schema());
 
-        assert_eq!(change, TagSearchChange::Nothing);
+        assert_eq!(highlighted(&search), None);
     }
 
     #[test]
-    fn moving_in_a_closed_list_opens_it_without_moving_the_highlight() {
+    fn a_highlight_with_a_closed_list_changes_nothing() {
         let mut search = typed("s");
         let _ = search.perform(TagSearchAction::Close, &schema());
 
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+        let change = highlight(&mut search, Some(0));
 
-        assert!(search.is_open());
-        assert!(search.suggestions(&schema())[0].is_highlighted());
+        assert_eq!(change, TagSearchChange::Nothing);
+        assert!(!search.is_open());
     }
 
     #[test]
-    fn a_list_that_shrank_keeps_a_highlighted_suggestion() {
+    fn a_list_that_shrank_past_the_highlight_lights_nothing() {
         let mut search = typed("status:");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+        let _ = highlight(&mut search, Some(1));
         let smaller =
             TagSchema::new(keys(), vec![row("web-1", "Running", &[])]);
 
         let found = search.suggestions(&smaller);
 
         assert_eq!(found.len(), 1);
-        assert!(found[0].is_highlighted());
+        assert!(!found[0].is_highlighted());
     }
 
     // Closing and focus.
@@ -1542,11 +1366,10 @@ mod tests {
     // Applying.
 
     #[test]
-    fn applying_a_key_puts_it_in_the_field_and_shows_its_values() {
+    fn picking_a_key_puts_it_in_the_field_and_shows_its_values() {
         let mut search = typed("sta");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
 
-        let change = apply(&mut search);
+        let change = pick(&mut search, 0);
 
         assert_eq!(search.input(), "status:");
         assert!(search.is_open());
@@ -1556,11 +1379,10 @@ mod tests {
     }
 
     #[test]
-    fn applying_a_value_adds_the_tag_and_clears_the_field() {
+    fn picking_a_value_adds_the_tag_and_clears_the_field() {
         let mut search = typed("status:run");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
 
-        let change = apply(&mut search);
+        let change = pick(&mut search, 0);
 
         assert_eq!(labels(&search), vec!["status:Running"]);
         assert_eq!(search.input(), "");
@@ -1581,11 +1403,10 @@ mod tests {
     }
 
     #[test]
-    fn applying_a_name_fills_the_field_closes_the_list_and_filters() {
+    fn picking_a_name_fills_the_field_closes_the_list_and_filters() {
         let mut search = typed("web");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
 
-        let change = apply(&mut search);
+        let change = pick(&mut search, 0);
 
         assert_eq!(search.input(), "web-1");
         assert_eq!(search.name_text(&keys()), "web-1");
@@ -1595,21 +1416,21 @@ mod tests {
     }
 
     #[test]
-    fn applying_uses_the_highlighted_suggestion() {
-        let mut search = typed("status:");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
+    fn a_pick_clears_the_highlight() {
+        let mut search = typed("sta");
+        let _ = highlight(&mut search, Some(0));
 
-        let _ = apply(&mut search);
+        let _ = pick(&mut search, 0);
 
-        assert_eq!(labels(&search), vec!["status:Exited (3)"]);
+        assert_eq!(search.input(), "status:");
+        assert_eq!(highlighted(&search), None);
     }
 
     #[test]
     fn a_value_with_a_colon_is_a_whole_value() {
         let mut search = typed("ports:8080:");
-        let _ = search.perform(TagSearchAction::MoveDown, &schema());
 
-        let _ = apply(&mut search);
+        let _ = pick(&mut search, 0);
 
         assert_eq!(labels(&search), vec!["ports:8080:80/tcp"]);
     }
@@ -1646,7 +1467,7 @@ mod tests {
 
     #[test]
     fn with_no_suggestion_enter_does_nothing_otherwise() {
-        // Plain text and `key:text` always have the typed row now.
+        // A bare key adds no tag; plain text is a name filter already.
         let mut search = typed("compose:");
         let before = search.clone();
 
@@ -2064,7 +1885,7 @@ mod tests {
         );
 
         let mut search = typed_in(&schema, "used");
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
         assert_eq!(search.input(), "Used by:");
     }
 
@@ -2076,11 +1897,7 @@ mod tests {
             let mut search = typed_in(&schema, text);
 
             assert_eq!(search.name_text(schema.keys()), text, "{text:?}");
-            assert_eq!(
-                shown_in(&search, &schema),
-                vec![(SuggestionKind::Typed, text.to_owned())],
-                "{text:?}"
-            );
+            assert!(shown_in(&search, &schema).is_empty(), "{text:?}");
 
             let _ = search.perform(TagSearchAction::Apply, &schema);
 
@@ -2133,9 +1950,10 @@ mod tests {
             let search = typed_in(&schema, text);
 
             assert_eq!(search.name_text(schema.keys()), text, "{text:?}");
-            assert_eq!(
-                shown_in(&search, &schema)[0],
-                (SuggestionKind::Typed, text.to_owned()),
+            assert!(
+                shown_in(&search, &schema)
+                    .iter()
+                    .all(|(kind, _)| *kind != SuggestionKind::Value),
                 "{text:?}"
             );
         }
@@ -2180,30 +1998,14 @@ mod tests {
         for text in ["Сост", "сост", "СОСТ"] {
             assert_eq!(
                 shown_in(&typed_in(&schema, text), &schema),
-                vec![
-                    (SuggestionKind::Typed, text.to_owned()),
-                    (SuggestionKind::Key, "Состояние".to_owned()),
-                ],
+                vec![(SuggestionKind::Key, "Состояние".to_owned())],
                 "{text:?}"
             );
         }
     }
 
     #[test]
-    fn the_typed_row_takes_the_shown_spelling_of_the_key() {
-        let schema = russian_schema();
-
-        for text in [" СОСТОЯНИЕ : zzz ", "состояние：zzz"] {
-            assert_eq!(
-                shown_in(&typed_in(&schema, text), &schema),
-                vec![(SuggestionKind::Typed, "Состояние:zzz".to_owned())],
-                "{text:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_shown_name_typed_whole_in_another_case_has_no_second_row() {
+    fn a_shown_name_typed_whole_in_another_case_suggests_it() {
         let schema = russian_schema();
 
         assert_eq!(
@@ -2217,7 +2019,7 @@ mod tests {
         let schema = russian_schema();
         let mut search = typed_in(&schema, "сост");
 
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
 
         assert_eq!(search.input(), "Состояние:");
         assert_eq!(search.name_text(schema.keys()), "");
@@ -2235,12 +2037,12 @@ mod tests {
         let schema = russian_schema();
         let mut search = typed_in(&schema, "Сост");
 
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
         let _ = search.perform(
             TagSearchAction::InputChanged("Состояние:раб".to_owned()),
             &schema,
         );
-        let _ = search.perform(TagSearchAction::Complete, &schema);
+        let _ = search.perform(TagSearchAction::Pick(0), &schema);
 
         let tag = &search.tags()[0];
         assert_eq!(tag.key(), "status");

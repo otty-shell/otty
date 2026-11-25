@@ -1,0 +1,244 @@
+//! The count of the tokens one profile spent. It reads the agent's session
+//! files, which can be many, so it runs on a thread of its own.
+
+use std::sync::Arc;
+use std::time::SystemTime;
+
+use iced::Task;
+use jiff::tz::TimeZone;
+use otty_agents::{Agent, ApiPrices, LocalNow, Profile};
+use otty_app_agents::{AgentList, AgentsIntent, LoadedSpend, SpendCount};
+
+use crate::background::{on_own_thread, read_stopped};
+use crate::time_zone::user_time_zone;
+
+/// Count the tokens `profile` spent in the background, with the counter of
+/// the agent of `agents` it belongs to, by the days of the user's time
+/// zone, its part pricing the answers at `prices`. The answer comes back
+/// as [`AgentsIntent::SpendLoaded`].
+///
+/// # Example
+///
+/// ```
+/// use std::path::PathBuf;
+/// use std::sync::Arc;
+///
+/// use otty_agents::{AgentId, ApiPrices, Profile};
+/// use otty_app_agents::AgentList;
+///
+/// let profile = Profile::default_for(
+///     AgentId::new("coder"),
+///     "Coder",
+///     PathBuf::from("/home/user/.coder"),
+/// );
+/// let agents: AgentList = Arc::from(Vec::new());
+/// let prices = Arc::new(ApiPrices::default());
+/// let count = otty_app_agents_io::load_spend(&agents, profile, &prices);
+///
+/// assert_eq!(count.units(), 1);
+/// ```
+pub fn load_spend(
+    agents: &AgentList,
+    profile: Profile,
+    prices: &Arc<ApiPrices>,
+) -> Task<AgentsIntent> {
+    let counts = has_counter(agents, &profile);
+    let task = format!("counting the tokens of {}", profile.name());
+    let agents = Arc::clone(agents);
+    let prices = Arc::clone(prices);
+    let fallback = profile.clone();
+
+    on_own_thread(
+        task,
+        move || {
+            let time_zone = user_time_zone().unwrap_or(TimeZone::UTC);
+            let now = LocalNow::new(SystemTime::now(), time_zone);
+            count_spend(&agents, profile, &now, &prices)
+        },
+        move || stopped_count(fallback, counts),
+        AgentsIntent::SpendLoaded,
+    )
+}
+
+/// The tokens `profile` spent up to `now`, priced at `prices`, with the
+/// time the count ended. An agent OTTY does not know, or one with no
+/// counter, counts nothing.
+fn count_spend(
+    agents: &[Box<dyn Agent>],
+    profile: Profile,
+    now: &LocalNow,
+    prices: &Arc<ApiPrices>,
+) -> LoadedSpend {
+    let counter = otty_agents::agent_of(agents, profile.agent())
+        .and_then(|agent| agent.spend_counter());
+
+    let spend =
+        match counter.map(|counter| counter.spend(&profile, now, prices)) {
+            Some(Ok(spend)) => SpendCount::Counted(spend),
+            Some(Err(error)) => SpendCount::Failed(error),
+            None => SpendCount::NoCounter,
+        };
+
+    LoadedSpend {
+        profile,
+        spend,
+        counted_at: SystemTime::now(),
+    }
+}
+
+/// Whether the agent of `profile` counts the tokens. An agent OTTY does
+/// not know does not.
+fn has_counter(agents: &[Box<dyn Agent>], profile: &Profile) -> bool {
+    otty_agents::agent_of(agents, profile.agent())
+        .and_then(|agent| agent.spend_counter())
+        .is_some()
+}
+
+/// What a count of the tokens of `profile` that stopped before it ended
+/// gives: when its agent counts tokens (`has_counter`), it failed because
+/// it stopped, so the last good count stays, greyed, and the user sees
+/// why; otherwise it counts nothing.
+fn stopped_count(profile: Profile, has_counter: bool) -> LoadedSpend {
+    let spend = if has_counter {
+        SpendCount::Failed(read_stopped())
+    } else {
+        SpendCount::NoCounter
+    };
+
+    LoadedSpend {
+        profile,
+        spend,
+        counted_at: SystemTime::now(),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use otty_agents::{AgentId, TokenCount};
+    use otty_app_testing::temp_dir::TempDir;
+
+    use super::*;
+    use crate::testing::{EXAMPLE_AGENT, agents_with_example, no_prices, run};
+
+    /// 2026-11-16T10:00:00Z.
+    const NOW: u64 = 1_794_823_200;
+
+    fn now() -> LocalNow {
+        LocalNow::new(
+            SystemTime::UNIX_EPOCH + Duration::from_secs(NOW),
+            TimeZone::UTC,
+        )
+    }
+
+    /// A profile of the example agent in a made-up folder with one
+    /// session file of one answer written today, 2026-11-16T09:00:00Z.
+    fn example_with_one_answer(home: &TempDir) -> Profile {
+        let config_dir = home.path().join(".example-agent-test");
+        let session_file = config_dir.join("sessions/s1.jsonl");
+        std::fs::create_dir_all(
+            session_file.parent().expect("the sessions folder"),
+        )
+        .expect("the sessions folder");
+        let lines = [
+            r#"{"type":"meta","version":"1.4.2","cwd":"/home/user/otty","title":"Fix the tabs"}"#,
+            r#"{"type":"answer","id":"a1","at_ms":1794819600000,"model":"example-large","tokens":{"input":10,"cached":100,"output":5}}"#,
+        ];
+        std::fs::write(&session_file, lines.join("\n"))
+            .expect("the session file");
+        std::fs::File::options()
+            .write(true)
+            .open(&session_file)
+            .and_then(|file| file.set_modified(now().now()))
+            .expect("the file time");
+
+        Profile::added(
+            AgentId::new(EXAMPLE_AGENT),
+            "Example (Test)",
+            config_dir,
+        )
+    }
+
+    #[test]
+    fn the_tokens_are_counted_by_the_agent_of_the_profile() {
+        let home = TempDir::new("agents-spend");
+        let profile = example_with_one_answer(&home);
+        let before = SystemTime::now();
+
+        let counted = count_spend(
+            &agents_with_example(home.path()),
+            profile.clone(),
+            &now(),
+            &no_prices(),
+        );
+
+        assert_eq!(counted.profile, profile);
+        let SpendCount::Counted(spend) = counted.spend else {
+            panic!("the example plugin counts the tokens of the files");
+        };
+        assert_eq!(spend.today(), TokenCount::new(10, 100, 5));
+        assert!(counted.counted_at >= before);
+    }
+
+    #[test]
+    fn a_profile_of_an_unknown_agent_counts_nothing() {
+        let profile = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+
+        let counted = count_spend(&[], profile, &now(), &no_prices());
+
+        assert_eq!(counted.spend, SpendCount::NoCounter);
+    }
+
+    #[test]
+    fn the_count_runs_in_the_background_and_answers_with_an_intent() {
+        let home = TempDir::new("agents-spend-task");
+        let profile = example_with_one_answer(&home);
+        let agents = agents_with_example(home.path());
+
+        let answers = run(load_spend(&agents, profile.clone(), &no_prices()));
+
+        assert!(matches!(
+            answers.as_slice(),
+            [AgentsIntent::SpendLoaded(counted)]
+                if counted.profile == profile
+                    && matches!(counted.spend, SpendCount::Counted(_))
+        ));
+    }
+
+    /// A count that stopped before it ended fails because it stopped, so
+    /// the last good count stays, greyed; it never says the agent can not
+    /// count tokens.
+    #[test]
+    fn a_count_that_stopped_fails_because_it_stopped() {
+        let home = TempDir::new("agents-spend-stopped");
+        let profile = example_with_one_answer(&home);
+
+        let counts = has_counter(&agents_with_example(home.path()), &profile);
+
+        let counted = stopped_count(profile.clone(), counts);
+
+        assert_eq!(counted.profile, profile);
+        assert_eq!(counted.spend, SpendCount::Failed(read_stopped()));
+    }
+
+    #[test]
+    fn a_stopped_count_of_an_unknown_agent_counts_nothing() {
+        let profile = Profile::added(
+            AgentId::new("stranger"),
+            "Stranger",
+            PathBuf::from("/home/user/.stranger"),
+        );
+
+        let counts = has_counter(&[], &profile);
+
+        let counted = stopped_count(profile, counts);
+
+        assert_eq!(counted.spend, SpendCount::NoCounter);
+    }
+}

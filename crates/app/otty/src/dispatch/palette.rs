@@ -116,7 +116,8 @@ mod tests {
     use crate::frame::sidebar::SidebarIntent;
     use crate::testing::task_outputs::{focuses_widget, runs_widget_operation};
     use crate::testing::window::{
-        app, app_with_launches, open_palette, open_shell_tab,
+        app, app_with_launches, app_with_scripted_terminals, open_palette,
+        open_shell_tab,
     };
 
     /// Type `query` in the open palette and pick the entry on top.
@@ -128,7 +129,7 @@ mod tests {
             ))),
         );
 
-        deliver(app, PaletteIntent::Action(PaletteAction::RunActive))
+        deliver(app, PaletteIntent::Action(PaletteAction::RunFirst))
     }
 
     /// The ctx the palette gets in `app` now.
@@ -259,16 +260,20 @@ mod tests {
 
         let in_containers = ctx_of(&app);
 
-        assert_eq!(terminal_modes, [Mode::Terminal, Mode::Containers]);
+        assert_eq!(
+            terminal_modes,
+            [Mode::Terminal, Mode::Containers, Mode::Agents]
+        );
         assert_eq!(
             terminal_commands,
             CommandCtx {
                 is_terminal_mode: true,
                 has_active_tab: false,
                 has_focused_pane: false,
+                has_local_folder: false,
             }
         );
-        assert_eq!(in_containers.pinned_modes, [Mode::Terminal]);
+        assert_eq!(in_containers.pinned_modes, [Mode::Terminal, Mode::Agents]);
         assert!(!in_containers.commands.is_terminal_mode);
     }
 
@@ -403,5 +408,84 @@ mod tests {
 
         assert!(app.palette.is_open());
         assert_eq!(app.terminal.pane_count(), Some(1));
+    }
+
+    /// Type `query` in the open palette and press Enter, through the input
+    /// checks of the window, as the palette input sends them.
+    fn run_in_palette(app: &mut App, query: &str) {
+        open_palette(app);
+
+        for action in [
+            PaletteAction::QueryChanged(String::from(query)),
+            PaletteAction::RunFirst,
+        ] {
+            let _ = crate::update::update_input(
+                app,
+                AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
+                    action,
+                ))),
+            );
+        }
+    }
+
+    /// Owner, issue 36: in a terminal tab on this computer the palette
+    /// offers New agent session in this folder, which opens Agents mode with
+    /// the New session dialog on the folder of the tab. The terminals are
+    /// mocks: no shell starts.
+    #[test]
+    fn a_new_agent_session_from_the_palette_opens_the_dialog_on_the_tab_folder()
+    {
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let _ = deliver(
+            &mut app,
+            TabsIntent::OpenTerminalTab {
+                folder: Some(std::path::PathBuf::from("/work/otty")),
+            },
+        );
+        let offered = ctx_of(&app).commands.has_local_folder;
+
+        run_in_palette(&mut app, i18n::t(Key::PaletteNewAgentSessionHere));
+
+        assert!(offered);
+        assert!(!app.palette.is_open());
+        assert_eq!(app.modes.active(), Mode::Agents);
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
+        let mut ui = iced_test::simulator(crate::view::view(&app));
+        ui.find("/work/otty")
+            .expect("the dialog is on the tab's folder");
+    }
+
+    /// A tab over SSH runs on another machine: the palette does not offer a
+    /// new agent session in its folder.
+    #[test]
+    fn the_palette_offers_no_agent_session_in_an_ssh_tab() {
+        use otty_ui_term::settings::{SSHSessionOptions, SessionKind};
+
+        let (mut app, _terminals) = app_with_scripted_terminals();
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(
+            SessionKind::from_ssh_options(
+                SSHSessionOptions::default().with_host("build-box"),
+            ),
+        );
+        let _ = deliver(
+            &mut app,
+            TabsIntent::OpenCommandTab {
+                title: String::from("build-box"),
+                settings: Box::new(settings),
+                exit_behavior: ExitBehavior::Close,
+                machine: TabMachine::Ssh(String::from("build-box")),
+            },
+        );
+        let offered = ctx_of(&app).commands.has_local_folder;
+
+        run_in_palette(&mut app, i18n::t(Key::PaletteNewAgentSessionHere));
+
+        assert!(!offered);
+        assert_eq!(app.modes.active(), Mode::Terminal);
+        assert_eq!(app.agents.top_overlay(), None);
     }
 }

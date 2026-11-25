@@ -123,6 +123,12 @@ impl RunningApp {
         self.input(&keys);
     }
 
+    /// Press and release Tab with `modifiers` held, then the frames after
+    /// it.
+    pub(crate) fn tap_tab(&mut self, modifiers: iced::keyboard::Modifiers) {
+        self.input(&crate::testing::keyboard::tab_tap(modifiers));
+    }
+
     /// Return where the window shows the text `label`, if it does.
     pub(crate) fn find(&mut self, label: &str) -> Option<Rectangle> {
         let mut find = Selector::find(label);
@@ -130,6 +136,21 @@ impl RunningApp {
 
         match find.finish() {
             operation::Outcome::Some(Some(text)) => Some(text.bounds()),
+            _ => None,
+        }
+    }
+
+    /// Return where the window shows the text `label` last, if it does: on
+    /// the top layer when a dialog over the window shows the same text as
+    /// the window under it.
+    pub(crate) fn find_last(&mut self, label: &str) -> Option<Rectangle> {
+        let mut find = Selector::find_all(label);
+        self.operate_once(&mut operation::black_box(&mut find));
+
+        match find.finish() {
+            operation::Outcome::Some(found) => {
+                found.last().map(|text| text.bounds())
+            },
             _ => None,
         }
     }

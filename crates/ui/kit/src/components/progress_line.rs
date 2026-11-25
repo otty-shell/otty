@@ -3,12 +3,13 @@
 //!
 //! [`ProgressBar`]: super::progress_bar::ProgressBar
 
-use iced::widget::{row, text};
-use iced::{Alignment, Element, Pixels};
+use iced::widget::row;
+use iced::{Alignment, Element};
 
 use super::progress_bar::ProgressBar;
+use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{fonts, spacing, typography};
+use crate::{fonts, spacing};
 
 /// What a [`progress_line`] shows. Plain data, so a view model can hold and
 /// compare it.
@@ -71,14 +72,7 @@ pub fn progress_line<'a, Message: 'a>(
     line: ProgressLine,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let hint = typography::SMALL;
-    let muted = |content: String| {
-        text(content)
-            .size(hint.size())
-            .line_height(Pixels(hint.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted())
-    };
+    let muted = |content: String| small_text(content, palette.text_muted());
 
     let mut parts =
         row![muted(line.label), ProgressBar::new(line.fraction, palette),]

@@ -1,13 +1,9 @@
 # otty-ui-kit
 
-`otty-ui-kit` holds the OTTY design system for `iced` widgets: design tokens
-today, shared components as they are added.
+`otty-ui-kit` is the OTTY design system for `iced`: the design tokens (colors,
+sizes, gaps, corner radii, text styles and fonts) and the ready-made controls
+built from them, such as buttons, fields, menus, tables and dialogs. The app
+builds its screens from these pieces, so every mode looks and behaves the same.
 
-Modules:
-
-- `spacing` — paddings and gaps (`SPACE_1` … `SPACE_7`)
-- `radius` — corner radii (`RADIUS_XS` … `RADIUS_LG`)
-- `size` — fixed heights and widths (`ROW`, `TAB`, `TITLEBAR`, `RAIL`, …)
-- `typography` — text styles (`TITLE`, `BODY`, `TERM`, `KBD`, …)
-
-Values come from the OTTY design system's `tokens.json`.
+The kit knows nothing of the app: it does not depend on the app crates and
+has no translations, so every label comes from the caller.

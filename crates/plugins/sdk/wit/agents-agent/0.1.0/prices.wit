@@ -1,0 +1,67 @@
+package otty:agents-agent@0.1.0;
+
+/// OTTY's price list of models at API prices, which it keeps and renews
+/// (the LiteLLM price table today). An agent part asks it for the price
+/// of a model when the agent did not write what an answer cost, prices
+/// the tokens itself and marks that money "at API prices" (spec
+/// 2026-11-23-accounts-apart-from-profiles, Decision 3). A provider part
+/// asks it while it reads the numbers of an account, to price what the
+/// agent's own sessions spent through it (issue 22). Both contracts share
+/// the money it prices, `priced-cost`.
+interface prices {
+  /// Who served an answer: the provider's name as the agent wrote it, or
+  /// the host of its server when the agent names no provider. A name
+  /// passes even when no installed plugin serves it, such as `google` or
+  /// a local model: the host joins it to the provider part with that id
+  /// when one is installed, and prices by it.
+  variant provider-ref {
+    id(string),
+    host(string),
+  }
+
+  /// Prices per million tokens, in millionths of a US dollar: of input
+  /// not read from the cache, of input read from the cache, of input
+  /// written to the cache, and of output.
+  record token-prices {
+    input: u64,
+    cached: u64,
+    cache-written: u64,
+    output: u64,
+  }
+
+  /// The prices of a request whose prompt, its input with the part read
+  /// from the cache, is over `over-tokens` tokens.
+  record long-prompt-price {
+    over-tokens: u64,
+    prices: token-prices,
+  }
+
+  /// The API price of one model: one set for every prompt, and a second
+  /// set for a long prompt when the model costs more for one.
+  record model-price {
+    standard: token-prices,
+    long-prompt: option<long-prompt-price>,
+  }
+
+  /// Money at API prices, in millionths of a US dollar: what each kind
+  /// of token cost, and their total, which OTTY shows on hover as what
+  /// the money is made of.
+  record priced-cost {
+    /// The four kinds added up.
+    total: u64,
+    /// The input not written to the cache, at the input price.
+    input: u64,
+    /// The input written to the cache, at the cache write price.
+    cache-written: u64,
+    /// The tokens read from the cache, at the cached price.
+    cached: u64,
+    /// The output, at the output price.
+    output: u64,
+  }
+
+  /// The API price of `model`, as the provider names it, served by
+  /// `provider`: that provider's price of the model, else its maker's.
+  /// None when the list has no price for it, or OTTY has no list yet,
+  /// and outside a read of answers or of numbers.
+  price-of: func(model: string, provider: option<provider-ref>) -> option<model-price>;
+}

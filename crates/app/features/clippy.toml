@@ -28,6 +28,11 @@ disallowed-methods = [
     { path = "std::env::var", reason = "a feature reads no environment; the binary does it and passes the value" },
     { path = "std::env::var_os", reason = "a feature reads no environment; the binary does it and passes the value" },
     { path = "std::env::vars", reason = "a feature reads no environment; the binary does it and passes the value" },
+    # The user's time zone comes from the `TZ` variable and the system's
+    # files; the io crate or the binary reads it and passes the `TimeZone`.
+    { path = "jiff::tz::TimeZone::system", reason = "a feature reads no time zone; its io crate or the binary does it and passes the value" },
+    { path = "jiff::tz::TimeZone::try_system", reason = "a feature reads no time zone; its io crate or the binary does it and passes the value" },
+    { path = "jiff::Zoned::now", reason = "a feature reads no time zone; its io crate or the binary does it and passes the value" },
 
     # Files are read and written in the io crate or the binary.
     { path = "std::fs::read", reason = "a feature touches no files; its io crate or the binary does it" },
@@ -46,4 +51,32 @@ disallowed-methods = [
     { path = "std::path::Path::exists", reason = "a feature touches no files; its io crate or the binary does it" },
     { path = "std::path::Path::is_dir", reason = "a feature touches no files; its io crate or the binary does it" },
     { path = "std::path::Path::is_file", reason = "a feature touches no files; its io crate or the binary does it" },
+
+    # An agent reads its files, servers and programs in the io crate. The
+    # core learns what an agent can do from its registry entry and from
+    # `Agent::has_stats` and `Agent::writes_cost`.
+    { path = "otty_agents::Agent::detect", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::session_sources", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::spend_counter", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::Agent::stats_source", reason = "a feature reads no agent; its io crate does it; ask Agent::has_stats" },
+    { path = "otty_agents::profile_status", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_bill", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_session_stats", reason = "a feature reads no agent; its io crate does it" },
+    { path = "otty_agents::read_project_stats", reason = "a feature reads no agent; its io crate does it" },
+
+    # Plugins are found, installed, updated, removed and loaded in the io
+    # crates. Plugins mode shows the plans, updates and reports
+    # otty-app-plugins-io gives it.
+    { path = "otty_plugin_releases::Installer::open", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::find_release", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::find_local", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::install", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::set_part_on", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::remove", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::check_update", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::check_updates", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::apply_update", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_releases::Installer::reload_local", reason = "a feature changes no plugin; otty-app-plugins-io does it" },
+    { path = "otty_plugin_host::PluginEngine::new", reason = "a feature runs no plugin; otty-app-agents-io loads them" },
+    { path = "otty_plugin_host::PluginEngine::load", reason = "a feature runs no plugin; otty-app-agents-io loads them" },
 ]

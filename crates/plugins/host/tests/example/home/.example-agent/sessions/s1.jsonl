@@ -1,0 +1,5 @@
+{"type":"meta","version":"1.4.1","cwd":"/home/dev/shop","title":"Fix the cart total"}
+{"type":"user","text":"The cart total is off by one cent."}
+{"type":"answer","id":"a1","at_ms":1763600000000,"model":"example-large","tokens":{"input":1200,"cached":300,"output":450}}
+{"type":"user","text":"Now add a test."}
+{"type":"answer","id":"a2","at_ms":1763600060000,"model":"example-large","tokens":{"input":800,"cached":1200,"output":200}}

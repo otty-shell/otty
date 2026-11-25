@@ -246,9 +246,9 @@ fn open_shell(ctx: &ActionsCtx<'_>, item: &TargetItem) -> Vec<ActionsOutcome> {
     };
 
     vec![ActionsOutcome::OpenShell {
-        title: i18n::containers_named(
+        title: i18n::filled(
             Key::TplContainersShellTabTitle,
-            &item.name,
+            &[("name", &item.name)],
         ),
         program: program.to_string_lossy().into_owned(),
         args: shell_args(item.engine.kind(), item.engine.address(), &item.id),

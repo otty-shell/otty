@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use iced::{Point, Size};
+use iced::Point;
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::quick_launch::{CommandSpec, NodePath, QuickLaunch};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::types::{
     CommandLaunchOptions, ContextMenuTarget, DropTarget, InlineEditKind,
@@ -421,9 +422,8 @@ impl std::fmt::Debug for SecretPromptState {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ContextMenuState {
     target: ContextMenuTarget,
-    cursor: Point,
-    /// Size of the main area when the menu opened; the menu stays inside.
-    area_size: Size,
+    /// The pointer when the menu opened and the main area it stays inside.
+    place: MenuPlace,
 }
 
 impl ContextMenuState {
@@ -431,12 +431,8 @@ impl ContextMenuState {
         self.target.clone()
     }
 
-    pub(crate) fn cursor(&self) -> Point {
-        self.cursor
-    }
-
-    pub(crate) fn area_size(&self) -> Size {
-        self.area_size
+    pub(crate) fn place(&self) -> MenuPlace {
+        self.place
     }
 
     pub(crate) fn with_target(mut self, target: ContextMenuTarget) -> Self {
@@ -444,13 +440,8 @@ impl ContextMenuState {
         self
     }
 
-    pub(crate) fn with_cursor(mut self, cursor: Point) -> Self {
-        self.cursor = cursor;
-        self
-    }
-
-    pub(crate) fn with_area_size(mut self, area_size: Size) -> Self {
-        self.area_size = area_size;
+    pub(crate) fn with_place(mut self, place: MenuPlace) -> Self {
+        self.place = place;
         self
     }
 }

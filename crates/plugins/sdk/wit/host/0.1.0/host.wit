@@ -1,0 +1,376 @@
+// What OTTY gives every plugin: the host operations and the values any
+// domain's contracts share. Each contract version names the host version
+// it imports. Operations know no domain, no agent and no provider; every
+// call is checked against the permissions of the part being called. The
+// values only one domain uses live in that domain's packages, such as
+// `otty:agents-agent/types`.
+//
+// Paths are absolute: a plugin builds them from `env.home` and the
+// variables its part lists. Times are milliseconds since the Unix epoch.
+package otty:host@0.1.0;
+
+/// Values shared by the host operations and the contracts of every
+/// domain.
+interface types {
+  /// Why a host operation refused or failed. Its text never holds a key
+  /// or a value read from a file.
+  variant host-error {
+    /// The called part did not declare this path, host, program,
+    /// variable, keyring entry or key place. The text names it.
+    not-allowed(string),
+    /// The file, keyring entry or row is not there.
+    not-found(string),
+    /// More than the operation's limit.
+    too-big(string),
+    /// The operation ran past its timeout.
+    timed-out(string),
+    /// Anything else, in plain words.
+    failed(string),
+  }
+
+  /// A program with its arguments and variables, run in a terminal tab.
+  record command {
+    program: string,
+    args: list<string>,
+    env: list<tuple<string, string>>,
+  }
+
+  /// A key OTTY asks the user for. OTTY keeps only where the user keeps
+  /// it, a file or a variable, never the key, and gives it back to the
+  /// part as a handle with its `slot` (`keys.given-key`).
+  record key-ask {
+    /// The part's own name for the key, such as `admin`. A need whose
+    /// key has no slot is not shown: OTTY keeps no key of its own to put
+    /// in place of the `key` of a call.
+    slot: option<string>,
+    /// The name of the field, such as "Admin key".
+    label: string,
+    /// One line under the field, such as what the key reads.
+    hint: string,
+    /// What the key starts with, such as `sk-ant-admin`, when it is
+    /// known.
+    prefix: option<string>,
+    /// The `https` page where the user makes the key.
+    page: option<string>,
+  }
+
+  /// What the button of a need does.
+  variant need-action {
+    /// Runs the command in a terminal tab, such as `codex login`, or the
+    /// agent itself so it renews its login.
+    run(command),
+    /// Shows a field for a key.
+    ask-key(key-ask),
+    /// Opens an `https` page in the browser.
+    open-page(string),
+    /// Puts the text on the clipboard, such as a report for the plugin's
+    /// author.
+    copy-report(string),
+  }
+
+  /// One thing only the user can do, with one button. The texts are in
+  /// the language `env.language` names, or in English.
+  record need {
+    /// Stable within the part, so the same need from two reads shows
+    /// once.
+    id: string,
+    /// What is needed, in a few words.
+    title: string,
+    /// Why, and what the button does.
+    text: string,
+    action: need-action,
+  }
+}
+
+/// Keys and login tokens, which a plugin uses but never reads.
+interface keys {
+  use types.{host-error};
+
+  /// A key or a login token the plugin may use but never read. The host
+  /// reads the key from its place right before each use and drops it
+  /// right after.
+  resource key {
+    /// SHA-256 of the key, lowercase hex.
+    fingerprint: func() -> result<string, host-error>;
+    /// Whether the key starts with `text`, such as `sk-ant-admin`.
+    has-prefix: func(text: string) -> result<bool, host-error>;
+    /// The claims (the decoded middle part) of a JWT as JSON; none when
+    /// the key is not a JWT. Never the signature or the token.
+    jwt-claims: func() -> result<option<string>, host-error>;
+    /// Whether the user gave the key in OTTY: a key given for an
+    /// `ask-key` slot. False for a key read from a place of an agent: a
+    /// file field, a variable, a keyring entry or a database. A refused
+    /// key given in OTTY is asked for again under its slot; one of an
+    /// agent is replaced where the agent keeps it.
+    given-in-otty: func() -> result<bool, host-error>;
+  }
+
+  /// A field of a JSON file.
+  record json-field {
+    file: string,
+    /// A JSON pointer, such as `/tokens/access_token`.
+    pointer: string,
+  }
+
+  /// A system keyring entry, or one JSON field of it.
+  record keyring-entry {
+    service: string,
+    user: string,
+    pointer: option<string>,
+  }
+
+  /// A column of one row of a SQLite table, or one JSON field of it.
+  record sqlite-field {
+    database: string,
+    table: string,
+    column: string,
+    row-id: s64,
+    /// A JSON pointer into the column, for a JSON column such as
+    /// OpenCode's `credential.value`.
+    pointer: option<string>,
+  }
+
+  /// Where a key sits. The host reads it there right before each use.
+  variant key-place {
+    json-field(json-field),
+    env-var(string),
+    keyring(keyring-entry),
+    sqlite-field(sqlite-field),
+  }
+
+  /// A JSON document whose key fields are replaced by `{"$key": n}`,
+  /// where `n` is the index of the key in `keys`.
+  record json-with-keys {
+    json: string,
+    keys: list<key>,
+  }
+
+  /// A key the user gave after a need of the part asked for it with
+  /// `ask-key`, under the `slot` that need named. The handle is the
+  /// part's for this call only.
+  record given-key {
+    slot: string,
+    key: key,
+  }
+
+  /// A handle to the key at `place`; it must be a key place the called
+  /// part declares.
+  open: func(place: key-place) -> result<key, host-error>;
+}
+
+/// Files the called part declares in `read`, `write` and `keys`.
+interface files {
+  use types.{host-error};
+  use keys.{json-with-keys};
+
+  /// One file a listing found.
+  record file-info {
+    path: string,
+    size: u64,
+    changed-ms: s64,
+  }
+
+  /// Complete lines of a file, from one read.
+  record batch {
+    /// Complete lines, each ending with a newline, in one buffer. The
+    /// last line of a file without a newline comes only at its end.
+    lines: list<u8>,
+    /// Where the next read starts.
+    next-offset: u64,
+    /// Lines left out because they hold none of the markers.
+    skipped: u32,
+    /// Whether the end of the file was reached.
+    at-end: bool,
+  }
+
+  /// The files whose paths match `glob`, at most 100,000.
+  %list: func(glob: string) -> result<list<file-info>, host-error>;
+  /// The bytes of a small file, at most `max-bytes` and 4 MiB. A key file
+  /// is refused: it is read with `read-json-with-keys`.
+  read: func(path: string, max-bytes: u32) -> result<list<u8>, host-error>;
+  /// Complete lines from `offset`, about `max-bytes` of them, only those
+  /// holding one of `markers` (all lines when there is none). A zstd file
+  /// is decoded; offsets then count decoded bytes.
+  read-lines: func(path: string, offset: u64, max-bytes: u32, markers: list<list<u8>>) -> result<batch, host-error>;
+  /// A JSON key file the part declares in `keys`, its key fields replaced
+  /// by handles.
+  read-json-with-keys: func(path: string) -> result<json-with-keys, host-error>;
+  /// Deletes one file, or one empty folder, that the part declares in
+  /// `write`.
+  remove: func(path: string) -> result<_, host-error>;
+}
+
+/// Read-only queries of the SQLite databases the called part declares.
+interface sqlite {
+  use types.{host-error};
+  use keys.{key, json-with-keys};
+
+  /// A value the query binds to a `?` of its SQL.
+  variant param {
+    null,
+    integer(s64),
+    real(f64),
+    text(string),
+    blob(list<u8>),
+  }
+
+  /// One value of a row. A column the part declares as a key comes back
+  /// as `key`; a JSON column with key fields as `json-with-keys`.
+  variant value {
+    null,
+    integer(s64),
+    real(f64),
+    text(string),
+    blob(list<u8>),
+    key(key),
+    json-with-keys(json-with-keys),
+  }
+
+  /// The rows of one read-only `SELECT`, at most 50,000, within 10 s.
+  query: func(database: string, sql: string, params: list<param>) -> result<list<list<value>>, host-error>;
+}
+
+/// HTTPS requests to the hosts the called part declares.
+interface http {
+  use types.{host-error};
+  use keys.{key};
+
+  /// One header; with a key, the host sends `value` followed by the key,
+  /// such as `Bearer ` and the token.
+  record header {
+    name: string,
+    value: string,
+    key: option<borrow<key>>,
+  }
+
+  record request {
+    method: string,
+    url: string,
+    headers: list<header>,
+    body: option<list<u8>>,
+  }
+
+  record response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: list<u8>,
+  }
+
+  /// Sends one request: HTTPS only, no redirects, 30 s, 8 MiB answer.
+  send: func(request: request) -> result<response, host-error>;
+}
+
+/// Programs the called part declares in `run`.
+interface programs {
+  use types.{host-error};
+
+  record output {
+    /// The exit status; none when a signal stopped the program.
+    status: option<s32>,
+    stdout: list<u8>,
+    stderr: list<u8>,
+  }
+
+  /// Runs a program once: 10 s at most, 1 MiB of output. Only the
+  /// variables in `env` are passed, and only those the part lists.
+  run: func(program: string, args: list<string>, env: list<tuple<string, string>>, timeout-ms: u32) -> result<output, host-error>;
+
+  /// A program spoken to line by line, such as `codex app-server`. It is
+  /// stopped when the call that started it ends; 60 s in all.
+  resource talk {
+    start: static func(program: string, args: list<string>, env: list<tuple<string, string>>) -> result<talk, host-error>;
+    send-line: func(line: string) -> result<_, host-error>;
+    /// The next line the program wrote, without its newline; none when
+    /// it ended.
+    next-line: func(timeout-ms: u32) -> result<option<string>, host-error>;
+  }
+}
+
+/// Programs the called part declares in `terminal`, started in a terminal
+/// nobody sees.
+interface terminal {
+  use types.{host-error};
+
+  /// The working folder OTTY starts every hidden terminal in: the folder
+  /// as OTTY names it and, when links lead elsewhere, as the system
+  /// resolves it. A program that keeps a record of where it ran, such as
+  /// a session file named after its folder, records this folder. Only
+  /// for a part that declares a terminal.
+  working-folders: func() -> result<list<string>, host-error>;
+
+  /// A program in a hidden terminal, in OTTY's own working folder. It is
+  /// stopped when the call that started it ends; 60 s in all.
+  resource hidden-terminal {
+    start: static func(program: string, args: list<string>, env: list<tuple<string, string>>, cols: u16, rows: u16) -> result<hidden-terminal, host-error>;
+    send-keys: func(keys: string) -> result<_, host-error>;
+    /// The visible text of the screen.
+    screen: func() -> result<string, host-error>;
+    /// Whether the screen changed within `timeout-ms`.
+    wait-for-change: func(timeout-ms: u32) -> result<bool, host-error>;
+  }
+}
+
+/// The system keyring entries the called part declares, once the user
+/// allowed OTTY to read the keyring.
+interface keyring {
+  use types.{host-error};
+  use keys.{json-with-keys};
+
+  /// One entry as JSON, its key fields replaced by handles; none when
+  /// there is no such entry.
+  read: func(service: string, user: string) -> result<option<json-with-keys>, host-error>;
+}
+
+/// The home folder and the variables the called part lists in `env`.
+interface env {
+  /// The variable `name` as text; none when it is not set or the part
+  /// does not list it. A variable that holds a key is read only through
+  /// `keys.open`.
+  var: func(name: string) -> option<string>;
+  /// The user's home folder.
+  home: func() -> string;
+  /// The language OTTY's interface shows now, as a tag such as `en`,
+  /// `ru` or `pt-BR`; it may change between two calls. A part writes the
+  /// texts of its needs in it, or in English.
+  language: func() -> string;
+}
+
+/// The time.
+interface clock {
+  /// Milliseconds since the Unix epoch.
+  now-ms: func() -> s64;
+  /// How many minutes the user's clock is ahead of UTC at `at-ms`, in the
+  /// time zone of the system, such as 180 in Moscow or -300 in New York
+  /// in winter; 0 when the system tells none. A plugin counts the days
+  /// and months of the user's own calendar with it.
+  local-offset-minutes: func(at-ms: s64) -> s32;
+}
+
+/// The plugin's log, shown on the Plugins page.
+interface log {
+  enum level {
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  /// Adds one line; the log keeps the newest 64 KiB of each plugin.
+  write: func(level: level, text: string);
+}
+
+/// Every host operation, for the bindings of the host and the SDK. It is
+/// not a contract: a plugin's imports come from its contracts.
+world operations {
+  import types;
+  import keys;
+  import files;
+  import sqlite;
+  import http;
+  import programs;
+  import terminal;
+  import keyring;
+  import env;
+  import clock;
+  import log;
+}

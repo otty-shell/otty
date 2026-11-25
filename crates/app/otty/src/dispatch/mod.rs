@@ -36,6 +36,7 @@
 //! three places (a shortcut, a title bar button, a palette entry), and all
 //! of them need the same translation.
 
+mod agents;
 mod command;
 mod containers;
 mod delivery;
@@ -43,6 +44,7 @@ mod explorer;
 mod modes;
 mod notifications;
 mod palette;
+mod plugins;
 mod quick_launch;
 mod settings;
 mod sidebar;
@@ -52,15 +54,20 @@ mod title_bar;
 
 use iced::Task;
 use iced::widget::operation;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::ContainersIntent;
+use otty_app_domain::mode::Mode;
 use otty_app_slots::focus;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
 pub(crate) use self::delivery::{Delivery, deliver};
+pub(crate) use self::plugins::{
+    loaded_plugins, open_plugins_mode, running_plugins,
+};
 use crate::app::App;
-use crate::layout;
 use crate::message::AppEvent;
+use crate::{keys, layout};
 
 /// Hand an app event to the one that handles it: a widget or feature intent
 /// to [`deliver`], a command to [`command::run`]. The I/O answers of the
@@ -78,6 +85,9 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         AppEvent::Terminal(intent) => deliver(app, intent),
         AppEvent::QuickLaunch(intent) => deliver(app, intent),
         AppEvent::Containers(intent) => deliver(app, intent),
+        AppEvent::Agents(intent) => deliver(app, intent),
+        AppEvent::Plugins(intent) => deliver(app, intent),
+        AppEvent::PluginsLoaded(loaded) => loaded_plugins(app, loaded),
         AppEvent::Command(command) => command::run(app, command),
         AppEvent::ShellIntegrated(shell_session) => {
             app.shell_session = shell_session;
@@ -100,9 +110,24 @@ pub(crate) fn dispatch(app: &mut App, event: AppEvent) -> Task<AppEvent> {
 
             Task::batch([panes, containers])
         },
+        // In Agents mode Enter no widget took continues the selected
+        // session of the sessions table; the feature does nothing with it
+        // outside its project screen. In the other modes it reaches no one.
+        AppEvent::Keyboard(key)
+            if app.modes.active() == Mode::Agents
+                && keys::is_enter_press(&key) =>
+        {
+            deliver(app, AgentsIntent::ContinueSelected)
+        },
+        // The input checks take the mark of a menu off; an event that
+        // skips them still reaches its feature.
+        AppEvent::FromMenu(event) => dispatch(app, *event),
         // A shortcut key arrives as its command (see `update_input`); other
-        // keys no widget took and other window events do nothing.
-        AppEvent::Keyboard(_) | AppEvent::Window(_) => Task::none(),
+        // keys no widget took, other window events and a press away with
+        // no menu open do nothing.
+        AppEvent::Keyboard(_) | AppEvent::Window(_) | AppEvent::PressedAway => {
+            Task::none()
+        },
     }
 }
 

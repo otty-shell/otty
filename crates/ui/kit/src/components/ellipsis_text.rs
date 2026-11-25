@@ -25,7 +25,7 @@ use iced::{
 };
 
 /// Mark added at the end of a shortened text.
-const ELLIPSIS: &str = "…";
+pub(super) const ELLIPSIS: &str = "…";
 /// Distance from the bottom of a link's line box up to its underline,
 /// which puts the line just under the letters without descenders.
 const UNDERLINE_RISE: f32 = 2.0;

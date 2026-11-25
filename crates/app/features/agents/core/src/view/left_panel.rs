@@ -1,0 +1,839 @@
+//! The Agents mode left panel under the switcher: the Accounts section,
+//! the Profiles section and the Projects section, sharing the panel height
+//! the way Sessions and Launches do in Terminal mode. Accounts and
+//! Profiles start with their All row; Projects is as it was.
+
+use iced::widget::{
+    Column, column, container, mouse_area, responsive, scrollable, svg, text,
+};
+use iced::{Element, Length, Padding};
+use otty_app_i18n::{self as i18n, Key};
+use otty_app_theme::icons;
+use otty_app_theme::theme::ThemeProps;
+use otty_ui_kit::components::icon_button::{
+    IconButton, IconButtonSize, IconTone,
+};
+use otty_ui_kit::components::panel_height::{
+    SectionHeight, share_panel_height,
+};
+use otty_ui_kit::components::panel_section::PanelSection;
+use otty_ui_kit::components::small_text::small_text;
+use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
+use otty_ui_kit::components::tree_row::TreeRow;
+use otty_ui_kit::components::{divider, scrollbar};
+use otty_ui_kit::palette::UiPalette;
+use otty_ui_kit::{size, spacing, typography};
+
+use super::super::event::AgentsIntent;
+use super::super::model::{
+    AccountRowViewModel, AccountsSectionViewModel, AgentsSectionViewModel,
+    AllRowViewModel, LeftPanelViewModel, ProfileRowViewModel,
+};
+use super::{entry_icon, projects_section};
+
+/// The tag of the row of an account with OTTY's own login, as the owner's
+/// prototype shows it: OTTY's name, the same in every language.
+const OWN_LOGIN_TAG: &str = "OTTY";
+
+/// Props for the left panel.
+pub(crate) struct LeftPanelProps<'a> {
+    pub(crate) vm: LeftPanelViewModel<'a>,
+    pub(crate) theme: ThemeProps<'a>,
+}
+
+/// Render the left panel: the Accounts section, a line, the Profiles
+/// section, a line, then the Projects section. Each open section takes the
+/// height of its rows while all fit and scrolls inside its share when they
+/// do not (see [`share_panel_height`]); the Projects section takes all the
+/// height left under the others.
+///
+/// The panel height is known only during layout, so this uses
+/// `iced::widget::responsive`.
+pub(crate) fn view(props: LeftPanelProps<'_>) -> Element<'_, AgentsIntent> {
+    let palette = props.theme.theme.ui();
+    let vm = props.vm;
+
+    responsive(move |panel| {
+        let accounts = SectionHeight::panel_section(
+            accounts_content_height(&vm.accounts),
+            vm.accounts.is_open,
+        );
+        let agents = SectionHeight::panel_section(
+            agents_content_height(&vm.agents),
+            vm.agents.is_open,
+        );
+        let projects = SectionHeight::panel_section(
+            projects_section::content_height(&vm.projects),
+            vm.projects.is_open,
+        );
+        let available = (panel.height - 2.0 * size::LINE).max(0.0);
+        let heights =
+            share_panel_height(available, &[accounts, agents, projects]);
+        let accounts_share = heights.first().copied().unwrap_or(0.0);
+        let agents_share = heights.get(1).copied().unwrap_or(0.0);
+
+        column![
+            container(accounts_section(vm.accounts.clone(), palette))
+                .width(Length::Fill)
+                .height(accounts_share)
+                .clip(true),
+            divider::horizontal(palette),
+            container(agents_section(vm.agents.clone(), palette))
+                .width(Length::Fill)
+                .height(agents_share)
+                .clip(true),
+            divider::horizontal(palette),
+            container(projects_section::view(vm.projects.clone(), palette))
+                .width(Length::Fill)
+                .height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    })
+    .into()
+}
+
+/// A muted line in place of rows, such as "Looking for agents…".
+pub(super) fn note_text<'a>(
+    content: impl text::IntoFragment<'a>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    container(small_text(content, palette.text_muted()))
+        .padding(Padding::from([spacing::SPACE_1, spacing::SPACE_3]))
+        .into()
+}
+
+/// Height of a [`note_text`] line.
+pub(super) fn note_height() -> f32 {
+    typography::SMALL.line_height() + 2.0 * spacing::SPACE_1
+}
+
+/// The Accounts section: Refresh and `+` (Add account, spec 2026-11-23,
+/// Decision 6) in the header, All accounts and a row for each account.
+fn accounts_section<'a>(
+    vm: AccountsSectionViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let add = IconButton::new(
+        svg::Handle::from_memory(icons::PLUS),
+        i18n::t(Key::AgentsAddAccountTitle),
+        palette,
+    )
+    .size(IconButtonSize::Small)
+    .tone(IconTone::Accent)
+    .on_press_maybe(vm.can_add.then_some(AgentsIntent::OpenAddAccount));
+
+    let count = vm.accounts.len();
+    let mut rows = Column::new().width(Length::Fill);
+    if let Some(all) = vm.all {
+        rows = rows.push(all_row(
+            all,
+            Key::AgentsAllAccounts,
+            icons::ALL_ACCOUNTS,
+            AgentsIntent::SelectAllAccounts,
+            palette,
+        ));
+    }
+    for account in vm.accounts {
+        rows = rows.push(account_row(account, palette));
+    }
+    if let Some(note) = vm.note {
+        rows = rows.push(note_text(note, palette));
+    }
+
+    let mut section =
+        PanelSection::new(i18n::t(Key::AgentsSectionAccounts), palette)
+            .open(vm.is_open)
+            .action(refresh_button(palette))
+            .action(add)
+            .body(section_body(rows, palette))
+            .on_toggle(AgentsIntent::ToggleAccountsSection);
+    if !vm.is_open {
+        section = section.count(count);
+    }
+
+    section.into()
+}
+
+/// The Profiles section: Refresh and `+` in the header, All profiles and
+/// a row for each profile.
+fn agents_section<'a>(
+    vm: AgentsSectionViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let add = IconButton::new(
+        svg::Handle::from_memory(icons::PLUS),
+        i18n::t(Key::AgentsAddProfile),
+        palette,
+    )
+    .size(IconButtonSize::Small)
+    .tone(IconTone::Accent)
+    .on_press_maybe(vm.can_add.then_some(AgentsIntent::OpenAddProfile));
+
+    let count = vm.profiles.len();
+    let mut rows = Column::new().width(Length::Fill);
+    if let Some(all) = vm.all {
+        rows = rows.push(all_row(
+            all,
+            Key::AgentsAllProfiles,
+            icons::ALL_PROFILES,
+            AgentsIntent::SelectAllProfiles,
+            palette,
+        ));
+    }
+    for profile in vm.profiles {
+        rows = rows.push(profile_row(profile, palette));
+    }
+    if let Some(note) = vm.note {
+        rows = rows.push(note_text(note, palette));
+    }
+
+    let mut section =
+        PanelSection::new(i18n::t(Key::AgentsSectionProfiles), palette)
+            .open(vm.is_open)
+            .action(refresh_button(palette))
+            .action(add)
+            .body(section_body(rows, palette))
+            .on_toggle(AgentsIntent::ToggleAgentsSection);
+    if !vm.is_open {
+        section = section.count(count);
+    }
+
+    section.into()
+}
+
+/// The small Refresh button of a section header: it reads everything
+/// again.
+fn refresh_button(palette: &UiPalette) -> IconButton<AgentsIntent> {
+    IconButton::new(
+        svg::Handle::from_memory(icons::REFRESH),
+        i18n::t(Key::AgentsRefreshAll),
+        palette,
+    )
+    .size(IconButtonSize::Small)
+    .on_press(AgentsIntent::Refresh)
+}
+
+/// The rows of a section, scrolling inside its share of the panel.
+fn section_body<'a>(
+    rows: Column<'a, AgentsIntent>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    scrollable(rows)
+        .width(Length::Fill)
+        .direction(scrollbar::vertical())
+        .style(scrollbar::style(palette))
+        .into()
+}
+
+/// Height of the body of the Accounts section: All accounts, the account
+/// rows and the note.
+///
+/// Counted from the rows because iced cannot measure a widget before the
+/// left panel shares its height between the sections.
+fn accounts_content_height(vm: &AccountsSectionViewModel) -> f32 {
+    let all = vm.all.map_or(0.0, |_| size::ROW);
+    let rows = vm.accounts.len() as f32 * size::ROW;
+    let note = vm.note.map_or(0.0, |_| note_height());
+
+    all + rows + note
+}
+
+/// Height of the body of the Profiles section: All profiles, the profile
+/// rows and the note.
+fn agents_content_height(vm: &AgentsSectionViewModel) -> f32 {
+    let all = vm.all.map_or(0.0, |_| size::ROW);
+    let rows = vm.profiles.len() as f32 * size::ROW;
+    let note = vm.note.map_or(0.0, |_| note_height());
+
+    all + rows + note
+}
+
+/// All accounts or All profiles: the icon, the title and how many rows
+/// follow it. A press shows its page.
+fn all_row<'a>(
+    vm: AllRowViewModel,
+    title: Key,
+    icon: &'static [u8],
+    on_press: AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    TreeRow::new(i18n::t(title), palette)
+        .icon(svg::Handle::from_memory(icon), None)
+        .count(vm.count)
+        .selected(vm.is_selected)
+        .on_press(on_press)
+        .into()
+}
+
+/// An account: the logo of its provider, its name and its number. The
+/// number and the tag stay whole, the name gives way and shows its whole
+/// name with the provider on hover. A press shows it; a right press opens
+/// its menu at the pointer, the same as "⋯" of the account page.
+fn account_row<'a>(
+    vm: AccountRowViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let menu = AgentsIntent::OpenAccountMenu(vm.account.clone());
+    let note = vm.icon.note();
+    let mut row =
+        entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .keep_note()
+            .selected(vm.is_selected)
+            .on_press(AgentsIntent::SelectAccount(vm.account));
+    if let Some(number) = &vm.number {
+        row = row.count_tone(number.tone()).state(number.text());
+    }
+    if vm.has_own_login {
+        row = row.tag(OWN_LOGIN_TAG);
+    }
+
+    with_whole_name(row, vm.whole_name, note, menu, palette)
+}
+
+/// A profile: the logo of its agent, its name and its number. The number
+/// stays whole, the name gives way and shows whole on hover. A press
+/// shows its page; a right press opens its menu at the pointer, the same
+/// as "⋯" of the profile page.
+fn profile_row<'a>(
+    vm: ProfileRowViewModel,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let menu = AgentsIntent::OpenProfileMenu(vm.profile.clone());
+    let note = vm.icon.note();
+    let whole_name = vm.name.clone();
+    let mut row =
+        entry_icon::in_row(TreeRow::new(vm.name, palette), vm.icon, palette)
+            .keep_note()
+            .count_tone(vm.tone)
+            .selected(vm.is_selected)
+            .on_press(AgentsIntent::SelectProfile(vm.profile));
+    if let Some(number) = vm.number {
+        row = row.state(number);
+    }
+
+    with_whole_name(row, whole_name, note, menu, palette)
+}
+
+/// `row` that shows `whole_name` in its tooltip when its name is cut, and
+/// opens `menu` on a right press. A row with a broken plugin icon always
+/// has a tooltip, its `note` ("Plugin OpenAI failed, see Plugins"), under
+/// the whole name, so two bubbles never cover each other.
+fn with_whole_name<'a>(
+    row: TreeRow<AgentsIntent>,
+    whole_name: String,
+    note: Option<String>,
+    menu: AgentsIntent,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    match note {
+        Some(note) => {
+            let row = mouse_area(row).on_right_press(menu);
+            tooltip(row, TooltipText::new(whole_name).line(note), palette)
+        },
+        None => mouse_area(row.whole_label(whole_name))
+            .on_right_press(menu)
+            .into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use iced_test::simulator;
+    use otty_agents::{Account, AgentId, Profile};
+    use otty_app_theme::theme::ThemeManager;
+    use otty_ui_kit::components::session_row::SessionTone;
+
+    use super::*;
+    use crate::model::ProjectsSectionViewModel;
+    use crate::testing::right_click;
+
+    fn codex() -> Profile {
+        Profile::default_for(
+            AgentId::new("codex"),
+            "Codex",
+            PathBuf::from("/home/user/.codex"),
+        )
+    }
+
+    fn chatgpt() -> Account {
+        crate::testing::chatgpt_login()
+    }
+
+    fn accounts() -> AccountsSectionViewModel {
+        AccountsSectionViewModel {
+            is_open: true,
+            all: Some(AllRowViewModel {
+                count: 1,
+                is_selected: false,
+            }),
+            accounts: vec![AccountRowViewModel {
+                account: chatgpt(),
+                is_selected: false,
+                icon: crate::testing::provider_icon("openai"),
+                name: String::from("OpenAI (you@example.com)"),
+                whole_name: String::from("OpenAI (you@example.com)"),
+                number: Some(crate::model::AccountNumber::word(
+                    String::from("42 % used"),
+                    SessionTone::Muted,
+                )),
+                has_own_login: false,
+            }],
+            can_add: true,
+            note: None,
+        }
+    }
+
+    fn agents() -> AgentsSectionViewModel {
+        AgentsSectionViewModel {
+            is_open: true,
+            all: Some(AllRowViewModel {
+                count: 1,
+                is_selected: false,
+            }),
+            profiles: vec![ProfileRowViewModel {
+                profile: codex(),
+                is_selected: false,
+                icon: crate::testing::agent_icon("codex"),
+                name: String::from("Codex"),
+                number: Some(String::from("3 760 left")),
+                tone: SessionTone::Muted,
+            }],
+            can_add: true,
+            note: None,
+        }
+    }
+
+    fn panel(agents: AgentsSectionViewModel) -> LeftPanelViewModel<'static> {
+        LeftPanelViewModel {
+            accounts: accounts(),
+            agents,
+            projects: ProjectsSectionViewModel {
+                is_open: true,
+                count: 0,
+                search: None,
+                projects: Vec::new(),
+                note: None,
+            },
+        }
+    }
+
+    /// Width of the panel under test.
+    const WIDTH: f32 = 280.0;
+    /// From the right edge of the panel to the right edge of the last
+    /// header button: the section padding and the header padding.
+    const HEADER_END: f32 = spacing::SPACE_3 + spacing::SPACE_1;
+
+    fn panel_view<'a>(
+        vm: LeftPanelViewModel<'a>,
+        themes: &'a ThemeManager,
+    ) -> Element<'a, AgentsIntent> {
+        container(view(LeftPanelProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(WIDTH)
+        .into()
+    }
+
+    fn pressed(vm: LeftPanelViewModel<'_>, label: &str) -> Vec<AgentsIntent> {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(vm, &themes));
+
+        ui.click(label).expect("the label should show");
+
+        ui.into_messages().collect()
+    }
+
+    /// What a press on the header button of the Profiles section
+    /// `from_end` places from the right end sends: 0 is `+`, 1 Refresh.
+    fn header_pressed(
+        vm: LeftPanelViewModel<'_>,
+        from_end: usize,
+    ) -> Vec<AgentsIntent> {
+        section_header_pressed(vm, Key::AgentsSectionProfiles, from_end)
+    }
+
+    /// What a press on the header button of the section titled `section`
+    /// `from_end` places from the right end sends.
+    fn section_header_pressed(
+        vm: LeftPanelViewModel<'_>,
+        section: Key,
+        from_end: usize,
+    ) -> Vec<AgentsIntent> {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(vm, &themes));
+        let title = ui
+            .find(i18n::t(section))
+            .expect("the title should show")
+            .bounds();
+        let button = size::CONTROL_SM;
+        let x = WIDTH
+            - HEADER_END
+            - button / 2.0
+            - from_end as f32 * (button + spacing::SPACE_2);
+
+        ui.point_at(iced::Point::new(x, title.center_y()));
+        let _ = ui.simulate(iced_test::simulator::click());
+
+        ui.into_messages().collect()
+    }
+
+    #[test]
+    fn a_profile_row_shows_its_number_and_a_press_selects_it() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        ui.find("3 760 left").expect("the number should show");
+        ui.click("Codex").expect("the profile should show");
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::SelectProfile(codex())]);
+    }
+
+    /// Owner, issue 26: a right click on a profile row opens the same menu
+    /// as "⋯" of its page, at the pointer.
+    #[test]
+    fn a_right_click_on_a_profile_row_opens_its_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        let row = ui.find("Codex").expect("the profile should show");
+        ui.point_at(row.bounds().center());
+        let _ = ui.simulate(right_click());
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::OpenProfileMenu(codex())]);
+    }
+
+    /// Spec 2026-11-19, Decision 7: a right click on an account row opens
+    /// its menu at the pointer; the row is not selected.
+    #[test]
+    fn a_right_click_on_an_account_row_opens_its_menu() {
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        let row = ui
+            .find("OpenAI (you@example.com)")
+            .expect("the account should show");
+        ui.point_at(row.bounds().center());
+        let _ = ui.simulate(right_click());
+
+        let intents: Vec<AgentsIntent> = ui.into_messages().collect();
+        assert_eq!(intents, vec![AgentsIntent::OpenAccountMenu(chatgpt())]);
+    }
+
+    /// Spec Decision 1: the Accounts section starts with All accounts,
+    /// then each account with its number and its word.
+    #[test]
+    fn all_accounts_and_an_account_row_show_their_pages() {
+        let all = pressed(panel(agents()), i18n::t(Key::AgentsAllAccounts));
+        let account = pressed(panel(agents()), "OpenAI (you@example.com)");
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(agents()), &themes));
+
+        ui.find("42 % used").expect("the number should show");
+        assert_eq!(all, vec![AgentsIntent::SelectAllAccounts]);
+        assert_eq!(account, vec![AgentsIntent::SelectAccount(chatgpt())]);
+    }
+
+    /// Issue 09 of spec 2026-11-23-accounts-apart-from-profiles: the row
+    /// of an account with OTTY's own login has the tag "OTTY", as the
+    /// prototype shows; a found account has none.
+    #[test]
+    fn the_row_of_an_own_login_has_the_otty_tag() {
+        let mut own = panel(agents());
+        own.accounts.accounts[0].has_own_login = true;
+        let themes = ThemeManager::new();
+
+        let mut tagged = simulator(panel_view(own, &themes));
+        let mut plain = simulator(panel_view(panel(agents()), &themes));
+
+        tagged.find("OTTY").expect("the tag shows");
+        assert!(plain.find("OTTY").is_err());
+    }
+
+    #[test]
+    fn all_profiles_shows_its_page() {
+        let all = pressed(panel(agents()), i18n::t(Key::AgentsAllProfiles));
+
+        assert_eq!(all, vec![AgentsIntent::SelectAllProfiles]);
+    }
+
+    /// Spec 2026-11-23-accounts-apart-from-profiles, Decision 6: the
+    /// Accounts header refreshes, and its `+` opens Add account.
+    #[test]
+    fn the_accounts_header_refreshes_and_adds_an_account() {
+        let added = section_header_pressed(
+            panel(agents()),
+            Key::AgentsSectionAccounts,
+            0,
+        );
+        let refreshed = section_header_pressed(
+            panel(agents()),
+            Key::AgentsSectionAccounts,
+            1,
+        );
+        let toggled =
+            pressed(panel(agents()), i18n::t(Key::AgentsSectionAccounts));
+
+        assert_eq!(added, vec![AgentsIntent::OpenAddAccount]);
+        assert_eq!(refreshed, vec![AgentsIntent::Refresh]);
+        assert_eq!(toggled, vec![AgentsIntent::ToggleAccountsSection]);
+    }
+
+    #[test]
+    fn the_header_buttons_refresh_and_add_a_profile() {
+        let refreshed = header_pressed(panel(agents()), 1);
+        let added = header_pressed(panel(agents()), 0);
+
+        assert_eq!(refreshed, vec![AgentsIntent::Refresh]);
+        assert_eq!(added, vec![AgentsIntent::OpenAddProfile]);
+    }
+
+    #[test]
+    fn the_title_opens_and_closes_the_section() {
+        let toggled =
+            pressed(panel(agents()), i18n::t(Key::AgentsSectionProfiles));
+
+        assert_eq!(toggled, vec![AgentsIntent::ToggleAgentsSection]);
+    }
+
+    #[test]
+    fn before_the_first_read_the_note_shows_and_add_is_off() {
+        let loading = AgentsSectionViewModel {
+            all: None,
+            profiles: Vec::new(),
+            can_add: false,
+            note: Some(i18n::t(Key::AgentsLoading)),
+            ..agents()
+        };
+
+        let note = pressed(panel(loading.clone()), i18n::t(Key::AgentsLoading));
+        let add = header_pressed(panel(loading), 0);
+
+        assert!(note.is_empty());
+        assert!(add.is_empty(), "add is off until the profiles are read");
+    }
+
+    #[test]
+    fn a_closed_section_shows_no_rows() {
+        let closed = AgentsSectionViewModel {
+            is_open: false,
+            ..agents()
+        };
+        let themes = ThemeManager::new();
+        let mut ui = simulator(panel_view(panel(closed), &themes));
+
+        assert!(ui.find("3 760 left").is_err());
+    }
+
+    #[test]
+    fn the_body_height_counts_the_all_row_the_rows_and_the_note() {
+        let loading = AgentsSectionViewModel {
+            all: None,
+            profiles: Vec::new(),
+            note: Some("…"),
+            ..agents()
+        };
+        let accounts_loading = AccountsSectionViewModel {
+            all: None,
+            accounts: Vec::new(),
+            note: Some("…"),
+            ..accounts()
+        };
+
+        assert_eq!(agents_content_height(&agents()), 2.0 * size::ROW);
+        assert_eq!(agents_content_height(&loading), note_height());
+        assert_eq!(accounts_content_height(&accounts()), 2.0 * size::ROW);
+        assert_eq!(accounts_content_height(&accounts_loading), note_height());
+    }
+
+    /// The least width of the left panel: 16 % of the least window, 800.
+    const LEAST_WIDTH: f32 = 128.0;
+
+    #[test]
+    fn at_the_least_panel_width_no_text_of_the_agents_section_overlaps() {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm: panel(agents()),
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(LEAST_WIDTH);
+        let mut ui = simulator(panel);
+        let mut at = |label: &str| {
+            ui.find(label).expect("the text should show").bounds()
+        };
+
+        let title = at(i18n::t(Key::AgentsSectionProfiles));
+        let name = at("Codex");
+        let number = at("3 760 left");
+
+        let buttons = LEAST_WIDTH
+            - HEADER_END
+            - 2.0 * size::CONTROL_SM
+            - spacing::SPACE_2;
+        assert!(title.x + title.width <= buttons, "{title:?}");
+        assert!(name.x + name.width <= number.x, "{name:?} {number:?}");
+        assert!(number.x + number.width <= LEAST_WIDTH, "{number:?}");
+    }
+
+    /// A long email for the rows of a narrow panel.
+    const LONG_EMAIL: &str = "someone.with.a.long.name@example.com";
+    /// A width of the panel where [`LONG_EMAIL`] does not fit.
+    const NARROW: f32 = 220.0;
+
+    /// The panel with one account of OTTY's own login named `name`, its
+    /// whole name `whole_name`, and the Codex profile named `profile`.
+    fn narrow_panel(
+        name: &str,
+        whole_name: &str,
+        profile: &str,
+    ) -> LeftPanelViewModel<'static> {
+        let mut vm = panel(agents());
+        let account = &mut vm.accounts.accounts[0];
+        account.name = String::from(name);
+        account.whole_name = String::from(whole_name);
+        account.has_own_login = true;
+        vm.agents.profiles[0].name = String::from(profile);
+
+        vm
+    }
+
+    /// Bounds of the texts `texts` in the panel `vm` `width` wide.
+    fn bounds_in(
+        vm: LeftPanelViewModel<'_>,
+        width: f32,
+        texts: &[&str],
+    ) -> Vec<iced::Rectangle> {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm,
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(width);
+        let mut ui = simulator(panel);
+
+        texts
+            .iter()
+            .map(|text| ui.find(*text).expect("the text shows").bounds())
+            .collect()
+    }
+
+    /// Issue 20: in a narrow panel an account row shows its whole number
+    /// at the right and its tag whole; its email gives way with "…".
+    #[test]
+    fn in_a_narrow_panel_an_account_keeps_its_number_and_cuts_its_email() {
+        let texts = [LONG_EMAIL, "OTTY", "42 % used"];
+        let vm = || narrow_panel(LONG_EMAIL, "OpenAI", "Codex");
+        let full = bounds_in(vm(), 800.0, &texts);
+
+        let narrow = bounds_in(vm(), NARROW, &texts);
+
+        let (email, tag, number) = (narrow[0], narrow[1], narrow[2]);
+        assert!(email.width < full[0].width, "{email:?} cut");
+        assert!((tag.width - full[1].width).abs() < 0.5, "{tag:?} whole");
+        assert!((number.width - full[2].width).abs() < 0.5, "{number:?}");
+        assert!(tag.x >= email.x + email.width, "{tag:?} {email:?}");
+        assert!(number.x >= tag.x + tag.width, "{number:?} {tag:?}");
+        assert!(number.x + number.width <= NARROW, "{number:?}");
+    }
+
+    /// Issue 20: the same for a profile: its number stays whole, its name
+    /// gives way.
+    #[test]
+    fn in_a_narrow_panel_a_profile_keeps_its_number_and_cuts_its_name() {
+        let name = "Codex for the work laptop at the office";
+        let texts = [name, "3 760 left"];
+        let vm = || narrow_panel("you@example.com", "OpenAI", name);
+        let full = bounds_in(vm(), 800.0, &texts);
+
+        let narrow = bounds_in(vm(), NARROW, &texts);
+
+        let (profile, number) = (narrow[0], narrow[1]);
+        assert!(profile.width < full[0].width, "{profile:?} cut");
+        assert!((number.width - full[1].width).abs() < 0.5, "{number:?}");
+        assert!(number.x >= profile.x + profile.width, "{number:?}");
+        assert!(number.x + number.width <= NARROW, "{number:?}");
+    }
+
+    /// Draws the narrow panel with an account named [`LONG_EMAIL`] whose
+    /// whole name is `whole_name`, the pointer over its row or not, and
+    /// checks it against the picture saved in `reference`; the first call
+    /// saves the picture. Tooltips are overlays that widget queries do not
+    /// reach.
+    fn hovered_account_matches(
+        whole_name: &str,
+        is_hovered: bool,
+        reference: &std::path::Path,
+    ) -> bool {
+        let themes = ThemeManager::new();
+        let panel = container(view(LeftPanelProps {
+            vm: narrow_panel(LONG_EMAIL, whole_name, "Codex"),
+            theme: ThemeProps::new(themes.current()),
+        }))
+        .width(NARROW)
+        .height(400);
+        let mut ui = simulator(panel);
+        if is_hovered {
+            let row = ui.find(LONG_EMAIL).expect("the row shows").bounds();
+            let position = row.center();
+            ui.point_at(position);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position },
+            )]);
+        }
+
+        ui.snapshot(&iced::Theme::Dark)
+            .expect("the panel draws")
+            .matches_hash(reference)
+            .expect("the reference reads")
+    }
+
+    /// Issue 20: the cut email of an account shows its whole name, with
+    /// the provider, in the tooltip while the pointer is over the row.
+    #[test]
+    fn a_cut_account_name_shows_its_whole_name_on_hover() {
+        let folder = otty_app_testing::temp_dir::TempDir::new("agents-whole");
+        let hovered = folder.path().join("hovered");
+        let idle = folder.path().join("idle");
+        let openai = format!("OpenAI ({LONG_EMAIL})");
+        let anthropic = format!("Anthropic ({LONG_EMAIL})");
+
+        assert!(hovered_account_matches(&openai, true, &hovered), "save");
+        assert!(
+            !hovered_account_matches(&anthropic, true, &hovered),
+            "the tooltip says the whole name"
+        );
+        assert!(hovered_account_matches(&openai, false, &idle), "save");
+        assert!(
+            hovered_account_matches(&anthropic, false, &idle),
+            "no tooltip while the pointer is away"
+        );
+    }
+
+    /// The built-in registry gives every known agent a logo of its own,
+    /// so none is drawn as a letter.
+    #[test]
+    fn every_known_agent_has_a_logo_of_its_own() {
+        let registry = crate::testing::registry();
+        let logos: Vec<&[u8]> = registry
+            .agents()
+            .iter()
+            .filter_map(|entry| entry.icon().map(|icon| icon.as_ref()))
+            .collect();
+
+        assert_eq!(
+            logos.len(),
+            registry.agents().len(),
+            "an agent has no logo"
+        );
+        let mut distinct = logos.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), logos.len(), "two agents share a logo");
+    }
+}

@@ -4,6 +4,7 @@ use otty_app_domain::mode::Mode;
 use otty_app_slots::Overlays;
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::divider;
+use otty_ui_kit::components::press_away::press_away;
 #[cfg(not(target_os = "macos"))]
 use otty_ui_kit::components::resize_grips::resize_grips;
 
@@ -13,10 +14,16 @@ use crate::frame::sidebar::view::{focus_note, panels};
 use crate::frame::sidebar::{SidebarIntent, SidebarViewModel};
 use crate::frame::title_bar::view as title_bar;
 use crate::message::AppEvent;
-use crate::screens::{containers, over_main_area, terminal};
+use crate::screens::{
+    agents, containers, header_menu, over_main_area, overlay_layer, plugins,
+    terminal,
+};
 
 /// Render the window: the window content and the overlays over it, in one
-/// order for every mode.
+/// order for every mode. A click on the window content that sends nothing
+/// is a press away from the open menus, which closes them
+/// ([`AppEvent::PressedAway`]): menus have no dismiss layer of their own,
+/// so a press on the trigger of another menu reaches it.
 ///
 /// The layers from bottom to top:
 ///
@@ -30,8 +37,10 @@ use crate::screens::{containers, over_main_area, terminal};
 /// 7. the SSH secret prompt;
 /// 8. the grips at the window edges.
 ///
-/// The overlays of Containers mode (the row menu and the dialogs) lie in the
-/// mode overlays layer.
+/// The overlays of Containers mode (the row menu and the dialogs), of
+/// Agents mode (the menus and the profile, remove, statistics and New
+/// session dialogs) and of Plugins mode (its dialogs and the menu of a
+/// plugin) lie in the mode overlays layer.
 pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let theme = ThemeProps::new(app.theme_manager.current());
     let sidebar_vm = app.sidebar.vm();
@@ -41,6 +50,8 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let mode_overlays = match mode {
         Mode::Terminal => terminal::overlays(app, theme),
         Mode::Containers => containers::overlays(app, theme),
+        Mode::Agents => agents::overlays(app, theme),
+        Mode::Plugins => plugins::overlays(app, theme),
     };
     // The mode overlays share one layer, so that one of them opening or
     // closing does not move the layers above it.
@@ -57,8 +68,8 @@ pub(crate) fn view(app: &App) -> Element<'_, AppEvent> {
     let secret_prompt = view_secret_prompt(app, theme);
     let resize_grips = view_resize_grips(app);
 
-    // The header menus of the Sessions and Launches sections lie under the
-    // modes menu, anchored where they were opened. The SSH secret prompt
+    // The header menus of the Sessions, Launches and Installed sections lie
+    // under the modes menu, anchored where they were opened. The SSH secret prompt
     // follows Settings, on top of everything. All of them lie in the main
     // area, between the header and the status bar, so the window buttons
     // stay usable under them.
@@ -99,12 +110,16 @@ fn view_window_content<'a>(
             (SidebarPane::Main, Mode::Containers) => {
                 containers::main(app, theme)
             },
+            (SidebarPane::Main, Mode::Agents) => agents::main(app, theme),
+            (SidebarPane::Main, Mode::Plugins) => plugins::main(app, theme),
             (SidebarPane::Right, Mode::Terminal) => {
                 terminal::right_panel(app, theme)
             },
             (SidebarPane::Right, Mode::Containers) => {
                 containers::right_panel(app, theme)
             },
+            (SidebarPane::Right, Mode::Agents) => agents::right_panel(),
+            (SidebarPane::Right, Mode::Plugins) => plugins::right_panel(),
         },
         on_intent: AppEvent::Sidebar,
     });
@@ -130,12 +145,15 @@ fn view_window_content<'a>(
     let status_bar = match mode {
         Mode::Terminal => terminal::status_bar(app, theme),
         Mode::Containers => containers::status_bar(app, theme),
+        Mode::Agents => agents::status_bar(app, theme),
+        Mode::Plugins => plugins::status_bar(app, theme),
     };
 
-    column![header, main_area, status_bar]
+    let content = column![header, main_area, status_bar]
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+    press_away(content, AppEvent::PressedAway)
 }
 
 /// Render the header: title bar + separator.
@@ -149,6 +167,7 @@ fn view_header<'a>(
         theme,
         left_open: sidebar_vm.is_left_open,
         right_open: sidebar_vm.is_right_open,
+        right_panel_enabled: app.modes.active().has_right_panel(),
         focus_mode: sidebar_vm.is_focus_mode,
         notifications_open: app.notifications.is_list_open(),
         unseen_notifications: app.notifications.unseen_count(),
@@ -177,6 +196,8 @@ fn view_left_panel<'a>(
     let content = match mode {
         Mode::Terminal => terminal::left_panel(app, sidebar_vm, theme),
         Mode::Containers => containers::left_panel(app, theme),
+        Mode::Agents => agents::left_panel(app, theme),
+        Mode::Plugins => plugins::left_panel(app, sidebar_vm, theme),
     };
 
     column![switcher, content]
@@ -185,8 +206,8 @@ fn view_left_panel<'a>(
         .into()
 }
 
-/// The open menu of a section header, in Terminal mode, where the section
-/// headers are.
+/// The open menu of a section header, in Terminal and Plugins mode, where
+/// the section headers with a split button are.
 fn view_header_menu<'a>(
     app: &'a App,
     mode: Mode,
@@ -196,8 +217,8 @@ fn view_header_menu<'a>(
     let open = sidebar_vm.open_header_menu?;
 
     match mode {
-        Mode::Terminal => terminal::header_menu(app, open, theme),
-        Mode::Containers => None,
+        Mode::Terminal | Mode::Plugins => Some(header_menu(app, open, theme)),
+        _ => None,
     }
 }
 
@@ -208,7 +229,7 @@ fn view_modes_menu<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let menu = app.modes.overlay(theme)?;
 
-    Some(menu.into_content().map(AppEvent::Modes))
+    Some(overlay_layer(menu, AppEvent::Modes))
 }
 
 /// The command palette, while it is open, in either mode.
@@ -218,7 +239,7 @@ fn view_palette<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let palette = app.palette.overlay(theme)?;
 
-    Some(palette.into_content().map(AppEvent::Palette))
+    Some(overlay_layer(palette, AppEvent::Palette))
 }
 
 /// The notifications list under the bell, while it is open, in either mode.
@@ -228,7 +249,7 @@ fn view_notification_list<'a>(
 ) -> Option<Element<'a, AppEvent>> {
     let list = app.notifications.overlay(theme)?;
 
-    Some(list.into_content().map(AppEvent::Notifications))
+    Some(overlay_layer(list, AppEvent::Notifications))
 }
 
 /// The Settings dialog, while it is open, in either mode. A press on the
@@ -243,8 +264,8 @@ fn view_settings<'a>(
 }
 
 /// The SSH secret prompt, while a launch waits for its password or
-/// passphrase, in either mode. A press on the dimmed area around it does
-/// nothing: it waits for Connect or Cancel.
+/// passphrase, in either mode. A press on the dimmed area around it
+/// cancels it, like Esc.
 fn view_secret_prompt<'a>(
     app: &'a App,
     theme: ThemeProps<'a>,
@@ -257,10 +278,10 @@ fn view_secret_prompt<'a>(
 /// The grips that resize the window at its edges. While a menu (a header
 /// menu, the All modes menu, a pane menu, the context menu of the launches
 /// or of Files, the row menu of Containers mode), the notifications list,
-/// Settings, the delete dialog of Files, a Containers dialog or the SSH
-/// secret prompt is open, an empty layer stands
-/// in for them. The overlays of Containers mode count only in that mode: in
-/// Terminal mode they are not on screen.
+/// Settings, the delete dialog of Files, a Containers, Agents or Plugins
+/// dialog or the SSH secret prompt is open, an empty layer stands in for
+/// them. The overlays of a mode count only in that mode: in another mode
+/// they are not on screen.
 #[cfg(not(target_os = "macos"))]
 fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
     if app.sidebar.has_header_menu_open()
@@ -274,6 +295,8 @@ fn view_resize_grips(app: &App) -> Element<'_, AppEvent> {
         || app.explorer.has_delete_dialog()
         || (app.modes.active() == Mode::Containers
             && containers::has_overlay(app))
+        || (app.modes.active() == Mode::Agents && agents::has_overlay(app))
+        || (app.modes.active() == Mode::Plugins && app.plugins.has_dialog())
     {
         return container(Space::new())
             .width(Length::Fill)
@@ -312,7 +335,9 @@ mod tests {
     use super::*;
     use crate::frame::title_bar::TitleBarIntent;
     use crate::message::Message;
-    use crate::testing::frames::{Frames, scroll_main_area};
+    use crate::testing::frames::{
+        Frames, LOW_WINDOW, left_panel_split, scroll_dialog_body,
+    };
     use crate::testing::window::{
         app, edit_the_shell, open_notification_list, open_palette,
         open_secret_prompt, open_settings, show_toast,
@@ -381,10 +406,71 @@ mod tests {
             assert_eq!(app.modes.active(), expected);
         }
 
-        for event in mode_events(click_in_window(&app, switcher_tab(2.0))) {
+        for event in mode_events(click_in_window(&app, switcher_tab(3.0))) {
             let _ = app.update(Message::Input(event));
         }
         assert!(app.modes.is_menu_open());
+    }
+
+    /// A window whose left panel, at its smallest, is too narrow for the
+    /// switcher tabs: they scroll under More.
+    const NARROW_WINDOW: iced::Size = iced::Size::new(600.0, 768.0);
+
+    /// Presses the left button at `point` in a [`NARROW_WINDOW`] and passes
+    /// what the window sends through the app, as the runtime does.
+    fn press_in_narrow_window(app: &mut App, point: Point) {
+        let events = Frames::in_window(NARROW_WINDOW).press(app, point);
+
+        for event in events {
+            let _ = app.update(Message::Input(event));
+        }
+    }
+
+    /// More stays at the right end of the left panel when the tabs do not
+    /// fit, and keeps opening and closing the All modes menu.
+    #[test]
+    fn in_a_narrow_left_panel_more_at_its_right_end_opens_and_closes_the_menu()
+    {
+        let mut app = app();
+        let panel_right = left_panel_split(&app, NARROW_WINDOW);
+        let more = Point::new(
+            panel_right - 8.0 - 3.0 - size::MODE_TAB_WIDTH / 2.0,
+            switcher_tab(0.0).y,
+        );
+
+        press_in_narrow_window(&mut app, more);
+        let opened = app.modes.is_menu_open();
+        press_in_narrow_window(&mut app, more);
+
+        assert!(opened);
+        assert!(!app.modes.is_menu_open());
+        assert_eq!(app.modes.active(), Mode::Terminal);
+    }
+
+    /// A mode picked while its tab lies under More, by a shortcut or in the
+    /// All modes menu, has its tab scrolled into view, where a press on it
+    /// reaches it.
+    #[test]
+    fn in_a_narrow_left_panel_the_picked_mode_tab_is_scrolled_into_view() {
+        let mut app = app();
+        let panel_right = left_panel_split(&app, NARROW_WINDOW);
+        let just_left_of_more = Point::new(
+            panel_right - 8.0 - 3.0 - size::MODE_TAB_WIDTH - 2.0 - 4.0,
+            switcher_tab(0.0).y,
+        );
+        let mut frames = Frames::in_window(NARROW_WINDOW);
+        frames.build(&app);
+
+        let _ = app.update(Message::Input(AppEvent::Modes(
+            ModesIntent::Select(Mode::Agents),
+        )));
+        frames.build(&app);
+        let pressed = frames.press(&app, just_left_of_more);
+
+        assert!(matches!(
+            mode_events(pressed).as_slice(),
+            [AppEvent::Modes(ModesIntent::Select(Mode::Agents))]
+        ));
     }
 
     #[test]
@@ -406,7 +492,8 @@ mod tests {
         ui.click(i18n::t(Key::ModeContainers))
             .expect("containers row should be visible");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesIntent::Select(Mode::Containers))]
@@ -458,7 +545,8 @@ mod tests {
         assert!(ui.find(i18n::t(Key::MenuNewLaunch)).is_ok());
         ui.click(i18n::t(Key::ModeContainers))
             .expect("the modes menu should take the press");
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(matches!(
             events.as_slice(),
             [AppEvent::Modes(ModesIntent::Select(Mode::Containers))]
@@ -554,7 +642,8 @@ mod tests {
             ui.point_at(cross);
             let _ = ui.simulate(iced_test::simulator::click());
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(line.y > size::TITLEBAR + size::LINE, "{line:?}");
             assert!(line.y < size::TITLEBAR + 40.0, "{line:?}");
             assert!(
@@ -586,19 +675,21 @@ mod tests {
                 .bounds();
             ui.find("Could not save the pinned modes")
                 .expect("the row should show");
-            ui.point_at(Point::new(200.0, 600.0));
+            let away = Point::new(600.0, 600.0);
+            ui.point_at(away);
+            let _ = ui.simulate([iced::Event::Mouse(
+                iced::mouse::Event::CursorMoved { position: away },
+            )]);
             let _ = ui.simulate(iced_test::simulator::click());
 
             let events: Vec<AppEvent> = ui.into_messages().collect();
+            for event in events {
+                let _ = app.update(Message::Input(event));
+            }
+
             assert!(title.y > size::TITLEBAR, "{title:?}");
             assert!(title.x > 1024.0 / 2.0, "{title:?}");
-            assert!(
-                events.iter().any(|event| matches!(
-                    event,
-                    AppEvent::Notifications(NotificationsIntent::CloseList)
-                )),
-                "{mode:?}"
-            );
+            assert!(!app.notifications.is_list_open(), "{mode:?}");
         }
     }
 
@@ -619,7 +710,8 @@ mod tests {
             ui.click("Esc")
                 .expect("the palette should show its Esc key");
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(input.y > size::TITLEBAR + size::LINE, "{input:?}");
             assert!(
                 events.iter().any(|event| matches!(
@@ -645,7 +737,8 @@ mod tests {
 
         ui.click("disk full").expect("the list row should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(
             !events
                 .iter()
@@ -703,7 +796,8 @@ mod tests {
 
             ui.click("OTTY Light").expect("the dialog should show");
 
-            let events: Vec<AppEvent> = ui.into_messages().collect();
+            let events: Vec<AppEvent> =
+                ui.into_messages().map(AppEvent::unmarked).collect();
             assert!(
                 matches!(
                     events.as_slice(),
@@ -784,34 +878,6 @@ mod tests {
         }
     }
 
-    /// Only Settings closes on a press outside it: the SSH prompt and the
-    /// Containers dialogs wait for their answer.
-    #[test]
-    fn a_press_on_the_dimmed_area_leaves_the_other_dialogs_open() {
-        use crate::testing::window::{
-            containers_app_with_lists, open_confirm, open_create_dialog,
-        };
-
-        let mut prompt = app();
-        open_secret_prompt(&mut prompt);
-        let mut create = containers_app_with_lists();
-        open_create_dialog(&mut create);
-        let mut confirm = containers_app_with_lists();
-        open_confirm(&mut confirm);
-
-        for mut app in [prompt, create, confirm] {
-            let opened = crate::guards::top_overlay(&app);
-
-            press_in_window(&mut app, ON_THE_DIM);
-
-            assert_eq!(
-                opened.and_then(crate::guards::Overlay::kind),
-                Some(otty_app_slots::OverlayKind::Dialog)
-            );
-            assert_eq!(crate::guards::top_overlay(&app), opened);
-        }
-    }
-
     /// An SSH launch asks for its password while a Containers dialog is
     /// open: the prompt is drawn on top and takes the click.
     #[test]
@@ -823,13 +889,17 @@ mod tests {
         let mut app = containers_app_with_lists();
         open_create_dialog(&mut app);
         open_secret_prompt(&mut app);
-        assert!(app.containers.has_create_dialog());
+        assert_eq!(
+            app.containers.top_overlay(),
+            Some(otty_app_containers::ContainersOverlay::CreateDialog)
+        );
 
         let mut ui = simulator(view(&app));
         ui.click(i18n::t(Key::ButtonConnect))
             .expect("the prompt should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::QuickLaunch(QuickLaunchIntent::SecretPromptSubmit)
@@ -850,7 +920,8 @@ mod tests {
         ui.click(i18n::t(Key::ModeTerminal))
             .expect("the modes menu should show");
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(events.iter().any(|event| matches!(
             event,
             AppEvent::Modes(ModesIntent::Select(Mode::Terminal))
@@ -922,7 +993,8 @@ mod tests {
         ui.point_at(cross);
         let _ = ui.simulate(iced_test::simulator::click());
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(
             !events.iter().any(|event| matches!(
                 event,
@@ -961,7 +1033,8 @@ mod tests {
             .expect("Settings should stay under the prompt");
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 
@@ -983,7 +1056,8 @@ mod tests {
             .expect("the New session menu should show");
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 
@@ -998,26 +1072,25 @@ mod tests {
         let mut ui = simulator(view(&app));
         press_connect(&mut ui);
 
-        let events: Vec<AppEvent> = ui.into_messages().collect();
+        let events: Vec<AppEvent> =
+            ui.into_messages().map(AppEvent::unmarked).collect();
         assert!(sends_connect(&events), "{events:?}");
     }
 
-    /// Only Settings closes on a press outside it: the SSH prompt waits for
-    /// its answer, and over Settings it takes the press, so neither closes.
+    /// Issue 18: the SSH prompt closes on a press on the dimmed area like
+    /// every dialog. Over Settings it takes the press, so only the prompt
+    /// closes and Settings stays.
     #[test]
-    fn a_press_on_the_dimmed_area_under_the_secret_prompt_keeps_settings() {
-        let mut alone = app();
-        open_secret_prompt(&mut alone);
-        let mut over_settings = app();
-        open_settings(&mut over_settings);
-        open_secret_prompt(&mut over_settings);
+    fn a_press_on_the_dimmed_area_over_settings_closes_only_the_secret_prompt()
+    {
+        let mut app = app();
+        open_settings(&mut app);
+        open_secret_prompt(&mut app);
 
-        press_in_window(&mut alone, ON_THE_DIM);
-        press_in_window(&mut over_settings, ON_THE_DIM);
+        press_in_window(&mut app, ON_THE_DIM);
 
-        assert!(alone.quick_launch.has_secret_prompt());
-        assert!(over_settings.settings.is_open());
-        assert!(over_settings.quick_launch.has_secret_prompt());
+        assert!(!app.quick_launch.has_secret_prompt());
+        assert!(app.settings.is_open());
     }
 
     /// The grips at the window edges stay away while the SSH prompt or the
@@ -1042,23 +1115,55 @@ mod tests {
         assert_eq!(resizes(&menu), 0);
     }
 
-    /// A dialog opened again starts at its top left, whatever it was
+    /// A dialog opened again starts at its top, whatever its body was
     /// scrolled to before it closed.
     #[test]
     fn settings_opened_again_starts_at_its_top() {
         let mut app = app();
-        let mut frames = Frames::new();
+        let mut frames = Frames::in_window(LOW_WINDOW);
         open_settings(&mut app);
 
         let _ = frames.dialog_frame(&app, None);
-        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        let scrolled = frames.dialog_frame(&app, scroll_dialog_body());
         let _ = app.settings.reduce(SettingsIntent::Close, ());
-        let _ = frames.frame(&app, None);
+        frames.build(&app);
         open_settings(&mut app);
         let opened_again = frames.dialog_frame(&app, None);
 
-        assert!(scrolled.x > 0.0 && scrolled.y > 0.0, "{scrolled:?}");
+        assert!(scrolled.y > 0.0, "{scrolled:?}");
         assert_eq!(opened_again, iced::Vector::new(0.0, 0.0));
+    }
+
+    /// The owner, 2026-11-22: in Plugins mode the menu of Add plugin is
+    /// drawn over the window, as the header menus of Terminal mode.
+    #[test]
+    fn the_add_plugin_menu_is_drawn_in_plugins_mode() {
+        let mut app = app();
+        let _ = app.modes.reduce(ModesIntent::Select(Mode::Plugins), ());
+        let closed = view_header_menu(
+            &app,
+            Mode::Plugins,
+            app.sidebar.vm(),
+            ThemeProps::new(app.theme_manager.current()),
+        )
+        .is_none();
+        let _ = app.sidebar.reduce(
+            SidebarIntent::HeaderMenuOpen(
+                crate::frame::sidebar::types::HeaderMenu::AddPlugin,
+            ),
+            (),
+        );
+
+        let open = view_header_menu(
+            &app,
+            Mode::Plugins,
+            app.sidebar.vm(),
+            ThemeProps::new(app.theme_manager.current()),
+        )
+        .is_some();
+
+        assert!(closed);
+        assert!(open);
     }
 
     /// Typing and switching rebuild the dialog; it stays where it was
@@ -1066,11 +1171,11 @@ mod tests {
     #[test]
     fn settings_built_again_keeps_its_scrolling() {
         let mut app = app();
-        let mut frames = Frames::new();
+        let mut frames = Frames::in_window(LOW_WINDOW);
         open_settings(&mut app);
 
         let _ = frames.dialog_frame(&app, None);
-        let scrolled = frames.dialog_frame(&app, scroll_main_area());
+        let scrolled = frames.dialog_frame(&app, scroll_dialog_body());
         edit_the_shell(&mut app, "/bin/z");
         let after_typing = frames.dialog_frame(&app, None);
         let _ = app
@@ -1078,7 +1183,7 @@ mod tests {
             .reduce(SettingsIntent::EqualizePanesToggled(false), ());
         let after_switch = frames.dialog_frame(&app, None);
 
-        assert_eq!(scrolled, iced::Vector::new(30.0, 50.0));
+        assert_eq!(scrolled, iced::Vector::new(0.0, 50.0));
         assert_eq!(after_typing, scrolled);
         assert_eq!(after_switch, scrolled);
     }

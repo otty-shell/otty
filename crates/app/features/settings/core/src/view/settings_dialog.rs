@@ -33,8 +33,9 @@ pub(crate) struct SettingsDialogProps<'a> {
 
 /// Render the Settings popup: the title with the close cross, the
 /// Appearance, General and Terminal sections, then Reset and Save. A press on
-/// the dimmed area around it closes it like the cross. In a window too small
-/// for it, the popup keeps its width and scrolls.
+/// the dimmed area around it closes it like the cross. In a low window the
+/// sections scroll under the title while Reset and Save stay; in a narrow
+/// one the popup shrinks to the window.
 pub(crate) fn view(
     props: SettingsDialogProps<'_>,
 ) -> Element<'_, SettingsIntent> {
@@ -51,8 +52,6 @@ pub(crate) fn view(
     Dialog::new(i18n::t(Key::SettingsTitle), palette)
         .width(size::DIALOG_WIDE)
         .on_close(SettingsIntent::Close, i18n::t(Key::ButtonClose))
-        // Owner, 2026-11-09: only Settings closes on a press outside it.
-        .on_backdrop_press(SettingsIntent::Close)
         .body(sections)
         .action(reset)
         .action(save)
@@ -225,18 +224,19 @@ mod tests {
         ui.into_messages().collect()
     }
 
-    /// Scrolls the popup, under its title, as far as `x` and `y` go.
-    fn wheel(ui: &mut Simulator<'_, SettingsIntent>, x: f32, y: f32) {
-        let title = ui
-            .find(i18n::t(Key::SettingsTitle))
-            .expect("the title should exist")
+    /// Scrolls the fields of the popup as far as `y` goes, with the pointer
+    /// on the first section.
+    fn wheel(ui: &mut Simulator<'_, SettingsIntent>, y: f32) {
+        let section = ui
+            .find(i18n::t(Key::SectionAppearance))
+            .expect("the first section should exist")
             .visible_bounds()
-            .expect("the title should be in view");
+            .expect("the first section should be in view");
 
-        ui.point_at(title.center());
+        ui.point_at(section.center());
         let _ = ui.simulate([iced::Event::Mouse(
             iced::mouse::Event::WheelScrolled {
-                delta: iced::mouse::ScrollDelta::Pixels { x, y },
+                delta: iced::mouse::ScrollDelta::Pixels { x: 0.0, y },
             },
         )]);
     }
@@ -302,6 +302,19 @@ mod tests {
         }
     }
 
+    /// Issue 33: plugins are managed in Plugins mode, so Settings has no
+    /// section for them.
+    #[test]
+    fn the_popup_has_no_plugins_section() {
+        let draft = SettingsData::default();
+        let app_theme = AppTheme::default();
+        let mut ui = simulator(view(props(&draft, &app_theme, false, false)));
+
+        for text in ["Plugins", "Installed plugins", "Manage plugins…"] {
+            assert!(ui.find(text).is_err(), "{text} should not show");
+        }
+    }
+
     #[test]
     fn given_a_normal_window_then_reset_and_save_end_the_popup_at_its_right() {
         let draft = SettingsData::default();
@@ -353,7 +366,7 @@ mod tests {
     }
 
     /// Owner, 2026-11-09: a press on the dimmed area around the popup closes
-    /// it like the cross, with any mouse button. Only Settings does this.
+    /// it like the cross, with any mouse button, as for every dialog.
     #[test]
     fn a_press_on_the_dimmed_area_closes_the_popup() {
         let draft = SettingsData::default();
@@ -476,32 +489,44 @@ mod tests {
         }
     }
 
+    /// Issue 33: in a low window only the fields scroll; the title, Reset
+    /// and Save stay in view.
     #[test]
-    fn given_a_low_window_then_save_comes_after_the_fields_and_is_reached_by_scrolling()
-     {
+    fn given_a_low_window_then_save_stays_in_view_and_the_fields_scroll() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
         let mut ui =
-            popup_in(props(&draft, &app_theme, true, false), 1024.0, 200.0);
+            popup_in(props(&draft, &app_theme, true, false), 1024.0, 360.0);
 
-        let hidden = ui.find("Save").expect("Save should exist");
-        wheel(&mut ui, 0.0, -10_000.0);
-        ui.click("Save").expect("Save should be in reach");
+        let hidden = ui
+            .find(i18n::t(Key::DescEqualizePanes))
+            .expect("the last field should exist")
+            .visible_bounds();
+        ui.click("Save").expect("Save should be in view");
+        wheel(&mut ui, -10_000.0);
+        let shown = ui
+            .find(i18n::t(Key::DescEqualizePanes))
+            .expect("the last field should exist")
+            .visible_bounds();
+        let title = ui
+            .find(i18n::t(Key::SettingsTitle))
+            .expect("the title should exist")
+            .visible_bounds();
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
 
-        assert_eq!(hidden.visible_bounds(), None);
+        assert_eq!(hidden, None, "the last field should start out of view");
+        assert!(shown.is_some(), "the last field should scroll into view");
+        assert!(title.is_some(), "the title should stay in view");
         assert!(matches!(messages.as_slice(), [SettingsIntent::Save]));
     }
 
     #[test]
-    fn given_a_clean_draft_when_scrolled_to_save_and_reset_then_they_stay_off()
-    {
+    fn given_a_clean_draft_in_a_low_window_then_save_and_reset_stay_off() {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
         let mut ui =
-            popup_in(props(&draft, &app_theme, false, false), 1024.0, 200.0);
+            popup_in(props(&draft, &app_theme, false, false), 1024.0, 360.0);
 
-        wheel(&mut ui, 0.0, -10_000.0);
         ui.click("Save").expect("Save should be in reach");
         ui.click("Reset").expect("Reset should be in reach");
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
@@ -540,57 +565,27 @@ mod tests {
         );
     }
 
-    /// In a window narrower than the popup, it keeps its width and scrolls
-    /// sideways.
+    /// In a window narrower than the popup, the popup shrinks to it and
+    /// Save stays in reach without scrolling sideways.
     #[test]
-    fn given_a_narrow_window_then_the_popup_keeps_its_width_and_save_is_reached_by_scrolling()
-     {
+    fn given_a_narrow_window_then_the_popup_shrinks_to_it_and_save_is_in_reach()
+    {
         let draft = SettingsData::default();
         let app_theme = AppTheme::default();
+        let width = 480.0;
         let mut ui =
-            popup_in(props(&draft, &app_theme, true, false), 300.0, 600.0);
+            popup_in(props(&draft, &app_theme, true, false), width, 600.0);
 
-        let name = ui
-            .find(i18n::t(Key::FieldTheme))
-            .expect("row name")
-            .bounds();
-        let last_choice = ui
-            .find("OTTY Light")
-            .expect("the theme should show")
-            .bounds();
-        let hidden = ui.find("Save").expect("Save should exist");
-        wheel(&mut ui, -10_000.0, -10_000.0);
+        let save = ui
+            .find("Save")
+            .expect("Save should exist")
+            .visible_bounds()
+            .expect("Save should be in view");
         ui.click("Save").expect("Save should be in reach");
         let messages: Vec<SettingsIntent> = ui.into_messages().collect();
 
-        let width = last_choice.x + last_choice.width - name.x;
-        let content = size::DIALOG_WIDE - 2.0 * spacing::SPACE_5;
-        assert!(width <= content && width > content - 30.0, "{width}");
-        assert_eq!(hidden.visible_bounds(), None);
+        assert!(save.x + save.width <= width, "{save:?}");
         assert!(matches!(messages.as_slice(), [SettingsIntent::Save]));
-    }
-
-    #[test]
-    fn given_a_narrow_window_when_scrolled_then_the_language_list_opens_and_picks()
-     {
-        let draft = SettingsData::default();
-        let app_theme = AppTheme::default();
-        let mut ui =
-            popup_in(props(&draft, &app_theme, true, false), 300.0, 600.0);
-
-        wheel(&mut ui, -10_000.0, 0.0);
-        let last_choice = ui
-            .find("OTTY Light")
-            .expect("the theme should show")
-            .visible_bounds()
-            .expect("the theme should be in view");
-        pick_a_language(&mut ui, last_choice.x + last_choice.width - 20.0);
-        let messages: Vec<SettingsIntent> = ui.into_messages().collect();
-
-        assert!(
-            matches!(messages.as_slice(), [SettingsIntent::LanguageChanged(_)]),
-            "{messages:?}"
-        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use iced::widget::{Column, container, scrollable, svg, text};
+use iced::widget::{Column, container, scrollable, svg};
 use iced::{Element, Length, Padding};
 use otty_app_domain::shortcuts::AppShortcut;
 use otty_app_i18n::{self as i18n, Key};
@@ -9,10 +9,11 @@ use otty_ui_kit::components::panel_section::PanelSection;
 use otty_ui_kit::components::scrollbar;
 use otty_ui_kit::components::session_group::SessionGroup;
 use otty_ui_kit::components::session_row::{SessionRow, SessionTone};
+use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::split_button::SplitButton;
 use otty_ui_kit::components::target_dot::TargetKind;
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, size, spacing, typography};
+use otty_ui_kit::{size, spacing, typography};
 
 use crate::event::TabsIntent;
 use crate::model::{
@@ -107,15 +108,10 @@ pub(crate) fn content_height(vm: &TabsViewModel<'_>) -> f32 {
 
 /// Muted hint shown while no session is open.
 fn empty_hint<'a>(palette: &UiPalette) -> Element<'a, Message> {
-    let small = typography::SMALL;
-
-    container(
-        text(i18n::t(Key::NoOpenSessions))
-            .size(small.size())
-            .line_height(iced::Pixels(small.line_height()))
-            .font(fonts::UI)
-            .color(palette.text_muted()),
-    )
+    container(small_text(
+        i18n::t(Key::NoOpenSessions),
+        palette.text_muted(),
+    ))
     .padding(Padding {
         top: EMPTY_HINT_TOP,
         right: spacing::SPACE_3,

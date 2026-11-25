@@ -4,6 +4,10 @@ pub enum NotificationsIntent {
     /// Tell the user about an error: a toast at the top of the window.
     /// Carries the text, already in the user's language.
     Push(String),
+    /// Tell the user that an action finished, such as "Plugin OpenCode
+    /// reloaded": a neutral toast with a green check. Carries the text,
+    /// already in the user's language.
+    PushDone(String),
     /// The cross of a toast was pressed; carries the toast's id.
     DismissToast(u64),
     /// A tick of the toast timer: toasts shown long enough go away.

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use iced::Point;
 use otty_app_domain::mode::Mode;
 use otty_app_i18n::{self as i18n, Key};
@@ -49,13 +51,13 @@ fn reduce_intent(
         ContainersIntent::ModeChanged(_) => {
             reduce_intent(state, ContainersIntent::Leave)
         },
+        ContainersIntent::LoadInBackground => search_at_start(state),
         ContainersIntent::Enter => {
             state.set_active(true);
-            state.start_search();
 
             // The timer did not run in the other mode, so the open form asks
             // about its folders now rather than in up to 2 seconds.
-            let mut outcomes = vec![ContainersOutcome::Discover];
+            let mut outcomes = search_unless_fresh(state, Instant::now());
             outcomes.extend(reduce_run(state, RunIntent::RecheckFolders));
             outcomes
         },
@@ -73,11 +75,11 @@ fn reduce_intent(
             Vec::new()
         },
         ContainersIntent::DiscoveryFinished(discovery) => {
-            take_search_result(state, discovery)
+            take_search_result(state, discovery, Instant::now())
         },
         ContainersIntent::EngineSearchTick => search_behind_the_card(state),
         ContainersIntent::BackgroundSearchFinished(discovery) => {
-            finish_search_behind_the_card(state, discovery)
+            finish_search_behind_the_card(state, discovery, Instant::now())
         },
         ContainersIntent::ListsLoaded { engine, lists } => {
             if !state.apply_lists(&engine, lists) {
@@ -328,6 +330,39 @@ fn apply_reloaded_list(
     .collect()
 }
 
+/// OTTY started: search for engines with the mode away, so the tree and the
+/// lists are there when the mode opens; nothing when a search was asked
+/// already or the mode is on screen.
+fn search_at_start(state: &mut ContainersState) -> Vec<ContainersOutcome> {
+    if state.is_active() || state.has_searched() {
+        return Vec::new();
+    }
+
+    state.start_search();
+    state.set_loading_in_background(true);
+    vec![ContainersOutcome::Discover]
+}
+
+/// Containers mode opened at `now`. A search on its way loads the lists when
+/// it ends. A search that ended within the period of the engine search timer
+/// is kept and only the lists are loaded again, since no engine events came
+/// while the mode was away. An older one is done again, as the timer of the
+/// no-engine card would; the engines found before stay shown meanwhile.
+fn search_unless_fresh(
+    state: &mut ContainersState,
+    now: Instant,
+) -> Vec<ContainersOutcome> {
+    if state.is_search_on_its_way() {
+        return Vec::new();
+    }
+    if state.is_search_fresh(now) {
+        return load_every_engine(state);
+    }
+
+    state.start_search();
+    vec![ContainersOutcome::Discover]
+}
+
 /// An engine stopped answering: search again, unless a search runs, so the
 /// tree and the no-engine card show what is left (ticket 10).
 fn search_after_lost_engine(
@@ -369,6 +404,7 @@ fn search_behind_the_card(
 fn finish_search_behind_the_card(
     state: &mut ContainersState,
     discovery: Discovery,
+    now: Instant,
 ) -> Vec<ContainersOutcome> {
     state.set_background_search_running(false);
 
@@ -377,22 +413,29 @@ fn finish_search_behind_the_card(
         return Vec::new();
     }
 
-    take_search_result(state, discovery)
+    take_search_result(state, discovery, now)
 }
 
-/// Take a finished engine search and load the lists of every engine. A place
-/// lost with its engine takes the row menu of its list with it.
+/// Take a finished engine search and load the lists of every engine: while
+/// Containers mode is active, and once for the search of the start of OTTY.
+/// A place lost with its engine takes the row menu of its list with it.
 fn take_search_result(
     state: &mut ContainersState,
     discovery: Discovery,
+    now: Instant,
 ) -> Vec<ContainersOutcome> {
-    let is_place_lost = state.finish_search(discovery);
+    let is_place_lost = state.finish_search(discovery, now);
+    let is_start = state.take_loading_in_background();
 
     let mut outcomes = Vec::new();
     if is_place_lost {
         outcomes.extend(reduce_actions(state, ActionsIntent::CloseRowMenu));
     }
-    outcomes.extend(load_every_engine(state));
+    if is_start {
+        outcomes.extend(lists_of_every_engine(state));
+    } else {
+        outcomes.extend(load_every_engine(state));
+    }
     outcomes
 }
 
@@ -427,6 +470,11 @@ fn load_every_engine(state: &ContainersState) -> Vec<ContainersOutcome> {
         return Vec::new();
     }
 
+    lists_of_every_engine(state)
+}
+
+/// Ask to load the lists of every engine.
+fn lists_of_every_engine(state: &ContainersState) -> Vec<ContainersOutcome> {
     state
         .engines()
         .iter()
@@ -597,6 +645,7 @@ mod tests {
     use otty_containers::{
         Container, EngineInfo, EngineKind, Image, Network, Volume, fixtures,
     };
+    use otty_ui_kit::components::data_table::SortDirection;
     use otty_ui_kit::components::tag_search::TagSearchAction;
 
     use super::*;
@@ -606,7 +655,7 @@ mod tests {
         EngineTreeViewModel, MainAreaViewModel, StatusBarViewModel,
     };
     use crate::run::types::RunEdit;
-    use crate::sort::{SortOrder, TableSort};
+    use crate::sort::default_sort;
     use crate::state::ListLoad;
     use crate::table_search::{COMPOSE_KEY, keys, keys_in};
     use crate::types::{
@@ -746,6 +795,94 @@ mod tests {
         assert!(state.is_active());
         assert_eq!(state.search(), &Search::Searching);
         assert_eq!(outcomes, vec![ContainersOutcome::Discover]);
+    }
+
+    #[test]
+    fn at_start_the_engines_are_looked_for_with_the_mode_away() {
+        let mut state = ContainersState::default();
+
+        let started = reduce(&mut state, ContainersIntent::LoadInBackground);
+        let again = reduce(&mut state, ContainersIntent::LoadInBackground);
+
+        assert!(!state.is_active());
+        assert_eq!(started, vec![ContainersOutcome::Discover]);
+        assert!(again.is_empty(), "a search is on its way");
+    }
+
+    /// The search of the start loads the lists once, so the mode shows them
+    /// when it opens; a later search with the mode away loads nothing.
+    #[test]
+    fn the_engines_found_at_start_have_their_lists_loaded_once() {
+        let mut state = ContainersState::default();
+        let _ = reduce(&mut state, ContainersIntent::LoadInBackground);
+        let found = || {
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ]))
+        };
+
+        let at_start = reduce(&mut state, found());
+        let later = reduce(&mut state, found());
+
+        assert_eq!(at_start, vec![ContainersOutcome::LoadLists(docker())]);
+        assert!(later.is_empty());
+        assert_eq!(state.engines().len(), 1);
+    }
+
+    #[test]
+    fn opening_the_mode_soon_after_a_search_loads_the_lists_without_one() {
+        let mut state = ContainersState::default();
+        for intent in [
+            ContainersIntent::LoadInBackground,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+
+        let opened = reduce(&mut state, ContainersIntent::Enter);
+
+        assert_eq!(opened, vec![ContainersOutcome::LoadLists(docker())]);
+    }
+
+    /// Older than the period of the engine search timer, the result of the
+    /// search may be out of date: opening the mode searches again, and the
+    /// engines found before stay on screen meanwhile.
+    #[test]
+    fn opening_the_mode_after_the_period_searches_again() {
+        let mut state = ContainersState::default();
+        for intent in [
+            ContainersIntent::LoadInBackground,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        ] {
+            let _ = reduce(&mut state, intent);
+        }
+        state.age_search_by(crate::ENGINE_SEARCH_PERIOD);
+
+        let opened = reduce(&mut state, ContainersIntent::Enter);
+
+        assert_eq!(opened, vec![ContainersOutcome::Discover]);
+        assert_eq!(state.engines().len(), 1);
+    }
+
+    #[test]
+    fn opening_the_mode_while_the_search_of_the_start_runs_waits_for_it() {
+        let mut state = ContainersState::default();
+        let _ = reduce(&mut state, ContainersIntent::LoadInBackground);
+
+        let opened = reduce(&mut state, ContainersIntent::Enter);
+        let found = reduce(
+            &mut state,
+            ContainersIntent::DiscoveryFinished(fixtures::discovery(&[
+                EngineKind::Docker,
+            ])),
+        );
+
+        assert!(opened.is_empty(), "{opened:?}");
+        assert_eq!(found, vec![ContainersOutcome::LoadLists(docker())]);
     }
 
     #[test]
@@ -968,7 +1105,7 @@ mod tests {
 
         let page = docker_page(ResourceKind::Containers);
         assert_eq!(state.sort(&page).column(), PORTS);
-        assert_eq!(state.sort(&page).order(), SortOrder::Ascending);
+        assert_eq!(state.sort(&page).direction(), SortDirection::Ascending);
         assert_eq!(
             shown_containers(&state),
             [
@@ -986,7 +1123,7 @@ mod tests {
 
         let _ = reduce(&mut state, ContainersIntent::SortBy(PORTS));
 
-        assert_eq!(state.sort(&page).order(), SortOrder::Descending);
+        assert_eq!(state.sort(&page).direction(), SortDirection::Descending);
         assert_eq!(
             shown_containers(&state),
             [
@@ -1107,9 +1244,9 @@ mod tests {
         let second = state.sort(&docker_page(ResourceKind::Images));
 
         assert_eq!(first.column(), 3);
-        assert_eq!(first.order(), SortOrder::Descending);
+        assert_eq!(first.direction(), SortDirection::Descending);
         assert_eq!(second.column(), 3);
-        assert_eq!(second.order(), SortOrder::Ascending);
+        assert_eq!(second.direction(), SortDirection::Ascending);
     }
 
     #[test]
@@ -2267,7 +2404,7 @@ mod tests {
         open(&mut state, ResourceKind::Volumes);
 
         type_text(&mut state, "dr");
-        search_does(&mut state, TagSearchAction::Complete);
+        search_does(&mut state, TagSearchAction::Pick(0));
 
         assert_eq!(input_of(&state, ResourceKind::Volumes), "Driver:");
         assert_eq!(input_of(&state, ResourceKind::Containers), "");
@@ -2979,7 +3116,7 @@ mod tests {
         assert_eq!(state.table_search(&podman_containers).input(), "");
         assert_eq!(
             state.sort(&podman_containers),
-            TableSort::default_for(ResourceKind::Containers)
+            default_sort(ResourceKind::Containers)
         );
 
         find_engines(&mut state, &[EngineKind::Docker, EngineKind::Podman]);

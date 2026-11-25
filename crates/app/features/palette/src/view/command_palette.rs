@@ -1,4 +1,4 @@
-use iced::widget::{Space, container, mouse_area, stack, svg};
+use iced::widget::{container, mouse_area, svg};
 use iced::{Element, Length, Padding, alignment, mouse};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons::SEARCH;
@@ -38,7 +38,7 @@ pub(crate) fn view(
     .on_action(PaletteIntent::Action);
 
     // A press the entries and the input leave alone lands here and must not
-    // reach the dismiss layer under the palette.
+    // reach what lies under the palette, which would close it.
     let command_palette = mouse_area(command_palette)
         .on_press(PaletteIntent::FocusInput)
         .interaction(mouse::Interaction::Idle);
@@ -53,20 +53,9 @@ pub(crate) fn view(
         .align_x(alignment::Horizontal::Center)
         .align_y(alignment::Vertical::Top);
 
-    // Transparent layer over the main area: a press of any button on it
-    // closes the palette, and the hidden widgets under it get no hover or
-    // clicks.
-    let dismiss_layer =
-        mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(PaletteIntent::Dismiss)
-            .on_right_press(PaletteIntent::Dismiss)
-            .on_middle_press(PaletteIntent::Dismiss)
-            .interaction(mouse::Interaction::Idle);
-
-    stack![dismiss_layer, positioned]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    // A press away from the palette reaches what lies under it; the frame
+    // closes the palette then.
+    positioned.into()
 }
 
 #[cfg(test)]
@@ -107,6 +96,7 @@ mod tests {
                 is_terminal_mode: true,
                 has_active_tab: true,
                 has_focused_pane: true,
+                has_local_folder: false,
             },
         }
     }
@@ -148,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_then_arrow_then_enter_runs_the_chosen_session() {
+    fn typing_then_arrows_then_enter_runs_the_chosen_session() {
         let mut state = open_state();
 
         let typed = drive_ui(&state, |ui| {
@@ -164,11 +154,13 @@ mod tests {
         assert!(apply(&mut state, typed).is_empty());
         assert_eq!(state.list().map(|list| list.query()), Some("to"));
 
-        let moved = drive_ui(&state, |ui| {
-            ui.click(input_id()).expect("input should be visible");
-            ui.tap_key(Named::ArrowDown);
-        });
-        assert!(apply(&mut state, moved).is_empty());
+        for _ in 0..2 {
+            let moved = drive_ui(&state, |ui| {
+                ui.click(input_id()).expect("input should be visible");
+                ui.tap_key(Named::ArrowDown);
+            });
+            assert!(apply(&mut state, moved).is_empty());
+        }
 
         let entered = drive_ui(&state, |ui| {
             ui.click(input_id()).expect("input should be visible");
@@ -180,6 +172,27 @@ mod tests {
             vec![PaletteOutcome::SessionPicked { tab_id: 2 }]
         );
         assert!(!state.is_open());
+    }
+
+    /// Issue 43: no entry is lit until ↓; Enter then runs the first match.
+    #[test]
+    fn typing_then_enter_with_none_lit_runs_the_first_match() {
+        let mut state = open_state();
+
+        let typed = drive_ui(&state, |ui| {
+            ui.click(input_id()).expect("input should be visible");
+            ui.typewrite("htop");
+        });
+        let _ = apply(&mut state, typed);
+        let entered = drive_ui(&state, |ui| {
+            ui.click(input_id()).expect("input should be visible");
+            ui.tap_key(Named::Enter);
+        });
+
+        assert_eq!(
+            apply(&mut state, entered),
+            vec![PaletteOutcome::SessionPicked { tab_id: 1 }]
+        );
     }
 
     #[test]
@@ -211,29 +224,23 @@ mod tests {
         );
     }
 
+    /// A press away from the palette sends nothing of the palette: it
+    /// reaches what lies under it, and the frame closes the palette.
     #[test]
-    fn a_click_outside_the_palette_dismisses_it() {
+    fn a_press_outside_the_palette_sends_nothing_of_it() {
         let state = open_state();
 
-        let intents = drive_ui(&state, |ui| {
+        let left = drive_ui(&state, |ui| {
             ui.point_at(Point::new(20.0, 740.0));
             let _ = ui.simulate(iced_test::simulator::click());
         });
-
-        assert!(matches!(intents.as_slice(), [PaletteIntent::Dismiss]));
-    }
-
-    /// A middle press away from the palette closes it, as a left press does.
-    #[test]
-    fn a_middle_press_outside_the_palette_dismisses_it() {
-        let state = open_state();
-
-        let intents = drive_ui(&state, |ui| {
+        let middle = drive_ui(&state, |ui| {
             ui.point_at(Point::new(20.0, 740.0));
             let _ = ui.simulate(middle_click());
         });
 
-        assert!(matches!(intents.as_slice(), [PaletteIntent::Dismiss]));
+        assert!(left.is_empty(), "{left:?}");
+        assert!(middle.is_empty(), "{middle:?}");
     }
 
     #[test]

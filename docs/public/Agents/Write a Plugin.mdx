@@ -1,0 +1,661 @@
+---
+title: Write a Plugin
+description: Write an OTTY plugin in Rust for a coding agent or a model provider - the template, the manifest and its permissions, the SDK traits, the test host, trying a build and releasing it.
+sidebar:
+  order: 18
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A plugin teaches OTTY an agent or a provider without any change to OTTY. It is a WebAssembly
+component written in Rust, kept in your own GitHub repository, and installed by its users from a
+link. When the agent changes its files, you ship a new release; OTTY picks it up.
+
+<figure class="not-content">
+<svg viewBox="0 0 720 120" width="100%" role="img" aria-labelledby="plugin-flow-title" style="max-width: 720px; font-family: var(--sl-font); font-size: 13px;">
+  <title id="plugin-flow-title">Your repository, a tag such as v0.1.0, a GitHub release with otty-plugin.toml, the .wasm and the icons, then OTTY installs and updates it.</title>
+  <defs>
+    <marker id="plugin-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--sl-color-gray-3);" />
+    </marker>
+  </defs>
+  <rect x="10" y="20" width="150" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="85" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Your repository</text>
+  <text x="85" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">from the template</text>
+  <rect x="200" y="20" width="130" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="265" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">Tag v0.1.0</text>
+  <text x="265" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">workflow builds</text>
+  <rect x="370" y="20" width="190" height="70" rx="6" style="fill: var(--sl-color-gray-6); stroke: var(--sl-color-hairline);" />
+  <text x="465" y="42" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">GitHub release</text>
+  <text x="465" y="60" text-anchor="middle" style="fill: var(--sl-color-gray-3);">otty-plugin.toml, &lt;id&gt;.wasm,</text>
+  <text x="465" y="76" text-anchor="middle" style="fill: var(--sl-color-gray-3);">icons</text>
+  <rect x="600" y="20" width="110" height="70" rx="6" style="fill: var(--sl-color-green-low); stroke: var(--sl-color-green);" />
+  <text x="655" y="48" text-anchor="middle" style="fill: var(--sl-color-white); font-weight: 600;">OTTY</text>
+  <text x="655" y="68" text-anchor="middle" style="fill: var(--sl-color-gray-3);">installs, updates</text>
+  <g style="stroke: var(--sl-color-gray-3); stroke-width: 1.5;">
+    <line x1="160" y1="55" x2="198" y2="55" marker-end="url(#plugin-flow-arrow)" />
+    <line x1="330" y1="55" x2="368" y2="55" marker-end="url(#plugin-flow-arrow)" />
+    <line x1="560" y1="55" x2="598" y2="55" marker-end="url(#plugin-flow-arrow)" />
+  </g>
+</svg>
+</figure>
+
+**The rule:** everything that breaks when an agent or a provider updates (file names, field names,
+JSON shapes, SQL, screen text, URLs, how a login works and whose it is) lives in the plugin. OTTY
+does the generic work: walking files and re-reading only the changed ones, adding up tokens and
+money, counting an answer once, the "format changed" verdict, the price list and the whole
+interface.
+
+**A plugin gives rows, OTTY sums.** A row is one fact as the agent wrote it: one answer of the model
+with its time, model, provider, session, project, tokens and cost, a limit or a balance a provider
+told, a bill. Every total is OTTY's: today, this week, by project, by model, money, and the numbers
+of one session or one project in their statistics. So your plugin never adds tokens up, and the
+statistics always agree with the totals.
+
+**Profiles and accounts are apart.** An agent part gives profiles and what happens in them, and
+knows nothing of accounts. A provider part finds the accounts, from the logins in the profiles of
+its own plugin's agents and in OTTY's own logins, and reads their numbers. OTTY draws no line
+between a profile and an account, and joins no accounts of different plugins.
+
+## Start from the template
+
+Copy the [template repository](https://github.com/otty-shell/otty-plugin-template),
+`otty-shell/otty-plugin-template`, into a new repository. It is a working plugin over a made-up
+agent and a made-up provider:
+
+| File                             | Holds                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `otty-plugin.toml`               | The manifest: the plugin, its parts and their permissions.               |
+| `src/lib.rs`                     | The plugin type and the `export!` line.                                  |
+| `src/agent.rs`, `src/provider.rs` | One `impl Agent` and one `impl Provider`, with their tests.             |
+| `src/session_file.rs`            | How one session file is read: its answers, their tokens and their money. |
+| `src/needs.rs`                   | The needs the parts give, with their texts in OTTY's ten languages.      |
+| `fixtures/`                      | Made-up files that stand for the home folder in tests.                   |
+| `*.svg`                          | One icon per part.                                                       |
+| `.github/workflows/release.yml`  | Builds and releases the plugin on a version tag.                         |
+
+The SDK is not on crates.io yet. The template takes it from the `agents` branch of the OTTY
+repository; once OTTY tags a release with it, depend on that tag instead:
+
+```toml
+[dependencies]
+otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", branch = "agents" }
+# or, once OTTY tags a release with the SDK:
+# otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY release tag>" }
+```
+
+## The manifest
+
+```toml
+[plugin]
+id = "example"                  # stable; a new id is a new plugin
+name = "Example"
+version = "0.1.11"              # equals the release tag without "v"
+description = "A made-up agent and a made-up provider, the start of a new plugin."
+repository = "https://github.com/you/otty-plugin-example"
+license = "Apache-2.0"
+authors = ["You"]
+wasm = "example.wasm"           # must be "<id>.wasm"
+
+[[agents.agent]]
+id = "example-agent"            # saved by OTTY; never change it
+name = "Example Agent"
+description = "Finds Example Agent sessions, tokens and their money."  # one sentence, on its card
+icon = "example-agent.svg"
+program = "example-agent"       # looked up on PATH
+program_places = ["~/.example/bin/example-agent"]  # where its installer puts it, when PATH has not
+tested_version = "1.4.2"        # newest agent version this release was checked with
+
+[agents.agent.install]          # optional: offered when OTTY finds the program nowhere
+command = ["sh", "-c", "curl -fsSL https://example.com/install.sh | sh"]  # runs in a tab the user sees
+page = "https://example.com/docs/install"
+
+[agents.agent.permissions]
+read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
+env = ["EXAMPLE_AGENT_HOME"]
+
+[[agents.agent.permissions.keys]]      # readable only with the keys replaced by handles
+files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
+fields = ["/api_key"]
+
+[[agents.provider]]
+id = "example-cloud"
+name = "Example Cloud"
+description = "Reads the limits of Example Cloud accounts."
+icon = "example-cloud.svg"
+hosts = ["example.com"]         # the hosts of its servers: answers sent there are priced as this provider's
+usage_page = "https://example.com/usage"
+# plan_usage_page = "https://example.com/plan"  # the usage page of a subscription, when it has another
+# priced_as = "example_cloud"   # its name in the LiteLLM price table, when not the id
+
+[agents.provider.permissions]
+http = ["api.example.com"]
+
+[[agents.provider.logins]]      # the profiles of an agent part of this plugin whose logins it reads
+agent = "example-agent"
+folder_env = "EXAMPLE_AGENT_HOME"  # a program it starts may get this variable set to one of the folders
+log_in = true                   # offers Add account → "Log in with Example Agent"
+read = ["sessions/*.jsonl"]     # globs inside each folder, read as plain files
+# write = ["cache/*.tmp"]       # globs inside each folder it may write and delete
+
+[[agents.provider.logins.keys]]  # key files inside each folder, their keys as handles
+files = ["auth.json"]
+fields = ["/api_key"]
+```
+
+Each part belongs to a **domain** of OTTY, the place of the window it fills, and is written under the
+domain's name: the agents and providers of Agents mode are the `agents` domain, so each
+`[[agents.agent]]` and `[[agents.provider]]` is a **part** with its own id, icon and permissions. The
+manifest names no contract version: the version of the SDK you build with decides them, and OTTY reads
+them from the built `.wasm` ([below](#the-code)). The `description` of the plugin
+and of each part is optional, one short sentence with commas, not semicolons: Plugins mode shows the
+plugin's under its name and a part's on its card, next to **Can access**. A part at the top level, such as
+`[[agent]]`, is refused as an unknown field. A plugin may have any number of parts; a new part is a
+new release. The permissions of a part apply only while
+OTTY calls that part: above, the provider part may not read `~/.example-agent` but for what its
+`logins` give it in the folders of a call, and the agent part may not call `api.example.com`.
+
+| Permission                       | Of     | Allows                                                                  |
+| -------------------------------- | ------ | ----------------------------------------------------------------------- |
+| `read`                           | both   | Listing and reading files that match the globs.                         |
+| `write`                          | both   | Deleting files that match the globs.                                    |
+| `sqlite`                         | agent  | Read-only queries of the databases that match.                          |
+| `env`                            | both   | Reading these environment variables, and using them in globs as `{NAME}`. |
+| `[[agents.<kind>.permissions.run]]`      | both   | Running `program` with arguments that match `args`, once or line by line. |
+| `[[agents.<kind>.permissions.terminal]]` | both   | Running `program` with `args` in a hidden terminal.                     |
+| `[[agents.agent.permissions.keyring]]`  | agent  | Reading the keyring entry `service` / `user` once the user allows the keyring; `fields` are its key fields. |
+| `[[agents.agent.permissions.keys]]`     | agent  | Where keys are: JSON `fields` of `files`, a `column` of a `table` in `sqlite` databases (with `fields` for a JSON column), or `env` variables. |
+| `[[agents.provider.permissions.keys]]`  | provider | JSON `fields` of `files` outside every profile folder, such as `~/.claude.json` next to `~/.claude`. Only files. |
+| `http`                           | provider | HTTPS requests to exactly these hosts.                                |
+| `[[agents.provider.logins]]`     | provider | What it reads, writes and deletes inside the folders of the profiles of one agent part of the same plugin ([below](#logins-of-a-provider-part)). |
+
+Paths start with `~` or with a listed variable (`{XDG_DATA_HOME}/...`) and may not contain `..`.
+The paths of `logins` are the exception: they are written from inside the folder, with no `~`,
+no leading `/`, no variable and no `..`. Ids use lowercase letters, digits and dashes. Each part needs an icon: an SVG of at most 16 KiB with no scripts, links
+or embedded images, drawn in one color with `currentColor`. Unknown fields are refused, so a
+misspelt permission is never dropped silently, and so is an `[api]` table: the contracts are not
+named in the manifest.
+
+### Logins of a provider part
+
+A provider part finds its accounts in the logins of the profiles of its own plugin's agents. Each
+`[[agents.provider.logins]]` names one agent part of the same manifest with `agent`, and says what
+the part may touch inside each folder of that agent's profiles:
+
+| Field          | Says                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `agent`        | The agent part whose profiles hold the logins, an agent part of this plugin.            |
+| `read`         | Globs of files inside the folder it reads as plain files, such as `config.toml`.        |
+| `write`        | Globs of files inside the folder it may write and delete, such as the leftovers of a program it ran there. Never a key file. |
+| `keys`         | `[[agents.provider.logins.keys]]`: `files` inside the folder and their JSON `fields` that hold keys, given as handles. |
+| `folder_env`   | The variable that points the agent at a folder, such as `CODEX_HOME`. A program or hidden terminal the part starts may get it set only to one of the folders of the call. |
+| `log_in`       | `true` offers Add account → "Log in with *agent*" ([below](#ottys-own-login)). At most one entry of a part offers it. |
+
+These rules apply only while OTTY calls the part with folders, and only inside those folders, so a
+profile the user added in any folder works with no wider glob. OTTY passes the folders of the shown
+profiles of that agent part, wherever they are, and the folders of the part's own logins. A part
+never gets a folder of another plugin. Plugins mode shows each entry as a group of its own, "Logins
+in *Agent* profiles".
+
+### The agent's program
+
+OTTY starts the agent's `program` through the user's login shell, the way a terminal tab starts it,
+so a program found on that shell's `PATH` is found. Some installers put the program in a folder the
+shell does not have on its `PATH`, such as `~/.opencode/bin/opencode`. List these places in
+`program_places`: each is one file, written from `~`, from a variable the part lists in `env`
+(`{XDG_DATA_HOME}/...`) or from `/`, with no `..` and no pattern. When the login shell does not find
+the program by its name, OTTY takes the first place that holds a program and starts the agent by
+that full path everywhere: session tabs, the commands of needs, the version check, and the programs
+and hidden terminals the plugin starts. The plugin still names the program by its name, and the
+permissions of that name apply.
+
+When OTTY finds the program nowhere, the profile says "program not found", names the program and
+where OTTY looked. `[agents.agent.install]` says how to install it: `command` is a program and its
+arguments that OTTY runs in a terminal tab the user sees, behind the button "Install <agent>", and
+the line shows the command; `page` is an `https` page, shown as a second button, or as the only one
+when there is no command. Give at least one of them; with no `install` table there is no button.
+After the install tab closes, OTTY reads the profiles again.
+
+## The code
+
+One plugin type serves all its parts. All agent parts share one `impl Agent`, all provider parts one
+`impl Provider`; OTTY passes the part's id with each call (`agent`, `profile.agent` or `provider`).
+The traits and every type of the domain are in `otty_plugin_sdk::agents`; the host operations
+(`files`, `http`, `keys`, `env` and the rest), `Need`, `Key` and `HostError` are at the root of the
+SDK, since every domain uses them. The last line names the domain's parts the plugin serves, one
+contract per kind of part in the manifest:
+
+```rust
+// src/lib.rs
+mod agent;
+mod provider;
+
+/// The plugin: one type serves every part its manifest lists.
+pub struct Example;
+
+otty_plugin_sdk::export!(Example with agents::agent, agents::provider, language);
+```
+
+A plugin with only agent parts and texts only in English writes
+`export!(Example with agents::agent)`. The version of the SDK decides the version of each contract,
+such as `agents.agent` 0.1, and the `.wasm` carries them. OTTY reads them when it installs your plugin,
+checks for an update and loads it: every part needs its contract exported, and no contract of a kind
+of part may be exported without a part, except `language`, which belongs to the whole plugin
+([below](#the-language)).
+
+| `Agent`                                   | Gives OTTY                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `profiles(agent)`                         | The agent's default config folder only, marked `is_default`: the folder the agent uses with no variable set, or the one its variable names. OTTY ignores any other place, and the user adds other folders as profiles. |
+| `detect(profile)`                         | `ProfileStatus::Found`, or `ProfileStatus::NotLoggedIn(need)` with the [need](#login-needs) that says how to log in. Never whose login it is. OTTY asks only about a folder that is there and itself says "folder not found" for one that is not, so you decide what an empty folder needs, as a new profile is: a login, or nothing when the agent works with no login. |
+| `version(profile)`                        | The version written in the newest files. `None` makes OTTY run `<program> --version`. |
+| `session_places(profile)`                 | File globs or a database that hold the sessions. OTTY re-reads only what changed. |
+| `read_sessions(profile, item)`            | What one file tells about its sessions: the id, and the folder and the title when the file names them. |
+| `spend_places(profile)`                   | File globs or a database that hold the answers. OTTY re-reads only what changed. |
+| `read_answers(profile, item)`             | Every answer of one file, of the whole history, with its tokens, its [money](#the-money-of-an-answer), an identity, and the session and the project it was given in, and the records seen and understood. OTTY makes the statistics of a session and of a project from these answers, reading for them only the files your session places tie to that session or project. |
+| `launch(profile, session)`                | The commands for New session and Continue.                          |
+
+| `Provider`                        | Gives OTTY                                                               |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `accounts(provider, folders)`     | The [accounts](#accounts) whose logins sit in `folders`, and the needs that belong to no account. Default: none. |
+| `numbers(provider, account, given)` | Limits, credits, extra usage, Left, Key limit, Spent this month, each optional. Read [any way you can](#numbers-any-way-you-can). |
+| `read_bill(provider, account, given, days)` | Optional: the bill of an organization per UTC day.             |
+| `log_in(provider, folder)`        | Optional: the agent's official login command pointed at the folder of [OTTY's own login](#ottys-own-login). Default: none. |
+
+### Accounts
+
+OTTY calls `accounts` with a list of `LoginFolder`: `LoginFolder::Profile((agent, folder))` for a
+profile of an agent part your `logins` name, and `LoginFolder::OwnLogin((id, folder))` for OTTY's
+own login of the part. Read the logins there with your own permissions, the keys as handles, and
+give an `Account` for each account you find:
+
+| Field      | Holds                                                                                     |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `id`       | What OTTY keeps the user's name and Hide by. Unique within the plugin, and the same in every read, also after the agent renews the login's tokens: the account or organization id the login names, or the key's fingerprint for a key, such as `chatgpt:<account id>` or `key:<fingerprint>`. |
+| `name`     | What the user knows it by, such as `you@example.com` or `key ••••a1f3`.                    |
+| `kind`     | `AccountKind::Subscription`, `Key` or `Organization`. An organization may have a bill.    |
+| `plan`     | The plan of a subscription, when the login tells.                                          |
+| `found_in` | Every folder it was found in. The same login in two folders is one account with two places, and whether two logins are one account is your call. |
+| `needs`    | What the user must do for it, such as log in again when its login expired.                |
+
+A folder with no login gives no account and no need, since that need is the agent part's.
+`Found::needs` holds what belongs to no account, such as a login file the part does not
+understand. A login your provider does not serve, such as a key the agent sends to another server,
+is no account of yours.
+
+### Numbers any way you can
+
+The provider part reads an account's numbers, however it can get them, only in the folders of
+`account.found_in`: from the provider's server with the login there, or by asking the agent itself
+there, such as `claude /usage` in a hidden terminal or the limits Codex writes in its session files.
+Start the agent with `folder_env` set to that folder, under the provider part's own `run` or
+`terminal` permissions. While Agents mode is not on screen no program starts, and the next read on
+screen asks again. A reading that started a program runs at most once in about 5 minutes per
+account, and OTTY gives its last answer in between.
+
+A key that is not at its place is a normal case, such as a Claude Code profile whose
+`.credentials.json` is `{}` while Claude Code still works: using the handle fails with
+`HostError::NotFound`. Try your other ways then. When no way works, answer numbers with nothing in
+them, not an error, and OTTY shows no limits.
+
+When the provider tells nothing of what a key or an organization spent, the part may count it from
+the agent's own sessions in the account's folders: give it as `spent_this_month` with `by_kind`, a
+`PricedCost` in millionths of a US dollar, whose presence shows it as "Your spend this month" marked
+"at API prices", its kinds on hover. Money the provider told has no `by_kind`. During `numbers` OTTY
+answers `agents::price_of` as it does for an agent part. `agents::MonthSpend::this_month()` adds up
+the answers of the user's calendar month (it starts at midnight of the first day on the user's
+clock, `clock::local_offset_minutes`), kind by kind and each identity once, and
+`MonthSpend::money()` gives that money. Skip a file changed before `MonthSpend::since_ms()`. In
+tests, `TestHost::with_local_offset_minutes` sets the user's clock. The template counts the spend of
+its key this way.
+
+A place is a glob and its kind, files or a database. OTTY lists the files of the places, keeps
+what each file gave, and asks your part again only for a file that is new or whose size or change
+time changed. A file that is gone drops what it gave. Your part keeps nothing between reads. The
+`item` names the file with its size and change time as OTTY listed it. OTTY joins what all the
+files tell about one session id: the latest time, and the folder and the title of the latest
+record that names them. So a file may tell only a part, such as an index of titles: Codex names
+its session files and `session_index.jsonl` as session places. A session no file gives a folder
+is not listed, and one with no title shows its id. For a database, return every session it holds
+from each of its files (the database and its write-ahead log).
+
+Make every answer file a session place too, even one that only adds to a session, such as the file
+of a helper agent: from it return just the session id, with no folder and no title. The statistics
+of a session or a project read only the answer files tied to their sessions. While one answer file
+is no session place, OTTY can not tell whose answers it holds and reads the whole history for every
+panel, which is slow on a large history.
+
+`given` holds the keys the user gave for the account after one of your needs asked for them
+([below](#keys-you-ask-for)). An optional function returns "not supported" by default. Count
+records with `RecordCounts` (`add_understood`, `add_not_understood`, `add_broken`, `saw_version`)
+so OTTY can tell a changed format from fewer tokens.
+
+### OTTY's own login
+
+A `logins` entry with `log_in = true` offers Add account → "Log in with *agent*". OTTY makes an
+empty folder of its own in your plugin's folder, `<plugins folder>/<plugin>/accounts/<id>/`, asks
+your `log_in(provider, folder)` for the
+agent's official login command pointed at it, such as `codex login` with `CODEX_HOME=<folder>`, and
+runs it in a terminal tab the user sees. When the tab closes, OTTY calls `accounts` with that folder
+alone, as `LoginFolder::OwnLogin`, read with the rules of that entry. With no account there, OTTY
+removes the folder.
+
+The folder is never a profile: no session or project of it is shown, so do not read its session
+files for numbers either. Keep its login fresh by running the agent there when you read the
+numbers, such as `codex app-server` with `CODEX_HOME` set to it, even when its token is past its
+time. The folder is OTTY's alone, and the agent renews its own login as it always does. Never renew
+a token yourself. A login the provider refuses there is the need "Log in again", running the same
+login command in that folder, shown on the account only.
+
+### The money of an answer
+
+Give each answer its money in `cost`. When the agent wrote what the answer cost, give that as it
+is: `AnswerCost::Written`, in millionths of a US dollar, shown with no mark. Else price its tokens
+at the API price of the model that OTTY gives: `AnswerCost::AtApiPrices`, shown with the mark "at
+API prices", on a subscription too. It carries a `PricedCost`: the money of each kind of token
+(`input` not written to the cache, `cache_written`, `cached` and `output`) next to their `total`,
+which OTTY lists on hover. A written cost has no parts. `agents::answer_cost(written, model,
+provider, &tokens)` does both. `agents::price_of(model, provider)` asks OTTY's price list for a
+model's price, and `agents::cost_at(&price, &tokens)` prices the tokens of one request kind by kind,
+at the long prompt prices when its prompt is over their limit. Each kind is rounded on its own, and
+the total is their sum. With no written cost and no price, `cost` is `None`. OTTY only adds the
+money up. In tests, `TestHost::with_price` gives the price list.
+
+### Who served an answer
+
+Give each answer the model as the provider names it and who served it, read from your agent's
+settings and files: `ProviderRef::Id` with the provider's name as the agent wrote it, or
+`ProviderRef::Host` with the host of its server when the agent names no provider. Pass the name
+even when no plugin serves that provider, such as OpenCode's `google` or a local model. Do not map
+it to the providers you know. OTTY answers `price_of` from the
+[LiteLLM](https://github.com/BerriAI/litellm) price table: the row of who served it and the model
+(`<provider>/<model>`), else the row of the plain model name, the maker's own price,
+else no price.
+
+A provider part is known to the price table by its id. When the table names the provider otherwise,
+give that name in the part's manifest: `priced_as = "gemini"` for a part whose id is `google`.
+
+### Needs
+
+Everything the user must do for your agent or provider, your part says itself, as a `Need`. OTTY
+shows it as it is, with a small label naming your plugin, and its button does the need's action.
+OTTY writes only the needs about plugins and its own permissions (an update waiting for an OK, a
+plugin that failed, a changed format, the keyring), never one about your agent.
+
+```rust
+use otty_plugin_sdk::env::in_language;
+use otty_plugin_sdk::{Command, Need, NeedAction};
+
+/// The title of `not_logged_in`, one text per language tag; the template has all ten.
+const NOT_LOGGED_IN_TITLE: &[(&str, &str)] = &[("en", "Needs login"), ("ru", "Нужен вход")];
+
+/// Nobody is logged in with the profile: the button runs `login` in a terminal tab.
+pub(crate) fn not_logged_in(login: Command) -> Need {
+    Need {
+        id: "not-logged-in".to_string(),
+        title: in_language(NOT_LOGGED_IN_TITLE).to_string(),
+        text: in_language(NOT_LOGGED_IN_TEXT).to_string(),
+        action: NeedAction::Run(login),
+    }
+}
+```
+
+| Field    | Holds                                                                                 |
+| -------- | ------------------------------------------------------------------------------------- |
+| `id`     | A name of the need, stable within the part, such as `not-logged-in`. Two reads that give the same id show one need, and it does not flicker between reads. Do not put a time or a count in it. |
+| `title`  | What is needed, in a few words.                                                       |
+| `text`   | Why, and what the button does.                                                        |
+| `action` | One of the four actions below.                                                        |
+
+| `NeedAction`        | The button                                                                  |
+| ------------------- | --------------------------------------------------------------------------- |
+| `Run(Command)`      | Runs the command in a new terminal tab, such as `codex login` in the profile's folder, or the agent itself so it renews its login. The same rules as for `launch`. When the tab closes, OTTY reads the profiles and the accounts again. |
+| `AskKey(KeyAsk)`    | Opens a field for a key. `KeyAsk` has a `slot` (your own name for the key, such as `admin`), a `label` (the name of the field, which also names the button, "Admin key…"), a `hint` (one line under the field), an optional `prefix` the key starts with, such as `sk-admin-`, and an optional `https` `page` where the user makes the key. A need with no slot is not shown. |
+| `OpenPage(url)`     | Opens an `https` page in the browser, such as the page of new keys.         |
+| `CopyReport(text)`  | Puts the text on the clipboard, such as a report for you.                  |
+
+A part gives a need in three places:
+
+- `ReadError::NeedsUser(need)`: the part can not read until the user does this, such as give a key
+  it asks for, or log in again because the provider refused the login.
+- `Account::needs` from `accounts`: what the user must do for that account.
+- `ProfileStatus::NotLoggedIn(need)` from `detect`: nobody is logged in with the profile, or its
+  login expired. The need's `Run` is also what the profile's **Log in** menu item runs.
+
+### Login needs
+
+Whether a login is missing or expired is your plugin's call, by whatever means it has: the expiry
+written in the files, or a request to the provider with your own permissions. OTTY does not work it
+out, and does not copy a need from an account to a profile or back. Each part says it for its own
+page:
+
+- The agent part gives `NotLoggedIn` for a profile nobody is logged in with, and for one whose
+  files say its login expired. An agent that works with no login never gives it.
+- The provider part gives the need on the account found in that folder, in `Account::needs` or as
+  `NeedsUser` of a read, when its files or the provider's answer say the login expired or was
+  refused.
+
+For one folder, give both the same need: the same id, texts and command, such as `codex login` with
+`CODEX_HOME` set to that folder. Then the user may act in either place, and both needs go at the
+next read. A folder with no login gives no need on the provider side, since there is no account
+yet. In OTTY's own login there is no profile, so only the provider part gives the need, as "Log in
+again" with your `log_in` command for that folder.
+
+### Keys you ask for
+
+A provider part that needs a key the account does not have, such as an admin key for an
+organization's bill, answers `ReadError::NeedsUser` with an `AskKey` need. The user gives the key
+once. OTTY keeps only where the user keeps it (a file or a variable) and from then on passes it to
+`numbers` and `read_bill` in `given`, as a handle with its slot. `given_key(given, slot)` finds it:
+
+```rust
+use otty_plugin_sdk::agents::{Account, Bill, DayRange, ReadError};
+use otty_plugin_sdk::{GivenKey, given_key};
+
+fn read_bill(_provider: &str, _account: &Account, given: &[GivenKey],
+             days: &DayRange) -> Result<Bill, ReadError> {
+    let bill_key = given_key(given, "admin")
+        .ok_or_else(|| ReadError::NeedsUser(needs::bill_key()))?;
+    // ...read the bill with `bill_key`
+}
+```
+
+When the provider refuses a key the part asked for, answer `NeedsUser` again with an `AskKey` under
+the same slot, so the user replaces it.
+
+### A refused key
+
+A key the part found in a login folder sits where the agent keeps it, and OTTY can not write
+there. When the provider refuses it, answer with an `OpenPage` need for the page of new keys, and
+say to put the new key where the agent keeps it. `key.is_given_in_otty()` tells a key the user gave
+in OTTY for one of your `AskKey` needs from one read from an agent's place: a given key that is
+refused is asked for again under its slot. In tests, `TestHost::given_key` makes a key given in
+OTTY, `TestHost::key_at` a handle to the key at a place, read at each use as OTTY reads it, which
+may be not there, and `TestHost::key` one read from an agent's place.
+
+### The language
+
+Write the texts of your needs in the language of OTTY's interface, or in English. `env::language()`
+gives it as a tag such as `en`, `ru` or `pt-BR`, at every call: it is the language OTTY shows now,
+and it may change while your plugin is loaded. `env::in_language(texts)` picks one of your
+translations, given as pairs of a tag and a text: the same tag, else the same language with another
+region (`pt` for `pt-BR`), else English. OTTY's own languages are `en`, `zh-CN`, `zh-TW`, `ja`, `ko`,
+`fr`, `de`, `es`, `pt-BR` and `ru`. The contract carries no translation tables: they live in your
+plugin.
+
+A plugin with translations also implements the optional `Language` trait and exports it
+(`export!(Example with agents::agent, agents::provider, language)`); the manifest says nothing about
+it. It belongs to no part and no domain:
+
+```rust
+impl otty_plugin_sdk::Language for Example {
+    /// The texts of the needs come in every language of OTTY.
+    fn language_changed(_tag: &str) -> bool {
+        true
+    }
+}
+```
+
+When the user changes the language, OTTY calls `language_changed` on every plugin that exports it.
+When one answers `true`, OTTY reads Agents mode again at once, so its needs show in the new language
+without a restart. The call has no permissions: it may only answer. A plugin without it is never
+called, and its texts change at its next read.
+
+### Host operations
+
+The plugin reads and sends only through the SDK's functions. Each call is checked against the
+permissions of the called part; a refused call returns `HostError::NotAllowed`.
+
+| Function                                             | Does                                                     | Needs              |
+| ---------------------------------------------------- | -------------------------------------------------------- | ------------------ |
+| `files::list`, `files::read`                         | Paths, sizes and times; the bytes of a file up to 4 MiB. | `read`             |
+| `files::lines(path, markers)`                        | Batches of complete lines holding a marker; zstd files decoded. | `read`      |
+| `files::json_with_keys`                              | A key file as JSON, each key as `{"$key": n}`.           | `keys`             |
+| `files::remove`                                      | Deletes one file, or an empty folder.                    | `write`            |
+| `sqlite::query`                                      | One read-only `SELECT`, at most 50,000 rows.             | `sqlite`           |
+| `http::request`                                      | An HTTPS request; `Request::header_with_key` puts a key in. | `http`          |
+| `programs::run`, `Talk::start`                       | Runs a program once, or talks to it line by line.        | `run`              |
+| `terminal::HiddenTerminal::start`                    | Starts a program unseen, sends keys, reads the screen.   | `terminal`         |
+| `keyring::read`                                      | One keyring entry, its keys as handles.                  | `keyring`          |
+| `keys::open`                                         | A handle for a declared key place.                       | `keys`             |
+| `env::var`, `env::home`                              | A variable; the home folder.                             | `env`              |
+| `env::language`, `env::in_language`                  | The language OTTY shows now; one of your translations.   | none               |
+| `agents::price_of`                                   | The API price of a model from OTTY's price list, while an agent part reads answers or a provider part reads numbers. | none |
+| `clock::now_ms`, `clock::local_offset_minutes`, `log::info` and the other levels | The time; how far the user's clock is from UTC at a time; a line in the plugin's log. | none |
+
+A `Key` has `fingerprint()`, `has_prefix(text)`, `jwt_claims()` and `is_given_in_otty()` (whether
+the user gave it in OTTY, [above](#a-refused-key)); the plugin never reads the key.
+
+<Aside type="caution" title="Do not use HashMap or HashSet">
+`std::collections::HashMap` and `HashSet` take a random seed, which makes the `.wasm` import
+`wasi:random`, and OTTY refuses the plugin at install. Use `BTreeMap` and `BTreeSet`. A plugin may
+import only `wasi:cli`, `wasi:io` and OTTY's own interfaces, so `std::fs`, `std::net` and
+`std::time::SystemTime` do not work either: use the SDK's `files`, `http` and `clock`.
+</Aside>
+
+Each read gets a new instance of the plugin, so nothing is kept between calls. A call has 2 seconds
+for the quick functions (`profiles`, `detect`, `version`, the places, `launch`, `log_in`), 120
+seconds for reading answers and sessions, and 90 seconds for `accounts`, `numbers` and `read_bill`,
+with at most 64 MiB of memory. A call that traps or runs out of time fails alone, and three failures in a row pause
+the part.
+
+## Test
+
+`cargo test` runs natively, with no WebAssembly. The SDK's test host serves `fixtures/` as the home
+folder, answers requests from canned answers, and checks every call against the permissions of the
+part being tested, as OTTY does. `as_provider_in` runs a provider call with its login folders, as
+OTTY gives them:
+
+```rust
+use otty_plugin_sdk::agents::{LoginFolder, Provider};
+use otty_plugin_sdk::test_host::TestHost;
+
+use crate::Example;
+
+#[test]
+fn numbers_read_with_the_key_of_the_accounts_folder() {
+    let host = TestHost::new(env!("CARGO_MANIFEST_DIR"));
+    host.answer(
+        "GET",
+        "https://api.example.com/v1/balance",
+        200,
+        br#"{"balance": 12.5, "currency": "USD"}"#,
+    );
+    let path = host.home().join(".example-agent").display().to_string();
+    let folders = [LoginFolder::Profile(("example-agent".to_string(), path))];
+
+    let mut found = host.as_provider_in("example-cloud", &folders, || {
+        Example::accounts("example-cloud", &folders)
+    });
+    let account = found.accounts.pop().expect("an account");
+    let numbers = host
+        .as_provider_in("example-cloud", &account.found_in, || {
+            Example::numbers("example-cloud", &account, &[])
+        })
+        .expect("the numbers");
+
+    assert_eq!(numbers.left.map(|money| money.amount), Some(12.5));
+    assert_eq!(
+        host.requests()[0].header("authorization"),
+        Some("Bearer ex-made-up-key-0001")
+    );
+}
+```
+
+`place_items(part, &places)` lists the files of your places as OTTY does, to call
+`read_sessions` and `read_answers` with. `answer_run`, `answer_talk` and `answer_terminal` give the output of a declared program,
+`with_var` sets a variable, and `with_keyring_entry` with `with_keyring_allowed` makes up a keyring
+entry. `with_language` starts the host in another language, and `set_language` switches it between
+two calls. `GivenKey::new(slot, host.key(...))` makes up a key the user gave. `requests()`, `removed()`, `started()` and `log()` show what the plugin did. Keep only
+made-up keys and made-up session text in `fixtures/`.
+
+## Build
+
+```sh
+rustup target add wasm32-wasip2
+cargo build --release --target wasm32-wasip2
+```
+
+Keep the template's release profile: `opt-level = 3` (a plugin is built for speed, not size), `lto`,
+one codegen unit, stripped. The `.wasm` may be at most 20 MiB.
+
+## Try it in OTTY
+
+<Steps>
+
+1. Put the built `target/wasm32-wasip2/release/<crate>.wasm` as `<id>.wasm` in a folder with
+   `otty-plugin.toml` and the icons.
+2. In OTTY, open Plugins mode (from **All modes**) → **Add plugin from folder…** (in the menu of the chevron next to `+` on the
+   left), type the folder, **Next**, **Install**. The checks and the install dialog are the same as for a release.
+3. After a rebuild, copy the new `.wasm` into the folder and press **Reload** on the plugin's page.
+   A notification says "Plugin *Name* reloaded", or "Plugin *Name* updated to *version*" when you
+   raised the version, or why the reload failed. When the new copy asks for more, OTTY shows what
+   changed first.
+
+</Steps>
+
+A plugin from a folder is marked **Local** and never updated on its own. **Show log** on its page
+shows what it wrote with `log::*` and to stderr.
+
+## Release
+
+<Steps>
+
+1. Set `version` in `otty-plugin.toml`, commit, and push the tag `v<version>`, such as `v0.1.0`.
+   The template's workflow runs on such tags only; OTTY also takes a release tagged `0.1.0`, and
+   ignores other tags.
+2. The template's workflow checks that the tag is semver and equals the manifest's version, tests
+   and builds the plugin for `wasm32-wasip2`, and attaches `otty-plugin.toml`, `<id>.wasm` and the
+   icons to the release.
+3. Users paste your repository's link in **Add plugin…**. OTTY checks for new releases once a day.
+
+</Steps>
+
+- A release that asks for no new permission and has no new part installs on its own; one that does
+  waits for each user's OK.
+- Never change the files of a published release: OTTY refuses a release whose files differ from what
+  it installed. Ship a new version instead.
+- OTTY runs a plugin only when it knows every contract version its `.wasm` exports, and installs the
+  newest release it can run; the others show "Needs a newer OTTY". A newer SDK may bring a newer
+  contract: build with the oldest SDK that has what you need.
+
+## Advice from the official plugins
+
+The OTTY team reviews its own plugins against these rules; they are good rules for any plugin:
+
+- Never print or log keys, tokens, prompts or session text.
+- Never renew, write or delete another agent's login. A refused or expired login is a need that
+  runs the agent's own login command in its folder. In OTTY's own login, run the agent there and let
+  it renew its own login.
+- Read logins only in the folders OTTY gives the call, and decide inside the plugin whether two
+  logins are one account.
+- Give every need a stable id and texts in OTTY's languages where you can, with English as the
+  fallback.
+- Never ask an agent's program for anything that changes its files. The OpenAI plugin never sends
+  `thread/list` to `codex app-server`, because Codex then rewrites its own index of sessions.
+- Ask only for the permissions you use, and write nothing but your own leftovers.
+- Read tolerantly and count what you did not understand, so a format change shows as "format
+  changed".
+
+The official plugins are built and released the same way as the template, each from its own
+repository: `otty-shell/otty-plugin-anthropic`, `otty-shell/otty-plugin-openai` and
+`otty-shell/otty-plugin-opencode`. Their code is a good place to see these rules at work.

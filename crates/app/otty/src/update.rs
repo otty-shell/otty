@@ -1,4 +1,5 @@
 use iced::Task;
+use otty_app_agents::AgentsIntent;
 use otty_app_containers::{ActionsIntent, ContainersIntent};
 use otty_app_domain::commands::AppCommand;
 use otty_app_domain::keys::Platform;
@@ -7,6 +8,7 @@ use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_slots::OverlayKind;
 use otty_app_terminal::TerminalIntent;
@@ -16,10 +18,10 @@ use crate::dispatch;
 use crate::frame::sidebar::SidebarIntent;
 use crate::guards::{
     MenuGuard, Overlay, command_ctx, context_menu_guard, dialog_guard,
-    files_inline_edit_guard, inline_edit_guard, is_escape_press,
-    is_header_menu_choice, is_terminal_input_kept_out, top_overlay,
+    files_inline_edit_guard, inline_edit_guard, is_terminal_input_kept_out,
+    top_overlay,
 };
-use crate::keys::shortcut_for_key_press;
+use crate::keys::{is_escape_press, shortcut_for_key_press};
 use crate::message::AppEvent;
 
 /// Handle input from the user. Open menus, dialogs and an inline edit decide
@@ -64,6 +66,10 @@ fn finish_update(app: &mut App, task: Task<AppEvent>) -> Task<AppEvent> {
 /// cancelled an inline edit like any other shortcut.
 fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     let top = top_overlay(app);
+    let (event, is_from_menu) = match event {
+        AppEvent::FromMenu(event) => (*event, true),
+        event => (event, false),
+    };
 
     // Keys typed under a menu or a dialog belong to it, even if a terminal
     // still had keyboard focus.
@@ -75,7 +81,8 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
     // inline edit. A focused terminal keeps Esc for its shell, so every
     // overlay takes the focus from the terminals when it opens.
     if let Some(top) = top
-        && is_escape_press(&event)
+        && let AppEvent::Keyboard(key) = &event
+        && is_escape_press(key)
     {
         return dispatch::dispatch(app, top.escape_event());
     }
@@ -124,21 +131,26 @@ fn filter_input(app: &mut App, event: AppEvent) -> Task<AppEvent> {
         ));
     }
 
-    // A choice in the open header menu closes it and runs.
-    if app.sidebar.has_header_menu_open() && is_header_menu_choice(&event) {
-        pre_dispatch_tasks.push(dispatch::dispatch(
-            app,
-            AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
-        ));
-    } else if top.and_then(Overlay::kind) == Some(OverlayKind::Menu) {
-        match context_menu_guard(&event) {
+    // What the open menu sends reaches it. A choice in a header menu,
+    // which belongs to another feature, closes the header menu and runs.
+    // Input outside the open menu goes through its check.
+    let menu = top.filter(|top| top.kind() == Some(OverlayKind::Menu));
+    match menu {
+        Some(Overlay::HeaderMenu) if is_from_menu => {
+            pre_dispatch_tasks.push(dispatch::dispatch(
+                app,
+                AppEvent::Sidebar(SidebarIntent::HeaderMenuDismiss),
+            ));
+        },
+        Some(menu) if !is_from_menu => match context_menu_guard(menu, &event) {
             MenuGuard::Allow => {},
             MenuGuard::Ignore => return Task::none(),
             MenuGuard::Dismiss => return close_all_menus(app),
             MenuGuard::DismissAndRun => {
                 pre_dispatch_tasks.push(close_all_menus(app));
             },
-        }
+        },
+        _ => {},
     }
 
     // A shortcut whose command can not run now (for example Close session
@@ -199,9 +211,11 @@ fn is_palette_shortcut(event: &AppEvent) -> bool {
 }
 
 /// Close every menu: the one on top and any left open under it, the Files
-/// menu and the Containers row menu too.
+/// menu, the Containers row menu and the menus of Agents mode too.
 fn close_all_menus(app: &mut App) -> Task<AppEvent> {
     Task::batch([
+        dispatch::dispatch(app, AppEvent::Agents(AgentsIntent::CloseMenu)),
+        dispatch::dispatch(app, AppEvent::Plugins(PluginsIntent::CloseMenu)),
         dispatch::dispatch(
             app,
             AppEvent::QuickLaunch(QuickLaunchIntent::ContextMenuDismiss),
@@ -292,9 +306,9 @@ mod tests {
         open_palette(&mut app);
         let _ = update_input(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(
+            AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
                 PaletteAction::QueryChanged(query.to_string()),
-            )),
+            ))),
         );
         assert!(app.palette.is_open());
         app
@@ -375,7 +389,10 @@ mod tests {
     fn app_with_open_row_menu() -> App {
         let mut app = containers_app_with_lists();
         open_row_menu(&mut app);
-        assert!(app.containers.has_row_menu());
+        assert_eq!(
+            app.containers.top_overlay(),
+            Some(otty_app_containers::ContainersOverlay::RowMenu)
+        );
         app
     }
 
@@ -457,11 +474,13 @@ mod tests {
 
         let _save = update_input(
             &mut app,
-            AppEvent::Modes(ModesIntent::Unpin(Mode::Containers)),
+            AppEvent::from_menu(AppEvent::Modes(ModesIntent::Unpin(
+                Mode::Containers,
+            ))),
         );
 
         assert!(app.modes.is_menu_open());
-        assert!(app.modes.pinned().is_empty());
+        assert_eq!(app.modes.pinned(), [Mode::Agents]);
     }
 
     #[test]
@@ -495,7 +514,7 @@ mod tests {
     fn a_panel_button_under_an_open_menu_only_closes_the_menu() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
         ];
 
@@ -604,21 +623,21 @@ mod tests {
         assert_eq!(top_overlay(&app), Some(Overlay::NotificationsList));
     }
 
-    /// The bell is a header button like the panel toggles: under any open
-    /// menu, the list too, it only closes the menus.
+    /// The bell under its open list closes it. Owner, 2026-11-23: under
+    /// another menu it closes that menu and opens the list, with the one
+    /// press.
     #[test]
-    fn the_bell_under_an_open_menu_only_closes_it() {
-        for mut app in [
-            app_with_open_notification_list(),
-            app_with_open_modes_menu(),
-        ] {
-            let _ = update_input(
-                &mut app,
-                AppEvent::TitleBar(TitleBarIntent::OpenNotifications),
-            );
+    fn the_bell_closes_its_list_and_opens_it_under_another_menu() {
+        let mut list = app_with_open_notification_list();
+        let mut modes = app_with_open_modes_menu();
+        let bell = AppEvent::TitleBar(TitleBarIntent::OpenNotifications);
 
-            assert_eq!(top_overlay(&app), None);
-        }
+        let _ = update_input(&mut list, bell.clone());
+        let _ = update_input(&mut modes, bell);
+
+        assert_eq!(top_overlay(&list), None);
+        assert!(!modes.modes.is_menu_open());
+        assert_eq!(top_overlay(&modes), Some(Overlay::NotificationsList));
     }
 
     #[test]
@@ -643,7 +662,9 @@ mod tests {
         // The first notification gets the first id.
         let _ = update_input(
             &mut app,
-            AppEvent::Notifications(NotificationsIntent::Remove(0)),
+            AppEvent::from_menu(AppEvent::Notifications(
+                NotificationsIntent::Remove(0),
+            )),
         );
 
         let mut ui = iced_test::simulator(crate::view::view(&app));
@@ -681,7 +702,7 @@ mod tests {
     fn a_shortcut_key_from_the_subscription_runs_its_command() {
         let mut app = app();
 
-        press(&mut app, AppShortcut::FilesPanel);
+        press(&mut app, AppShortcut::RightPanel);
 
         assert!(!app.sidebar.vm().is_right_open);
     }
@@ -724,8 +745,10 @@ mod tests {
         assert_eq!(top_overlay(&app), Some(Overlay::Palette));
     }
 
+    /// Owner, 2026-11-23: the palette button under another menu closes it
+    /// and opens the palette, with the one press.
     #[test]
-    fn the_palette_button_under_an_open_menu_only_closes_the_menu() {
+    fn the_palette_button_under_an_open_menu_closes_it_and_opens_the_palette() {
         let mut app = app_with_open_modes_menu();
 
         let _ = update_input(
@@ -734,7 +757,7 @@ mod tests {
         );
 
         assert!(!app.modes.is_menu_open());
-        assert!(!app.palette.is_open());
+        assert!(app.palette.is_open());
     }
 
     /// The palette is a menu, so a press on a header button closes it
@@ -743,7 +766,7 @@ mod tests {
     fn a_panel_button_while_the_palette_is_open_only_closes_it() {
         let presses = [
             TitleBarIntent::ToggleLeftPanel,
-            TitleBarIntent::ToggleFilesPanel,
+            TitleBarIntent::ToggleRightPanel,
             TitleBarIntent::ToggleFocusMode,
         ];
 
@@ -1043,7 +1066,9 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Palette(PaletteIntent::Action(PaletteAction::RunActive)),
+            AppEvent::from_menu(AppEvent::Palette(PaletteIntent::Action(
+                PaletteAction::RunFirst,
+            ))),
         );
 
         assert!(!app.palette.is_open());
@@ -1322,11 +1347,13 @@ mod tests {
 
         let _ = update_input(
             &mut app,
-            AppEvent::Terminal(TerminalIntent::SplitPane {
-                tab_id,
-                pane,
-                axis: iced::widget::pane_grid::Axis::Vertical,
-            }),
+            AppEvent::from_menu(AppEvent::Terminal(
+                TerminalIntent::SplitPane {
+                    tab_id,
+                    pane,
+                    axis: iced::widget::pane_grid::Axis::Vertical,
+                },
+            )),
         );
 
         assert!(!app.sidebar.has_header_menu_open());
@@ -1453,7 +1480,7 @@ mod tests {
         let mut app = app();
         start_inline_edit(&mut app);
 
-        press(&mut app, AppShortcut::FilesPanel);
+        press(&mut app, AppShortcut::RightPanel);
 
         assert!(!app.quick_launch.has_inline_edit());
     }
@@ -1519,7 +1546,7 @@ mod tests {
         let _ = update_internal(&mut app, AppEvent::HostNameRead(None));
         let _ = update_internal(
             &mut app,
-            AppEvent::Command(AppCommand::ToggleFilesPanel),
+            AppEvent::Command(AppCommand::ToggleRightPanel),
         );
 
         assert!(app.quick_launch.has_inline_edit());
@@ -1601,7 +1628,7 @@ mod tests {
 
         press(&mut app, AppShortcut::FocusMode);
 
-        assert!(!app.containers.has_row_menu());
+        assert_eq!(app.containers.top_overlay(), None);
         assert!(app.sidebar.vm().is_focus_mode);
     }
 
@@ -1826,18 +1853,18 @@ mod tests {
     }
 
     #[test]
-    fn the_files_panel_shortcut_stops_the_logs_and_starts_them_again() {
+    fn the_right_panel_shortcut_stops_the_logs_and_starts_them_again() {
         assert_logs_follow_the_panel(
-            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
-            AppEvent::Keyboard(shortcut_press(AppShortcut::FilesPanel)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::RightPanel)),
+            AppEvent::Keyboard(shortcut_press(AppShortcut::RightPanel)),
         );
     }
 
     #[test]
-    fn the_title_bar_files_button_stops_the_logs_and_starts_them_again() {
+    fn the_title_bar_right_panel_button_stops_the_logs_and_starts_them_again() {
         assert_logs_follow_the_panel(
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
-            AppEvent::TitleBar(TitleBarIntent::ToggleFilesPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
+            AppEvent::TitleBar(TitleBarIntent::ToggleRightPanel),
         );
     }
 

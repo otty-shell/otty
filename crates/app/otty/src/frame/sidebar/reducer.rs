@@ -40,7 +40,14 @@ pub(super) fn reduce(
         SidebarIntent::RevealRight => main_area_resized(state.reveal_right()),
         // The menu takes the keyboard, so typed keys do not reach the shell
         // under it and Esc reaches the frame.
+        // The chevron of the open header menu closes it.
         SidebarIntent::HeaderMenuOpen(menu) => {
+            let is_open =
+                state.header_menu().is_some_and(|open| open.menu() == menu);
+            if is_open && state.dismiss_header_menu() {
+                return vec![SidebarOutcome::HeaderMenuClosed];
+            }
+
             state.open_header_menu(menu);
             vec![SidebarOutcome::HeaderMenuOpened]
         },
@@ -64,6 +71,9 @@ pub(super) fn reduce(
 
             outcomes
         },
+        SidebarIntent::ModeChanged(mode) => main_area_resized(
+            state.set_right_panel_allowed(mode.has_right_panel()),
+        ),
         SidebarIntent::FocusNoteFrame(now) => {
             state.advance_focus_note(now);
             Vec::new()
@@ -1049,6 +1059,32 @@ mod tests {
         assert_eq!(open, vec![SidebarOutcome::HeaderMenuOpened]);
 
         let _dismiss = reduce(&mut widget, SidebarIntent::HeaderMenuDismiss);
+        assert_eq!(widget.vm().open_header_menu, None);
+    }
+
+    /// Owner, 2026-11-23: the chevron of the open header menu closes it;
+    /// the chevron of another header opens its menu in place of it.
+    #[test]
+    fn the_chevron_of_the_open_header_menu_closes_it() {
+        let mut widget = SidebarWidget::new();
+        let _ = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Sessions),
+        );
+
+        let other = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
+        );
+        let switched = widget.vm().open_header_menu.map(|open| open.menu());
+        let same = reduce(
+            &mut widget,
+            SidebarIntent::HeaderMenuOpen(HeaderMenu::Launches),
+        );
+
+        assert_eq!(other, vec![SidebarOutcome::HeaderMenuOpened]);
+        assert_eq!(switched, Some(HeaderMenu::Launches));
+        assert_eq!(same, vec![SidebarOutcome::HeaderMenuClosed]);
         assert_eq!(widget.vm().open_header_menu, None);
     }
 

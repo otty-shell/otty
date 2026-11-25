@@ -1,0 +1,51 @@
+---
+title: Keyboard Shortcuts
+description: Every keyboard shortcut of OTTY on Linux and macOS.
+sidebar:
+  order: 30
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+On Linux the shortcuts use <kbd>Ctrl</kbd> <kbd>Shift</kbd>, so <kbd>Ctrl</kbd> with a letter stays
+with the shell: <kbd>Ctrl</kbd> <kbd>D</kbd> still ends input, <kbd>Ctrl</kbd> <kbd>C</kbd> still
+stops a program. On macOS they use <kbd>Cmd</kbd>. Menus show the shortcut next to each action.
+
+## Window and modes
+
+| Action           | Linux                                                       | macOS                                         |
+| ---------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| Command palette  | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>K</kbd>               | <kbd>Cmd</kbd> <kbd>K</kbd>                   |
+| Settings         | <kbd>Ctrl</kbd> <kbd>,</kbd>                                | <kbd>Cmd</kbd> <kbd>,</kbd>                   |
+| Left panel       | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>B</kbd>               | <kbd>Cmd</kbd> <kbd>B</kbd>                   |
+| Right panel      | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>O</kbd>               | <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>E</kbd>  |
+| Focus mode       | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd>               | <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>F</kbd>  |
+| Terminal mode    | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>1</kbd>               | <kbd>Cmd</kbd> <kbd>1</kbd>                   |
+| Pinned modes     | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>2</kbd>–<kbd>5</kbd>  | <kbd>Cmd</kbd> <kbd>2</kbd>–<kbd>5</kbd>      |
+| All modes menu   | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd>               | <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>M</kbd>  |
+
+The digits pick the modes in the order of the mode switcher: Terminal first, then the pinned modes.
+They work by the key's place on the keyboard, so they work with any keyboard layout.
+
+## Tabs and panes
+
+| Action       | Linux                                                      | macOS                                          |
+| ------------ | ---------------------------------------------------------- | ---------------------------------------------- |
+| New terminal | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>T</kbd>              | <kbd>Cmd</kbd> <kbd>T</kbd>                    |
+| Close session (the active tab) | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>W</kbd> | <kbd>Cmd</kbd> <kbd>W</kbd>             |
+| Split right  | <kbd>Super</kbd> <kbd>Shift</kbd> <kbd>D</kbd>             | <kbd>Cmd</kbd> <kbd>D</kbd>                    |
+| Split down   | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>D</kbd>              | <kbd>Cmd</kbd> <kbd>Shift</kbd> <kbd>D</kbd>   |
+
+## In the terminal
+
+| Action                                         | Linux                                         | macOS                        |
+| ---------------------------------------------- | --------------------------------------------- | ---------------------------- |
+| Copy the selection                             | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd> | <kbd>Cmd</kbd> <kbd>C</kbd>  |
+| Paste                                          | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>V</kbd> | <kbd>Cmd</kbd> <kbd>V</kbd>  |
+| Open a link                                    | <kbd>Ctrl</kbd> + click                       | <kbd>Cmd</kbd> + click       |
+| [Previous command block](../terminal/command-blocks/) | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>↑</kbd> | <kbd>Cmd</kbd> <kbd>↑</kbd>  |
+| [Next command block](../terminal/command-blocks/)     | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>↓</kbd> | <kbd>Cmd</kbd> <kbd>↓</kbd>  |
+
+<Aside>
+<kbd>Super</kbd> is the key with the Windows or system logo.
+</Aside>

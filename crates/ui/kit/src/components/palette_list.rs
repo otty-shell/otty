@@ -1,5 +1,5 @@
 //! `PaletteList`: the items of the command palette, the typed query, the
-//! items that match it and the active one.
+//! items that match it and the lit one.
 //!
 //! The list knows nothing about the app. Each item carries a caller key, so
 //! the app can tell which of its sessions, launches or actions was chosen.
@@ -109,14 +109,15 @@ struct PaletteMatch {
 }
 
 /// Every palette entry, the typed query, the entries that match it and the
-/// active (keyboard-selected) one.
+/// lit (keyboard-chosen) one.
 ///
 /// Matching ignores case and looks for the query inside the title or the
 /// detail. Matches are listed group by group, in the order each group first
-/// appears in the items; groups with no match are left out. The active entry
-/// is an index into the matches: it moves with [`Self::move_up`] and
-/// [`Self::move_down`], wraps at both ends, goes back to the first match when
-/// the query changes, and is `None` when nothing matches.
+/// appears in the items; groups with no match are left out. The lit entry is
+/// an index into the matches. None is lit at first and after the query
+/// changes; the keys of the palette, the same as those of every list of
+/// suggestions of the kit, choose the next one, and [`Self::highlight`]
+/// keeps it.
 ///
 /// # Example
 ///
@@ -129,16 +130,18 @@ struct PaletteMatch {
 /// ]);
 ///
 /// list.set_query("la".to_owned());
+/// list.highlight(Some(0));
 ///
 /// assert_eq!(list.match_count(), 1);
-/// assert_eq!(list.active_key(), Some(&2));
+/// assert_eq!(list.key_at(0), Some(&2));
+/// assert_eq!(list.highlighted(), Some(0));
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaletteList<K> {
     items: Vec<PaletteItem<K>>,
     query: String,
     matches: Vec<PaletteMatch>,
-    active: Option<usize>,
+    highlighted: Option<usize>,
 }
 
 impl<K> PaletteList<K> {
@@ -147,9 +150,9 @@ impl<K> PaletteList<K> {
         &self.query
     }
 
-    /// Index of the active entry among the matches.
-    pub fn active(&self) -> Option<usize> {
-        self.active
+    /// Index of the lit entry among the matches.
+    pub fn highlighted(&self) -> Option<usize> {
+        self.highlighted
     }
 
     /// Number of entries that match the query.
@@ -167,11 +170,6 @@ impl<K> PaletteList<K> {
         })
     }
 
-    /// Key of the active entry.
-    pub fn active_key(&self) -> Option<&K> {
-        self.active.and_then(|index| self.key_at(index))
-    }
-
     /// Key of the match at `index`, as sent by a click on that entry.
     pub fn key_at(&self, index: usize) -> Option<&K> {
         let found = self.matches.get(index)?;
@@ -179,14 +177,14 @@ impl<K> PaletteList<K> {
         Some(&self.items[found.item].key)
     }
 
-    /// Creates a list with an empty query: every entry matches and the first
-    /// one is active.
+    /// Creates a list with an empty query: every entry matches and none is
+    /// lit.
     pub fn new(items: Vec<PaletteItem<K>>) -> Self {
         let mut list = Self {
             items,
             query: String::new(),
             matches: Vec::new(),
-            active: None,
+            highlighted: None,
         };
 
         list.match_query();
@@ -194,31 +192,21 @@ impl<K> PaletteList<K> {
         list
     }
 
-    /// Replaces the query, matches again and makes the first match active.
-    /// A query of only spaces matches everything.
+    /// Replaces the query and matches again; no entry is lit. A query of
+    /// only spaces matches everything.
     pub fn set_query(&mut self, query: String) {
         self.query = query;
         self.match_query();
     }
 
-    /// Makes the previous match active; from the first one, the last.
-    pub fn move_up(&mut self) {
-        let count = self.matches.len();
-
-        self.active = self
-            .active
-            .map(|index| if index == 0 { count - 1 } else { index - 1 });
+    /// Lights the match at `row`, the row the keys chose, or none for
+    /// `None`. A row past the matches lights none.
+    pub fn highlight(&mut self, row: Option<usize>) {
+        self.highlighted = row.filter(|row| *row < self.matches.len());
     }
 
-    /// Makes the next match active; from the last one, the first.
-    pub fn move_down(&mut self) {
-        let count = self.matches.len();
-
-        self.active = self.active.map(|index| (index + 1) % count);
-    }
-
-    /// Rebuilds the matches for the current query, group by group, and
-    /// makes the first one active.
+    /// Rebuilds the matches for the current query, group by group, with
+    /// none lit.
     fn match_query(&mut self) {
         let needle = FoldedText::new(self.query.trim()).text;
 
@@ -238,7 +226,7 @@ impl<K> PaletteList<K> {
             }
         }
 
-        self.active = if matches.is_empty() { None } else { Some(0) };
+        self.highlighted = None;
         self.matches = matches;
     }
 }
@@ -394,7 +382,7 @@ mod tests {
 
         assert_eq!(titles(&list), vec!["zsh", "htop", "laptop", "Settings"]);
         assert_eq!(groups(&list), vec!["Sessions", "Launches", "Actions"]);
-        assert_eq!(list.active(), Some(0));
+        assert_eq!(list.highlighted(), None);
         assert!(list.matches().all(|(_, ranges)| ranges.is_empty()));
     }
 
@@ -475,81 +463,58 @@ mod tests {
         assert_eq!(groups(&list), vec!["Sessions", "Launches"]);
     }
 
+    /// Issue 43: the list keeps the row the shared keys of the kit chose;
+    /// it moves nothing itself.
     #[test]
-    fn given_moves_when_applied_then_active_wraps_at_both_ends() {
-        // (moves, expected active index); `d` is down, `u` is up.
-        let cases: [(&str, Option<usize>); 6] = [
-            ("", Some(0)),
-            ("d", Some(1)),
-            ("dd", Some(2)),
-            ("ddd", Some(0)),
-            ("u", Some(2)),
-            ("uud", Some(2)),
-        ];
+    fn a_highlight_lights_that_match_only() {
+        let mut list = three_items();
 
-        for (moves, expected) in cases {
-            let mut list = three_items();
+        list.highlight(Some(2));
+        let lit = list.highlighted();
+        list.highlight(None);
 
-            for step in moves.chars() {
-                match step {
-                    'd' => list.move_down(),
-                    _ => list.move_up(),
-                }
-            }
-
-            assert_eq!(list.active(), expected, "moves {moves:?}");
-        }
+        assert_eq!(lit, Some(2));
+        assert_eq!(list.highlighted(), None);
     }
 
     #[test]
-    fn given_active_item_when_query_changes_then_first_match_is_active() {
+    fn a_highlight_past_the_matches_lights_nothing() {
         let mut list = three_items();
-        list.move_down();
-        list.move_down();
+        list.highlight(Some(1));
+
+        list.highlight(Some(3));
+
+        assert_eq!(list.highlighted(), None);
+    }
+
+    #[test]
+    fn a_new_query_clears_the_highlight() {
+        let mut list = three_items();
+        list.highlight(Some(2));
 
         list.set_query("h".to_owned());
 
         assert_eq!(titles(&list), vec!["zsh", "htop", "New launch"]);
-        assert_eq!(list.active(), Some(0));
-        assert_eq!(list.active_key(), Some(&1));
+        assert_eq!(list.highlighted(), None);
     }
 
     #[test]
-    fn given_no_match_when_moving_then_nothing_is_active() {
-        let mut list = three_items();
-
-        list.set_query("zzz".to_owned());
-        list.move_down();
-        list.move_up();
-
-        assert_eq!(list.match_count(), 0);
-        assert_eq!(list.active(), None);
-        assert_eq!(list.active_key(), None);
-
-        list.set_query(String::new());
-
-        assert_eq!(list.active(), Some(0));
-    }
-
-    #[test]
-    fn given_no_items_when_used_then_nothing_matches_or_is_active() {
+    fn given_no_items_when_used_then_nothing_matches_or_is_lit() {
         let mut list: PaletteList<u32> = PaletteList::new(Vec::new());
 
-        list.move_down();
-        list.move_up();
+        list.highlight(Some(0));
         list.set_query("a".to_owned());
 
         assert_eq!(list.match_count(), 0);
-        assert_eq!(list.active(), None);
+        assert_eq!(list.highlighted(), None);
         assert_eq!(list.key_at(0), None);
     }
 
     #[test]
     fn given_matches_when_key_read_then_it_follows_display_order() {
-        let mut list = three_items();
-        list.move_down();
+        let list = three_items();
 
-        assert_eq!(list.active_key(), Some(&2));
+        assert_eq!(list.key_at(1), Some(&2));
         assert_eq!(list.key_at(2), Some(&3));
         assert_eq!(list.key_at(3), None);
     }

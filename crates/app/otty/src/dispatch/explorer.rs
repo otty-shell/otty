@@ -12,7 +12,7 @@ use otty_app_notifications::NotificationsIntent;
 use otty_app_tabs::TabsIntent;
 use otty_app_terminal::TerminalIntent;
 
-use super::{Delivery, deliver, terminal};
+use super::{Delivery, agents, deliver, terminal};
 use crate::app::App;
 use crate::message::AppEvent;
 use crate::terminal_settings;
@@ -61,6 +61,9 @@ impl Delivery for ExplorerIntent {
                     folder: Some(folder),
                 },
             ),
+            ExplorerOutcome::NewAgentSession { folder } => {
+                agents::new_session_in(app, Some(folder))
+            },
             ExplorerOutcome::FocusInput(id) => operation::focus(id),
             ExplorerOutcome::TakeKeyboard => super::take_keyboard(),
             // The terminal decides: in Terminal mode the active pane gets its
@@ -116,7 +119,7 @@ mod tests {
 
     use iced_test::simulator;
     use otty_app_explorer::{ExplorerMenuAction, FileNode};
-    use otty_app_i18n as i18n;
+    use otty_app_i18n::{self as i18n, Key};
     use otty_app_settings::{SettingsIntent, SettingsLoad, SettingsLoadStatus};
     use otty_app_testing::temp_dir::TempDir;
     use otty_ui_term::settings::SessionKind;
@@ -279,7 +282,10 @@ mod tests {
             },
         );
 
-        let text = i18n::folder_open_failed("src", "no access");
+        let text = i18n::filled(
+            Key::TplFolderOpenFailed,
+            &[("name", "src"), ("error", "no access")],
+        );
         let mut ui = simulator(view(&app));
         assert!(ui.find(text).is_ok());
         assert_eq!(app.notifications.unseen_count(), 1);
@@ -380,5 +386,43 @@ mod tests {
 
         assert_eq!(task.units(), 0);
         assert_eq!(app.tabs.len(), 0);
+    }
+
+    /// Owner, issue 36: New agent session here, pressed in the Files menu
+    /// of a folder in the window, opens Agents mode with the New session
+    /// dialog on that folder. The terminals are mocks: no shell starts.
+    #[test]
+    fn new_agent_session_here_in_the_window_opens_the_dialog_on_the_folder() {
+        let (app, _terminals) =
+            crate::testing::window::app_with_scripted_terminals();
+        let mut window = crate::testing::running::RunningApp::new(app);
+        let root = PathBuf::from(ROOT);
+        window.deliver(AppEvent::Explorer(ExplorerIntent::SyncRoot {
+            cwd: root.clone(),
+        }));
+        window.deliver(AppEvent::Explorer(ExplorerIntent::RootLoaded {
+            root: root.clone(),
+            nodes: vec![FileNode::new(
+                String::from("src"),
+                root.join("src"),
+                true,
+            )],
+        }));
+        let row = window.find("src").expect("the folder row shows");
+        window.move_to(row.center());
+        window.click(iced::mouse::Button::Right);
+
+        window.click_text(i18n::t(Key::FilesNewAgentSession));
+
+        let app = window.app();
+        assert_eq!(app.modes.active(), otty_app_domain::mode::Mode::Agents);
+        assert_eq!(
+            app.agents.top_overlay(),
+            Some(otty_app_agents::AgentsOverlay::NewSessionDialog)
+        );
+        assert!(
+            window.find("/tmp/otty-explorer-dispatch/src").is_some(),
+            "the dialog is on the folder"
+        );
     }
 }

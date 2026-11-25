@@ -36,7 +36,11 @@ pub enum ContainersIntent {
     /// The active mode changed: Containers mode enters, any other mode
     /// leaves it.
     ModeChanged(Mode),
-    /// Containers mode became active: search for engines, then load their
+    /// OTTY started: search for engines and load their lists once while
+    /// Containers mode is not on screen (spec Decision 10 of Agents mode).
+    LoadInBackground,
+    /// Containers mode became active: search for engines unless a search
+    /// ended within the period of the engine search timer, then load their
     /// lists, and ask again about the folders of an open Run form.
     Enter,
     /// Another mode became active: start no more engine work.

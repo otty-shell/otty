@@ -4,17 +4,8 @@ use std::cmp::Ordering;
 
 /// Compare two texts as a person reads them: A to Z, whatever the case. Texts
 /// that differ only in case keep a fixed order, so nothing jumps between
-/// rebuilds. Nothing is allocated: tables are long and rebuilt often.
-///
-/// ```
-/// use std::cmp::Ordering;
-///
-/// use otty_containers::compare_text;
-///
-/// assert_eq!(compare_text("apple", "Banana"), Ordering::Less);
-/// assert_eq!(compare_text("Web", "web"), Ordering::Less);
-/// ```
-pub fn compare_text(a: &str, b: &str) -> Ordering {
+/// rebuilds. Nothing is allocated: lists are long and rebuilt often.
+pub(crate) fn compare_text(a: &str, b: &str) -> Ordering {
     a.chars()
         .flat_map(char::to_lowercase)
         .cmp(b.chars().flat_map(char::to_lowercase))

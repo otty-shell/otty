@@ -1,0 +1,29 @@
+[package]
+name = "otty-test-plugin-example"
+description = "The example test plugin of otty-plugin-host: the plugin template with one agent part and one provider part"
+readme = "README.md"
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = "2024"
+rust-version = "1.96.0"
+
+# Built on its own for `wasm32-wasip2` by `scripts/build-test-plugins.sh`;
+# the OTTY workspace leaves it out.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+otty-plugin-sdk = { path = "../../../sdk" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# A small fixture: its speed does not matter.
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+lto = true
+strip = true
+panic = "abort"

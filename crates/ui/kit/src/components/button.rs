@@ -1,8 +1,9 @@
 //! `Button`: text button for forms, toolbars and panels.
 
 use iced::widget::{button, row, text};
-use iced::{Alignment, Border, Element, Length, Padding};
+use iced::{Alignment, Border, Element, Font, Length, Padding};
 
+use super::ellipsis_text::text_width;
 use super::{faded, kbd};
 use crate::palette::UiPalette;
 use crate::{fonts, radius, size, spacing};
@@ -69,6 +70,34 @@ pub struct Button<Message> {
 }
 
 impl<Message> Button<Message> {
+    /// Returns the width the button takes: its label on one line, its
+    /// shortcut hint and its padding, for a caller that decides what fits
+    /// beside it.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use otty_ui_kit::components::button::{Button, ButtonSize};
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let form = Button::<()>::new("Admin key…", &palette);
+    /// let small =
+    ///     Button::<()>::new("Admin key…", &palette).size(ButtonSize::Small);
+    ///
+    /// assert!(small.width() < form.width());
+    /// ```
+    pub fn width(&self) -> f32 {
+        let (_, label_size, padding_x) = metrics(self.size);
+        let label = text_width(&self.label, label_size, label_font(self.kind));
+
+        let shortcut = self.shortcut.as_deref().map_or(0.0, |shortcut| {
+            spacing::SPACE_2 + kbd::kbd_width(shortcut)
+        });
+
+        label + shortcut + 2.0 * padding_x
+    }
+
     /// Creates a secondary, form-size button with `label`.
     pub fn new(label: impl Into<String>, palette: &UiPalette) -> Self {
         Self {
@@ -108,17 +137,8 @@ impl<Message> Button<Message> {
 
 impl<'a, Message: Clone + 'a> From<Button<Message>> for Element<'a, Message> {
     fn from(value: Button<Message>) -> Self {
-        let (height, label_size, padding_x) = match value.size {
-            ButtonSize::Form => (size::CONTROL_LG, LABEL_SIZE, PADDING_X),
-            ButtonSize::Small => {
-                (size::CONTROL_MD, LABEL_SIZE_SMALL, PADDING_X_SMALL)
-            },
-        };
-        let font = if value.kind == ButtonKind::Primary {
-            fonts::UI_SEMIBOLD
-        } else {
-            fonts::UI
-        };
+        let (height, label_size, padding_x) = metrics(value.size);
+        let font = label_font(value.kind);
 
         let mut content = row![text(value.label).size(label_size).font(font)]
             .spacing(spacing::SPACE_2)
@@ -136,6 +156,26 @@ impl<'a, Message: Clone + 'a> From<Button<Message>> for Element<'a, Message> {
             .on_press_maybe(value.on_press)
             .style(move |_, status| style(&palette, kind, status))
             .into()
+    }
+}
+
+/// Returns the height, the label size and the horizontal padding of a
+/// button of `button_size`.
+fn metrics(button_size: ButtonSize) -> (f32, f32, f32) {
+    match button_size {
+        ButtonSize::Form => (size::CONTROL_LG, LABEL_SIZE, PADDING_X),
+        ButtonSize::Small => {
+            (size::CONTROL_MD, LABEL_SIZE_SMALL, PADDING_X_SMALL)
+        },
+    }
+}
+
+/// Returns the font of the label of a button of `kind`.
+fn label_font(kind: ButtonKind) -> Font {
+    if kind == ButtonKind::Primary {
+        fonts::UI_SEMIBOLD
+    } else {
+        fonts::UI
     }
 }
 
@@ -251,5 +291,31 @@ mod tests {
         ui.click("Save").expect("button label should be visible");
 
         assert_eq!(ui.into_messages().count(), 0);
+    }
+
+    /// The width a caller reads is the width the label and the padding
+    /// take once laid out, for every size and kind.
+    #[test]
+    fn the_width_is_the_laid_out_label_and_its_padding() {
+        let palette = UiPalette::otty_dark();
+
+        for (size, padding_x) in [
+            (ButtonSize::Form, PADDING_X),
+            (ButtonSize::Small, PADDING_X_SMALL),
+        ] {
+            for kind in [ButtonKind::Primary, ButtonKind::Secondary] {
+                let button = || {
+                    Button::<Message>::new("Admin key…", &palette)
+                        .kind(kind)
+                        .size(size)
+                };
+                let mut ui = simulator(button());
+
+                let label = ui.find("Admin key…").expect("the label shows");
+
+                let laid_out = label.bounds().width + 2.0 * padding_x;
+                assert!((button().width() - laid_out).abs() < 0.5);
+            }
+        }
     }
 }

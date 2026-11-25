@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use iced::widget::Id;
-use iced::{Point, Size};
 use otty_app_domain::exit_behavior::ExitBehavior;
 use otty_app_domain::quick_launch::NodePath;
 use otty_app_i18n::{self as i18n, Key};
+use otty_ui_kit::components::context_menu::MenuPlace;
 
 use crate::state::{InlineEditState, QuickLaunchState};
 use crate::types::{
@@ -71,10 +71,8 @@ impl<'a> InlineEditViewModel<'a> {
 pub(crate) struct ContextMenuViewModel {
     /// What was right-clicked: a launch, a folder or the empty area.
     pub(crate) target: ContextMenuTarget,
-    /// Where the right click was, in window coordinates.
-    pub(crate) cursor: Point,
-    /// Size of the main area the menu is kept inside.
-    pub(crate) area_size: Size,
+    /// Where the right click was and the main area the menu stays inside.
+    pub(crate) place: MenuPlace,
     /// The right-clicked launch is running, so the menu offers Kill.
     pub(crate) is_running: bool,
 }
@@ -92,8 +90,7 @@ impl ContextMenuViewModel {
 
         Some(Self {
             target,
-            cursor: menu.cursor(),
-            area_size: menu.area_size(),
+            place: menu.place(),
             is_running,
         })
     }
@@ -127,19 +124,25 @@ impl<'a> SecretPromptViewModel<'a> {
 
         let (title, hint, label, retry_error) = match request.kind() {
             SshSecretKind::KeyPassphrase => (
-                i18n::secret_prompt_passphrase_title(request.target()),
-                i18n::secret_prompt_passphrase_hint(
-                    prompt.launch_title(),
-                    &account,
+                i18n::filled(
+                    Key::TplSecretPromptPassphraseTitle,
+                    &[("path", request.target())],
+                ),
+                i18n::filled(
+                    Key::TplSecretPromptPassphraseHint,
+                    &[("launch", prompt.launch_title()), ("account", &account)],
                 ),
                 i18n::t(Key::SecretPromptPassphraseLabel),
                 i18n::t(Key::SecretPromptWrongPassphrase),
             ),
             SshSecretKind::Password => (
-                i18n::secret_prompt_password_title(request.target()),
-                i18n::secret_prompt_password_hint(
-                    prompt.launch_title(),
-                    &account,
+                i18n::filled(
+                    Key::TplSecretPromptPasswordTitle,
+                    &[("target", request.target())],
+                ),
+                i18n::filled(
+                    Key::TplSecretPromptPasswordHint,
+                    &[("launch", prompt.launch_title()), ("account", &account)],
                 ),
                 i18n::t(Key::SecretPromptPasswordLabel),
                 i18n::t(Key::SecretPromptPasswordRejected),
@@ -201,6 +204,7 @@ impl<'a> WizardFormViewModel<'a> {
 mod tests {
     use std::sync::Arc;
 
+    use iced::{Point, Size};
     use otty_app_domain::quick_launch::{CommandSpec, QuickLaunch, SshCommand};
 
     use super::*;
@@ -237,7 +241,7 @@ mod tests {
         state.set_context_menu(Some(
             ContextMenuState::default()
                 .with_target(target)
-                .with_cursor(Point::new(40.0, 30.0)),
+                .with_place(MenuPlace::new(Point::new(40.0, 30.0), Size::ZERO)),
         ));
 
         state
@@ -311,7 +315,7 @@ mod tests {
             .expect("the menu should be open");
 
         assert!(vm.is_running);
-        assert_eq!(vm.cursor, Point::new(40.0, 30.0));
+        assert_eq!(vm.place.cursor(), Point::new(40.0, 30.0));
         assert!(matches!(
             vm.target,
             ContextMenuTarget::Command(ref target) if target == &path(&["build"])
@@ -363,13 +367,16 @@ mod tests {
 
         assert_eq!(
             vm.title,
-            i18n::secret_prompt_passphrase_title("~/.ssh/id_ed25519")
+            i18n::filled(
+                Key::TplSecretPromptPassphraseTitle,
+                &[("path", "~/.ssh/id_ed25519")]
+            )
         );
         assert_eq!(
             vm.hint,
-            i18n::secret_prompt_passphrase_hint(
-                "laptop",
-                "ubuntu@192.168.1.20"
+            i18n::filled(
+                Key::TplSecretPromptPassphraseHint,
+                &[("launch", "laptop"), ("account", "ubuntu@192.168.1.20")]
             )
         );
         assert_eq!(vm.label, i18n::t(Key::SecretPromptPassphraseLabel));
@@ -389,11 +396,17 @@ mod tests {
 
         assert_eq!(
             vm.title,
-            i18n::secret_prompt_password_title("ubuntu@192.168.1.20:22")
+            i18n::filled(
+                Key::TplSecretPromptPasswordTitle,
+                &[("target", "ubuntu@192.168.1.20:22")]
+            )
         );
         assert_eq!(
             vm.hint,
-            i18n::secret_prompt_password_hint("laptop", "ubuntu@192.168.1.20")
+            i18n::filled(
+                Key::TplSecretPromptPasswordHint,
+                &[("launch", "laptop"), ("account", "ubuntu@192.168.1.20")]
+            )
         );
         assert_eq!(vm.label, i18n::t(Key::SecretPromptPasswordLabel));
         assert_eq!(vm.error, None);

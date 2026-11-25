@@ -1,0 +1,193 @@
+// The agent contract of the `agents` domain: what an agent part gives
+// OTTY. A plugin exports it once for all its agent parts; OTTY names the
+// part in each call (the `agent` argument, or `profile.agent`). An agent
+// part does agent things only (spec 2026-11-23-accounts-apart-from-profiles,
+// Decision 2): profiles, projects, sessions, tokens and their money, and
+// the launch and resume commands. It knows nothing of accounts: whose
+// login a profile holds is the business of the provider part of its
+// plugin. The domain's shared values are in `types.wit` of this package,
+// and OTTY's price list, which the part asks to price tokens, in
+// `prices.wit`.
+package otty:agents-agent@0.1.0;
+
+interface agent {
+  use otty:host/types@0.1.0.{command, need};
+  use otty:host/files@0.1.0.{file-info};
+  use types.{read-error};
+  use prices.{provider-ref, priced-cost};
+
+  /// A config folder of the agent on this computer.
+  record profile-place {
+    folder: string,
+    /// Whether it is the agent's default folder, or the one its variable
+    /// names, so the agent needs no variable to find it.
+    is-default: bool,
+  }
+
+  /// One agent with one config folder, as OTTY asks about it.
+  record profile {
+    /// The id of the agent part being asked, such as `codex`.
+    agent: string,
+    folder: string,
+    is-default: bool,
+  }
+
+  /// Whether a profile can be used. OTTY itself tells when the agent's
+  /// program is missing, and when the profile folder is not there: it asks
+  /// only about a folder that is there, which may be empty, as a new
+  /// profile is. Whose login the profile holds is no word of the agent
+  /// part's.
+  variant profile-status {
+    /// The profile can be used: the agent is logged in with it, or needs
+    /// no login.
+    found,
+    /// The agent can not log in with the profile; the need says how, such
+    /// as a `run` of the agent's login command when nobody is logged in or
+    /// the login expired. Whether a login is missing or expired is the
+    /// part's own call; an agent that works with no login never says it.
+    not-logged-in(need),
+  }
+
+  /// What one file tells about one conversation the agent can continue.
+  /// The host joins what all the files of the session places tell about
+  /// one id: the latest `changed-ms`, and the folder and the title of the
+  /// latest record that names them. A session no record names a folder
+  /// for is not listed; one with no title shows its id.
+  record session {
+    id: string,
+    /// The project folder the session ran in.
+    folder: option<string>,
+    title: option<string>,
+    changed-ms: s64,
+  }
+
+  /// What holds records: lines of files, or a SQLite database.
+  enum place-kind {
+    files,
+    database,
+  }
+
+  /// Where some of the profile's records are, such as its sessions or its
+  /// answers: the host walks the files of `glob`, keeps what each file
+  /// gave and asks again only for the files that are new or changed.
+  record place {
+    glob: string,
+    kind: place-kind,
+  }
+
+  /// One file or database of a place that the host asks to read, with
+  /// its size and change time as the host listed it.
+  record place-item {
+    file: file-info,
+    kind: place-kind,
+  }
+
+  /// Tokens of one answer. `input` leaves out what was read from the
+  /// cache (`cached`); `cache-written` is the part of `input` written to
+  /// the cache; `reasoning` is the part of `output` spent thinking.
+  record token-count {
+    input: u64,
+    cached: u64,
+    cache-written: u64,
+    output: u64,
+    reasoning: u64,
+  }
+
+  /// What one answer cost, in millionths of a US dollar.
+  variant answer-cost {
+    /// The cost the agent wrote itself, such as OpenCode writes for each
+    /// answer: given as it is, exact, and with no parts.
+    written(u64),
+    /// The tokens priced by the part at the price of the model that
+    /// `prices.price-of` gave, kind by kind: shown "at API prices", on a
+    /// subscription too.
+    at-api-prices(priced-cost),
+  }
+
+  /// One answer of the model: a fact, as the agent wrote it, with its
+  /// money as the part priced it. The host makes every total from these
+  /// rows: the tokens of a day, of a project, of a session and their
+  /// money.
+  record answer {
+    /// What tells this answer from the others; the host counts answers
+    /// with one identity once.
+    identity: option<string>,
+    /// The id of the session it was given in, as `read-sessions` names
+    /// it, when the agent records it; the host sums the numbers of a
+    /// session from the answers that name it.
+    session: option<string>,
+    at-ms: s64,
+    /// The model as the provider names it.
+    model: option<string>,
+    /// Who served the answer, read from the agent's settings and files:
+    /// the provider the agent wrote, else the host of its server. The
+    /// part prices the tokens at this provider's price of the model.
+    provider: option<provider-ref>,
+    /// The project folder.
+    project: option<string>,
+    tokens: token-count,
+    /// What the answer cost, as the part priced it; none when the agent
+    /// did not write it and OTTY's price list has no price of the model.
+    cost: option<answer-cost>,
+  }
+
+  /// What a part saw in one file: the records of the kind it reads, the
+  /// ones it understood, the agent's version written in the file, and
+  /// the names (never values) of the fields it missed and found.
+  record record-counts {
+    seen: u64,
+    understood: u64,
+    version: option<string>,
+    missing: list<string>,
+    fields: list<string>,
+  }
+
+  /// What one read gives, and what it saw.
+  record answers {
+    answers: list<answer>,
+    records: record-counts,
+  }
+
+  /// The agent's default config folder only: the one the agent uses with
+  /// no variable set, or the one its variable names, marked `is-default`.
+  /// OTTY ignores any other place; the user adds other folders as
+  /// profiles.
+  profiles: func(agent: string) -> list<profile-place>;
+  /// Whether the profile can be used: found, not logged in with the need
+  /// that fixes it, or its folder is gone.
+  detect: func(profile: profile) -> profile-status;
+  /// The agent's version written in the profile's newest files; none and
+  /// OTTY runs `<program> --version` itself.
+  version: func(profile: profile) -> option<string>;
+  /// Where the profile's sessions are.
+  session-places: func(profile: profile) -> list<place>;
+  /// What one file or database of a session place tells about its
+  /// sessions.
+  read-sessions: func(profile: profile, item: place-item) -> result<list<session>, read-error>;
+  /// Where the profile's answers are.
+  spend-places: func(profile: profile) -> list<place>;
+  /// Every answer in one file or database of a spend place, each with
+  /// its money: the cost the agent wrote, else its tokens at the price
+  /// `prices.price-of` gives.
+  read-answers: func(profile: profile, item: place-item) -> result<answers, read-error>;
+  /// The command that starts a new session, or continues `session`.
+  launch: func(profile: profile, session: option<string>) -> command;
+}
+
+/// What a component with agent parts imports and exports.
+world agent-part {
+  import otty:host/types@0.1.0;
+  import otty:host/keys@0.1.0;
+  import otty:host/files@0.1.0;
+  import otty:host/sqlite@0.1.0;
+  import otty:host/http@0.1.0;
+  import otty:host/programs@0.1.0;
+  import otty:host/terminal@0.1.0;
+  import otty:host/keyring@0.1.0;
+  import otty:host/env@0.1.0;
+  import otty:host/clock@0.1.0;
+  import otty:host/log@0.1.0;
+  import types;
+  import prices;
+  export agent;
+}

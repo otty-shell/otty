@@ -1,0 +1,136 @@
+---
+title: OpenAI
+description: What the official OpenAI plugin reads for Codex and for ChatGPT and OpenAI accounts, every request it sends and to whom, and what it changes.
+sidebar:
+  order: 14
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Official, version 0.2.17. It lives in its own repository,
+[`github.com/otty-shell/otty-plugin-openai`](https://github.com/otty-shell/otty-plugin-openai),
+which releases it. Install it with **Add plugin…** in Plugins mode and the link
+`https://github.com/otty-shell/otty-plugin-openai` ([how](../../plugins/#install-the-official-plugins));
+it then updates from the releases of that repository. Its README says how to build it yourself.
+
+| Part                       | Kind     | Gives                                                                         |
+| -------------------------- | -------- | ----------------------------------------------------------------------------- |
+| [Codex](#codex-agent)      | agent    | The default profile, sessions, tokens and their money at API prices, and whether a profile is logged in. |
+| [OpenAI](#openai-provider) | provider | The OpenAI accounts found in your Codex profiles and in OTTY's own Codex logins, the limits and credits of a ChatGPT login, from OpenAI or from Codex, the bill of an organization, and your spend this month of a key from your Codex sessions. |
+
+The two parts do not know about each other's pages: the Codex part says nothing about accounts,
+and the OpenAI part shows no profile.
+
+## Codex (agent)
+
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Profiles       | The default one only: `CODEX_HOME`, or `~/.codex`. Other folders, such as `~/.codex-work`, you add with **Add profile**. |
+| Reads          | The session files `sessions/**` and `archived_sessions/**`, plain or compressed (sessions, the tokens of each answer with its session, project and who served it, the agent's version), `session_index.jsonl` (session names). |
+| Logins, as handles | `auth.json`: `OPENAI_API_KEY`, `tokens.access_token`, `tokens.id_token`, `tokens.refresh_token`. The part reads only whether a login is there and, through the handle, when its access token expires, never a token and never whose login it is. |
+| Variables      | `CODEX_HOME`.                                                                                          |
+| Runs           | `codex --version`. OTTY runs it only for a profile whose session files name no version.               |
+| Writes         | Nothing.                                                                                               |
+| Sends          | Nothing.                                                                                              |
+| Program        | `codex`, found on the `PATH` of your login shell. Found nowhere, the profile shows "program not found" with **Install Codex**, which runs the install script of Codex, `curl -fsSL https://chatgpt.com/codex/install.sh \| sh`, in a terminal tab you see, and **Open github.com**, the repository of Codex. |
+| Commands       | New session `codex`, continue `codex resume <id>`, Log in `codex login`.                               |
+
+The money of each answer is its tokens at the API price of its model where it was served, marked
+"at API prices", on a subscription too.
+
+### codex app-server
+
+<Badge text="runs the agent" variant="note" />
+
+When the login's token is not at its place or the usage request gives no answer, and only while
+Agents mode is on screen, the OpenAI part starts `codex -s read-only -a never app-server` with
+`CODEX_HOME` set to a Codex profile folder the account was found in, and talks to it line by line.
+It sends only `initialize`, `initialized` and `account/rateLimits/read`, never the request for the
+list of sessions, which makes Codex rewrite its own index of sessions. In a profile of yours, with
+an expired login token it is not started, since Codex would renew the token, and the need **The
+login expired** shows instead. In OTTY's own login it is the first way, also with an expired token,
+so Codex keeps that login fresh itself. It runs at most once in about 5 minutes per account and
+gives up after 10 seconds.
+
+## OpenAI (provider)
+
+The part finds its accounts itself, in the folders OTTY gives it: the folders of your Codex profiles
+and of OTTY's own Codex logins. It reads there only what its manifest lists, and only during that
+call.
+
+| Login in `auth.json`                | Account                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------ |
+| A ChatGPT login                     | A subscription known by its account id, named by its email, with its plan from the claims of the id token. It stays the same account when Codex renews its tokens. |
+| An API key                          | A key, named by the end of its fingerprint, such as `key ••••a1f3`. An admin key is an organization. |
+| A login `config.toml` sends to a gateway (`chatgpt_base_url`, or another provider of `model_providers`) | No account. |
+
+One account logged in to two folders, such as `~/.codex` and OTTY's own login, is one account with
+both places under Source.
+
+| Request                                                                       | With                                         | When                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------- |
+| `GET https://chatgpt.com/backend-api/wham/usage`                              | The ChatGPT login token in `Authorization`, and `ChatGPT-Account-Id`. | Every read of the limits of a ChatGPT login: windows, credits, plan. |
+| `GET https://chatgpt.com/backend-api/accounts/<account>/spend-controls/current-user/monthly-usage` | The same. | Only when the answer above says the workspace credits are on but gives no number, and the plan is not a personal one. |
+| `GET https://chatgpt.com/backend-api/accounts/<account>/remaining_balance`    | The same.                                    | Only when the requests above gave no balance. |
+| `GET https://api.openai.com/v1/organization/costs`                            | The admin key in `Authorization`.            | Every read of the bill of an organization with its own admin key or one you gave: the 31 UTC days up to today, page by page. |
+
+| What           | Where                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Logins in Codex profiles | Inside each folder of a call: `auth.json` with its keys as handles, `config.toml` (who a login is sent to), and the session files `sessions/**` and `archived_sessions/**` of a profile, where Codex writes the limits it was last told and the tokens of each answer, for [your spend this month](#your-spend-this-month). |
+| Runs           | [`codex -s read-only -a never app-server`](#codex-app-server), with `CODEX_HOME` set to one of the folders of the call. |
+
+- The limits of a ChatGPT login come from `chatgpt.com` with the login's token. In OTTY's own login
+  they come first from `codex app-server` there. When the server gives no answer, or no token is at
+  its place, they come from what Codex knows in a profile folder of the account: `codex app-server`,
+  else the last limits Codex wrote in its 10 newest session files. Else there are none, and no
+  failure is shown. The session files of OTTY's own login are never read.
+- It reads the expiry from the token's claims, and an expired token is not sent. An expired or
+  refused ChatGPT login of a profile gets **The login expired** on the account. In OTTY's own
+  login, a login the server refused needs **Log in again**. Nothing is renewed by the plugin.
+- OTTY's own login (Add account → **Log in with Codex**) runs `codex login` with `CODEX_HOME` set to
+  OTTY's own folder.
+- An API key has no numbers OpenAI tells: nothing is sent for it. It shows
+  [your spend this month](#your-spend-this-month).
+- While it runs, the files of the Codex part are refused to it, but for what it lists inside the
+  folders of the call.
+
+### Your spend this month
+
+OpenAI tells nothing of what one API key spent. So a key found in your Codex profiles shows **Your
+spend this month**, such as "~$42.10", marked "at API prices": what the answers of this calendar
+month (of your time zone) in the session files of those folders would cost at the API price of each
+model, from OTTY's price list. Hovering over it lists the input, cached and output money.
+
+- It counts only the Codex sessions on this computer, of the profiles OTTY shows. Other programs,
+  other computers and other people using the same key are not in it.
+- Each session names the provider that served it (`model_provider`), so a session of a local model
+  or of another provider is left out. It does not name the login it used, so the answers of a
+  folder served by OpenAI count for the key that folder logs in with now. A folder that changed
+  from a ChatGPT login to a key this month counts its earlier answers for the key too.
+- An admin key runs no session, a ChatGPT login shows its limits instead, and OTTY's own login
+  folder is never counted.
+- It is an estimate: list prices know nothing of discounts or of a negotiated rate.
+
+**Open usage page** opens `chatgpt.com/codex/settings/usage` for a login,
+`platform.openai.com/usage` for a key or an organization.
+
+## What it asks you for
+
+Each need carries the label "OpenAI plugin". Its texts come in all ten languages of OTTY.
+
+| Need                             | Part   | When                                                                 | Button |
+| -------------------------------- | ------ | -------------------------------------------------------------------- | ------ |
+| Needs login                      | Codex  | Nobody is logged in with the profile's folder, such as a new folder that is still empty. | **Run codex login**, with `CODEX_HOME` set to the profile's folder. |
+| The login expired                | Codex, OpenAI | The access token of the folder's ChatGPT login says it expired (both parts, on the profile and on its account), or OpenAI refused it (OpenAI, on the account). | **Run codex login**, with `CODEX_HOME` set to that folder. Acting on either page fixes both. |
+| Log in again                     | OpenAI | OpenAI refused OTTY's own login and Codex could not renew it there. Shown on the account only. | **Run codex login** in OTTY's own folder. |
+| The real bill needs an admin key | OpenAI | An organization has no admin key of its own in its folders. Until it has one, the organization shows no money: OTTY counts no money from the tokens. | **Admin key…**: a key that starts with `sk-admin-`, made on `platform.openai.com/settings/organization/admin-keys`. |
+| The admin key was refused        | OpenAI | OpenAI refused the admin key the bill was read with.                 | **Admin key…**, to give a new one. The next bill reads with it. |
+
+## What it changes
+
+<Aside type="tip">
+Nothing in Codex's files. `codex app-server` runs read-only and is asked only for the limits, so
+the model runs no commands. Codex itself may still write its own logs and state, as on any start,
+and renews its own login in OTTY's own folder. In that folder `codex login` writes the login, as it
+does in any folder.
+</Aside>

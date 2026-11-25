@@ -7,12 +7,15 @@
 
 #[cfg(not(target_os = "macos"))]
 use iced::window::Direction;
+use otty_app_agents::AgentsIntent;
+use otty_app_agents_io::LoadedReaders;
 use otty_app_containers::ContainersIntent;
 use otty_app_domain::commands::AppCommand;
 use otty_app_explorer::ExplorerIntent;
 use otty_app_modes::ModesIntent;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_palette::PaletteIntent;
+use otty_app_plugins::PluginsIntent;
 use otty_app_quick_launch::QuickLaunchIntent;
 use otty_app_settings::SettingsIntent;
 use otty_app_shell::ShellSession;
@@ -67,6 +70,14 @@ pub(crate) enum AppEvent {
     /// Containers mode: the engine tree, the lists and their search, and the
     /// answers of the engine work and the engine events.
     Containers(ContainersIntent),
+    /// Agents mode: the profiles, the projects and their sessions, and the
+    /// answers of their reads.
+    Agents(AgentsIntent),
+    /// Plugins mode, its dialogs, and the answers of its I/O.
+    Plugins(PluginsIntent),
+    /// The parts that are on of the installed plugins were loaded: Agents
+    /// mode reads with them from now on.
+    PluginsLoaded(LoadedReaders),
     /// Run an app command, from a shortcut or a header button.
     Command(AppCommand),
     /// The session new terminal tabs start, built after the shell
@@ -84,4 +95,28 @@ pub(crate) enum AppEvent {
     /// The system resizes the window on macOS, so it has no grips.
     #[cfg(not(target_os = "macos"))]
     ResizeWindow(Direction),
+    /// An event sent from inside an open menu: one of its items, or a
+    /// hover or a scroll on it. The view marks every message of a menu
+    /// so, and the input checks let it reach the menu without knowing
+    /// its items.
+    FromMenu(Box<AppEvent>),
+    /// A press of any mouse button that no widget took, such as one on an
+    /// empty part of the window: it closes the open menus.
+    PressedAway,
+}
+
+impl AppEvent {
+    /// Marks `event` as sent from inside an open menu.
+    pub(crate) fn from_menu(event: AppEvent) -> Self {
+        Self::FromMenu(Box::new(event))
+    }
+
+    /// The event without the mark of a menu, as its feature gets it.
+    #[cfg(test)]
+    pub(crate) fn unmarked(self) -> AppEvent {
+        match self {
+            Self::FromMenu(event) => *event,
+            event => event,
+        }
+    }
 }

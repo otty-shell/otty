@@ -14,6 +14,13 @@
 //! and no area inside another, so this does not multiply. `responsive`, which
 //! `DataTable` uses, does not fit here: it builds its content again for each
 //! width, and a screen holds elements it was handed once.
+//!
+//! A screen with a table that scrolls on its own under its sticky header,
+//! such as a page with a header over a sessions table, needs a height it can
+//! fill. [`ScreenArea::filling_height`] gives it the same minimum width and
+//! the same sideways scrolling, but a scroller that scrolls only sideways:
+//! its content then gets the room's height as its upper limit, and the table
+//! fills what the header leaves.
 
 use iced::advanced::layout::{self, Layout, Limits};
 use iced::advanced::widget::{Operation, Tree, tree};
@@ -46,8 +53,10 @@ use crate::size;
 /// keyed column would not do this: with one child it only compares the keys and
 /// still hands the old state on.
 ///
-/// Not for what scrolls on its own and needs a height it can fill: a terminal
-/// or a table with its sticky header.
+/// Not for what scrolls on its own and needs a height it can fill: a terminal,
+/// or a table with its sticky header, unless the screen around the table
+/// keeps the minimum width too: then it goes in
+/// [`ScreenArea::filling_height`].
 ///
 /// # Example
 ///
@@ -73,6 +82,49 @@ impl<'a, Message: 'a, Key> ScreenArea<'a, Message, Key> {
         content: impl Into<Element<'a, Message>>,
         palette: &UiPalette,
     ) -> Self {
+        let direction = scrollbar::both();
+
+        Self::with_direction(key, content, direction, palette)
+    }
+
+    /// Puts `content`, the screen named `key`, in an area that scrolls only
+    /// sideways: the screen keeps the minimum width and always gets the
+    /// room's height, which a table in it fills and scrolls down on its own.
+    /// A screen taller than the room is cut, so give it something that
+    /// scrolls down itself.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iced::widget::{column, scrollable, text};
+    /// use iced::{Element, Length};
+    /// use otty_ui_kit::components::screen_area::ScreenArea;
+    /// use otty_ui_kit::palette::UiPalette;
+    ///
+    /// let palette = UiPalette::otty_dark();
+    /// let rows =
+    ///     scrollable(column![text("row 1"), text("row 2")]).height(Length::Fill);
+    /// let page = column![text("Header"), rows].height(Length::Fill);
+    /// let screen: Element<'_, ()> =
+    ///     ScreenArea::filling_height("project", page, &palette).into();
+    /// ```
+    pub fn filling_height(
+        key: Key,
+        content: impl Into<Element<'a, Message>>,
+        palette: &UiPalette,
+    ) -> Self {
+        let direction = scrollbar::horizontal();
+
+        Self::with_direction(key, content, direction, palette)
+    }
+
+    /// The area of `content` with a scroller in `direction`.
+    fn with_direction(
+        key: Key,
+        content: impl Into<Element<'a, Message>>,
+        direction: scrollable::Direction,
+        palette: &UiPalette,
+    ) -> Self {
         let centered = container(content)
             .center_x(Length::Fill)
             .align_y(Alignment::Center);
@@ -82,7 +134,7 @@ impl<'a, Message: 'a, Key> ScreenArea<'a, Message, Key> {
         })
         .width(Length::Fill)
         .height(Length::Fill)
-        .direction(scrollbar::both())
+        .direction(direction)
         .style(scrollbar::style(palette))
         .into();
 
@@ -393,16 +445,15 @@ impl<'a, Message: 'a> From<Room<'a, Message>> for Element<'a, Message> {
 #[cfg(test)]
 mod tests {
     use iced::Point;
-    use iced::advanced::widget::operation;
     use iced::keyboard::key::Named;
     use iced::keyboard::{self, Modifiers};
     use iced::widget::{Space, button, column, row, text, text_input};
     use iced_test::Simulator;
-    use iced_test::runtime::user_interface::{Cache, UserInterface};
-    use iced_test::selector::{Candidate, Selector};
+    use iced_test::selector::Candidate;
 
     use super::*;
-    use crate::testing::shift_wheel_notch;
+    use crate::testing::events::shift_wheel_notch;
+    use crate::testing::live_app::LiveApp;
 
     #[derive(Debug, Clone, PartialEq)]
     enum Message {
@@ -564,6 +615,75 @@ mod tests {
         assert!(shown.y + shown.height <= 300.0);
     }
 
+    /// A screen whose list scrolls on its own under a line: the list fills
+    /// what the line leaves.
+    fn with_own_list(rows: usize) -> Element<'static, Message> {
+        let mut list = column![];
+        for index in 0..rows {
+            list = list.push(text(format!("row {index}")));
+        }
+
+        column![
+            text("header").width(Length::Fill),
+            scrollable(list).height(Length::Fill),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn in_filling_area(
+        content: impl Into<Element<'static, Message>>,
+        window: Size,
+    ) -> Simulator<'static, Message> {
+        Simulator::with_size(
+            iced::Settings::default(),
+            window,
+            ScreenArea::filling_height(
+                SCREEN,
+                content,
+                &UiPalette::otty_dark(),
+            ),
+        )
+    }
+
+    /// Issue 38: a screen whose list scrolls on its own keeps the minimum
+    /// width and scrolls sideways below it, as every screen does, but it
+    /// gets the room's height: its list fills it and scrolls down on its
+    /// own, and the area never scrolls down.
+    #[test]
+    fn given_a_screen_that_scrolls_on_its_own_then_it_gets_the_room_height_and_scrolls_only_sideways()
+     {
+        let mut ui = in_filling_area(with_own_list(100), SMALL);
+
+        let header = ui.find("header").expect("the header").bounds();
+        let (_, content, showing) = scroller(&mut ui);
+        wheel(&mut ui, FAR, 0.0);
+        let (offset, _, _) = scroller(&mut ui);
+
+        assert_eq!(header.width, size::SCREEN_MIN);
+        assert_eq!(content.width, size::SCREEN_MIN);
+        assert_eq!(
+            content.height, showing.height,
+            "the area does not scroll down"
+        );
+        assert_eq!(showing.height, SMALL.height);
+        assert_eq!(offset.x, size::SCREEN_MIN - SMALL.width);
+        assert_eq!(offset.y, 0.0);
+    }
+
+    /// With room, the screen takes it and nothing scrolls sideways.
+    #[test]
+    fn given_room_then_a_screen_that_scrolls_on_its_own_takes_it() {
+        let mut ui = in_filling_area(with_own_list(100), ROOMY);
+
+        let header = ui.find("header").expect("the header").bounds();
+        let (_, content, showing) = scroller(&mut ui);
+
+        assert_eq!(header.width, ROOMY.width);
+        assert_eq!(content, showing);
+    }
+
     #[test]
     fn given_a_small_screen_with_room_then_it_is_centered_both_ways() {
         let card = container(text("card"))
@@ -688,76 +808,81 @@ mod tests {
         }
     }
 
-    /// One frame after another, as the running app builds them: the widget
-    /// state carries over from one to the next.
-    struct Frames {
-        renderer: Renderer,
-        cache: Option<Cache>,
+    /// A screen of the tests that follow one another, as the running app
+    /// shows them.
+    #[derive(Clone, Copy)]
+    enum Screen {
+        /// [`tall`] with `rows` lines, under the key.
+        Tall(u32, usize),
+        /// [`tall`] with 30 lines, under a key of another type.
+        OtherKind,
+        /// An input at the top left over [`tall`], under the key.
+        WithInput(u32),
     }
 
-    impl Frames {
-        fn new() -> Self {
-            use iced_test::core::renderer::Headless;
+    /// What the app of these tests keeps: the screen it shows and what
+    /// that screen sent.
+    struct Shown {
+        screen: Screen,
+        sent: Vec<Message>,
+    }
 
-            let renderer =
-                iced_test::runtime::futures::futures::executor::block_on(
-                    <Renderer as Headless>::new(
-                        iced::Font::DEFAULT,
-                        iced::Pixels(16.0),
-                        None,
-                    ),
-                )
-                .expect("a headless renderer");
+    fn shown_view(shown: &Shown) -> Element<'_, Message> {
+        let palette = UiPalette::otty_dark();
 
-            Self {
-                renderer,
-                cache: Some(Cache::default()),
-            }
+        match shown.screen {
+            Screen::Tall(key, rows) => {
+                ScreenArea::new(key, tall(rows), &palette).into()
+            },
+            Screen::OtherKind => {
+                ScreenArea::new("other", tall(30), &palette).into()
+            },
+            Screen::WithInput(key) => {
+                let input = text_input("", "").on_input(Message::Typed);
+                let screen = column![input, tall(30)].width(Length::Fill);
+
+                ScreenArea::new(key, screen, &palette).into()
+            },
         }
+    }
 
-        /// Builds a frame of `screen`, gives it `events` with the pointer in
-        /// the area, and returns how far the outer scroller is scrolled and
-        /// what the screen sent.
-        fn frame(
-            &mut self,
-            screen: Element<'static, Message>,
-            events: &[Event],
-        ) -> (Vector, Vec<Message>) {
-            let mut ui = UserInterface::build(
-                screen,
-                SMALL,
-                self.cache.take().expect("the frames keep their cache"),
-                &mut self.renderer,
-            );
-            let mut messages = Vec::new();
-            let _ = ui.update(
-                events,
-                mouse::Cursor::Available(Point::new(40.0, 10.0)),
-                &mut self.renderer,
-                &mut iced::advanced::clipboard::Null,
-                &mut messages,
-            );
+    fn shown_update(shown: &mut Shown, message: Message) {
+        shown.sent.push(message);
+    }
 
-            let mut find = (|candidate: Candidate<'_>| match candidate {
+    /// An app in a small window that shows one screen after another, with
+    /// the pointer in the area.
+    fn frames() -> LiveApp<Shown, Message> {
+        let shown = Shown {
+            screen: Screen::Tall(SCREEN, 30),
+            sent: Vec::new(),
+        };
+        let mut app =
+            LiveApp::new(shown, shown_view, shown_update).window(SMALL);
+        app.point_at(Point::new(40.0, 10.0));
+
+        app
+    }
+
+    /// Shows `screen` in the next frame of `app` and gives it `events`;
+    /// returns how far the outer scroller is scrolled and what the screen
+    /// sent.
+    fn frame(
+        app: &mut LiveApp<Shown, Message>,
+        screen: Screen,
+        events: &[Event],
+    ) -> (Vector, Vec<Message>) {
+        app.state_mut().screen = screen;
+
+        app.send(events.iter().cloned());
+        let offset = app
+            .find(|candidate: Candidate<'_>| match candidate {
                 Candidate::Scrollable { translation, .. } => Some(translation),
                 _ => None,
             })
-            .find();
-            ui.operate(&self.renderer, &mut operation::black_box(&mut find));
-            let offset = match find.finish() {
-                operation::Outcome::Some(Some(offset)) => offset,
-                _ => panic!("the area should have a scroller"),
-            };
+            .expect("the area should have a scroller");
 
-            self.cache = Some(ui.into_cache());
-
-            (offset, messages)
-        }
-    }
-
-    /// A screen of [`tall`] named `key` with `rows` lines in a frame.
-    fn tall_screen(key: u32, rows: usize) -> Element<'static, Message> {
-        ScreenArea::new(key, tall(rows), &UiPalette::otty_dark()).into()
+        (offset, std::mem::take(&mut app.state_mut().sent))
     }
 
     fn wheel_event(x: f32, y: f32) -> Event {
@@ -768,16 +893,16 @@ mod tests {
 
     #[test]
     fn given_another_key_when_built_then_it_starts_at_the_top_left() {
-        let mut frames = Frames::new();
+        let mut app = frames();
         let top = Vector::new(0.0, 0.0);
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
         let (scrolled, _) =
-            frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let (other, _) = frames.frame(tall_screen(2, 30), &[]);
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (other, _) = frame(&mut app, Screen::Tall(2, 30), &[]);
         let (other_scrolled, _) =
-            frames.frame(tall_screen(2, 30), &[wheel_event(-5.0, -5.0)]);
-        let (first_again, _) = frames.frame(tall_screen(1, 30), &[]);
+            frame(&mut app, Screen::Tall(2, 30), &[wheel_event(-5.0, -5.0)]);
+        let (first_again, _) = frame(&mut app, Screen::Tall(1, 30), &[]);
 
         assert_eq!(scrolled, Vector::new(30.0, 50.0));
         assert_eq!(other, top);
@@ -789,13 +914,13 @@ mod tests {
     /// changes, as with a validation message or a new row.
     #[test]
     fn given_the_same_key_when_built_again_then_it_keeps_its_place() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
         let (scrolled, _) =
-            frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let (same, _) = frames.frame(tall_screen(1, 30), &[]);
-        let (more_rows, _) = frames.frame(tall_screen(1, 40), &[]);
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (same, _) = frame(&mut app, Screen::Tall(1, 30), &[]);
+        let (more_rows, _) = frame(&mut app, Screen::Tall(1, 40), &[]);
 
         assert_eq!(scrolled, Vector::new(30.0, 50.0));
         assert_eq!(same, scrolled);
@@ -805,23 +930,14 @@ mod tests {
     /// Two kinds of key are two screens too.
     #[test]
     fn given_a_key_of_another_type_when_built_then_it_starts_at_the_top_left() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(tall_screen(1, 30), &[]);
-        let _ = frames.frame(tall_screen(1, 30), &[wheel_event(-30.0, -50.0)]);
-        let other: Element<'static, Message> =
-            ScreenArea::new("other", tall(30), &UiPalette::otty_dark()).into();
-        let (other, _) = frames.frame(other, &[]);
+        let _ = frame(&mut app, Screen::Tall(1, 30), &[]);
+        let _ =
+            frame(&mut app, Screen::Tall(1, 30), &[wheel_event(-30.0, -50.0)]);
+        let (other, _) = frame(&mut app, Screen::OtherKind, &[]);
 
         assert_eq!(other, Vector::new(0.0, 0.0));
-    }
-
-    /// A screen with an input at the top left.
-    fn screen_with_input(key: u32) -> Element<'static, Message> {
-        let input = text_input("", "").on_input(Message::Typed);
-        let screen = column![input, tall(30)].width(Length::Fill);
-
-        ScreenArea::new(key, screen, &UiPalette::otty_dark()).into()
     }
 
     fn press_events() -> [Event; 2] {
@@ -849,12 +965,12 @@ mod tests {
     /// built again, and it does not reach an input of the next screen.
     #[test]
     fn the_focus_of_an_input_stays_with_its_screen() {
-        let mut frames = Frames::new();
+        let mut app = frames();
 
-        let _ = frames.frame(screen_with_input(1), &[]);
-        let _ = frames.frame(screen_with_input(1), &press_events());
-        let (_, same) = frames.frame(screen_with_input(1), &[typed_key()]);
-        let (_, other) = frames.frame(screen_with_input(2), &[typed_key()]);
+        let _ = frame(&mut app, Screen::WithInput(1), &[]);
+        let _ = frame(&mut app, Screen::WithInput(1), &press_events());
+        let (_, same) = frame(&mut app, Screen::WithInput(1), &[typed_key()]);
+        let (_, other) = frame(&mut app, Screen::WithInput(2), &[typed_key()]);
 
         assert_eq!(same, vec![Message::Typed(String::from("n"))]);
         assert!(other.is_empty(), "{other:?}");

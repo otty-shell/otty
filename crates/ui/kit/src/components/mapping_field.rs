@@ -1,19 +1,16 @@
 //! `MappingField`: rows that map something on this computer to something in
 //! a container, such as ports and volumes (`.port-row`, `.vol-row`).
 
-use iced::widget::{Space, column, container, row, text, text_input};
-use iced::{Alignment, Element, Length, Padding, Pixels};
+use iced::widget::{Space, column, container, row, text};
+use iced::{Alignment, Element, Length};
 
-use super::field_chrome::{self, Note, input_style};
+use super::field_chrome::{self, Note, mono_input};
 use super::glyph;
 use super::icon_button::IconButton;
+use super::small_text::small_text;
 use crate::palette::UiPalette;
-use crate::{fonts, size, spacing, typography};
+use crate::{fonts, size, spacing};
 
-/// Horizontal padding of an input (`padding: 0 11px`).
-const PADDING_X: f32 = 11.0;
-/// Vertical padding that makes a 13/20 text line 34px high.
-const PADDING_Y: f32 = 7.0;
 /// Width of the arrow column (`16px`).
 const ARROW_WIDTH: f32 = 16.0;
 /// Width of the column of the per-row control unless the caller sets one
@@ -278,13 +275,8 @@ fn heading_row<'a, Message: 'a>(
     control_width: f32,
     palette: &UiPalette,
 ) -> Element<'a, Message> {
-    let style = typography::SMALL;
     let heading = |content: String| {
-        text(content)
-            .size(style.size())
-            .font(fonts::UI)
-            .color(palette.text_muted())
-            .width(Length::Fill)
+        small_text(content, palette.text_muted()).width(Length::Fill)
     };
 
     row![
@@ -354,33 +346,10 @@ fn mapping_row<'a, Message: Clone + 'a>(
         lines = lines.push(detail);
     }
     if let Some(error) = mapping.error {
-        let style = typography::SMALL;
-        lines = lines.push(
-            text(error)
-                .size(style.size())
-                .font(fonts::UI)
-                .color(palette.status_error()),
-        );
+        lines = lines.push(small_text(error, palette.status_error()));
     }
 
     lines.into()
-}
-
-/// A boxed mono input of control-lg height; `invalid` colors its border.
-fn mono_input<'a, Message: Clone + 'a>(
-    placeholder: &str,
-    content: &str,
-    invalid: bool,
-    palette: &UiPalette,
-) -> text_input::TextInput<'a, Message> {
-    let style = typography::TERM;
-
-    text_input(placeholder, content)
-        .font(fonts::MONO)
-        .size(style.size())
-        .line_height(Pixels(style.line_height()))
-        .padding(Padding::from([PADDING_Y, PADDING_X]))
-        .style(input_style(palette, invalid))
 }
 
 #[cfg(test)]
@@ -636,7 +605,7 @@ mod tests {
 
     #[test]
     fn the_cross_of_a_row_that_can_not_change_shows_the_label_the_app_gives() {
-        let folder = crate::testing::TempDir::new("mapping-cross");
+        let folder = crate::testing::temp_dir::TempDir::new("mapping-cross");
         let reference = folder.path().join("cross");
 
         assert!(hovered_disabled_row_matches("Remove this port", &reference));

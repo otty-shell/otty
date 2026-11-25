@@ -33,7 +33,8 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     let sidebar = app.sidebar.subscription().map(AppEvent::Sidebar);
 
     // The timers of the features: the toasts, the quick launch tick, the
-    // engine search and the Run form's folder recheck.
+    // engine search, the Run form's folder recheck and the limits of the
+    // agents.
     let notifications = app
         .notifications
         .subscription()
@@ -41,6 +42,9 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
     let quick_launch =
         app.quick_launch.subscription().map(AppEvent::QuickLaunch);
     let containers = app.containers.subscription().map(AppEvent::Containers);
+    let agents = app.agents.subscription().map(AppEvent::Agents);
+    // The daily update check of the plugins.
+    let plugins = app.plugins.subscription().map(AppEvent::Plugins);
 
     // The folders of the Files section, watched for changes on disk.
     let explorer_watch =
@@ -78,6 +82,8 @@ pub(crate) fn subscription(app: &App) -> Subscription<AppEvent> {
         notifications,
         quick_launch,
         containers,
+        agents,
+        plugins,
         explorer_watch,
         terminals,
         block_clock,
@@ -140,10 +146,17 @@ mod tests {
     }
 
     /// The events of each open terminal come in through the terminal's own
-    /// subscription, one per pane.
+    /// subscription, one per pane. Files already follows a folder, so the
+    /// folder the new shell starts in only takes the place of its watch.
     #[test]
     fn each_open_terminal_is_listened_to() {
         let mut app = app();
+        let _read = dispatch::dispatch(
+            &mut app,
+            AppEvent::Explorer(ExplorerIntent::SyncRoot {
+                cwd: PathBuf::from("/tmp/otty-explorer-watch"),
+            }),
+        );
         let without = subscription(&app).units();
 
         open_terminal_tab(&mut app);
@@ -237,6 +250,29 @@ mod tests {
         );
 
         assert_eq!(in_containers, without + 2);
+        assert_eq!(subscription(&app).units(), without);
+    }
+
+    /// Agents mode reads the limits again on a timer while it is on
+    /// screen; another mode stops it.
+    #[test]
+    fn agents_mode_starts_the_limits_timer_until_another_mode_shows() {
+        use otty_app_modes::ModesIntent;
+
+        let mut app = app();
+        let without = subscription(&app).units();
+
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Modes(ModesIntent::Select(Mode::Agents)),
+        );
+        let in_agents = subscription(&app).units();
+        let _ = dispatch::dispatch(
+            &mut app,
+            AppEvent::Modes(ModesIntent::Select(Mode::Terminal)),
+        );
+
+        assert_eq!(in_agents, without + 1);
         assert_eq!(subscription(&app).units(), without);
     }
 

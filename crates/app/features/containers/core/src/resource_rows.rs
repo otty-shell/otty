@@ -22,8 +22,10 @@ pub(crate) const PORTS_COLUMN: usize = 4;
 
 /// The table columns of `resource`, with their width shares and minimum
 /// widths. Number columns are right-aligned. A minimum keeps the title and a
-/// typical value readable (side padding included); on a narrow window the
-/// table scrolls sideways instead of going below the minimums.
+/// typical value readable (side padding included). The minimums of a list
+/// and its "⋯" column fit the smallest screen (`size::SCREEN_MIN`), so the
+/// table never scrolls sideways itself: on a narrow window the main area
+/// keeps the page at that width and scrolls it sideways (issue 39).
 pub(crate) fn columns(resource: ResourceKind) -> Vec<TableColumn> {
     columns_in(i18n::current_locale(), resource)
 }
@@ -41,7 +43,9 @@ pub(super) fn columns_in(
 
     let columns = match resource {
         ResourceKind::Containers => vec![
-            column(Key::ContainersColumnName, 3, 110),
+            // 94, not 110: with it the list fits the smallest screen. A
+            // long name ends with "…" and has the widest share.
+            column(Key::ContainersColumnName, 3, 94),
             // The dot and "Exited (3)".
             column(Key::ContainersColumnStatus, 2, 104),
             column(Key::ContainersColumnImage, 3, 96),
@@ -266,7 +270,10 @@ pub(crate) fn volume_status(volume: &Volume) -> (String, StatusTone) {
     }
 
     let names = volume.containers().join(", ");
-    (i18n::containers_used_by(&names), StatusTone::Neutral)
+    (
+        i18n::filled(Key::TplContainersUsedBy, &[("names", &names)]),
+        StatusTone::Neutral,
+    )
 }
 
 /// The inspector status line of a network: built in, or how many
@@ -279,13 +286,12 @@ pub(crate) fn network_status(network: &Network) -> (String, StatusTone) {
         );
     }
 
-    let text = match network.containers().len() {
-        1 => i18n::t(Key::ContainersOneContainerConnected).to_string(),
-        count => i18n::with_count(
-            Key::TplContainersContainersConnected,
-            count as u64,
-        ),
-    };
+    let text = i18n::one_or_many(
+        Key::ContainersOneContainerConnected,
+        Key::TplContainersContainersConnected,
+        network.containers().len() as u64,
+    );
+
     (text, StatusTone::Neutral)
 }
 
@@ -317,7 +323,7 @@ mod tests {
             titles(ResourceKind::Containers),
             vec![
                 TableColumn::new(i18n::t(Key::ContainersColumnName), 3)
-                    .min_width(110)
+                    .min_width(94)
                     .sortable(true),
                 TableColumn::new(i18n::t(Key::ContainersColumnStatus), 2)
                     .min_width(104)
@@ -758,7 +764,10 @@ mod tests {
         assert_eq!(
             volume_status(named),
             (
-                i18n::containers_used_by(&named.containers().join(", ")),
+                i18n::filled(
+                    Key::TplContainersUsedBy,
+                    &[("names", &named.containers().join(", "))]
+                ),
                 StatusTone::Neutral
             )
         );

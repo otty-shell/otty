@@ -73,6 +73,7 @@ mod selinux;
 mod socket_candidate;
 #[cfg(all(test, feature = "client"))]
 mod testing;
+#[cfg(feature = "client")]
 mod text_order;
 #[cfg(feature = "client")]
 mod timestamp;
@@ -108,6 +109,5 @@ pub use crate::run::{
     VolumeMount,
 };
 pub use crate::socket_candidate::{CandidateSource, SocketCandidate};
-pub use crate::text_order::compare_text;
 pub use crate::volume::Volume;
 pub use crate::watch_event::{ListKind, WatchEvent};

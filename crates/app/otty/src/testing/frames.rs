@@ -15,19 +15,30 @@ use crate::view::view;
 /// same in a larger window.
 pub(crate) const SMALL_WINDOW: iced::Size = iced::Size::new(400.0, 250.0);
 
+/// A window too low for the fields of Settings, which then scroll in the
+/// body of the dialog, but with room for some of them.
+pub(crate) const LOW_WINDOW: iced::Size = iced::Size::new(800.0, 400.0);
+
 /// One frame of the app after another, as the running app builds them: the
 /// widget state carries over from one to the next.
 pub(crate) struct Frames {
     renderer: iced::Renderer,
     cache: Option<iced_test::runtime::user_interface::Cache>,
+    window: iced::Size,
 }
 
 impl Frames {
-    /// Start with no frame built.
+    /// Start with no frame built, in a [`SMALL_WINDOW`].
     pub(crate) fn new() -> Self {
+        Self::in_window(SMALL_WINDOW)
+    }
+
+    /// Start with no frame built, in a window of the size `window`.
+    pub(crate) fn in_window(window: iced::Size) -> Self {
         Self {
             renderer: headless_renderer(),
             cache: Some(iced_test::runtime::user_interface::Cache::default()),
+            window,
         }
     }
 
@@ -44,22 +55,55 @@ impl Frames {
         .expect("the screen should have its scroller")
     }
 
-    /// Like [`Frames::frame`], for the scroller of the Settings dialog: the
-    /// only one whose content is wider than the dialog's card.
+    /// Build a frame of `app` and give it nothing.
+    pub(crate) fn build(&mut self, app: &App) {
+        let _ = self.scrolled_frame(app, None, |_| false);
+    }
+
+    /// Like [`Frames::frame`], for the body of the Settings dialog: the
+    /// dialog lies over everything else, so its body is the last scroller
+    /// that is not the screen's.
     pub(crate) fn dialog_frame(
         &mut self,
         app: &App,
         wheel: Option<(Point, iced::Vector)>,
     ) -> iced::Vector {
         self.scrolled_frame(app, wheel, |content| {
-            content.width > size::DIALOG_WIDE
+            content.width != size::SCREEN_MIN
         })
         .expect("the dialog should have its scroller")
     }
 
+    /// Build a frame of `app`, press and release the left button at `point`
+    /// and return what the window sent.
+    pub(crate) fn press(&mut self, app: &App, point: Point) -> Vec<AppEvent> {
+        use iced_test::runtime::user_interface::UserInterface;
+
+        let mut ui = UserInterface::build(
+            view(app),
+            self.window,
+            self.cache.take().expect("the frames keep their cache"),
+            &mut self.renderer,
+        );
+
+        let clicks: Vec<iced::Event> = iced_test::simulator::click().collect();
+        let mut events = Vec::new();
+        let _ = ui.update(
+            &clicks,
+            iced::mouse::Cursor::Available(point),
+            &mut self.renderer,
+            &mut iced::advanced::clipboard::Null,
+            &mut events,
+        );
+
+        self.cache = Some(ui.into_cache());
+
+        events
+    }
+
     /// Build a frame of `app`, give it the wheel at the pointer if any, and
-    /// return how far the scroller whose content `is_scroller` picks is
-    /// scrolled.
+    /// return how far the last scroller whose content `is_scroller` picks
+    /// is scrolled.
     fn scrolled_frame(
         &mut self,
         app: &App,
@@ -72,7 +116,7 @@ impl Frames {
 
         let mut ui = UserInterface::build(
             view(app),
-            SMALL_WINDOW,
+            self.window,
             self.cache.take().expect("the frames keep their cache"),
             &mut self.renderer,
         );
@@ -100,10 +144,10 @@ impl Frames {
             } if is_scroller(&content_bounds) => Some(translation),
             _ => None,
         })
-        .find();
+        .find_all();
         ui.operate(&self.renderer, &mut operation::black_box(&mut find));
         let offset = match find.finish() {
-            operation::Outcome::Some(Some(offset)) => Some(offset),
+            operation::Outcome::Some(offsets) => offsets.last().copied(),
             _ => None,
         };
 
@@ -132,6 +176,12 @@ pub(crate) fn headless_renderer() -> iced::Renderer {
 /// right and 50 px down.
 pub(crate) fn scroll_main_area() -> Option<(Point, iced::Vector)> {
     Some((Point::new(200.0, 150.0), iced::Vector::new(-30.0, -50.0)))
+}
+
+/// A wheel in the middle of a [`LOW_WINDOW`], on the body of a dialog,
+/// that moves the body 50 px down.
+pub(crate) fn scroll_dialog_body() -> Option<(Point, iced::Vector)> {
+    Some((Point::new(400.0, 200.0), iced::Vector::new(0.0, -50.0)))
 }
 
 /// The scroller of the main area: where it is and how far it is scrolled.

@@ -1,0 +1,81 @@
+# The manifest of the example test plugin of otty-plugin-host, the one of
+# the plugin template: one agent part and one provider part of the
+# `agents` domain, each with its own permissions. Both are made up. The
+# hidden terminal of the provider part's `/usage` read is left out, so the
+# tests that need it declare it themselves.
+[plugin]
+id = "example"
+name = "Example"
+version = "0.1.11"
+description = "A made-up agent and a made-up provider, the start of a new plugin."
+repository = "https://github.com/otty-shell/otty-plugin-example"
+license = "Apache-2.0"
+authors = ["OTTY team"]
+wasm = "example.wasm"
+
+[[agents.agent]]
+id = "example-agent"
+name = "Example Agent"
+# One sentence on what the part does, shown on its card in Plugins mode.
+description = "Finds Example Agent sessions, tokens and their money."
+icon = "example-agent.svg"
+program = "example-agent"
+# Where the agent's official installer puts its program. OTTY looks
+# there when the user's login shell does not find `example-agent` by its
+# name, and then starts it by that full path.
+program_places = ["~/.example/bin/example-agent"]
+tested_version = "1.4.2"
+
+# How to install the agent's program, offered when OTTY finds it nowhere:
+# a command OTTY runs in a terminal tab the user sees, a page, or both.
+[agents.agent.install]
+command = ["sh", "-c", "curl -fsSL https://example.com/install.sh | sh"]
+page = "https://example.com/docs/install"
+
+# Apply only while a function of this part runs.
+[agents.agent.permissions]
+read = ["~/.example-agent*/**", "{EXAMPLE_AGENT_HOME}/**"]
+env = ["EXAMPLE_AGENT_HOME"]
+
+# Where the keys are: readable only with the keys replaced by handles.
+[[agents.agent.permissions.keys]]
+files = ["~/.example-agent*/auth.json", "{EXAMPLE_AGENT_HOME}/auth.json"]
+fields = ["/api_key"]
+
+[[agents.provider]]
+id = "example-cloud"
+name = "Example Cloud"
+description = "Reads the limits of Example Cloud accounts."
+icon = "example-cloud.svg"
+hosts = ["example.com"]
+usage_page = "https://example.com/usage"
+# OTTY prices the answers this provider served at its rows of the LiteLLM
+# price table, found by the id. A provider the table names otherwise
+# gives that name, such as `priced_as = "gemini"` for the id `google`.
+# priced_as = "example_cloud"
+
+[agents.provider.permissions]
+http = ["api.example.com"]
+
+# The profiles of the agent parts of this plugin whose logins the part
+# reads to find its accounts. OTTY gives the part the folders of those
+# profiles, wherever they are, when it asks for the accounts, and the
+# folders of an account when it reads it; for that call only the part
+# reads there what this entry lists: `read` as plain files, `keys` with
+# the keys replaced by handles. A program it starts may get `folder_env`
+# set only to one of those folders.
+#
+# `log_in = true` offers Add account → "Log in with Example Agent": OTTY
+# makes a folder of its own, runs the command the part's `log_in` gives
+# there in a terminal tab, and then asks the part for the accounts in it,
+# which the part reads as it reads a profile folder of this entry. At
+# most one entry of a part offers it.
+[[agents.provider.logins]]
+agent = "example-agent"
+folder_env = "EXAMPLE_AGENT_HOME"
+log_in = true
+read = ["sessions/*.jsonl"]
+
+[[agents.provider.logins.keys]]
+files = ["auth.json"]
+fields = ["/api_key"]

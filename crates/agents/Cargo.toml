@@ -1,0 +1,45 @@
+[package]
+name = "otty-agents"
+homepage = "https://otty.run"
+repository = "https://github.com/otty-shell/otty"
+description = "What OTTY knows about coding agents and the providers they pay through, read by plugin parts"
+readme = "README.md"
+authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+version = "0.1.0"
+license = "Apache-2.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+# The dates of the days the tokens are counted by and of the days of a
+# bill, and the time zone the app passes in.
+jiff = { workspace = true }
+# A warning when the LiteLLM price table has a long prompt limit the token
+# counter does not count, so those requests are priced at the standard rate.
+log = { workspace = true }
+# Runs the plugin parts of agents and providers (spec
+# 2026-11-19-agent-plugins, Decision 4): `PluginAgent` and
+# `PluginProvider` call them, and the host walks, reads keys and checks
+# permissions for them.
+otty-plugin-host = { path = "../plugins/host", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The fingerprint of a key, SHA-256, so the same key found in two places
+# is one account and the key can not be read back from it (spec 2026-11-19,
+# Decision 2). The version the keyring store already builds, so no new
+# crate comes with it.
+sha2 = { version = "0.11.1", default-features = false }
+thiserror = { workspace = true }
+# The HTTPS request of the LiteLLM price table (spec Decision 16). TLS
+# comes from
+# rustls with ring and the Mozilla roots of webpki-roots: no OpenSSL and no
+# aws-lc-rs. gzip and the other default features are left out.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+
+[features]
+# `otty_agents::fixtures`: values for the tests of the crates that use this
+# one, such as the answer of a walk over made-up sources.
+fixtures = []
+
+[dev-dependencies]
+mockall = { workspace = true }

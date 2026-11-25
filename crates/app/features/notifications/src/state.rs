@@ -8,10 +8,21 @@ const TOAST_LIFETIME: Duration = Duration::from_secs(5);
 /// Most toasts on screen at once; a new one hides the oldest.
 const TOAST_LIMIT: usize = 3;
 
-/// An error the user was told about.
+/// What the user was told: an error, or that an action finished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NotificationKind {
+    /// A failed action: a red toast with the error mark.
+    Error,
+    /// A finished action, such as "Plugin OpenCode reloaded": a neutral
+    /// toast with a green check.
+    Done,
+}
+
+/// Something the user was told about.
 #[derive(Debug)]
 pub(super) struct Notification {
     id: u64,
+    kind: NotificationKind,
     text: String,
     at: Instant,
     is_toast: bool,
@@ -21,6 +32,11 @@ impl Notification {
     /// Return the id the cross of its toast or of its row sends.
     pub(super) fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Return whether it is an error or a finished action.
+    pub(super) fn kind(&self) -> NotificationKind {
+        self.kind
     }
 
     /// Return the text, in the language the user had when it came.
@@ -77,17 +93,28 @@ impl NotificationsState {
         self.list_opened_at.is_some()
     }
 
-    /// Add a notification that came at `now`; the list keeps the last 100.
+    /// Add an error that came at `now`; the list keeps the last 100.
     /// It shows as a toast on top of the others and counts as unseen; with
     /// more than three, the oldest toast goes away. While the list is open
     /// the user already looks at it: no toast, nothing unseen.
     pub(super) fn push(&mut self, text: String, now: Instant) {
+        self.add(NotificationKind::Error, text, now);
+    }
+
+    /// Add the news of a finished action that came at `now`, as
+    /// [`NotificationsState::push`] adds an error.
+    pub(super) fn push_done(&mut self, text: String, now: Instant) {
+        self.add(NotificationKind::Done, text, now);
+    }
+
+    fn add(&mut self, kind: NotificationKind, text: String, now: Instant) {
         let id = self.next_id;
         self.next_id += 1;
         let is_toast = !self.is_list_open();
 
         self.items.push_front(Notification {
             id,
+            kind,
             text,
             at: now,
             is_toast,
@@ -194,6 +221,26 @@ mod tests {
 
         assert_eq!(texts(&state), vec!["busy", "disk full"]);
         assert!(state.has_toasts());
+    }
+
+    /// Issue 35: a finished action shows as a toast and joins the list as
+    /// an error does, and keeps its kind.
+    #[test]
+    fn a_finished_action_shows_as_a_toast_of_its_kind() {
+        let mut state = NotificationsState::default();
+        let now = Instant::now();
+
+        state.push(String::from("disk full"), now);
+        state.push_done(String::from("Plugin OpenCode reloaded"), now);
+
+        let kinds: Vec<NotificationKind> =
+            state.toasts().map(Notification::kind).collect();
+        assert_eq!(
+            texts(&state),
+            vec!["Plugin OpenCode reloaded", "disk full"]
+        );
+        assert_eq!(kinds, [NotificationKind::Done, NotificationKind::Error]);
+        assert_eq!(state.unseen(), 2);
     }
 
     #[test]

@@ -2,7 +2,11 @@
 //! the file reads and writes, the saved settings the window takes, the
 //! keyboard and the failures to tell.
 
+use std::sync::Arc;
+
 use iced::Task;
+use otty_app_agents::AgentsIntent;
+use otty_app_i18n as i18n;
 use otty_app_notifications::NotificationsIntent;
 use otty_app_settings::{
     Settings, SettingsData, SettingsIntent, SettingsOutcome,
@@ -51,15 +55,21 @@ impl Delivery for SettingsIntent {
 }
 
 /// Give saved settings to the window and the terminals: the language of
-/// the interface and of the fonts, the theme with its colors for the open
-/// terminals, and the shell with its integration files, written in the
-/// background.
+/// the interface, of the fonts and of the plugins, the theme with its
+/// colors for the open terminals, and the shell with its integration
+/// files, written in the background.
 ///
 /// New terminals take the theme from `app.theme_manager` and the shell
 /// from `app.shell_session`; the saved editor and the equalize-panes switch
 /// stay in `app.settings.saved()`.
 fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
+    let language_before = i18n::current_locale();
     language::apply(saved.language().fixed());
+    let told = if i18n::current_locale() == language_before {
+        Task::none()
+    } else {
+        tell_plugins_language(app)
+    };
     app.theme_manager.set_theme(saved.theme());
     let palette = Box::new(app.theme_manager.current().terminal_palette());
     let recolored = deliver(app, TerminalIntent::ApplyTheme { palette });
@@ -70,7 +80,29 @@ fn apply(app: &mut App, saved: &SettingsData) -> Task<AppEvent> {
     )
     .map(AppEvent::ShellIntegrated);
 
-    Task::batch([recolored, integrated])
+    Task::batch([recolored, integrated, told])
+}
+
+/// Give the plugins the language of the interface the user just picked.
+/// When a plugin with the language receiver answers that its texts depend
+/// on it, Agents mode reads again at once, as its Refresh button does, so
+/// the needs of the plugins show in the new language (spec
+/// 2026-11-19-agent-plugins, issue 20).
+fn tell_plugins_language(app: &App) -> Task<AppEvent> {
+    let tag = i18n::current_locale().tag().to_string();
+
+    otty_app_agents_io::tell_language(
+        Arc::clone(&app.plugin_io.engine),
+        Arc::clone(&app.language_receivers),
+        tag,
+    )
+    .then(|changed| {
+        if changed {
+            Task::done(AppEvent::Agents(AgentsIntent::Refresh))
+        } else {
+            Task::none()
+        }
+    })
 }
 
 #[cfg(test)]

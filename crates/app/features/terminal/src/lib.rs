@@ -129,6 +129,15 @@ impl TerminalWorkspace {
         Some((tab_id, pane))
     }
 
+    /// Return whether the tab in front is a terminal tab on this computer
+    /// with a focused pane: the pane
+    /// [`TerminalIntent::SplitFocusedPaneWith`] splits.
+    pub fn has_local_pane_in_front(&self) -> bool {
+        self.state
+            .active_tab()
+            .is_some_and(|tab| tab.runs_locally() && tab.focus().is_some())
+    }
+
     /// Return the id of the terminal in the focused pane of the tab in
     /// front: the id the events of that terminal carry.
     pub fn focused_terminal_id(&self) -> Option<u64> {
@@ -136,11 +145,20 @@ impl TerminalWorkspace {
     }
 
     /// Return the folder of the focused pane of the tab in front, shortened
-    /// to its last folders when long; `None` until its shell reports one.
+    /// to its last folders when long: the one its shell reported, else the
+    /// one the pane was started in; `None` when neither is known.
     pub fn focused_folder_path(&self) -> Option<&str> {
         let entry = self.state.active_tab()?.focused_terminal_entry()?;
 
         entry.label().folder_path()
+    }
+
+    /// Return the whole folder of the focused pane of the tab in front,
+    /// when that tab runs on this computer: the folder Files follows, the
+    /// one its shell reported, else the one the pane was started in. `None`
+    /// for a tab over SSH or with no known folder.
+    pub fn focused_local_folder(&self) -> Option<std::path::PathBuf> {
+        self.state.active_local_cwd()
     }
 
     /// Return whether a command runs in a pane of the tab in front. Its
@@ -409,6 +427,66 @@ mod tests {
         assert_eq!(terminal.focused_folder_path(), Some("/tmp/shown"));
     }
 
+    /// Owner, issue 36: a new agent session from a terminal tab starts in
+    /// the folder Files follows: the full folder of the focused pane, not
+    /// the shortened one of the status bar.
+    #[test]
+    fn the_focused_local_folder_is_the_full_folder_of_the_focused_pane() {
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        let before = terminal.focused_local_folder();
+        open_shell_tab(&mut terminal, 1);
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+
+        terminals.report(terminal_id, snapshot_in("/tmp/otty-agents/project"));
+        content_sync(&mut terminal, terminal_id);
+
+        assert_eq!(before, None);
+        assert_eq!(
+            terminal.focused_local_folder(),
+            Some(std::path::PathBuf::from("/tmp/otty-agents/project"))
+        );
+    }
+
+    /// A tab over SSH runs on another machine: its folder is not here.
+    #[test]
+    fn an_ssh_tab_has_no_focused_local_folder() {
+        use otty_ui_term::settings::SSHSessionOptions;
+
+        let terminals = ScriptedTerminals::default();
+        let mut terminal = TerminalWorkspace::starting_terminals_with(Rc::new(
+            terminals.starter(),
+        ));
+        let mut settings = Settings::default();
+        settings.engine = settings.engine.clone().with_session(
+            SessionKind::from_ssh_options(
+                SSHSessionOptions::default().with_host("build-box"),
+            ),
+        );
+        let _ = terminal.reduce(
+            TerminalIntent::OpenTab {
+                tab_id: 1,
+                title: String::from("ssh"),
+                settings: Box::new(settings),
+                kind: TerminalKind::Shell,
+                machine: PaneMachine {
+                    name: String::from("build-box"),
+                    target: TargetKind::Ssh,
+                    home: None,
+                },
+            },
+            ctx(Size::new(800.0, 600.0)),
+        );
+        let terminal_id = terminal.focused_terminal_id().expect("the pane");
+
+        terminals.report(terminal_id, snapshot_in("/home/ann/projects"));
+        content_sync(&mut terminal, terminal_id);
+
+        assert_eq!(terminal.focused_local_folder(), None);
+    }
+
     /// A snapshot with one command block that `is_finished` or still runs.
     fn snapshot_with_command(is_finished: bool) -> SnapshotOwned {
         let mut block = command_block("cmd-1", 1_000);
@@ -606,6 +684,25 @@ mod tests {
         assert_eq!(terminal.focused_pane(), Some((3, focus)));
         assert_eq!(terminal.pane_count(), Some(1));
         assert_eq!(terminal.focused_folder_path(), None);
+    }
+
+    /// A local shell tab in front has a pane that can run a program of this
+    /// computer; the launch editor in front has none.
+    #[test]
+    fn a_local_terminal_tab_in_front_has_a_pane_to_split_here() {
+        let mut terminal = scripted_workspace();
+        let before = terminal.has_local_pane_in_front();
+        open_shell_tab(&mut terminal, 3);
+        let shell = terminal.has_local_pane_in_front();
+
+        let _ = terminal.reduce(
+            TerminalIntent::TabActivated { tab_id: 9 },
+            ctx(Size::new(800.0, 600.0)),
+        );
+
+        assert!(!before);
+        assert!(shell);
+        assert!(!terminal.has_local_pane_in_front());
     }
 
     /// The launch editor is in front: the terminal tab stays, but no pane

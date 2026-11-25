@@ -1,4 +1,5 @@
-//! Design tokens of the OTTY design system for [`iced`] widgets.
+//! Design tokens and ready-made controls of the OTTY design system for
+//! [`iced`] widgets.
 //!
 //! Every color, size, gap, corner radius and text style used by the app comes
 //! from one of these modules:

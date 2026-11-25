@@ -348,12 +348,14 @@ fn heading_color(palette: &UiPalette) -> Color {
 
 #[cfg(test)]
 mod tests {
+    use iced::Size;
     use iced::widget::{container, scrollable};
     use iced_test::simulator;
 
     use super::*;
     use crate::size;
-    use crate::testing::TempDir;
+    use crate::testing::pictures::draws;
+    use crate::testing::temp_dir::TempDir;
 
     /// Indent of one level, in the tests.
     const ONE_LEVEL: f32 = 12.0;
@@ -727,28 +729,16 @@ mod tests {
         assert!((deeper.x - heading.x - ONE_LEVEL).abs() < 0.5, "{deeper:?}");
     }
 
-    /// Draws one heading with the pointer at `pointer` and checks it against
-    /// the picture saved in `reference`; the first call saves it.
-    fn hovered_heading_matches(
-        row: DataRow<LinkMessage>,
-        pointer: iced::Point,
-        reference: &std::path::Path,
-    ) -> bool {
-        let palette = UiPalette::otty_dark();
-        let tree: Element<'_, LinkMessage> =
-            container(DataTree::new(&palette).group("General", vec![row]))
-                .width(400)
-                .into();
-        let mut ui = simulator(tree);
-        ui.point_at(pointer);
-        let _ = ui.simulate([iced::Event::Mouse(
-            iced::mouse::Event::CursorMoved { position: pointer },
-        )]);
+    /// A tree of one heading, made by `heading`.
+    fn heading_tree(
+        heading: fn() -> DataRow<LinkMessage>,
+    ) -> impl Fn() -> Element<'static, ()> {
+        move || {
+            let tree = DataTree::new(&UiPalette::otty_dark())
+                .group("General", vec![heading()]);
 
-        ui.snapshot(&iced::Theme::Dark)
-            .expect("tree should draw")
-            .matches_hash(reference)
-            .expect("reference should be readable")
+            Element::from(container(tree).width(400)).map(|_| ())
+        }
     }
 
     #[test]
@@ -756,7 +746,8 @@ mod tests {
      {
         let folder = TempDir::new("data-tree");
         let reference = folder.path().join("heading");
-        let heading = || DataRow::heading_link(0, "net", open("network"));
+        let heading: fn() -> DataRow<LinkMessage> =
+            || DataRow::heading_link(0, "net", open("network"));
         let palette = UiPalette::otty_dark();
         let tree: Element<'_, LinkMessage> = container(
             DataTree::new(&palette).group("General", vec![heading()]),
@@ -765,15 +756,14 @@ mod tests {
         .into();
         let mut ui = simulator(tree);
         let on_link = ui.find("net").expect("heading").bounds().center();
-        let away = iced::Point::new(390.0, 2.0);
+        let away = Some(iced::Point::new(390.0, 2.0));
+        let window = Size::new(480.0, 200.0);
+        let link_tree = heading_tree(heading);
+        let plain_tree = heading_tree(|| DataRow::heading(0, "net"));
 
-        assert!(hovered_heading_matches(heading(), away, &reference));
-        assert!(!hovered_heading_matches(heading(), on_link, &reference));
-        assert!(!hovered_heading_matches(
-            DataRow::heading(0, "net"),
-            away,
-            &reference
-        ));
+        assert!(draws(&link_tree, window, away, &reference));
+        assert!(!draws(&link_tree, window, Some(on_link), &reference));
+        assert!(!draws(&plain_tree, window, away, &reference));
     }
 
     #[test]

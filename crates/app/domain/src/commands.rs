@@ -17,8 +17,8 @@ pub enum AppCommand {
     OpenPalette,
     /// Show or hide the left panel.
     ToggleLeftPanel,
-    /// Show or hide the files (right) panel.
-    ToggleFilesPanel,
+    /// Show or hide the right panel.
+    ToggleRightPanel,
     /// Enter or leave focus mode.
     ToggleFocusMode,
     /// Open the Settings popup over the active mode.
@@ -50,14 +50,18 @@ pub enum AppCommand {
     /// Select the command block after the selected one in the focused pane
     /// of the active tab.
     SelectNextBlock,
+    /// Open Agents mode with the New session dialog in the folder of the
+    /// focused pane of the active tab.
+    NewAgentSessionHere,
 }
 
 impl AppCommand {
     /// Return whether the command can run now. Close session, the two
     /// splits and the block keys act on the active tab, and New folder on
     /// the Launches panel, which only show in Terminal mode (spec Decision
-    /// 5). Close session also needs an active tab, and a split and the
-    /// block keys a focused terminal pane.
+    /// 5). Close session also needs an active tab, a split and the block
+    /// keys a focused terminal pane, and New agent session here a tab on
+    /// this computer whose folder is known.
     ///
     /// This is the one rule, and the places that send a command check it
     /// themselves, because `dispatch/command.rs` delivers whatever it gets:
@@ -76,6 +80,9 @@ impl AppCommand {
                 ctx.is_terminal_mode && ctx.has_focused_pane
             },
             Self::NewFolder => ctx.is_terminal_mode,
+            Self::NewAgentSessionHere => {
+                ctx.is_terminal_mode && ctx.has_local_folder
+            },
             _ => true,
         }
     }
@@ -90,6 +97,9 @@ pub struct CommandCtx {
     pub has_active_tab: bool,
     /// The active tab is a terminal tab with a focused pane.
     pub has_focused_pane: bool,
+    /// The active tab runs on this computer and the folder of its focused
+    /// pane is known.
+    pub has_local_folder: bool,
 }
 
 #[cfg(test)]
@@ -101,14 +111,36 @@ mod tests {
         is_terminal_mode: false,
         has_active_tab: false,
         has_focused_pane: false,
+        has_local_folder: false,
     };
 
-    /// Context in Terminal mode with an active terminal tab.
+    /// Context in Terminal mode with an active terminal tab on this
+    /// computer whose folder is known.
     const TERMINAL_TAB: CommandCtx = CommandCtx {
         is_terminal_mode: true,
         has_active_tab: true,
         has_focused_pane: true,
+        has_local_folder: true,
     };
+
+    /// Owner, issue 36: a new agent session starts in the folder of the
+    /// focused terminal tab, so the command needs a tab on this computer
+    /// with a known folder, in Terminal mode.
+    #[test]
+    fn a_new_agent_session_here_needs_a_local_folder_in_terminal_mode() {
+        let command = AppCommand::NewAgentSessionHere;
+
+        assert!(command.is_available(&TERMINAL_TAB));
+        assert!(!command.is_available(&CommandCtx {
+            has_local_folder: false,
+            ..TERMINAL_TAB
+        }));
+        assert!(!command.is_available(&CommandCtx {
+            is_terminal_mode: false,
+            ..TERMINAL_TAB
+        }));
+        assert!(!command.is_available(&NOTHING));
+    }
 
     #[test]
     fn close_session_needs_terminal_mode_and_an_active_tab() {
@@ -192,7 +224,7 @@ mod tests {
         for command in [
             AppCommand::OpenPalette,
             AppCommand::ToggleLeftPanel,
-            AppCommand::ToggleFilesPanel,
+            AppCommand::ToggleRightPanel,
             AppCommand::ToggleFocusMode,
             AppCommand::OpenSettings,
             AppCommand::OpenNotifications,
