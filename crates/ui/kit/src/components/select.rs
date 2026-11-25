@@ -8,7 +8,7 @@ use iced::{Border, Element, Padding, Pixels};
 
 use super::field_chrome;
 use crate::palette::UiPalette;
-use crate::{fonts, radius, typography};
+use crate::{fonts, radius, size, typography};
 
 /// Renders a dropdown over `options` with the Menu look.
 ///
@@ -123,8 +123,9 @@ fn field_style(
         handle_color: palette.text_muted(),
         background: field_chrome::dropdown_background(palette, is_lit).into(),
         border: Border {
+            color: field_chrome::rest_border(palette),
+            width: size::LINE,
             radius: radius::RADIUS_SM.into(),
-            ..Border::default()
         },
     }
 }

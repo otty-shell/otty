@@ -8,7 +8,7 @@ use super::floating_list::{FloatingList, open_list};
 use super::tooltip::tooltip;
 use super::{faded, field_chrome, glyph, menu};
 use crate::palette::UiPalette;
-use crate::{fonts, radius, spacing, typography};
+use crate::{fonts, radius, size, spacing, typography};
 
 /// Edge of the logo before the label of an option.
 const ICON_SIZE: f32 = 14.0;
@@ -305,8 +305,9 @@ fn option_icon<'a, Message: 'a>(
         .into()
 }
 
-/// The look of the field, the same as `Select`: `surface-raised`, and
-/// `surface-hover` under the pointer and while the list `is_open`.
+/// The look of the field, the same as `Select`: `surface-raised` with the
+/// edge of a field at rest, and `surface-hover` under the pointer and
+/// while the list `is_open`.
 fn field_style(
     palette: &UiPalette,
     status: button::Status,
@@ -321,8 +322,9 @@ fn field_style(
         background: Some(background.into()),
         text_color: palette.text_strong(),
         border: Border {
+            color: field_chrome::rest_border(palette),
+            width: size::LINE,
             radius: radius::RADIUS_SM.into(),
-            ..Border::default()
         },
         ..button::Style::default()
     }

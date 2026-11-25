@@ -12,6 +12,10 @@ use super::small_text::small_text;
 use crate::palette::UiPalette;
 use crate::{fonts, radius, spacing, typography};
 
+/// How much of `text-muted` the edge of a field at rest takes, as the
+/// border of a card.
+const REST_BORDER_ALPHA: f32 = 0.24;
+
 /// Horizontal padding of a boxed field, an input or a dropdown
 /// (`padding: 0 11px`).
 pub(super) const PADDING_X: f32 = 11.0;
@@ -123,7 +127,7 @@ pub(super) fn input_style(
         } else if matches!(status, text_input::Status::Focused { .. }) {
             palette.focus()
         } else {
-            Color::TRANSPARENT
+            rest_border(&palette)
         };
         let fade = |color: Color| if disabled { faded(color) } else { color };
 
@@ -158,5 +162,59 @@ pub(super) fn dropdown_background(palette: &UiPalette, is_lit: bool) -> Color {
         palette.surface_hover()
     } else {
         palette.surface_raised()
+    }
+}
+
+/// The edge of a field at rest: `text-muted` at [`REST_BORDER_ALPHA`]. A
+/// field's fill is about the color of a card, so without an edge a field
+/// on a card, such as the period drop-down of a usage card, hardly shows.
+pub(super) fn rest_border(palette: &UiPalette) -> Color {
+    palette.text_muted().scale_alpha(REST_BORDER_ALPHA)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::card;
+    use crate::contrast::contrast_ratio;
+
+    /// The least contrast of a field's edge against the surface under it,
+    /// so a field at rest shows on a card as on the canvas.
+    const EDGE_MIN: f32 = 1.3;
+
+    /// `color` drawn over `surface`.
+    fn over(color: Color, surface: Color) -> Color {
+        let mix = |under: f32, top: f32| under + (top - under) * color.a;
+
+        Color::from_rgb(
+            mix(surface.r, color.r),
+            mix(surface.g, color.g),
+            mix(surface.b, color.b),
+        )
+    }
+
+    /// A field at rest, such as the period drop-down of a usage card, has
+    /// an edge that shows on the canvas, on a card and on a dialog.
+    #[test]
+    fn given_each_theme_then_a_field_at_rest_shows_its_edge_on_every_surface() {
+        for (theme, palette) in [
+            ("OTTY Dark", UiPalette::otty_dark()),
+            ("OTTY Light", UiPalette::otty_light()),
+        ] {
+            let surfaces = [
+                ("canvas", palette.surface_canvas()),
+                ("card", card::raised(&palette)),
+                ("dialog", palette.surface_overlay()),
+            ];
+            for (name, surface) in surfaces {
+                let edge = over(rest_border(&palette), surface);
+                let ratio = contrast_ratio(edge, surface);
+
+                assert!(
+                    ratio >= EDGE_MIN,
+                    "{theme}: a field's edge on {name} is {ratio:.2}:1"
+                );
+            }
+        }
     }
 }
