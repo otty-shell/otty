@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent} установлен, но сессий и входов пока нет. OTTY подхватит их, как только вы им воспользуетесь.",
     "agents_profile_info": "О профиле",
     "agents_project_info": "О проекте",
+    "agents_session_info": "О сессии",
     "agents_field_path": "Путь",
     "tpl_agents_stats_failed": "Не удалось прочитать статистику: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

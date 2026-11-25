@@ -11,8 +11,8 @@
 //! pointer; in a popup, over which no menu shows, its list opens under
 //! it.
 
-use iced::widget::{Column, column, container, mouse_area, row};
-use iced::{Alignment, Element, Length, Point};
+use iced::widget::{Column, container, mouse_area};
+use iced::{Element, Point};
 use otty_app_i18n::{self as i18n, Key};
 use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::data_table::{
@@ -24,7 +24,7 @@ use otty_ui_kit::components::segmented::segmented;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::tooltip::{TooltipText, tooltip};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{size, spacing};
+use otty_ui_kit::size;
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
@@ -45,22 +45,11 @@ const MONEY_MIN_WIDTH: u16 = 88;
 /// Least width of the share column.
 const SHARE_MIN_WIDTH: u16 = 56;
 
-/// Render the usage block of a popup: its title row over its body.
-pub(super) fn view<'a>(
-    vm: UsageBlockViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let title = title_row(&vm, palette);
-
-    column![title, body(vm, palette)]
-        .spacing(blocks::TITLE_GAP)
-        .into()
-}
-
-/// Render the usage block of a profile page as a kit card (issue 24 of
-/// spec 2026-11-23-accounts-apart-from-profiles): the title "Usage" with
-/// the total under it and the period drop-down at the right end of its
-/// row, then the body.
+/// Render the usage block of a profile page or of a statistics popup as a
+/// kit card (issues 24 and 25 of spec
+/// 2026-11-23-accounts-apart-from-profiles): the title "Usage" with the
+/// total under it and the period drop-down at the right end of its row,
+/// then the body.
 pub(super) fn card<'a>(
     vm: UsageBlockViewModel,
     palette: &UiPalette,
@@ -109,25 +98,6 @@ fn body<'a>(
     }
 
     block.into()
-}
-
-/// The title with the total of the period, or the time of the last good
-/// numbers, under it, and the period drop-down at its right.
-fn title_row<'a>(
-    vm: &UsageBlockViewModel,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    let mut lines = column![blocks::title(i18n::t(Key::AgentsUsage), palette)]
-        .spacing(spacing::SPACE_1);
-    if let Some(total) = total(vm, palette) {
-        lines = lines.push(total);
-    }
-    let title = container(lines).width(Length::Fill);
-
-    row![title, period(vm, palette)]
-        .spacing(spacing::SPACE_3)
-        .align_y(Alignment::Center)
-        .into()
 }
 
 /// The total of the period, or the time of the last good numbers, muted;
@@ -379,7 +349,7 @@ mod tests {
         themes: &'a ThemeManager,
         width: f32,
     ) -> Simulator<'a, AgentsIntent> {
-        simulator(container(view(vm, themes.current().ui())).width(width))
+        simulator(container(card(vm, themes.current().ui())).width(width))
     }
 
     /// Issue 14 of spec 2026-11-23: the table has a Tokens and a Money
@@ -433,7 +403,8 @@ mod tests {
     }
 
     /// Spec 2026-11-23, Decision 3: money at API prices carries the mark
-    /// "at API prices" under the table, at the right end.
+    /// "at API prices" under the table, at the right end of the body of
+    /// the card, inside its padding.
     #[test]
     fn money_at_api_prices_is_marked_under_the_table() {
         let themes = ThemeManager::new();
@@ -448,7 +419,9 @@ mod tests {
 
         assert!(mark.y >= last_row.y + last_row.height, "{mark:?}");
         assert!(
-            (mark.x + mark.width - WIDTH).abs() < 1.0,
+            (mark.x + mark.width - (WIDTH - otty_ui_kit::spacing::SPACE_5))
+                .abs()
+                < 1.0,
             "the mark ends the row: {mark:?}"
         );
     }
@@ -577,7 +550,7 @@ mod tests {
             rows: Vec::new(),
             ..usage_block()
         };
-        let block = container(view(vm, themes.current().ui()))
+        let block = container(card(vm, themes.current().ui()))
             .id(iced::widget::Id::new("usage-block"))
             .width(WIDTH);
         let mut ui = simulator(block);

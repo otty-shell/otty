@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent} is installed, but has no sessions and no logins yet. OTTY picks them up as soon as you use it.",
     "agents_profile_info": "Profile info",
     "agents_project_info": "Project info",
+    "agents_session_info": "Session info",
     "agents_field_path": "Path",
     "tpl_agents_stats_failed": "Could not read the statistics: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

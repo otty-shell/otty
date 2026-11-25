@@ -1,14 +1,16 @@
 //! The statistics popup of a session or of a project (spec 2026-11-19,
 //! Decision 6): the spinner while they are read, the reason when they
 //! could not be, else the facts, the usage windows of a session whose agent
-//! writes them and
-//! the usage block of the session or of the project.
+//! writes them and the usage block of the session or of the project. Each
+//! part is a kit card, as on the pages (issue 25 of spec
+//! 2026-11-23-accounts-apart-from-profiles).
 
 use iced::widget::{Column, Id, column, container};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::theme::ThemeProps;
 use otty_ui_kit::components::button::{Button, ButtonKind};
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::dialog::Dialog;
 use otty_ui_kit::components::small_text::small_text;
 use otty_ui_kit::components::spinner::Spinner;
@@ -73,40 +75,42 @@ fn reading<'a>(palette: &UiPalette) -> Element<'a, AgentsIntent> {
     .into()
 }
 
-/// The facts of a session, its usage windows when its agent writes them,
-/// and its usage
-/// block.
+/// The cards of a session: Session info with its facts, Limits with its
+/// usage windows when its agent writes them, and its usage block.
 fn session_body<'a>(
     vm: SessionStatsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let mut body = Column::new().push(blocks::facts(vm.facts, palette));
+    let info = Card::new(blocks::facts(vm.facts, palette), palette)
+        .title(i18n::t(Key::AgentsSessionInfo));
+
+    let mut body = Column::new().push(info);
     if !vm.limits.is_empty() {
-        body = body.push(blocks::titled(
-            i18n::t(Key::AgentsStatsLimits),
-            blocks::facts(vm.limits, palette),
-            palette,
-        ));
+        body = body.push(
+            Card::new(blocks::facts(vm.limits, palette), palette)
+                .title(i18n::t(Key::AgentsStatsLimits)),
+        );
     }
 
-    body.push(usage_block::view(vm.usage, palette))
-        .spacing(spacing::SPACE_5)
+    body.push(usage_block::card(vm.usage, palette))
+        .spacing(blocks::BLOCK_GAP)
         .width(Length::Fill)
         .into()
 }
 
-/// The facts of a project and its usage block.
+/// The cards of a project: Project info with its facts, and its usage
+/// block.
 fn project_body<'a>(
     vm: ProjectStatsViewModel,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    column![
-        blocks::facts(vm.facts, palette),
-        usage_block::view(vm.usage, palette),
-    ]
-    .spacing(spacing::SPACE_5)
-    .width(Length::Fill)
-    .into()
+    let info = Card::new(blocks::facts(vm.facts, palette), palette)
+        .title(i18n::t(Key::AgentsProjectInfo));
+
+    column![info, usage_block::card(vm.usage, palette)]
+        .spacing(blocks::BLOCK_GAP)
+        .width(Length::Fill)
+        .into()
 }
 
 #[cfg(test)]
@@ -299,6 +303,70 @@ mod tests {
             share.x + share.width < dialog_end,
             "{share:?} ends inside the dialog at {dialog_end}"
         );
+    }
+
+    /// Side padding of a kit card.
+    const CARD_PADDING: f32 = spacing::SPACE_5;
+    /// The least room between the last line of a card and the title of the
+    /// card under it: the bottom padding of the card and the gap.
+    const CARD_AFTER: f32 = CARD_PADDING + spacing::SPACE_5 - 0.5;
+
+    /// Issue 25 of spec 2026-11-23-accounts-apart-from-profiles: the parts
+    /// of the session popup are kit cards, as on the pages: Session info
+    /// with the facts, Limits and Usage, whose period sits at the right
+    /// end of its title row.
+    #[test]
+    fn the_parts_of_a_session_popup_are_cards() {
+        let themes = ThemeManager::new();
+        let vm = session(popup_usage(&UsageTab::SESSION_POPUP, false));
+        let mut ui = ui(vm, &themes);
+        let mut at =
+            |label: &str| ui.find(label).expect("the text shows").bounds();
+
+        let body_left = at("Fix the tabs").x;
+        let info = at(i18n::t(Key::AgentsSessionInfo));
+        let started = at("Started");
+        let limits = at(i18n::t(Key::AgentsStatsLimits));
+        let window = at("5 hours");
+        let usage = at(i18n::t(Key::AgentsUsage));
+        let period = at(UsagePeriod::SevenDays.label());
+
+        let inside = body_left + CARD_PADDING;
+        for part in [info, started, limits, window, usage] {
+            assert_eq!(part.x, inside, "{part:?} lies inside its card");
+        }
+        assert!(started.y >= info.y + info.height, "{started:?}");
+        assert!(limits.y >= started.y + started.height + CARD_AFTER);
+        assert!(usage.y >= window.y + window.height + CARD_AFTER);
+        assert!(
+            (period.center_y() - usage.center_y()).abs() < size::CONTROL_MD,
+            "the period {period:?} is in the title row of {usage:?}"
+        );
+        let dialog_end = (1000.0 + size::DIALOG_WIDE) / 2.0;
+        assert!(period.x + period.width < dialog_end - 2.0 * CARD_PADDING);
+    }
+
+    /// Issue 25: the parts of the project popup are kit cards: Project
+    /// info with the facts, and Usage.
+    #[test]
+    fn the_parts_of_a_project_popup_are_cards() {
+        let themes = ThemeManager::new();
+        let mut ui = ui(project_popup(true), &themes);
+        let mut at =
+            |label: &str| ui.find(label).expect("the text shows").bounds();
+
+        let body_left = at("Fix the tabs").x;
+        let info = at(i18n::t(Key::AgentsProjectInfo));
+        let sessions = at("Sessions");
+        let usage = at(i18n::t(Key::AgentsUsage));
+        let tab = at(i18n::t(Key::AgentsStatsByProfile));
+
+        let inside = body_left + CARD_PADDING;
+        for part in [info, sessions, usage] {
+            assert_eq!(part.x, inside, "{part:?} lies inside its card");
+        }
+        assert!(usage.y >= sessions.y + sessions.height + CARD_AFTER);
+        assert!(tab.x >= inside, "{tab:?} inside the card of Usage");
     }
 
     /// The least height of a whole line of text of a table cell.

@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent} 已安装，但还没有会话和登录。开始使用后 OTTY 会自动识别。",
     "agents_profile_info": "配置文件信息",
     "agents_project_info": "项目信息",
+    "agents_session_info": "会话信息",
     "agents_field_path": "路径",
     "tpl_agents_stats_failed": "无法读取统计：{error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

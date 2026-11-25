@@ -206,8 +206,12 @@ pub(crate) fn session_columns() -> Vec<TableColumn> {
             .sortable(true)
     };
 
+    // The four minimums and the "⋯" column (36 px) fit the sessions card
+    // of the smallest screen, 528 px inside the page and the card padding,
+    // so the table never scrolls sideways itself (issue 25 of spec
+    // 2026-11-23-accounts-apart-from-profiles).
     vec![
-        column(Key::AgentsColumnTitle, 5, 198),
+        column(Key::AgentsColumnTitle, 5, 166),
         // The agent icon and "Coder (Work)".
         column(Key::AgentsProfile, 2, 130),
         column(Key::AgentsAgent, 2, 100),

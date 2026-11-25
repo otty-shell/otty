@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent}이(가) 설치되었지만 아직 세션과 로그인이 없습니다. 사용을 시작하면 OTTY가 자동으로 찾습니다.",
     "agents_profile_info": "프로필 정보",
     "agents_project_info": "프로젝트 정보",
+    "agents_session_info": "세션 정보",
     "agents_field_path": "경로",
     "tpl_agents_stats_failed": "통계를 읽을 수 없습니다: {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

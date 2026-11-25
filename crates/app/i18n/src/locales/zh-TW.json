@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent} 已安裝，但還沒有工作階段和登入。開始使用後 OTTY 會自動識別。",
     "agents_profile_info": "設定檔資訊",
     "agents_project_info": "專案資訊",
+    "agents_session_info": "工作階段資訊",
     "agents_field_path": "路徑",
     "tpl_agents_stats_failed": "無法讀取統計：{error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

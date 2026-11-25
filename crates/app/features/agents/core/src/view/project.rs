@@ -1,16 +1,19 @@
 //! The project screen of Agents mode: the title row with the folder name,
 //! Project statistics, Open the folder in a terminal tab and New session;
-//! Project info with the path, the profiles as chips, the sessions and the
-//! first and the last activity; the toolbar with the
-//! search over the sessions and Refresh; the tags; the notice of a gone
-//! folder; the sessions table, whose Profile cells open their profile;
-//! and the line that says how to continue a session (spec Decision 6,
-//! canvas "Project: sessions table"; spec 2026-11-19, Decision 6).
+//! the notice of a gone folder; Project info with the path, the profiles
+//! as chips, the sessions and the first and the last activity; and the
+//! sessions, with the search over them and Refresh in their title row, the
+//! tags, the table, whose Profile cells open their profile, and the line
+//! that says how to continue a session (spec Decision 6, canvas "Project:
+//! sessions table"; spec 2026-11-19, Decision 6). Project info and the
+//! sessions are kit cards (issue 25 of spec
+//! 2026-11-23-accounts-apart-from-profiles).
 
-use iced::widget::{Column, Id, container, row, svg};
+use iced::widget::{Column, Id, column, container, row, svg};
 use iced::{Alignment, Element, Length};
 use otty_app_i18n::{self as i18n, Key};
 use otty_app_theme::icons;
+use otty_ui_kit::components::card::Card;
 use otty_ui_kit::components::data_table::DataTable;
 use otty_ui_kit::components::ellipsis_text::EllipsisText;
 use otty_ui_kit::components::icon_button::IconButton;
@@ -22,7 +25,7 @@ use otty_ui_kit::components::tag_row::TagRow;
 use otty_ui_kit::components::tag_search_field::TagSearchField;
 use otty_ui_kit::components::toolbar::{Toolbar, ToolbarItem};
 use otty_ui_kit::palette::UiPalette;
-use otty_ui_kit::{fonts, spacing, typography};
+use otty_ui_kit::{fonts, size, spacing, typography};
 
 use super::super::event::AgentsIntent;
 use super::super::model::{
@@ -30,12 +33,18 @@ use super::super::model::{
 };
 use super::blocks;
 use super::chips::{self, Chip};
+use super::profile_page::PAGE_GAP;
 
 /// Smallest width of the search field; it shrinks to it before Refresh
 /// moves into the toolbar's "⋯" menu.
 const SEARCH_MIN_WIDTH: f32 = 140.0;
 /// Width of the search field when there is room (`width: 320px`).
 const SEARCH_MAX_WIDTH: f32 = 320.0;
+/// Width of the search and Refresh in the title row of the sessions card:
+/// the whole field, the toolbar's gap and the button. It fits the card of
+/// the smallest screen beside the title.
+const TOOLBAR_WIDTH: f32 =
+    SEARCH_MAX_WIDTH + spacing::SPACE_4 + size::CONTROL_MD;
 /// Widget id of the search field.
 const SEARCH_ID: &str = "agents_sessions_search";
 /// The id of the box around the button of the title row that opens the
@@ -43,45 +52,30 @@ const SEARCH_ID: &str = "agents_sessions_search";
 pub(crate) const PROJECT_STATS_BUTTON_ID: &str = "agents_project_stats";
 
 /// Render the project screen. It fills the height of the main area: the
-/// table scrolls down on its own under its fixed header. The main area
-/// keeps the screen at the minimum width of a screen and scrolls it
-/// sideways in less room.
+/// card of the sessions takes the height the rest leaves, and its table
+/// scrolls down on its own under its fixed header. The main area keeps
+/// the screen at the minimum width of a screen and scrolls it sideways in
+/// less room.
 pub(crate) fn view<'a>(
     vm: ProjectViewModel<'a>,
     palette: &UiPalette,
 ) -> Element<'a, AgentsIntent> {
-    let info = blocks::titled(
-        i18n::t(Key::AgentsProjectInfo),
-        info(vm.info.clone(), palette),
-        palette,
-    );
-    let mut page = Column::new()
-        .push(title_row(&vm, palette))
-        .push(info)
-        .push(toolbar(&vm, palette));
-    if !vm.search.tags().is_empty() {
-        page = page.push(
-            TagRow::new(vm.search.tags(), &vm.keys, palette)
-                .remove_label(i18n::t(Key::TagRemove))
-                .clear_all_label(i18n::t(Key::TagsClearAll))
-                .on_action(AgentsIntent::SessionSearch),
-        );
-    }
+    let title = title_row(&vm, palette);
+    let info = Card::new(info(vm.info.clone(), palette), palette)
+        .title(i18n::t(Key::AgentsProjectInfo));
+
+    let mut cards = Column::new().spacing(blocks::BLOCK_GAP);
     if vm.is_missing {
-        page = page.push(Notice::new(
+        cards = cards.push(Notice::new(
             i18n::t(Key::AgentsFolderMissing),
             svg::Handle::from_memory(icons::NOTICE_ERROR),
             palette,
         ));
     }
+    let cards = cards.push(info).push(sessions(vm, palette));
 
-    let hint =
-        small_text(i18n::t(Key::AgentsSessionsHint), palette.text_muted());
-    let table = container(table(vm, palette)).height(Length::Fill);
-
-    page.push(table)
-        .push(hint)
-        .spacing(spacing::SPACE_3)
+    column![title, cards]
+        .spacing(PAGE_GAP)
         .padding([spacing::SPACE_4, spacing::SPACE_5])
         .width(Length::Fill)
         .height(Length::Fill)
@@ -182,6 +176,35 @@ fn profile_chips<'a>(
     chips::view(chips, palette)
 }
 
+/// The card of the sessions: the search and Refresh at the right end of
+/// its title row, then the tags, the table, which fills the height the
+/// card gets, and the line that says how to continue a session.
+fn sessions<'a>(
+    vm: ProjectViewModel<'a>,
+    palette: &UiPalette,
+) -> Element<'a, AgentsIntent> {
+    let toolbar = container(toolbar(&vm, palette)).width(TOOLBAR_WIDTH);
+
+    let mut body = Column::new().spacing(spacing::SPACE_3);
+    if !vm.search.tags().is_empty() {
+        body = body.push(
+            TagRow::new(vm.search.tags(), &vm.keys, palette)
+                .remove_label(i18n::t(Key::TagRemove))
+                .clear_all_label(i18n::t(Key::TagsClearAll))
+                .on_action(AgentsIntent::SessionSearch),
+        );
+    }
+    let hint =
+        small_text(i18n::t(Key::AgentsSessionsHint), palette.text_muted());
+    let table = container(table(vm, palette)).height(Length::Fill);
+    let body = body.push(table).push(hint).height(Length::Fill);
+
+    Card::new(body, palette)
+        .title(i18n::t(Key::AgentsSessions))
+        .trailing(toolbar)
+        .into()
+}
+
 /// The search field over the sessions, then Refresh; its label is the
 /// tooltip. When the row is too narrow the field shrinks first, then
 /// Refresh moves into the "⋯" menu.
@@ -259,9 +282,18 @@ mod tests {
 
     /// Width of the main area in the tests.
     const WIDTH: f32 = 900.0;
-    /// Right edge of the title row and the toolbar: the main area less its
-    /// padding.
+    /// Right edge of the title row: the main area less its padding.
     const RIGHT_END: f32 = WIDTH - spacing::SPACE_5;
+    /// Side padding of a kit card (issue 25 of spec
+    /// 2026-11-23-accounts-apart-from-profiles).
+    const CARD_PADDING: f32 = spacing::SPACE_5;
+    /// Left edge of what lies inside a card: the page padding and the
+    /// card padding.
+    const INSIDE: f32 = spacing::SPACE_5 + CARD_PADDING;
+    /// Height of the main area in the tests.
+    const HEIGHT: f32 = 600.0;
+    /// Bottom padding of the page.
+    const PAGE_BOTTOM: f32 = spacing::SPACE_4;
 
     fn vm(search: &TagSearch, is_missing: bool) -> ProjectViewModel<'_> {
         ProjectViewModel {
@@ -314,7 +346,10 @@ mod tests {
                 name: String::from("Codex (Main)"),
             }],
             facts: vec![
-                FactViewModel::new("Sessions", String::from("2")),
+                FactViewModel::new(
+                    "Last activity",
+                    String::from("Nov 14, 2026, 18:00"),
+                ),
                 FactViewModel::new(
                     "First activity",
                     String::from("Nov 12, 2026, 09:00"),
@@ -329,7 +364,7 @@ mod tests {
     ) -> Element<'a, AgentsIntent> {
         container(view(vm, themes.current().ui()))
             .width(WIDTH)
-            .height(600.0)
+            .height(HEIGHT)
             .into()
     }
 
@@ -380,6 +415,136 @@ mod tests {
     /// Project statistics, before Open the folder in a terminal tab.
     fn statistics() -> f32 {
         open_folder() + size::CONTROL_MD + spacing::SPACE_3
+    }
+
+    /// A sessions table of `count` rows, "Session 0" first.
+    fn many(search: &TagSearch, count: usize) -> ProjectViewModel<'_> {
+        let rows = (0..count)
+            .map(|index| {
+                vec![
+                    TableCell::plain(format!("Session {index}")),
+                    profile_cell("codex", "Codex (Work)"),
+                    TableCell::muted("Codex"),
+                    TableCell::muted("5 min ago"),
+                ]
+            })
+            .collect();
+
+        ProjectViewModel {
+            rows,
+            ..vm(search, false)
+        }
+    }
+
+    /// Issue 25 of spec 2026-11-23-accounts-apart-from-profiles: Project
+    /// info is a kit card, its title and its facts inside its padding, and
+    /// the card of the sessions comes under it.
+    #[test]
+    fn project_info_lies_inside_its_card() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(vm(&search, false), &themes));
+        let mut at =
+            |label: &str| ui.find(label).expect("the text shows").bounds();
+
+        let title = at(i18n::t(Key::AgentsProjectInfo));
+        let path = at(i18n::t(Key::AgentsFieldPath));
+        let profiles = at(i18n::t(Key::AgentsSectionProfiles));
+        let last_fact = at("Nov 12, 2026, 09:00");
+        let sessions = at(i18n::t(Key::AgentsSessions));
+
+        assert_eq!(title.x, INSIDE);
+        assert_eq!(path.x, INSIDE);
+        assert_eq!(profiles.x, INSIDE);
+        assert!(path.y >= title.y + title.height, "{path:?} under {title:?}");
+        assert!(
+            sessions.y
+                >= last_fact.y
+                    + last_fact.height
+                    + CARD_PADDING
+                    + spacing::SPACE_5
+                    - 0.5,
+            "the card of the sessions {sessions:?} comes after the card of \
+             the info, which ends under {last_fact:?}"
+        );
+    }
+
+    /// Issue 25: the sessions table is a kit card titled Sessions, the
+    /// search and Refresh at the right end of its title row, the table
+    /// and the hint inside its padding.
+    #[test]
+    fn the_sessions_table_lies_inside_its_card_with_the_search_in_its_title_row()
+     {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let mut ui = simulator(screen(vm(&search, false), &themes));
+
+        let title = ui
+            .find(i18n::t(Key::AgentsSessions))
+            .expect("the title shows")
+            .bounds();
+        let field = ui
+            .find(Id::new(SEARCH_ID))
+            .expect("the search field should show")
+            .bounds();
+        let column = ui
+            .find(i18n::t(Key::AgentsColumnTitle))
+            .expect("the column shows")
+            .bounds();
+        let hint = ui
+            .find(i18n::t(Key::AgentsSessionsHint))
+            .expect("the hint shows")
+            .bounds();
+
+        assert_eq!(title.x, INSIDE);
+        assert!(
+            field.y < title.y + title.height
+                && title.y < field.y + field.height,
+            "the search {field:?} is in the title row of {title:?}"
+        );
+        assert!(field.x > title.x + title.width, "{field:?} after {title:?}");
+        assert!(
+            column.y >= field.y + field.height,
+            "{column:?} under the row"
+        );
+        assert!(column.x >= INSIDE, "{column:?}");
+        assert_eq!(hint.x, INSIDE);
+    }
+
+    /// Issue 25: the sessions table fills the height its card leaves, with
+    /// few rows or with many: the hint stays at the bottom of the card,
+    /// and the rows past it scroll inside the table, not the page.
+    #[test]
+    fn the_sessions_table_fills_its_card_and_scrolls_down_inside_it() {
+        let search = TagSearch::default();
+        let themes = ThemeManager::new();
+        let card_bottom = HEIGHT - PAGE_BOTTOM - CARD_PADDING;
+
+        for count in [2, 40] {
+            let mut ui = simulator(screen(many(&search, count), &themes));
+            let hint = ui
+                .find(i18n::t(Key::AgentsSessionsHint))
+                .expect("the hint shows")
+                .bounds();
+            let last = ui
+                .find(format!("Session {}", count - 1).as_str())
+                .expect("the last row is built")
+                .bounds();
+
+            assert!(
+                (hint.y + hint.height - card_bottom).abs() < 0.5,
+                "with {count} rows the hint ends at the bottom of the card: \
+                 {hint:?}"
+            );
+            if count == 40 {
+                assert!(
+                    last.y >= hint.y,
+                    "the last row {last:?} waits under the table to scroll in"
+                );
+            } else {
+                assert!(last.y + last.height <= hint.y, "{last:?}");
+            }
+        }
     }
 
     #[test]
@@ -436,7 +601,7 @@ mod tests {
             i18n::t(Key::AgentsFieldPath),
             "~/work/otty",
             i18n::t(Key::AgentsSectionProfiles),
-            "Sessions",
+            "Last activity",
             "Nov 12, 2026, 09:00",
         ] {
             assert!(ui.find(label).is_ok(), "{label:?} should show");
@@ -539,7 +704,7 @@ mod tests {
             .bounds();
 
         ui.point_at(Point::new(
-            RIGHT_END - size::CONTROL_MD / 2.0,
+            RIGHT_END - CARD_PADDING - size::CONTROL_MD / 2.0,
             field.center_y(),
         ));
         let _ = ui.simulate(iced_test::simulator::click());
@@ -667,7 +832,8 @@ mod tests {
     /// Issue 38: the whole table, its "⋯" column too, fits the smallest
     /// screen, so the table never scrolls sideways itself: in less room
     /// the main area keeps the page at that width and scrolls it sideways,
-    /// as every screen, and nothing scrolls twice.
+    /// as every screen, and nothing scrolls twice. Issue 25 of spec
+    /// 2026-11-23: it fits inside the padding of its card.
     #[test]
     fn the_whole_table_fits_the_smallest_screen() {
         let smallest = size::SCREEN_MIN;
@@ -686,11 +852,14 @@ mod tests {
             .bounds();
 
         let column_end = title.x - spacing::SPACE_4 + updated_min;
+        let card_end = smallest - spacing::SPACE_5 - CARD_PADDING;
         assert!(
-            column_end <= smallest - spacing::SPACE_5 - menu_column + 0.5,
+            column_end <= card_end - menu_column + 0.5,
             "the Updated column ends at {column_end}"
         );
-        assert!(updated_title_end(800.0) <= 800.0 - spacing::SPACE_5);
+        assert!(
+            updated_title_end(800.0) <= 800.0 - spacing::SPACE_5 - CARD_PADDING
+        );
     }
 
     #[test]
@@ -708,7 +877,7 @@ mod tests {
             .bounds();
 
         ui.point_at(Point::new(
-            smallest - spacing::SPACE_5 - size::CONTROL_MD / 2.0,
+            smallest - spacing::SPACE_5 - CARD_PADDING - size::CONTROL_MD / 2.0,
             field.center_y(),
         ));
         let _ = ui.simulate(iced_test::simulator::click());

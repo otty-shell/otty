@@ -1,8 +1,7 @@
 //! The pieces the blocks of the pages and of the statistics dialog share:
-//! a block title, alone or over its content, the data cards of the pages,
-//! the lists of facts and a keyed row in their look, the tables as tall as
-//! their rows, the figures of the Limits, Credits and Money cards and
-//! small lines.
+//! the data cards of the pages, the lists of facts and a keyed row in their
+//! look, the tables as tall as their rows, the figures of the Limits,
+//! Credits and Money cards and small lines.
 
 use iced::widget::text::Wrapping;
 use iced::widget::{Column, column, container, row, text};
@@ -20,40 +19,12 @@ use super::super::model::{FactViewModel, UsageRowViewModel};
 
 /// Gap between the cards of a page (`gap: 16px`).
 pub(super) const BLOCK_GAP: f32 = spacing::SPACE_5;
-/// Gap between a block title and its list or table (`gap: 10px`).
+/// Gap between the parts of a block, such as its bars and its table
+/// (`gap: 10px`).
 pub(super) const TITLE_GAP: f32 = 10.0;
 /// Size of the key of a keyed row, as the keys of the kit `KeyValueList`
 /// (`font-size: 12.5px`).
 const KEY_SIZE: f32 = 12.5;
-/// Size of a block title (`h2 { font-size: 14px; line-height: 20px }`).
-const TITLE_SIZE: f32 = 14.0;
-/// Line height of a block title.
-const TITLE_LINE: f32 = 20.0;
-
-/// A block title, such as "Tokens, last 30 days".
-pub(super) fn title<'a>(
-    title: &'a str,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    text(title)
-        .size(TITLE_SIZE)
-        .line_height(iced::Pixels(TITLE_LINE))
-        .font(fonts::UI_SEMIBOLD)
-        .color(palette.text_strong())
-        .into()
-}
-
-/// `content` under the block title `heading`.
-pub(super) fn titled<'a>(
-    heading: &'a str,
-    content: impl Into<Element<'a, AgentsIntent>>,
-    palette: &UiPalette,
-) -> Element<'a, AgentsIntent> {
-    column![title(heading, palette), content.into()]
-        .spacing(TITLE_GAP)
-        .into()
-}
-
 /// Each fact as its label and its value; a value that names a plugin
 /// opens its page in Plugins mode.
 pub(super) fn facts<'a>(

@@ -732,6 +732,7 @@
     "tpl_agents_installed_not_used": "{agent} est installé, mais n’a encore ni sessions ni connexions. OTTY les détecte dès que vous l’utilisez.",
     "agents_profile_info": "Infos du profil",
     "agents_project_info": "Infos du projet",
+    "agents_session_info": "Infos de la session",
     "agents_field_path": "Chemin",
     "tpl_agents_stats_failed": "Impossible de lire les statistiques : {error}",
     "tpl_agents_limit_change": "{start} % → {end} %",

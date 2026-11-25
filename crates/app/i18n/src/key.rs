@@ -1554,6 +1554,8 @@ pub enum Key {
     AgentsProfileInfo,
     /// Title of the facts of a project, on its page.
     AgentsProjectInfo,
+    /// Title of the facts of a session, in its statistics popup.
+    AgentsSessionInfo,
     /// Label of the folder path of a project.
     AgentsFieldPath,
     /// The statistics could not be read; the reason follows. Placeholder: `{error}`.
@@ -2062,7 +2064,7 @@ pub enum Key {
 impl Key {
     /// Every key in the catalogs, used by tests to verify full coverage.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 960] = [
+    pub(super) const ALL: [Self; 961] = [
         Self::MenuNewTerminal,
         Self::MenuSplitCurrentPane,
         Self::MenuSplitCurrentPaneDown,
@@ -2780,6 +2782,7 @@ impl Key {
         Self::TplAgentsInstalledNotUsed,
         Self::AgentsProfileInfo,
         Self::AgentsProjectInfo,
+        Self::AgentsSessionInfo,
         Self::AgentsFieldPath,
         Self::TplAgentsStatsFailed,
         Self::TplAgentsLimitChange,
