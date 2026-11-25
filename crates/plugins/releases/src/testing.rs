@@ -1,5 +1,5 @@
 //! Test-only values shared by the tests of this crate: temporary folders,
-//! the test copy of the template plugin in `assets/plugins/example/`, a
+//! the built example test plugin of `otty-plugin-host`, a
 //! made-up GitHub behind a mocked [`HttpClient`] and a compiler that
 //! accepts every plugin.
 
@@ -17,10 +17,11 @@ use crate::installer::{Installer, Places, parts_of};
 use crate::package::MANIFEST_FILE;
 use crate::plugins_file::InstalledPart;
 
-/// The built copy of the template plugin, as `plugins/build.sh` makes it.
+/// The built example test plugin of `otty-plugin-host`, as an installed
+/// plugin folder holds it: a copy of the plugin template.
 const EXAMPLE_FOLDER: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../assets/plugins/example"
+    "/../host/tests/fixtures/example"
 );
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -138,7 +139,7 @@ pub(crate) struct FakeRelease {
 }
 
 impl FakeRelease {
-    /// A release of the template plugin with the tag `tag` and the
+    /// A release of the example plugin with the tag `tag` and the
     /// manifest version `version`.
     pub(crate) fn example(tag: &str, version: &str) -> Self {
         Self {
@@ -190,7 +191,7 @@ pub(crate) fn needs_agent_0_2(release: FakeRelease) -> FakeRelease {
     release.with_file("example.wasm", &wasm_with_agent_0_2())
 }
 
-/// The template's `.wasm` with the agent contract 0.2 in place of 0.1: the
+/// The example's `.wasm` with the agent contract 0.2 in place of 0.1: the
 /// version is part of each name of the contract's interface, so every
 /// name is changed, in bytes of the same length.
 pub(crate) fn wasm_with_agent_0_2() -> Vec<u8> {
@@ -211,7 +212,7 @@ pub(crate) fn wasm_with_agent_0_2() -> Vec<u8> {
     bytes
 }
 
-/// The template's `.wasm` built again: the same component in other bytes,
+/// The example's `.wasm` built again: the same component in other bytes,
 /// with an empty custom section `rebuilt` at its end.
 pub(crate) fn rebuilt_wasm() -> Vec<u8> {
     let mut bytes = example_wasm();
@@ -233,10 +234,10 @@ pub(crate) fn agent_only_wasm() -> Vec<u8> {
     .expect("a test plugin")
 }
 
-/// The template's `.wasm`.
+/// The example's `.wasm`.
 pub(crate) fn example_wasm() -> Vec<u8> {
     std::fs::read(Path::new(EXAMPLE_FOLDER).join("example.wasm"))
-        .expect("the template's .wasm")
+        .expect("the example's .wasm")
 }
 
 /// The releases list body of `releases`: (tag, pre-release, file names).
@@ -260,7 +261,7 @@ pub(crate) fn releases_json(releases: &[(&str, bool, &[&str])]) -> Vec<u8> {
     serde_json::to_vec(&list).expect("JSON")
 }
 
-/// The manifest of the template plugin with the version `version`.
+/// The manifest of the example plugin with the version `version`.
 pub(crate) fn template_manifest(version: &str) -> String {
     crate::fixtures::example_manifest(version)
 }
@@ -270,7 +271,7 @@ pub(crate) fn template_parts(manifest: &Manifest) -> Vec<InstalledPart> {
     parts_of(manifest)
 }
 
-/// The files of the template plugin with the version `version`.
+/// The files of the example plugin with the version `version`.
 pub(crate) fn example_files(version: &str) -> BTreeMap<String, Vec<u8>> {
     let mut files = BTreeMap::new();
     for name in ["example.wasm", "example-agent.svg", "example-cloud.svg"] {

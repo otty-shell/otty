@@ -122,12 +122,12 @@ const CREATE_ICON: &[u8] = include_bytes!("../../../../assets/svg/plus.svg");
 const REFRESH_ICON: &[u8] =
     include_bytes!("../../../../assets/svg/refresh.svg");
 const COPY_ICON: &[u8] = include_bytes!("../../../../assets/svg/copy.svg");
-/// Agent logos from the official plugins in `assets/plugins/`, drawn in one
-/// color that the row tints.
-const CLAUDE_LOGO: &[u8] =
-    include_bytes!("../../../../assets/plugins/anthropic/claude-code.svg");
-const OPENAI_LOGO: &[u8] =
-    include_bytes!("../../../../assets/plugins/openai/codex.svg");
+/// Stand-ins for the agent logos a plugin gives, drawn in one color that
+/// the row tints: OTTY carries no plugin and no logo of an agent.
+const AGENT_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/mode-agents.svg");
+const OTHER_AGENT_LOGO: &[u8] =
+    include_bytes!("../../../../assets/svg/terminal.svg");
 /// Width of the pane the block parts stand in, and of a narrow one.
 const BLOCK_PANE: f32 = 420.0;
 const NARROW_BLOCK_PANE: f32 = 200.0;
@@ -1790,17 +1790,17 @@ fn view(state: &Gallery) -> Element<'_, Message> {
 /// name and the state of the limits, the selected one picked by a press.
 fn agent_rows<'a>(state: &Gallery, p: &UiPalette) -> Element<'a, Message> {
     let agents = [
-        ("Claude Code", CLAUDE_LOGO, "42 %", SessionTone::Muted),
+        ("Claude Code", AGENT_LOGO, "42 %", SessionTone::Muted),
         (
             "Claude Code (Work)",
-            CLAUDE_LOGO,
+            AGENT_LOGO,
             "86 %",
             SessionTone::Waiting,
         ),
-        ("Codex", OPENAI_LOGO, "3 760 left", SessionTone::Muted),
+        ("Codex", OTHER_AGENT_LOGO, "3 760 left", SessionTone::Muted),
         (
             "Claude Code (API key)",
-            CLAUDE_LOGO,
+            AGENT_LOGO,
             "$12.40 today",
             SessionTone::Muted,
         ),

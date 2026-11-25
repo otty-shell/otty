@@ -114,20 +114,22 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{fake_shell, providers_with_plugins, run};
+    use crate::testing::{
+        EXAMPLE_AGENT, fake_shell, providers_with_example, run,
+    };
 
     /// A made-up organization the provider part `provider` of the plugin
-    /// of the same id found in `home`.
-    fn organization(home: &Path, provider: &str) -> Account {
+    /// `plugin` found in `home`.
+    fn organization(home: &Path, plugin: &str, provider: &str) -> Account {
         Account::new(
-            provider,
+            plugin,
             ProviderId::new(provider),
             "org:made-up-org",
             "Made-up org",
             AccountKind::Organization,
             vec![FoundIn::profile(
-                AgentId::new("claude-code"),
-                home.join(".claude-api"),
+                AgentId::new(EXAMPLE_AGENT),
+                home.join(".example-agent-admin"),
             )],
         )
     }
@@ -142,11 +144,12 @@ mod tests {
     fn a_provider_with_no_part_has_no_bill() {
         let home = TempDir::new("agents-bill-no-part");
         let key = KeyRef::EnvVar(String::from("OTTY_TEST_ORG_KEY"));
-        let organization = organization(home.path(), "example-cloud");
+        let organization =
+            organization(home.path(), "no-such-plugin", "no-such-cloud");
         let before = SystemTime::now();
 
         let loaded = read_bill(
-            &providers_with_plugins(home.path()),
+            &providers_with_example(home.path()),
             organization.clone(),
             given(key.clone()),
             SystemTime::now(),
@@ -170,8 +173,8 @@ mod tests {
         let key = KeyRef::EnvVar(String::from("OTTY_TEST_ORG_KEY"));
 
         let loaded = read_bill(
-            &providers_with_plugins(home.path()),
-            organization(home.path(), "anthropic"),
+            &providers_with_example(home.path()),
+            organization(home.path(), "example", "example-cloud"),
             given(key.clone()),
             SystemTime::now(),
             |_| None,
@@ -187,8 +190,9 @@ mod tests {
     fn the_read_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-bill-task");
         let shell = fake_shell(&home);
-        let organization = organization(home.path(), "anthropic");
-        let providers = providers_with_plugins(home.path());
+        let organization =
+            organization(home.path(), "example", "example-cloud");
+        let providers = providers_with_example(home.path());
 
         let answers = run(load_bill(
             &providers,

@@ -78,10 +78,13 @@ it answers `true`, so its needs show in the new language. A plugin
 without it is never called. In tests, `TestHost::set_language` switches
 the language between two calls.
 
-Plugin authors depend on it by a git tag of the OTTY repository; it goes
-to crates.io with its first stable version. The plugins in this
-repository depend on it by path. See `plugins/template/` for a plugin to
-start from.
+Plugin authors depend on it by git, from the `agents` branch of the OTTY
+repository until OTTY tags a release with it, then by that tag; it goes
+to crates.io with its first stable version. The OTTY repository holds no
+plugin: the official plugins and the template each live in a repository
+of their own, such as `otty-shell/otty-plugin-template`, the plugin to
+start from. Only the test plugins of `otty-plugin-host` depend on it by
+path.
 
 Do not use `std::collections::HashMap` or `HashSet` in a plugin: their
 random seed makes the `.wasm` import `wasi:random`, and OTTY refuses a

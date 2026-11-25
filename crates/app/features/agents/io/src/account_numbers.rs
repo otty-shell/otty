@@ -133,39 +133,33 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        agents_and_providers_with_shell, executable_script,
-        providers_with_plugins, run, write,
+        EXAMPLE_AGENT, EXAMPLE_CLOUD, agents_and_providers_with_shell,
+        executable_script, providers_with_example, run, write,
     };
 
-    /// The made-up id of the Claude account of the tests.
-    const ACCOUNT_ID: &str = "00000000-0000-4000-8000-0000000000a1";
-
-    /// The Claude login the Anthropic plugin found in a made-up Claude
-    /// Code folder under `home`, whose `.credentials.json` holds no token
-    /// while `.claude.json` names its account: Claude Code still works
-    /// with it (the owner's Semrush profile, issue 29).
-    fn claude_login_without_token(home: &TempDir) -> Account {
-        let config_dir = home.path().join(".claude-test");
-        write(&config_dir.join(".credentials.json"), "{}");
+    /// The login the example plugin found in a made-up folder of the
+    /// example agent under `home`, whose `auth.json` now names its email
+    /// but holds no key: the agent still works with it, as the owner's
+    /// Claude Code profile with no token did (issue 29).
+    fn login_without_key(home: &TempDir) -> Account {
+        let config_dir = home.path().join(".example-agent-test");
         write(
-            &config_dir.join(".claude.json"),
-            &format!(
-                r#"{{"oauthAccount":{{"accountUuid":"{ACCOUNT_ID}","emailAddress":"dev@example.com"}}}}"#
-            ),
+            &config_dir.join("auth.json"),
+            r#"{"email": "dev@example.com"}"#,
         );
 
         Account::new(
-            "anthropic",
-            ProviderId::new("anthropic"),
-            format!("claude:{ACCOUNT_ID}"),
+            "example",
+            ProviderId::new(EXAMPLE_CLOUD),
+            "key:made-up",
             "dev@example.com",
-            AccountKind::Subscription,
-            vec![FoundIn::profile(AgentId::new("claude-code"), config_dir)],
+            AccountKind::Key,
+            vec![FoundIn::profile(AgentId::new(EXAMPLE_AGENT), config_dir)],
         )
     }
 
-    /// A shell in `home` that only counts its starts, so no real `claude`
-    /// ever runs.
+    /// A shell in `home` that only counts its starts, so no program ever
+    /// runs.
     fn counting_shell(home: &TempDir) -> String {
         let starts = home.path().join("starts");
 
@@ -182,15 +176,15 @@ mod tests {
         home.path().join("starts").exists()
     }
 
-    /// Issue 29, the owner's case: no token in the login's files, so the
-    /// Anthropic provider part reads the limits with `claude /usage` in
-    /// the Claude Code folder the account was found in. The shell here
-    /// only counts its starts, so the made-up `claude` never shows its
-    /// panel; the plugin's own tests read the panel.
+    /// Issue 29, the owner's case: no key in the login's files, so the
+    /// provider part reads the numbers with `example-agent usage` in a
+    /// hidden terminal in the folder the account was found in. The shell
+    /// here only counts its starts, so the made-up agent never shows its
+    /// screen.
     #[test]
-    fn a_login_with_no_token_is_read_with_usage_in_its_folder() {
-        let home = TempDir::new("agents-numbers-semrush");
-        let account = claude_login_without_token(&home);
+    fn a_login_with_no_key_is_read_in_a_hidden_terminal_in_its_folder() {
+        let home = TempDir::new("agents-numbers-no-key");
+        let account = login_without_key(&home);
         let shell = counting_shell(&home);
         let (_, providers) =
             agents_and_providers_with_shell(home.path(), &shell);
@@ -204,7 +198,7 @@ mod tests {
             |_| None,
         );
 
-        assert!(started(&home), "`claude /usage` was not started");
+        assert!(started(&home), "`example-agent usage` was not started");
         assert_eq!(loaded.account, account);
     }
 
@@ -214,7 +208,7 @@ mod tests {
     #[test]
     fn a_read_in_the_background_starts_no_hidden_terminal() {
         let home = TempDir::new("agents-numbers-background");
-        let account = claude_login_without_token(&home);
+        let account = login_without_key(&home);
         let shell = counting_shell(&home);
         let (_, providers) =
             agents_and_providers_with_shell(home.path(), &shell);
@@ -237,18 +231,18 @@ mod tests {
         );
     }
 
-    /// An Anthropic organization the Anthropic plugin found in the Claude
-    /// Code folder under `home`, which holds no login now.
+    /// An organization the example plugin found in the folder of the
+    /// example agent under `home`, which holds no login now.
     fn organization_in(home: &Path) -> Account {
         Account::new(
-            "anthropic",
-            ProviderId::new("anthropic"),
+            "example",
+            ProviderId::new(EXAMPLE_CLOUD),
             "org:made-up-org",
             "Made-up org",
             AccountKind::Organization,
             vec![FoundIn::profile(
-                AgentId::new("claude-code"),
-                home.join(".claude"),
+                AgentId::new(EXAMPLE_AGENT),
+                home.join(".example-agent"),
             )],
         )
     }
@@ -260,7 +254,7 @@ mod tests {
         let folder = TempDir::new("agents-numbers-no-part");
         let account = Account::new(
             "no-such-plugin",
-            ProviderId::new("anthropic"),
+            ProviderId::new(EXAMPLE_CLOUD),
             "org:made-up-org",
             "Made-up org",
             AccountKind::Organization,
@@ -269,7 +263,7 @@ mod tests {
         let before = SystemTime::now();
 
         let loaded = read_account_numbers(
-            &providers_with_plugins(folder.path()),
+            &providers_with_example(folder.path()),
             account.clone(),
             &[],
             true,
@@ -290,7 +284,7 @@ mod tests {
         let folder = TempDir::new("agents-numbers-task");
         let account = organization_in(folder.path());
 
-        let providers = providers_with_plugins(folder.path());
+        let providers = providers_with_example(folder.path());
         let answers = run(load_account_numbers(
             &providers,
             account.clone(),

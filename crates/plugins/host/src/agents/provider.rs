@@ -248,21 +248,21 @@ mod tests {
     };
     use crate::system_keyring::MockKeyringRead;
     use crate::testing::{
-        TempDir, debug_err, engine_with, load_template, no_prices,
-        template_env, write_file,
+        TempDir, debug_err, engine_with, example_env, load_example, no_prices,
+        write_file,
     };
 
     const KEY: &str = "ex-made-up-key-0001";
 
-    /// The template's provider part.
+    /// The example's provider part.
     const PROVIDER: &str = "example-cloud";
 
-    /// The template's agent part, whose profiles hold the logins its
+    /// The example's agent part, whose profiles hold the logins its
     /// provider part reads.
     const AGENT: &str = "example-agent";
 
-    /// A folder of a profile of the template's agent part that no glob of
-    /// the template names, with the login `key` of `email` in `auth.json`
+    /// A folder of a profile of the example's agent part that no glob of
+    /// the example names, with the login `key` of `email` in `auth.json`
     /// and its version in `state.json`.
     fn login_folder_with(key: &str, email: &str) -> TempDir {
         let folder = TempDir::new();
@@ -291,12 +291,12 @@ mod tests {
         LoginFolder::Profile((agent.to_string(), folder))
     }
 
-    /// What the template's provider part finds in `folders`.
+    /// What the example's provider part finds in `folders`.
     fn accounts_in(folders: &[LoginFolder]) -> Found {
         let cache = TempDir::new();
         let engine =
             engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider(PROVIDER))
             .expect("a listed part");
@@ -308,7 +308,7 @@ mod tests {
             .expect("the call")
     }
 
-    /// The folders an account of the template was found in.
+    /// The folders an account of the example was found in.
     fn folders_of(account: &Account) -> Vec<&str> {
         account
             .found_in
@@ -320,7 +320,7 @@ mod tests {
             .collect()
     }
 
-    /// An account of the template's provider part found in `folders`,
+    /// An account of the example's provider part found in `folders`,
     /// with no id the part gave.
     fn account_in(kind: AccountKind, folders: &[LoginFolder]) -> Account {
         Account {
@@ -333,7 +333,7 @@ mod tests {
         }
     }
 
-    /// The numbers the template's provider part reads of `account`.
+    /// The numbers the example's provider part reads of `account`.
     /// `https` serves its requests.
     // A `ReadError` may hold a need, a record the contract can not box.
     #[allow(clippy::result_large_err)]
@@ -344,7 +344,7 @@ mod tests {
         numbers_at_prices(account, https, no_prices())
     }
 
-    /// The numbers the template's provider part reads of `account`, its
+    /// The numbers the example's provider part reads of `account`, its
     /// tokens priced at `prices`. `https` serves its requests.
     // A `ReadError` may hold a need, a record the contract can not box.
     #[allow(clippy::result_large_err)]
@@ -355,7 +355,7 @@ mod tests {
     ) -> Result<AccountNumbers, ReadError> {
         let cache = TempDir::new();
         let engine = engine_with(&cache, https, MockKeyringRead::new());
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider(PROVIDER))
             .expect("a listed part");
@@ -504,7 +504,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider(PROVIDER))
             .expect("a listed part");
@@ -567,7 +567,7 @@ mod tests {
     /// Issue 22 of spec 2026-11-23-accounts-apart-from-profiles: a
     /// provider part asks OTTY's price list for the price of a model while
     /// it reads the numbers of an account, as an agent part does while it
-    /// reads its answers. The template counts this month's spend of a key
+    /// reads its answers. The example counts this month's spend of a key
     /// from the sessions of its folders, at API prices kind by kind.
     #[test]
     fn a_provider_part_prices_tokens_while_it_reads_the_numbers() {
@@ -626,7 +626,7 @@ mod tests {
         assert!(numbers.left.is_none());
     }
 
-    /// What the template's provider part gets when it reads `file` with
+    /// What the example's provider part gets when it reads `file` with
     /// its keys as handles, and the bytes of `file`, in a call with the
     /// login folders `folders`.
     fn reads_in_call(
@@ -636,7 +636,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             engine_with(&cache, MockHttpsSend::new(), MockKeyringRead::new());
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider(PROVIDER))
             .expect("a listed part");
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(bytes, Err(not_allowed(&state)));
     }
 
-    /// The bill the template's provider part reads of an organization
+    /// The bill the example's provider part reads of an organization
     /// found in no folder, with the keys of `given`; `https` serves its
     /// requests.
     // A `ReadError` may hold a need, a record the contract can not box.
@@ -710,7 +710,7 @@ mod tests {
     ) -> Result<Bill, ReadError> {
         let cache = TempDir::new();
         let engine = engine_with(&cache, https, MockKeyringRead::new());
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider(PROVIDER))
             .expect("a listed part");

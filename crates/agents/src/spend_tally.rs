@@ -625,7 +625,7 @@ mod tests {
                 "/a",
                 vec![
                     answer(NOW, "m", input(2))
-                        .with_provider(Some(ProviderRef::of_id("deepseek"))),
+                        .with_provider(Some(ProviderRef::of_id("tealcloud"))),
                 ],
             ),
         ];
@@ -638,7 +638,7 @@ mod tests {
 
         let expected = [
             ModelTokens::new(Some("m"), input(2), 1)
-                .with_provider(Some(ProviderRef::of_id("deepseek"))),
+                .with_provider(Some(ProviderRef::of_id("tealcloud"))),
             ModelTokens::new(Some("m"), input(1), 1)
                 .with_provider(Some(ProviderRef::of_id("anthropic"))),
         ];

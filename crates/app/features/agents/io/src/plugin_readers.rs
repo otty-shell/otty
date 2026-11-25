@@ -193,15 +193,10 @@ mod tests {
     use otty_plugin_host::PartRef;
 
     use super::*;
-    use crate::testing::run_task;
+    use crate::testing::{example_copy, run_task};
 
     fn no_variable(_: &str) -> Option<OsString> {
         None
-    }
-
-    fn template_folder() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../assets/plugins/example")
     }
 
     /// Issue 07, left for issue 09: the installed plugins load into the
@@ -213,7 +208,7 @@ mod tests {
         let engine =
             plugin_engine(cache.path(), "/bin/sh").expect("the engine");
         let plugins = vec![InstalledParts {
-            folder: template_folder(),
+            folder: example_copy(),
             on: vec![
                 PartRef::agent("example-agent"),
                 PartRef::provider("example-cloud"),
@@ -250,7 +245,7 @@ mod tests {
             plugin_engine(cache.path(), "/bin/sh").expect("the engine");
 
         let plugins = [InstalledParts {
-            folder: template_folder(),
+            folder: example_copy(),
             on: vec![PartRef::agent("example-agent")],
         }];
 
@@ -272,36 +267,22 @@ mod tests {
         assert!(loaded.readers.agents.is_empty());
     }
 
-    /// Issue 17: the official plugins in `assets/plugins/` declare no entry of
-    /// the system keyring, so with only them installed Agents mode never
-    /// asks to allow the keyring.
+    /// Issue 17: a plugin whose manifest declares no entry of the system
+    /// keyring, as the official plugins do, gives its parts none, so with
+    /// only such plugins installed Agents mode never asks to allow the
+    /// keyring. The example plugin stands for them.
     #[test]
-    fn the_official_plugins_declare_no_keyring_entry() {
-        let cache = TempDir::new("plugin-readers-official-cache");
+    fn a_plugin_that_declares_no_keyring_entry_gives_its_parts_none() {
+        let cache = TempDir::new("plugin-readers-keyring-cache");
         let engine =
             plugin_engine(cache.path(), "/bin/sh").expect("the engine");
-        let official = |id: &str, on: Vec<PartRef>| InstalledParts {
-            folder: Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../../assets/plugins")
-                .join(id),
-            on,
-        };
-        let plugins = [
-            official(
-                "anthropic",
-                vec![
-                    PartRef::agent("claude-code"),
-                    PartRef::provider("anthropic"),
-                ],
-            ),
-            official(
-                "openai",
-                vec![PartRef::agent("codex"), PartRef::provider("openai")],
-            ),
-            official("opencode", vec![PartRef::agent("opencode")]),
-            official("deepseek", vec![PartRef::provider("deepseek")]),
-            official("openrouter", vec![PartRef::provider("openrouter")]),
-        ];
+        let plugins = [InstalledParts {
+            folder: example_copy(),
+            on: vec![
+                PartRef::agent("example-agent"),
+                PartRef::provider("example-cloud"),
+            ],
+        }];
 
         let loaded = readers_now(
             &engine,
@@ -312,8 +293,8 @@ mod tests {
         );
 
         let registry = &loaded.readers.registry;
-        assert_eq!(registry.agents().len(), 3);
-        assert_eq!(registry.providers().len(), 4);
+        assert_eq!(registry.agents().len(), 1);
+        assert_eq!(registry.providers().len(), 1);
         assert!(
             registry
                 .agents()

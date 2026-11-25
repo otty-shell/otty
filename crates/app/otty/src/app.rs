@@ -513,7 +513,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     fn the_hidden_entries_are_split_by_commas() {
-        assert_eq!(entry_ids(" deepseek, ,codex "), ["deepseek", "codex"]);
+        assert_eq!(entry_ids(" tealcloud, ,codex "), ["tealcloud", "codex"]);
     }
 
     /// With several broken files the user is told about them in the order

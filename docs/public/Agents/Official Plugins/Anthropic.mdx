@@ -7,9 +7,11 @@ sidebar:
 
 import { Aside, Badge } from '@astrojs/starlight/components';
 
-Official, version 0.2.18, install it from `assets/plugins/anthropic/` of the OTTY repository with
-**Add plugin from folder…** ([how](../../plugins/#install-the-official-plugins)). Its own
-repository will be `github.com/otty-shell/otty-plugin-anthropic`.
+Official, version 0.2.18. It lives in its own repository,
+[`github.com/otty-shell/otty-plugin-anthropic`](https://github.com/otty-shell/otty-plugin-anthropic),
+which releases it. Install it with **Add plugin…** in Plugins mode and the link
+`https://github.com/otty-shell/otty-plugin-anthropic` ([how](../../plugins/#install-the-official-plugins));
+it then updates from the releases of that repository. Its README says how to build it yourself.
 
 | Part                          | Kind     | Gives                                                                    |
 | ----------------------------- | -------- | ------------------------------------------------------------------------ |
@@ -33,8 +35,8 @@ accounts, and the Anthropic part shows no profile.
 | Commands       | New session `claude`, continue `claude --resume <id>`, Log in `claude auth login --claudeai`.          |
 
 The money of each answer is its tokens at the API price of its model, marked "at API prices", on a
-subscription too. A profile whose `ANTHROPIC_BASE_URL` sends Claude Code to another server, such as
-`https://api.deepseek.com/anthropic`, has its answers priced as that server's.
+subscription too. A profile whose `ANTHROPIC_BASE_URL` sends Claude Code to another provider's
+server has its answers priced as that server's.
 
 ### Claude Code /usage
 
@@ -67,7 +69,7 @@ during that call.
 | A Claude login (`.credentials.json` and the account in `.claude.json`) | A subscription, named by its email and, after a comma, its organization (unless it is the personal one Claude makes for every account), such as `you@example.com, Example Org`, with its plan. It stays the same account when Claude Code renews its tokens. |
 | A login to a Console organization that pays per token | That organization, named by its name. A part of the name in parentheses goes after a comma, such as `Example Org, Claude API Platform` for "Example Org (Claude API Platform)", so the name never nests parentheses in "Anthropic (…)". |
 | A Console key or an Anthropic key of `settings.json` | A key, named by the end of its fingerprint, such as `key ••••a1f3`. An admin key is an organization. |
-| A key `settings.json` sends to another server, such as DeepSeek's | No account.                                      |
+| A key `settings.json` sends to another provider's server | No account.                                      |
 
 One account logged in to two folders is one account with both places under Source.
 
@@ -112,7 +114,7 @@ OTTY's price list. Hovering over it lists the input, cache write, cached and out
   the account that pays for that folder now: the key of `settings.json`, else the Console
   organization of its login, else its Console key. A folder that changed its login this month
   counts its earlier answers for the new one too.
-- Answers sent to another server by `ANTHROPIC_BASE_URL`, such as DeepSeek's, are left out. OTTY's
+- Answers sent to another provider's server by `ANTHROPIC_BASE_URL` are left out. OTTY's
   own login folder is never counted, and a Claude subscription shows its limits instead.
 - It is an estimate: list prices know nothing of discounts or of a negotiated rate. An organization
   whose bill is read with an admin key shows that bill instead.

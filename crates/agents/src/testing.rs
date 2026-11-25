@@ -94,9 +94,10 @@ impl Drop for TempDir {
     }
 }
 
-/// A made-up home folder with the files of the template plugin's agent,
-/// `~/.example-agent`, and the template plugin (issue 03) loaded for it
-/// from its built copy in `otty-plugin-host`.
+/// A made-up home folder with the files of the example plugin's agent,
+/// `~/.example-agent`, and the example test plugin of `otty-plugin-host`,
+/// a copy of the plugin template (issue 03), loaded for it from its built
+/// copy.
 pub(crate) struct TemplateHome {
     home: TempDir,
     cache: TempDir,
@@ -154,21 +155,19 @@ impl TemplateHome {
         set_file_time(&path, at(changed));
     }
 
-    /// The template plugin, loaded by an engine of its own for this home.
+    /// The example plugin, loaded by an engine of its own for this home.
     pub(crate) fn plugin(&self) -> Arc<LoadedPlugin> {
-        let crate_folder = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let manifest = std::fs::read_to_string(
-            crate_folder.join("../../plugins/template/otty-plugin.toml"),
-        )
-        .expect("the template's manifest");
+        let copy = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../plugins/host/tests/fixtures/example");
+        let manifest = std::fs::read_to_string(copy.join("otty-plugin.toml"))
+            .expect("the example's manifest");
         let manifest = Manifest::parse(&manifest).expect("a valid manifest");
-        let wasm =
-            crate_folder.join("../plugins/host/tests/fixtures/template.wasm");
+        let wasm = copy.join("example.wasm");
         let engine = PluginEngine::new(self.cache.path().to_path_buf())
             .expect("the engine");
 
         let env = Environment::new(self.home().to_path_buf());
-        let plugin = engine.load(manifest, &wasm, &env).expect("the template");
+        let plugin = engine.load(manifest, &wasm, &env).expect("the example");
         Arc::new(plugin)
     }
 }

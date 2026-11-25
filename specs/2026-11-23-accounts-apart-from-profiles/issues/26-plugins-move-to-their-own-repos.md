@@ -1,6 +1,6 @@
 # 26 The plugins move to their own repositories
 
-Status: ready
+Status: done
 Blocked by: 25
 
 ## Why
@@ -73,3 +73,49 @@ Owner's answers, 2026-11-25:
   `AGENTS.md` pass.
 
 ## Comments
+
+- 2026-11-25, done. The four folders next to the OTTY checkout are git
+  repositories with one first commit each (`otty-plugin-anthropic`
+  d142657, `otty-plugin-openai` bb22f5d, `otty-plugin-opencode` 1e1ad13,
+  `otty-plugin-template` 7d03c89), `origin` set to
+  `git@github.com:otty-shell/otty-plugin-<id>.git`, nothing pushed. Each
+  takes the SDK from the `agents` branch, has a `.gitignore`, a README
+  (build, the local SDK for one command, install, release by tag) and
+  `.github/workflows/release.yml`: on a tag `v<version>` it checks the
+  tag is semver and equals `version` of the manifest, runs the tests,
+  builds for `wasm32-wasip2` and attaches `otty-plugin.toml`,
+  `<id>.wasm` (the manifest's `wasm`, which must be `<id>.wasm`) and the
+  icons, the files `crates/plugins/releases` downloads. Each built for
+  `wasm32-wasip2` and passed its tests against the local SDK (Anthropic
+  202, OpenAI 213, OpenCode 36, template 34). Their `Cargo.lock` pins no
+  SDK commit yet: the first build without the local SDK pins the head of
+  `agents`, so after `agents` is pushed run `cargo update -p
+  otty-plugin-sdk` in each and commit the lock. The template's manifest
+  names `otty-plugin-template` as its repository.
+
+  The OTTY repository: `plugins/` (with `build.sh`) and `assets/plugins/`
+  are gone, with DeepSeek, OpenRouter, their docs pages and the tests that
+  installed every built plugin. The host test plugin is
+  `crates/plugins/host/tests/example/` (`otty-test-plugin-example`): the
+  template with its tests left out, texts in English and Russian only,
+  and a `/usage` read of a login with no key in a hidden terminal.
+  `scripts/build-test-plugins.sh` builds it into
+  `tests/fixtures/example/` as an installed folder (manifest,
+  `example.wasm`, icons); its manifest is the template's, so the tests of
+  Plugins mode keep their groups, and the two tests that need the hidden
+  terminal add its permission to a copy. `template.wasm` is gone. The
+  host, releases, otty-agents, Agents io and Plugins io tests use it; the
+  Agents io tests that ran the Anthropic, OpenAI and OpenCode plugins now
+  run the example agent and provider and check the same things, but for
+  the OpenCode "works with no login" case (the plugin's own behaviour).
+  The ignored measures of the real `~/.codex`, `~/.claude` and OpenCode
+  data were removed: they ran the official plugins on the user's files.
+  The made-up DeepSeek and OpenRouter providers of OTTY's tests are now
+  Tealcloud and Hopway. Left on purpose: the LiteLLM table data and docs
+  in `litellm.rs` and `price_table.rs`, which name LiteLLM's real
+  providers, and `docs/research/`.
+
+  Tests first (`wip: issue 26 tests`): the moved tests did not build, the
+  example plugin was not built yet. Docs: Write a Plugin starts from the
+  template repository; Plugins and each official plugin page name its
+  repository and install it with **Add plugin…**.

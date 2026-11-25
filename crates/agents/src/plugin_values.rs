@@ -168,12 +168,12 @@ mod tests {
 
     #[test]
     fn a_host_is_kept_in_small_letters_and_an_id_as_it_is() {
-        let host = PartProviderRef::Host(" API.DeepSeek.com ".to_string());
+        let host = PartProviderRef::Host(" API.Tealcloud.example ".to_string());
         let id = PartProviderRef::Id("openai".to_string());
 
         assert_eq!(
             provider_of(&host),
-            ProviderRef::Host("api.deepseek.com".to_string())
+            ProviderRef::Host("api.tealcloud.example".to_string())
         );
         assert_eq!(provider_of(&id), ProviderRef::of_id("openai"));
     }

@@ -193,49 +193,60 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{agents_with_plugins, no_prices, run, write};
+    use crate::testing::{
+        EXAMPLE_AGENT, agents_with_example, no_prices, run, write,
+    };
 
     fn utc_now() -> LocalNow {
         LocalNow::new(SystemTime::UNIX_EPOCH, TimeZone::UTC)
     }
 
-    /// A made-up Coder profile in `home` with the session `c1` in
-    /// `/work/otty`: one prompt and one answer.
-    fn claude_with_a_session(home: &TempDir) -> Profile {
-        let config_dir = home.path().join(".claude-test");
+    /// A made-up profile of the example agent in `home/<folder>`, named
+    /// `name`, with the session `session` in `/work/otty`: one answer with
+    /// `tokens` (input, cached, output).
+    fn example_with_a_session(
+        home: &TempDir,
+        folder: &str,
+        name: &str,
+        session: &str,
+        tokens: (u64, u64, u64),
+    ) -> Profile {
+        let config_dir = home.path().join(folder);
+        let (input, cached, output) = tokens;
         let lines = [
-            r#"{"type":"user","cwd":"/work/otty","sessionId":"c1","timestamp":"2026-11-16T09:00:00Z","message":{"role":"user","content":"Fix the tabs"}}"#,
-            r#"{"type":"assistant","cwd":"/work/otty","sessionId":"c1","requestId":"req_1","timestamp":"2026-11-16T09:01:00Z","message":{"id":"msg_1","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"cache_read_input_tokens":100,"output_tokens":5}}}"#,
+            r#"{"type":"meta","version":"1.4.2","cwd":"/work/otty","title":"Fix the tabs"}"#.to_string(),
+            format!(
+                r#"{{"type":"answer","id":"{session}-a1","at_ms":1794819660000,"model":"example-large","tokens":{{"input":{input},"cached":{cached},"output":{output}}}}}"#
+            ),
         ];
         write(
-            &config_dir.join("projects/-work-otty/c1.jsonl"),
+            &config_dir.join(format!("sessions/{session}.jsonl")),
             &lines.join("\n"),
         );
 
-        Profile::added(
-            AgentId::new("claude-code"),
-            "Claude Code (Test)",
-            config_dir,
+        Profile::added(AgentId::new(EXAMPLE_AGENT), name, config_dir)
+    }
+
+    /// The profile `Example (Test)` with the session `c1`.
+    fn example_test(home: &TempDir) -> Profile {
+        example_with_a_session(
+            home,
+            ".example-agent-test",
+            "Example (Test)",
+            "c1",
+            (10, 100, 5),
         )
     }
 
-    /// A made-up Coder profile in `home` with the session `x1` in
-    /// `/work/otty`: one answer of `gpt-5-codex`.
-    fn codex_with_a_session(home: &TempDir) -> Profile {
-        let config_dir = home.path().join(".codex-test");
-        let lines = [
-            r#"{"timestamp":"2026-11-16T09:00:00.000Z","type":"session_meta","payload":{"id":"x1","cwd":"/work/otty","source":"cli"}}"#,
-            r#"{"timestamp":"2026-11-16T09:00:01.000Z","type":"turn_context","payload":{"cwd":"/work/otty","model":"gpt-5-codex"}}"#,
-            r#"{"timestamp":"2026-11-16T09:02:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"cached_input_tokens":0,"output_tokens":3},"last_token_usage":{"input_tokens":30,"cached_input_tokens":0,"output_tokens":3}},"rate_limits":null}}"#,
-        ];
-        write(
-            &config_dir.join(
-                "sessions/2026/11/16/rollout-2026-11-16T09-00-00-x1.jsonl",
-            ),
-            &lines.join("\n"),
-        );
-
-        Profile::added(AgentId::new("codex"), "Codex (Test)", config_dir)
+    /// The profile `Example (Work)` with the session `x1`.
+    fn example_work(home: &TempDir) -> Profile {
+        example_with_a_session(
+            home,
+            ".example-agent-work",
+            "Example (Work)",
+            "x1",
+            (30, 0, 3),
+        )
     }
 
     fn stranger() -> Profile {
@@ -249,10 +260,10 @@ mod tests {
     #[test]
     fn a_session_is_read_by_the_agent_of_its_profile() {
         let home = TempDir::new("agents-stats-session");
-        let profile = claude_with_a_session(&home);
+        let profile = example_test(&home);
 
         let read = read_session_stats(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             profile.clone(),
             SessionId::new("c1"),
             &utc_now(),
@@ -271,10 +282,10 @@ mod tests {
     #[test]
     fn a_session_with_no_answers_is_empty_and_an_unknown_agent_fails() {
         let home = TempDir::new("agents-stats-gone");
-        let profile = claude_with_a_session(&home);
+        let profile = example_test(&home);
 
         let gone = read_session_stats(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             profile,
             SessionId::new("gone"),
             &utc_now(),
@@ -302,15 +313,15 @@ mod tests {
     }
 
     #[test]
-    fn a_project_is_read_from_each_profile_of_each_agent() {
+    fn a_project_is_read_from_each_profile() {
         let home = TempDir::new("agents-stats-project");
-        let claude = claude_with_a_session(&home);
-        let codex = codex_with_a_session(&home);
+        let test = example_test(&home);
+        let work = example_work(&home);
 
         let read = read_project_stats(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             PathBuf::from("/work/otty"),
-            &[claude.clone(), codex.clone()],
+            &[test.clone(), work.clone()],
             &no_prices(),
         );
 
@@ -323,8 +334,8 @@ mod tests {
         assert_eq!(
             tokens,
             [
-                (&claude, TokenCount::new(10, 100, 5)),
-                (&codex, TokenCount::new(30, 0, 3)),
+                (&test, TokenCount::new(10, 100, 5)),
+                (&work, TokenCount::new(30, 0, 3)),
             ]
         );
     }
@@ -332,12 +343,12 @@ mod tests {
     #[test]
     fn a_project_fails_with_the_reason_of_the_profile_that_failed() {
         let home = TempDir::new("agents-stats-project-failed");
-        let claude = claude_with_a_session(&home);
+        let test = example_test(&home);
 
         let read = read_project_stats(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             PathBuf::from("/work/otty"),
-            &[claude, stranger()],
+            &[test, stranger()],
             &no_prices(),
         );
 
@@ -353,8 +364,8 @@ mod tests {
     #[test]
     fn the_reads_run_in_the_background_and_answer_with_an_intent() {
         let home = TempDir::new("agents-stats-task");
-        let profile = claude_with_a_session(&home);
-        let agents = agents_with_plugins(home.path());
+        let profile = example_test(&home);
+        let agents = agents_with_example(home.path());
 
         let session = run(load_session_stats(
             &agents,
@@ -377,149 +388,5 @@ mod tests {
             project.as_slice(),
             [AgentsIntent::ProjectStatsLoaded(read)] if read.parts.is_ok()
         ));
-    }
-    /// Issue 22: how long the first session panel, the first project
-    /// panel and a second panel take from the real `~/.codex`, and the
-    /// memory of the process after them. It only reads the folder. Run it
-    /// by hand: `cargo test -p otty-app-agents-io --release
-    /// measure_the_panels -- --ignored --nocapture`, one test at a time.
-    #[test]
-    #[ignore = "reads the real ~/.codex; run by hand"]
-    fn measure_the_panels_of_the_real_codex() {
-        measure_panels(AgentId::new("codex"), "Codex", ".codex");
-    }
-
-    /// [`measure_the_panels_of_the_real_codex`] for the real `~/.claude`.
-    #[test]
-    #[ignore = "reads the real ~/.claude; run by hand"]
-    fn measure_the_panels_of_the_real_claude() {
-        measure_panels(AgentId::new("claude-code"), "Claude Code", ".claude");
-    }
-
-    /// Issue 22: how long a count of the real OpenCode database takes now
-    /// that its whole history is read; the count after a change of the
-    /// database reads it all again, as the first one does.
-    #[test]
-    #[ignore = "reads the real OpenCode data; run by hand"]
-    fn measure_the_answers_of_the_real_opencode() {
-        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
-        let profile = Profile::default_for(
-            AgentId::new("opencode"),
-            "OpenCode",
-            home.join(".local/share/opencode"),
-        );
-        let agents = crate::testing::agents_with_opencode(&home);
-        let agent =
-            otty_agents::agent_of(&agents, profile.agent()).expect("the agent");
-        let counter = agent.spend_counter().expect("a spend counter");
-
-        for read in ["first", "unchanged"] {
-            let started = std::time::Instant::now();
-            let spend = counter.spend(&profile, &utc_now(), &no_prices());
-            let took = started.elapsed();
-
-            let today = spend.map(|spend| spend.last_30_days().total());
-            println!("OpenCode: {read} count: {today:?} tokens in {took:?}");
-        }
-        println!("OpenCode: after: {}", memory());
-    }
-
-    /// Prints how long the panels of the newest sessions of the profile
-    /// in `~/<folder>` take, each first one with agents that read nothing
-    /// yet, and the memory of the process after them.
-    fn measure_panels(agent: AgentId, name: &str, folder: &str) {
-        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
-        let profile = Profile::default_for(agent, name, home.join(folder));
-        println!("{name}: before: {}", memory());
-
-        // The sessions are read at the start of Agents mode, before any
-        // panel can open.
-        let agents = agents_with_plugins(&home);
-        let started = std::time::Instant::now();
-        let sessions = newest_sessions(&agents, &profile);
-        println!(
-            "{name}: sessions read: {} sessions in {:?}",
-            sessions.len(),
-            started.elapsed()
-        );
-        let (first, second) = (sessions[0].clone(), sessions[1].clone());
-
-        let started = std::time::Instant::now();
-        let session = otty_agents::read_session_stats(
-            &agents,
-            &profile,
-            first.id(),
-            &utc_now(),
-            &no_prices(),
-        )
-        .expect("the session");
-        println!(
-            "{name}: (a) first session panel: {} answers in {:?}",
-            session.answers(),
-            started.elapsed()
-        );
-        drop(agents);
-
-        let agents = agents_with_plugins(&home);
-        let _ = newest_sessions(&agents, &profile);
-        let started = std::time::Instant::now();
-        let project = otty_agents::read_project_stats(
-            &agents,
-            &profile,
-            first.folder(),
-            &no_prices(),
-        )
-        .expect("the project");
-        println!(
-            "{name}: (b) first project panel: {} tokens in {:?}",
-            project.tokens().total(),
-            started.elapsed()
-        );
-
-        let started = std::time::Instant::now();
-        let session = otty_agents::read_session_stats(
-            &agents,
-            &profile,
-            second.id(),
-            &utc_now(),
-            &no_prices(),
-        )
-        .expect("the second session");
-        println!(
-            "{name}: (c) second panel: {} answers in {:?}",
-            session.answers(),
-            started.elapsed()
-        );
-        println!("{name}: after: {}", memory());
-    }
-
-    /// The sessions of `profile`, the newest first.
-    fn newest_sessions(
-        agents: &[Box<dyn Agent>],
-        profile: &Profile,
-    ) -> Vec<otty_agents::AgentSession> {
-        let agent =
-            otty_agents::agent_of(agents, profile.agent()).expect("the agent");
-        let mut sessions =
-            otty_agents::read_sessions(&agent.session_sources(), profile)
-                .expect("the sessions")
-                .into_value();
-        sessions.sort_by_key(|session| std::cmp::Reverse(session.changed_at()));
-        sessions
-    }
-
-    /// The peak and the resident memory of this process.
-    fn memory() -> String {
-        let status =
-            std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-
-        status
-            .lines()
-            .filter(|line| {
-                line.starts_with("VmHWM") || line.starts_with("VmRSS")
-            })
-            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-            .collect::<Vec<_>>()
-            .join(", ")
     }
 }

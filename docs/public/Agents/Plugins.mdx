@@ -87,7 +87,7 @@ shows the same mark as a tag after its version; the **Community** tag is in the 
 | ------------- | ------------------------------------------------------------------------------------------------------ |
 | **Official**  | From a repository of the OTTY team (`github.com/otty-shell/`), reviewed by the team.                   |
 | **Community** | From anyone else's repository, reviewed by its author only.                                            |
-| **Local**     | From a folder on this computer: a plugin you built, or an official plugin from a copy of the OTTY repository. Never updated on its own. |
+| **Local**     | From a folder on this computer: a plugin you built, such as an official plugin built from its repository. Never updated on its own. |
 
 After the mark, a sign says when a plugin needs a look:
 
@@ -120,18 +120,19 @@ icons, then **Next** and **Install**. For a plugin of your own, see [Write a plu
 
 ## Install the official plugins
 
-The [official plugins](../official-plugins/anthropic/) do not have repositories of their own yet.
-Until they do, install them from a copy of the OTTY repository, where each one is built into
-`assets/plugins/<id>/`:
+Each [official plugin](../official-plugins/anthropic/) lives in its own repository of the OTTY
+team, which releases it:
 
-1. Get the repository: `git clone https://github.com/otty-shell/otty`.
-2. **Add plugin from folder…** → pick `assets/plugins/openai/` (or `anthropic`, `opencode`,
-   `deepseek`, `openrouter`) → **Next** → **Install**.
+| Plugin                                           | Repository                                         |
+| ------------------------------------------------ | -------------------------------------------------- |
+| [Anthropic](../official-plugins/anthropic/)      | `https://github.com/otty-shell/otty-plugin-anthropic` |
+| [OpenAI](../official-plugins/openai/)            | `https://github.com/otty-shell/otty-plugin-openai`    |
+| [OpenCode](../official-plugins/opencode/)        | `https://github.com/otty-shell/otty-plugin-opencode`  |
 
-A plugin installed this way is marked **Local**: it changes only when you pull a newer copy and
-press **Reload** on its page. Once an official plugin has its own repository, add it with
-**Add plugin…** and the link of that repository instead; it is then marked **Official** and updates
-from its releases.
+**Add plugin…** → paste the link of its repository → **Next** → **Install**. It is marked
+**Official** and updates from the releases of its repository. To try a build of your own, build it
+from a copy of its repository as its README says and install the folder with **Add plugin from
+folder…**; it is then marked **Local**.
 
 ## Permissions
 

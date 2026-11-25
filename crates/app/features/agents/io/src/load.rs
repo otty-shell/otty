@@ -241,11 +241,15 @@ mod tests {
     use super::*;
     use crate::background::read_stopped;
     use crate::testing::{
-        agents_with_opencode, agents_with_plugins, executable_script,
-        providers_with_plugins, run, write,
+        EXAMPLE_AGENT, agents_with_example, executable_script,
+        providers_with_example, run, write,
     };
 
     const SESSION: &str = "3f1c2b7e-8d4a-4e6f-9b0c-1a2d3e4f5a6b";
+
+    /// A made-up login of the example agent: `auth.json` with a key.
+    const LOGIN: &str =
+        r#"{"api_key": "ex-made-up-key-0001", "email": "dev@example.com"}"#;
 
     /// A made-up shell that answers "found" for every program, or for
     /// none, without reading the user's start files.
@@ -257,19 +261,26 @@ mod tests {
             .to_string()
     }
 
-    /// A made-up Coder session in `folder`, kept in `config_dir`.
+    /// A made-up session of the example agent in `folder`, kept in
+    /// `config_dir`.
     fn write_session(config_dir: &Path, id: &str, folder: &Path) {
         let line = format!(
-            r#"{{"type":"user","cwd":"{}","sessionId":"{id}","timestamp":"2026-11-16T10:00:00.000Z","message":{{"role":"user","content":"Fix the tabs"}}}}"#,
+            r#"{{"type":"meta","version":"1.4.2","cwd":"{}","title":"Fix the tabs"}}"#,
             folder.display()
         );
         write(
-            &config_dir
-                .join("projects")
-                .join("-work")
-                .join(format!("{id}.jsonl")),
+            &config_dir.join("sessions").join(format!("{id}.jsonl")),
             &line,
         );
+    }
+
+    /// The entry of `agents.json` that adds the profile `name` of the
+    /// example agent in `folder`.
+    fn added(name: &str, folder: &Path) -> String {
+        format!(
+            r#"{{"agent":"{EXAMPLE_AGENT}","name":"{name}","config_dir":"{}"}}"#,
+            folder.display()
+        )
     }
 
     fn statuses(loaded: &LoadedProfiles) -> Vec<(&str, &ProfileStatus)> {
@@ -280,27 +291,22 @@ mod tests {
             .collect()
     }
 
-    /// Issue 14: the built OpenCode plugin reads OpenCode's data folder:
-    /// the profile is connected and its version comes from its database,
-    /// which is never written. Spec 2026-11-23-accounts-apart-from-profiles,
-    /// Decision 11: OpenCode finds no account.
+    /// Issue 14: a plugin with only its agent part on reads the profile's
+    /// folder: the profile is connected and its version comes from its
+    /// files, which are never written. Spec
+    /// 2026-11-23-accounts-apart-from-profiles, Decision 11: with no
+    /// provider part, its logins are no accounts.
     #[test]
-    fn the_built_opencode_plugin_reads_its_data_folder() {
-        let home = TempDir::new("agents-read-opencode");
-        let data = home.path().join(".local/share/opencode");
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../../../../../plugins/opencode/fixtures/.local/share/opencode",
-        );
-        std::fs::create_dir_all(&data).expect("the data folder");
-        for file in ["auth.json", "opencode.db"] {
-            std::fs::copy(fixtures.join(file), data.join(file))
-                .expect("the made-up file");
-        }
-        let database = std::fs::read(data.join("opencode.db")).expect("read");
+    fn a_plugin_with_only_its_agent_part_reads_the_folder_and_finds_no_account()
+    {
+        let home = TempDir::new("agents-read-agent-only");
+        let folder = home.path().join(".example-agent");
+        write(&folder.join("auth.json"), LOGIN);
+        write(&folder.join("state.json"), r#"{"last_version": "1.4.2"}"#);
         let env = AgentEnv::new(home.path().to_path_buf());
 
         let loaded = read_profiles(
-            &agents_with_opencode(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             home.path(),
@@ -308,33 +314,31 @@ mod tests {
             &shell(&home, true),
         );
 
-        let opencode = loaded
+        let example = loaded
             .profiles
             .iter()
-            .find(|entry| entry.profile.agent().as_str() == "opencode")
-            .expect("the OpenCode profile");
-        assert_eq!(opencode.status, ProfileStatus::Connected);
-        assert_eq!(opencode.version.as_deref(), Some("2.3.2"));
+            .find(|entry| entry.profile.agent().as_str() == EXAMPLE_AGENT)
+            .expect("the Example Agent profile");
+        assert_eq!(example.status, ProfileStatus::Connected);
+        assert_eq!(example.version.as_deref(), Some("1.4.2"));
         assert!(
             loaded.accounts.accounts().is_empty(),
-            "OpenCode has no provider part: its logins are no accounts"
+            "no provider part: its logins are no accounts"
         );
         assert_eq!(
-            std::fs::read(data.join("opencode.db")).expect("read"),
-            database,
-            "the database is never written"
+            std::fs::read_to_string(folder.join("auth.json")).expect("read"),
+            LOGIN,
+            "the files are never written"
         );
     }
 
     #[test]
     fn each_profile_has_its_state_and_a_program_not_found_says_so() {
         let home = TempDir::new("agents-read-found");
-        let claude_dir = home.path().join(".claude");
-        write(
-            &claude_dir.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
-        );
+        write(&home.path().join(".example-agent/auth.json"), LOGIN);
+        let empty_home = TempDir::new("agents-read-empty-home");
         let env = AgentEnv::new(home.path().to_path_buf());
+        let empty_env = AgentEnv::new(empty_home.path().to_path_buf());
         let finds = shell(&home, true);
         let other = TempDir::new("agents-read-none");
         let finds_nothing = shell(&other, false);
@@ -342,7 +346,7 @@ mod tests {
         let before = SystemTime::now();
 
         let found = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             home.path(),
@@ -350,25 +354,33 @@ mod tests {
             &finds,
         );
         let not_found = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             home.path(),
             home.path(),
             &finds_nothing,
         );
+        let no_folder = read_profiles(
+            &agents_with_example(empty_home.path()),
+            &[],
+            &empty_env,
+            empty_home.path(),
+            empty_home.path(),
+            &finds,
+        );
 
-        let connected = ProfileStatus::Connected;
         assert_eq!(
             statuses(&found),
-            [
-                ("Claude Code", &connected),
-                ("Codex", &ProfileStatus::ConfigDirNotFound),
-            ]
+            [("Example Agent", &ProfileStatus::Connected)]
         );
         assert_eq!(
             statuses(&not_found),
-            [("Claude Code", &ProfileStatus::ProgramNotFound)]
+            [("Example Agent", &ProfileStatus::ProgramNotFound)]
+        );
+        assert_eq!(
+            statuses(&no_folder),
+            [("Example Agent", &ProfileStatus::ConfigDirNotFound)]
         );
         assert_eq!(found.problem, None);
         assert!(
@@ -377,37 +389,28 @@ mod tests {
         );
     }
 
-    /// Spec 2026-11-23, Decision 4: with `~/.codex` and `~/.codex-work`
-    /// on disk and nothing added, only `~/.codex` is a profile; an extra
-    /// folder is one once the user adds it, with the version its sessions
-    /// name. The read of the profiles never starts an agent's program, so a
-    /// profile with no session has no version yet.
+    /// Spec 2026-11-23, Decision 4: with `~/.example-agent` and
+    /// `~/.example-agent-work` on disk and nothing added, only
+    /// `~/.example-agent` is a profile; an extra folder is one once the
+    /// user adds it, with the version its files name. The read of the
+    /// profiles never starts an agent's program, so a profile whose files
+    /// name no version has none yet.
     #[test]
     fn only_the_default_and_the_added_folders_are_profiles() {
         let home = TempDir::new("agents-read-versions");
         let config_dir = home.path().join("otty");
-        write(
-            &home.path().join(".codex/config.toml"),
-            "model = \"gpt-5-codex\"",
-        );
-        write(
-            &home.path().join(".codex-work/config.toml"),
-            "model = \"gpt-5-codex\"",
-        );
-        let semrush = home.path().join(".claude-semrush");
-        write(
-            &semrush.join("projects/-work/a1.jsonl"),
-            r#"{"type":"user","version":"2.1.328","cwd":"/work","message":{"content":"Fix it"}}"#,
-        );
+        write(&home.path().join(".example-agent/auth.json"), LOGIN);
+        let work = home.path().join(".example-agent-work");
+        write(&work.join("state.json"), r#"{"last_version": "1.4.2"}"#);
         let env = AgentEnv::new(home.path().to_path_buf());
         let prints_a_version = executable_script(
             home.path(),
             "version-shell",
-            "echo '2.1.0 (Claude Code)'",
+            "echo '2.1.0 (Example Agent)'",
         )
         .display()
         .to_string();
-        let agents = agents_with_plugins(home.path());
+        let agents = agents_with_example(home.path());
 
         let before = read_profiles(
             &agents,
@@ -419,10 +422,7 @@ mod tests {
         );
         write(
             &config_dir.join("agents.json"),
-            &format!(
-                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Semrush","config_dir":"{}"}}]}}"#,
-                semrush.display()
-            ),
+            &format!(r#"{{"added_profiles":[{}]}}"#, added("Work", &work)),
         );
         let after = read_profiles(
             &agents,
@@ -447,16 +447,12 @@ mod tests {
         let named = |folder: &str, version: Option<&str>| {
             (Some(PathBuf::from(folder)), version.map(String::from))
         };
-        assert_eq!(
-            folders(&before),
-            [named(".claude", None), named(".codex", None)]
-        );
+        assert_eq!(folders(&before), [named(".example-agent", None)]);
         assert_eq!(
             folders(&after),
             [
-                named(".claude", None),
-                named(".codex", None),
-                named(".claude-semrush", Some("2.1.328")),
+                named(".example-agent", None),
+                named(".example-agent-work", Some("1.4.2")),
             ]
         );
     }
@@ -465,20 +461,20 @@ mod tests {
     fn saved_profiles_are_read_from_agents_json_in_the_config_folder() {
         let home = TempDir::new("agents-read-saved");
         let config_dir = home.path().join("otty");
-        let work = home.path().join(".codex-work");
-        write(&work.join("config.toml"), "model = \"gpt-5-codex\"");
+        let work = home.path().join(".example-agent-work");
+        write(&work.join("state.json"), "{}");
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"default_profiles":{{"codex":{{"name":"Codex (Home)"}}}},"added_profiles":[{{"agent":"codex","name":"Codex (Work)","config_dir":"{}"}}]}}"#,
-                work.display()
+                r#"{{"default_profiles":{{"{EXAMPLE_AGENT}":{{"name":"Example (Home)"}}}},"added_profiles":[{}]}}"#,
+                added("Example (Work)", &work)
             ),
         );
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             &config_dir,
@@ -491,15 +487,15 @@ mod tests {
             .iter()
             .map(|entry| entry.profile.name())
             .collect();
-        assert_eq!(names, ["Claude Code", "Codex (Home)", "Codex (Work)"]);
+        assert_eq!(names, ["Example (Home)", "Example (Work)"]);
         assert!(
             matches!(
-                &loaded.profiles[2].status,
+                &loaded.profiles[1].status,
                 ProfileStatus::NotLoggedIn(Some(need))
                     if need.id() == "not-logged-in"
             ),
             "{:?}",
-            loaded.profiles[2].status
+            loaded.profiles[1].status
         );
     }
 
@@ -516,34 +512,19 @@ mod tests {
     }
 
     /// Issue 12 of spec 2026-11-23-accounts-apart-from-profiles: an added
-    /// folder that is there but empty is never "folder not found". Codex
-    /// and Claude Code need a login in it, run with the folder's variable,
-    /// and OpenCode, which works with no login, is found. Only a folder
-    /// that is not there is not found.
+    /// folder that is there but empty is never "folder not found". The
+    /// example agent needs a login in it, run with the folder's variable.
+    /// Only a folder that is not there is not found.
     #[test]
     fn an_empty_added_folder_needs_what_its_agent_says_and_only_a_missing_one_is_not_found()
      {
         let home = TempDir::new("agents-read-empty");
         let config_dir = home.path().join("otty");
-        let codex_new = home.path().join(".codex-new");
-        let claude_new = home.path().join(".claude-new");
-        let opencode_new = home.path().join("work/opencode");
-        let codex_gone = home.path().join(".codex-gone");
-        for folder in [&codex_new, &claude_new, &opencode_new] {
-            std::fs::create_dir_all(folder).expect("the empty folder");
-        }
-        let added = |agent: &str, name: &str, folder: &Path| {
-            format!(
-                r#"{{"agent":"{agent}","name":"{name}","config_dir":"{}"}}"#,
-                folder.display()
-            )
-        };
-        let profiles = [
-            added("codex", "Codex (New)", &codex_new),
-            added("claude-code", "Claude Code (New)", &claude_new),
-            added("opencode", "OpenCode (New)", &opencode_new),
-            added("codex", "Codex (Gone)", &codex_gone),
-        ];
+        let new = home.path().join(".example-agent-new");
+        let gone = home.path().join(".example-agent-gone");
+        std::fs::create_dir_all(&new).expect("the empty folder");
+        let profiles =
+            [added("Example (New)", &new), added("Example (Gone)", &gone)];
         write(
             &config_dir.join("agents.json"),
             &format!(r#"{{"added_profiles":[{}]}}"#, profiles.join(",")),
@@ -552,15 +533,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
-            &[],
-            &env,
-            &config_dir,
-            home.path(),
-            &finds,
-        );
-        let opencode = read_profiles(
-            &agents_with_opencode(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             &config_dir,
@@ -568,7 +541,7 @@ mod tests {
             &finds,
         );
 
-        let status_of = |loaded: &LoadedProfiles, name: &str| {
+        let status_of = |name: &str| {
             loaded
                 .profiles
                 .iter()
@@ -576,31 +549,16 @@ mod tests {
                 .map(|entry| entry.status.clone())
                 .expect("the profile")
         };
-        let codex = status_of(&loaded, "Codex (New)");
-        let codex_login = login_command(&codex);
-        assert_eq!(codex_login.program(), "codex");
-        assert_eq!(codex_login.args(), ["login"]);
+        let empty = status_of("Example (New)");
+        let login = login_command(&empty);
+        assert_eq!(login.program(), "example-agent");
+        assert_eq!(login.args(), ["login"]);
         assert_eq!(
-            codex_login.env(),
-            [("CODEX_HOME".to_string(), codex_new.display().to_string())]
-        );
-        let claude = status_of(&loaded, "Claude Code (New)");
-        let claude_login = login_command(&claude);
-        assert_eq!(claude_login.program(), "claude");
-        assert_eq!(claude_login.args(), ["auth", "login", "--claudeai"]);
-        assert_eq!(
-            claude_login.env(),
-            [(
-                "CLAUDE_CONFIG_DIR".to_string(),
-                claude_new.display().to_string()
-            )]
+            login.env(),
+            [("EXAMPLE_AGENT_HOME".to_string(), new.display().to_string())]
         );
         assert_eq!(
-            status_of(&opencode, "OpenCode (New)"),
-            ProfileStatus::Connected
-        );
-        assert_eq!(
-            status_of(&loaded, "Codex (Gone)"),
+            status_of("Example (Gone)"),
             ProfileStatus::ConfigDirNotFound
         );
     }
@@ -611,23 +569,23 @@ mod tests {
     fn a_hidden_profile_comes_apart_and_is_not_checked() {
         let home = TempDir::new("agents-read-hidden");
         let config_dir = home.path().join("otty");
-        let claude_dir = home.path().join(".claude");
-        write(
-            &claude_dir.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up"}}"#,
-        );
+        let default = home.path().join(".example-agent");
+        write(&default.join("auth.json"), LOGIN);
+        let work = home.path().join(".example-agent-work");
+        write(&work.join("auth.json"), LOGIN);
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"hidden_profiles":[{{"agent":"claude-code","config_dir":"{}"}}]}}"#,
-                claude_dir.display()
+                r#"{{"hidden_profiles":[{{"agent":"{EXAMPLE_AGENT}","config_dir":"{}"}}],"added_profiles":[{}]}}"#,
+                default.display(),
+                added("Example (Work)", &work)
             ),
         );
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             &config_dir,
@@ -642,8 +600,8 @@ mod tests {
             .collect();
         let hidden: Vec<_> =
             loaded.hidden_profiles.iter().map(Profile::name).collect();
-        assert_eq!(names, ["Codex"]);
-        assert_eq!(hidden, ["Claude Code"]);
+        assert_eq!(names, ["Example (Work)"]);
+        assert_eq!(hidden, ["Example Agent"]);
     }
 
     #[test]
@@ -651,12 +609,12 @@ mod tests {
      {
         let home = TempDir::new("agents-read-old");
         let config_dir = home.path().join("otty");
-        let work = home.path().join(".codex-work");
-        write(&work.join("config.toml"), "model = \"gpt-5-codex\"");
+        let work = home.path().join(".example-agent-work");
+        write(&work.join("state.json"), "{}");
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"default_profiles":{{"codex":{{"hidden":true,"program":"/no/such/codex"}}}},"added_profiles":[{{"agent":"codex","name":"Codex (Work)","config_dir":"{}","program":"/no/such/codex","hidden":true}}]}}"#,
+                r#"{{"default_profiles":{{"{EXAMPLE_AGENT}":{{"hidden":true,"program":"/no/such/example-agent"}}}},"added_profiles":[{{"agent":"{EXAMPLE_AGENT}","name":"Example (Work)","config_dir":"{}","program":"/no/such/example-agent","hidden":true}}]}}"#,
                 work.display()
             ),
         );
@@ -664,7 +622,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             &config_dir,
@@ -673,10 +631,13 @@ mod tests {
         );
 
         let statuses = statuses(&loaded);
-        assert_eq!(statuses[1], ("Codex", &ProfileStatus::ConfigDirNotFound));
-        assert_eq!(statuses[2].0, "Codex (Work)");
+        assert_eq!(
+            statuses[0],
+            ("Example Agent", &ProfileStatus::ConfigDirNotFound)
+        );
+        assert_eq!(statuses[1].0, "Example (Work)");
         assert!(
-            matches!(statuses[2].1, ProfileStatus::NotLoggedIn(Some(_))),
+            matches!(statuses[1].1, ProfileStatus::NotLoggedIn(Some(_))),
             "{statuses:?}"
         );
         assert_eq!(loaded.problem, None);
@@ -689,28 +650,24 @@ mod tests {
     fn the_provider_parts_find_the_accounts_in_the_shown_profiles() {
         let home = TempDir::new("agents-read-accounts");
         let config_dir = home.path().join("otty");
-        let work = home.path().join(".claude-work");
+        let work = home.path().join(".example-agent-work");
         write(
-            &work.join(".claude.json"),
-            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"dev@example.com","organizationUuid":"00000000-0000-4000-8000-00000000000b","organizationName":"Made-up Org"}}"#,
-        );
-        write(
-            &work.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000,"subscriptionType":"pro"}}"#,
+            &work.join("auth.json"),
+            r#"{"api_key": "ex-made-up-key-0002", "email": "dev@work.example.com"}"#,
         );
         write(
             &config_dir.join("agents.json"),
             &format!(
-                r#"{{"added_profiles":[{{"agent":"claude-code","name":"Claude Code (Work)","config_dir":"{}"}}]}}"#,
-                work.display()
+                r#"{{"added_profiles":[{}]}}"#,
+                added("Example (Work)", &work)
             ),
         );
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
-            &providers_with_plugins(home.path()),
+            &agents_with_example(home.path()),
+            &providers_with_example(home.path()),
             &env,
             &config_dir,
             home.path(),
@@ -718,7 +675,7 @@ mod tests {
         );
 
         let place = otty_agents::FoundIn::profile(
-            AgentId::new("claude-code"),
+            AgentId::new(EXAMPLE_AGENT),
             work.clone(),
         );
         let in_work: Vec<_> = loaded
@@ -728,7 +685,7 @@ mod tests {
             .filter(|account| account.found_in().contains(&place))
             .collect();
         assert_eq!(in_work.len(), 1, "{:?}", loaded.accounts);
-        assert_eq!(in_work[0].plugin(), "anthropic");
+        assert_eq!(in_work[0].plugin(), "example");
         assert!(loaded.saved.is_some(), "the file was read");
     }
 
@@ -742,31 +699,26 @@ mod tests {
         let config_dir = home.path().join("otty");
         let plugins_folder = home.path().join("data").join("plugins");
         let own = plugins_folder
-            .join("anthropic")
+            .join("example")
             .join("accounts")
             .join("6f0c1e2a");
         write(
-            &own.join(".claude.json"),
-            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"own@example.com"}}"#,
+            &own.join("auth.json"),
+            r#"{"api_key": "ex-made-up-key-0003", "email": "own@example.com"}"#,
         );
-        write(
-            &own.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000,"subscriptionType":"pro"}}"#,
-        );
-        write(
-            &own.join("projects").join("-work").join("a.jsonl"),
-            r#"{"type":"user","cwd":"/work","message":{"content":"Probe"}}"#,
-        );
+        write_session(&own, "a", Path::new("/work"));
         write(
             &config_dir.join("agents.json"),
-            r#"{"own_logins":[{"id":"6f0c1e2a","plugin":"anthropic","provider":"anthropic","agent":"claude-code"}]}"#,
+            &format!(
+                r#"{{"own_logins":[{{"id":"6f0c1e2a","plugin":"example","provider":"example-cloud","agent":"{EXAMPLE_AGENT}"}}]}}"#
+            ),
         );
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
-            &providers_with_plugins(home.path()),
+            &agents_with_example(home.path()),
+            &providers_with_example(home.path()),
             &env,
             &config_dir,
             &plugins_folder,
@@ -780,7 +732,7 @@ mod tests {
             .filter(|account| account.is_found_in_own_login("6f0c1e2a"))
             .collect();
         assert_eq!(found.len(), 1, "{:?}", loaded.accounts);
-        assert_eq!(found[0].plugin(), "anthropic");
+        assert_eq!(found[0].plugin(), "example");
         assert_eq!(
             found[0].found_in(),
             [otty_agents::FoundIn::own_login("6f0c1e2a", own.clone())]
@@ -798,12 +750,13 @@ mod tests {
     fn a_broken_agents_json_is_told_and_the_defaults_are_used() {
         let home = TempDir::new("agents-read-broken");
         write(&home.path().join("agents.json"), "{ not json");
-        std::fs::create_dir_all(home.path().join(".claude")).expect("folder");
+        std::fs::create_dir_all(home.path().join(".example-agent"))
+            .expect("folder");
         let env = AgentEnv::new(home.path().to_path_buf());
         let finds_nothing = shell(&home, false);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             home.path(),
@@ -820,7 +773,9 @@ mod tests {
         let home = TempDir::new("agents-read-content");
         write(
             &home.path().join("agents.json"),
-            r#"{"default_profiles":{"codex":{"name":"Codex (Home)"}}}"#,
+            &format!(
+                r#"{{"default_profiles":{{"{EXAMPLE_AGENT}":{{"name":"Example (Home)"}}}}}}"#
+            ),
         );
         let broken = TempDir::new("agents-read-content-broken");
         write(&broken.path().join("agents.json"), "{ not json");
@@ -828,7 +783,7 @@ mod tests {
         let finds = shell(&home, true);
 
         let loaded = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             home.path(),
@@ -836,7 +791,7 @@ mod tests {
             &finds,
         );
         let unread = read_profiles(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             &[],
             &env,
             broken.path(),
@@ -847,8 +802,8 @@ mod tests {
         let saved = loaded.saved.expect("the file was read");
         assert!(
             saved
-                .default_changes_of(&AgentId::new("codex"))
-                .is_some_and(|changes| changes.name() == Some("Codex (Home)"))
+                .default_changes_of(&AgentId::new(EXAMPLE_AGENT))
+                .is_some_and(|changes| changes.name() == Some("Example (Home)"))
         );
         assert_eq!(unread.saved, None);
         assert!(unread.problem.is_some());
@@ -857,7 +812,7 @@ mod tests {
     #[test]
     fn the_sessions_of_a_profile_come_with_their_missing_folders() {
         let home = TempDir::new("agents-sessions");
-        let config_dir = home.path().join(".claude");
+        let config_dir = home.path().join(".example-agent");
         let project = home.path().join("otty");
         let gone = home.path().join("gone");
         std::fs::create_dir_all(&project).expect("the project folder");
@@ -868,13 +823,13 @@ mod tests {
             &gone,
         );
         let profile = Profile::default_for(
-            AgentId::new("claude-code"),
-            "Claude Code",
+            AgentId::new(EXAMPLE_AGENT),
+            "Example Agent",
             config_dir,
         );
 
         let loaded =
-            read_sessions(&agents_with_plugins(home.path()), profile.clone());
+            read_sessions(&agents_with_example(home.path()), profile.clone());
 
         assert_eq!(loaded.profile, profile);
         let SessionsRead::Read(sessions) = loaded.sessions else {
@@ -900,14 +855,14 @@ mod tests {
     #[test]
     fn the_reads_run_in_the_background_and_answer_with_an_intent() {
         let home = TempDir::new("agents-tasks");
-        let config_dir = home.path().join(".claude");
-        std::fs::create_dir_all(config_dir.join("projects")).expect("folder");
+        let config_dir = home.path().join(".example-agent");
+        std::fs::create_dir_all(config_dir.join("sessions")).expect("folder");
         let env = AgentEnv::new(home.path().to_path_buf());
-        let agents = agents_with_plugins(home.path());
+        let agents = agents_with_example(home.path());
         let finds_nothing = shell(&home, false);
         let profile = Profile::default_for(
-            AgentId::new("claude-code"),
-            "Claude Code",
+            AgentId::new(EXAMPLE_AGENT),
+            "Example Agent",
             config_dir,
         );
 
@@ -968,48 +923,5 @@ mod tests {
             )])
         );
         assert_eq!(unknown.sessions, SessionsRead::NoWay);
-    }
-
-    /// Issue 25: how long OTTY takes to read the sessions of the real
-    /// `~/.codex` through the OpenAI plugin, and of the real OpenCode
-    /// database through the OpenCode plugin, the first time and again
-    /// with nothing changed. It only reads the folders. Run it by hand:
-    /// `cargo test -p otty-app-agents-io --release measure_the_sessions --
-    /// --ignored --nocapture`.
-    #[test]
-    #[ignore = "reads the real ~/.codex and OpenCode data; run by hand"]
-    fn measure_the_sessions_read_of_the_real_folders() {
-        let home = std::env::var_os("HOME").map(PathBuf::from).expect("HOME");
-        let codex = Profile::default_for(
-            AgentId::new("codex"),
-            "Codex",
-            home.join(".codex"),
-        );
-        let opencode = Profile::default_for(
-            AgentId::new("opencode"),
-            "OpenCode",
-            home.join(".local/share/opencode"),
-        );
-
-        measure(&agents_with_plugins(&home), &codex);
-        measure(&agents_with_opencode(&home), &opencode);
-    }
-
-    /// Prints how long three reads of the sessions of `profile` take.
-    fn measure(agents: &AgentList, profile: &Profile) {
-        for read in ["first", "second", "third"] {
-            let started = std::time::Instant::now();
-            let loaded = read_sessions(agents, profile.clone());
-            let took = started.elapsed();
-
-            let count = match &loaded.sessions {
-                SessionsRead::Read(sessions) => sessions.len(),
-                other => panic!("the sessions are read: {other:?}"),
-            };
-            println!(
-                "{}: {read} read: {count} sessions in {took:?}",
-                profile.name()
-            );
-        }
     }
 }

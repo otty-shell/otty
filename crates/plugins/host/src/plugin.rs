@@ -248,13 +248,13 @@ mod tests {
     use super::*;
     use crate::engine::PluginEngine;
     use crate::operations::v0_1::otty::host::keys::JsonField;
-    use crate::testing::{TempDir, load_fixture, load_template, template_env};
+    use crate::testing::{TempDir, example_env, load_example, load_fixture};
 
     const AGENT: &str = "example-agent";
     const PROVIDER: &str = "example-cloud";
 
     fn auth_place() -> KeyPlace {
-        let file = template_env().home().join(".example-agent/auth.json");
+        let file = example_env().home().join(".example-agent/auth.json");
 
         KeyPlace::JsonField(JsonField {
             file: file.display().to_string(),
@@ -267,8 +267,8 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
-        let glob = template_env()
+        let plugin = load_example(&engine, &example_env());
+        let glob = example_env()
             .home()
             .join(".example-agent/sessions/*.jsonl")
             .display()
@@ -285,7 +285,7 @@ mod tests {
             .expect("listed");
 
         for_agent.sort();
-        let folder = template_env().home().join(".example-agent/sessions");
+        let folder = example_env().home().join(".example-agent/sessions");
         assert_eq!(
             for_agent,
             [
@@ -301,7 +301,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
 
         let for_agent = plugin.read_key(&PartRef::agent(AGENT), &auth_place());
         let for_provider =
@@ -321,7 +321,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
 
         engine.set_language("ru");
         let changed = plugin.language_changed("ru");

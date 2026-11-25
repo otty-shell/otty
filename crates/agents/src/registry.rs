@@ -293,7 +293,7 @@ mod tests {
                 ProviderRef::Host("api.example.org".to_string()),
                 Some("example-gemini"),
             ),
-            (ProviderRef::of_id("openrouter"), Some("openrouter")),
+            (ProviderRef::of_id("hopway"), Some("hopway")),
             (ProviderRef::Host("llm.example.net".to_string()), None),
         ];
 

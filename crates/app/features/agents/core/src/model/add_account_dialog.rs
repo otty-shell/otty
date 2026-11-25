@@ -222,14 +222,14 @@ mod tests {
         let plugin = |name: &str| {
             i18n::filled(Key::TplAgentsNeedPluginLabel, &[("plugin", name)])
         };
-        assert_eq!(names, ["Anthropic", "OpenAI", "DeepSeek", "OpenRouter"]);
+        assert_eq!(names, ["Anthropic", "OpenAI", "Tealcloud", "Hopway"]);
         assert_eq!(
             plugins,
             [
                 plugin("Anthropic"),
                 plugin("OpenAI"),
-                plugin("DeepSeek"),
-                plugin("OpenRouter")
+                plugin("Tealcloud"),
+                plugin("Hopway")
             ]
         );
         assert_eq!(vm.providers[0].icon, provider_icon("anthropic"));
@@ -314,7 +314,7 @@ mod tests {
             vm.no_agent_login,
             Some(i18n::filled(
                 Key::TplAgentsNoAgentLogin,
-                &[("provider", "DeepSeek")]
+                &[("provider", "Tealcloud")]
             ))
         );
         assert!(!vm.can_continue);

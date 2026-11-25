@@ -84,8 +84,8 @@ mod tests {
 
         assert_eq!(EntryIcon::of(Some(&logo), "Codex"), EntryIcon::Svg(logo));
         assert_eq!(
-            EntryIcon::of(None, "api.deepseek.com"),
-            EntryIcon::Letter(String::from("api.deepseek.com"))
+            EntryIcon::of(None, "api.tealcloud.example"),
+            EntryIcon::Letter(String::from("api.tealcloud.example"))
         );
     }
 
@@ -152,21 +152,21 @@ mod tests {
     #[test]
     fn the_account_of_a_broken_plugin_has_the_broken_icon() {
         let mut state = with_registry_and_profiles(
-            crate::testing::registry_without_deepseek(),
+            crate::testing::registry_without_tealcloud(),
             &[],
         );
         let _ = reduce(
             &mut state,
             AgentsIntent::PluginNotesChanged(broken(
-                "deepseek",
-                "DeepSeek",
-                &[(PartSide::Provider, "deepseek")],
+                "tealcloud",
+                "Tealcloud",
+                &[(PartSide::Provider, "tealcloud")],
             )),
         );
 
-        let icon = state.account_icon(&found_key("deepseek"));
+        let icon = state.account_icon(&found_key("tealcloud"));
 
-        assert_eq!(icon, EntryIcon::Broken(String::from("DeepSeek")));
+        assert_eq!(icon, EntryIcon::Broken(String::from("Tealcloud")));
         assert_eq!(
             icon.svg_or(icons::MODE_AGENTS),
             svg::Handle::from_memory(icons::PLUGIN_BROKEN)

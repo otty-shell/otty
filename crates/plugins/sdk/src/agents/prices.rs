@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn a_provider_s_own_price_comes_before_the_maker_s() {
-        let openrouter = ProviderRef::Id("openrouter".to_string());
+        let hopway = ProviderRef::Id("hopway".to_string());
         let resold = ModelPrice {
             standard: per_million(2 * DOLLAR, 0, 0, 0),
             long_prompt: None,
@@ -305,22 +305,18 @@ mod tests {
         let (_plugin, host) = host();
         let host = host.with_price("m", None, price()).with_price(
             "m",
-            Some(openrouter.clone()),
+            Some(hopway.clone()),
             resold,
         );
-        let deepseek = ProviderRef::Host("api.deepseek.com".to_string());
+        let tealcloud = ProviderRef::Host("api.tealcloud.example".to_string());
 
         let (resold, maker) = host.as_agent(AGENT, || {
-            let resold = answer_cost(
-                None,
-                Some("m"),
-                Some(&openrouter),
-                &tokens(10, 0, 0),
-            );
+            let resold =
+                answer_cost(None, Some("m"), Some(&hopway), &tokens(10, 0, 0));
             let maker = answer_cost(
                 None,
                 Some("m"),
-                Some(&deepseek),
+                Some(&tealcloud),
                 &tokens(10, 0, 0),
             );
             (resold, maker)

@@ -1,11 +1,9 @@
 //! Helpers that the tests of several files share: running a task to its
 //! end, writing files, made-up programs to run, and the agents and the
-//! providers with the built Anthropic and OpenAI plugins or the built
-//! OpenCode plugin of `assets/plugins/`.
+//! providers of the example test plugin of `otty-plugin-host`.
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-#[cfg(unix)]
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::process::Command;
@@ -22,15 +20,22 @@ use otty_app_agents::{AgentList, AgentsIntent};
 use otty_app_testing::temp_dir::TempDir;
 use otty_plugin_host::PartRef;
 
-/// The folder of the built Anthropic plugin.
-const ANTHROPIC_COPY: &str = "../../../../../assets/plugins/anthropic";
-/// The folder of the built OpenAI plugin.
-const OPENAI_COPY: &str = "../../../../../assets/plugins/openai";
-/// The folder of the built OpenCode plugin.
-const OPENCODE_COPY: &str = "../../../../../assets/plugins/opencode";
+/// The agent part of the example plugin.
+pub(crate) const EXAMPLE_AGENT: &str = "example-agent";
+/// The provider part of the example plugin.
+pub(crate) const EXAMPLE_CLOUD: &str = "example-cloud";
+
 /// The folder next to the test binary its compiled plugins are kept in,
 /// so the plugin is compiled once for all the tests, not in each.
 const COMPILED_FOLDER: &str = "otty-agents-io-compiled-plugins";
+
+/// The built example test plugin of `otty-plugin-host`, a copy of the
+/// plugin template, as an installed plugin folder holds it: its manifest,
+/// its `.wasm` and its icons.
+pub(crate) fn example_copy() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../plugins/host/tests/fixtures/example")
+}
 
 /// An empty price list: the agent parts price no answer whose cost the
 /// agent did not write.
@@ -38,88 +43,90 @@ pub(crate) fn no_prices() -> std::sync::Arc<otty_agents::ApiPrices> {
     std::sync::Arc::new(otty_agents::ApiPrices::default())
 }
 
-/// The agents of Agents mode with the built Anthropic and OpenAI plugins
-/// installed, loaded as the app loads them: their parts Claude Code and
-/// Codex. The plugins see `home` as the home folder and no variable;
-/// nothing they start runs, since the shell is not there.
-pub(crate) fn agents_with_plugins(home: &std::path::Path) -> AgentList {
-    agents_with_plugins_and_shell(home, "/no/such/shell")
+/// The agents of Agents mode with the example plugin installed, loaded as
+/// the app loads it: its agent part Example Agent. The plugin sees `home`
+/// as the home folder and no variable; nothing it starts runs, since the
+/// shell is not there.
+pub(crate) fn agents_with_example(home: &Path) -> AgentList {
+    readers_of(home, &[PartRef::agent(EXAMPLE_AGENT)], "/no/such/shell")
+        .readers
+        .agents
 }
 
-/// [`agents_with_plugins`] whose plugins start their programs and hidden
-/// terminals through the shell `shell`.
-pub(crate) fn agents_with_plugins_and_shell(
-    home: &std::path::Path,
-    shell: &str,
-) -> AgentList {
-    let parts = [(ANTHROPIC_COPY, "claude-code"), (OPENAI_COPY, "codex")];
-
-    agents_with_built_in(home, &parts, shell)
-}
-
-/// The agents of Agents mode with the built OpenCode plugin installed,
-/// loaded as the app loads it: its part OpenCode. The plugin sees `home`
-/// as the home folder and no variable.
-pub(crate) fn agents_with_opencode(home: &std::path::Path) -> AgentList {
-    agents_with_built_in(home, &[(OPENCODE_COPY, "opencode")], "/no/such/shell")
-}
-
-/// The provider parts of the built Anthropic and OpenAI plugins, loaded
-/// as the app loads them. The plugins see `home` as the home
+/// The provider part Example Cloud of the example plugin, loaded as the
+/// app loads it, with no agent part on. The plugin sees `home` as the home
 /// folder and no variable.
-pub(crate) fn providers_with_plugins(
-    home: &std::path::Path,
+pub(crate) fn providers_with_example(
+    home: &Path,
 ) -> crate::plugin_parts::ProviderList {
-    let parts = [
-        (ANTHROPIC_COPY, PartRef::provider("anthropic")),
-        (OPENAI_COPY, PartRef::provider("openai")),
-    ];
-
-    readers_of(home, &parts, "/no/such/shell").providers
+    readers_of(home, &[PartRef::provider(EXAMPLE_CLOUD)], "/no/such/shell")
+        .providers
 }
 
-/// The agent parts Claude Code and Codex and the provider parts Anthropic
-/// and OpenAI of the built plugins, loaded as the app loads them, whose
-/// programs and hidden terminals start through the shell `shell`. The
-/// plugins see `home` as the home folder and no variable.
+/// The agent part and the provider part of the example plugin, loaded as
+/// the app loads them, whose programs and hidden terminals start through
+/// the shell `shell`. Its provider part may also run `example-agent usage`
+/// in a hidden terminal: the copy of the plugin in `home` declares it. The
+/// plugin sees `home` as the home folder and no variable.
 #[cfg(unix)]
 pub(crate) fn agents_and_providers_with_shell(
-    home: &std::path::Path,
+    home: &Path,
     shell: &str,
 ) -> (AgentList, crate::plugin_parts::ProviderList) {
+    let copy = example_copy_with_usage(&home.join("example-with-usage"));
     let parts = [
-        (ANTHROPIC_COPY, PartRef::agent("claude-code")),
-        (ANTHROPIC_COPY, PartRef::provider("anthropic")),
-        (OPENAI_COPY, PartRef::agent("codex")),
-        (OPENAI_COPY, PartRef::provider("openai")),
+        PartRef::agent(EXAMPLE_AGENT),
+        PartRef::provider(EXAMPLE_CLOUD),
     ];
 
-    let loaded = readers_of(home, &parts, shell);
+    let loaded = readers_in(&copy, home, &parts, shell);
     (loaded.readers.agents, loaded.providers)
 }
 
-/// The agents with the agent parts of the built plugins: each
-/// `(copy, part)` names the folder of a copy and the part turned on in
-/// it. The plugins start their programs through `shell`.
-fn agents_with_built_in(
-    home: &std::path::Path,
-    parts: &[(&str, &str)],
-    shell: &str,
-) -> AgentList {
-    let parts: Vec<(&str, PartRef)> = parts
-        .iter()
-        .map(|(copy, part)| (*copy, PartRef::agent(part)))
-        .collect();
+/// A copy of the built example plugin in `folder` whose manifest also
+/// lets the provider part run `example-agent usage` in a hidden terminal,
+/// as a plugin that reads a login with no key that way declares it.
+#[cfg(unix)]
+fn example_copy_with_usage(folder: &Path) -> PathBuf {
+    let built = example_copy();
+    std::fs::create_dir_all(folder).expect("the folder of the copy");
+    for name in ["example.wasm", "example-agent.svg", "example-cloud.svg"] {
+        std::fs::copy(built.join(name), folder.join(name))
+            .expect("a file of the plugin");
+    }
 
-    readers_of(home, &parts, shell).readers.agents
+    let manifest = std::fs::read_to_string(built.join("otty-plugin.toml"))
+        .expect("the manifest");
+    let sites = "http = [\"api.example.com\"]\n";
+    let usage = "\n[[agents.provider.permissions.terminal]]\n\
+                 program = \"example-agent\"\nargs = [\"usage\"]\n";
+    assert!(manifest.contains(sites), "the provider part's sites");
+    std::fs::write(
+        folder.join("otty-plugin.toml"),
+        manifest.replacen(sites, &format!("{sites}{usage}"), 1),
+    )
+    .expect("the manifest of the copy");
+
+    folder.to_path_buf()
 }
 
-/// The readers of the parts of the built plugins: each `(copy,
-/// part)` names the folder of a copy and the part turned on in it. The
-/// plugins start their programs through `shell`.
+/// The readers of the parts `on` of the example plugin. The plugin starts
+/// its programs through `shell`.
 fn readers_of(
-    home: &std::path::Path,
-    parts: &[(&str, PartRef)],
+    home: &Path,
+    on: &[PartRef],
+    shell: &str,
+) -> crate::plugin_readers::LoadedReaders {
+    readers_in(&example_copy(), home, on, shell)
+}
+
+/// The readers of the parts `on` of the plugin in `folder`, loaded as the
+/// app loads them. The plugin sees `home` as the home folder and starts
+/// its programs through `shell`.
+fn readers_in(
+    folder: &Path,
+    home: &Path,
+    on: &[PartRef],
     shell: &str,
 ) -> crate::plugin_readers::LoadedReaders {
     let compiled = std::env::current_exe()
@@ -128,18 +135,10 @@ fn readers_of(
         .expect("the folder of the test binary");
     let engine = crate::plugin_readers::plugin_engine(&compiled, shell)
         .expect("the engine");
-    let mut plugins: Vec<crate::plugin_parts::InstalledParts> = Vec::new();
-    for (copy, part) in parts {
-        let folder =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(copy);
-        match plugins.iter_mut().find(|plugin| plugin.folder == folder) {
-            Some(plugin) => plugin.on.push(part.clone()),
-            None => plugins.push(crate::plugin_parts::InstalledParts {
-                folder,
-                on: vec![part.clone()],
-            }),
-        }
-    }
+    let plugins = [crate::plugin_parts::InstalledParts {
+        folder: folder.to_path_buf(),
+        on: on.to_vec(),
+    }];
 
     crate::plugin_readers::readers_now(
         &engine,
@@ -175,7 +174,6 @@ fn run_all<T: Send + 'static>(task: Task<T>) -> Vec<T> {
 }
 
 /// Write `text` to the file at `path`, making its folders.
-#[cfg(unix)]
 pub(crate) fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().expect("a parent"))
         .expect("the folder is made");

@@ -1,3 +1,0 @@
-# The made-up default config folder of the fixtures: the root .gitignore
-# leaves out every `.codex` folder.
-!/fixtures/.codex

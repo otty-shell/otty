@@ -217,59 +217,63 @@ mod tests {
         assert!(!state.profiles().is_account_hidden(&chatgpt_login()));
     }
 
-    /// The registry of the tests with a second plugin, DeepSeek Fork, that
-    /// serves DeepSeek too.
-    fn with_deepseek_fork() -> std::sync::Arc<otty_agents::Registry> {
+    /// The registry of the tests with a second plugin, Tealcloud Fork, that
+    /// serves Tealcloud too.
+    fn with_tealcloud_fork() -> std::sync::Arc<otty_agents::Registry> {
         let fork = otty_agents::ProviderEntry::new(
-            otty_agents::ProviderId::new("deepseek"),
-            "DeepSeek",
+            otty_agents::ProviderId::new("tealcloud"),
+            "Tealcloud",
             otty_plugin_host::PluginPart::new(
-                "deepseek-fork",
-                "DeepSeek Fork",
+                "tealcloud-fork",
+                "Tealcloud Fork",
                 "0.1.0",
                 "",
-                "deepseek",
+                "tealcloud",
             ),
         )
-        .with_hosts(["deepseek.com"]);
+        .with_hosts(["tealcloud.example"]);
 
         crate::testing::registry_with(fork)
     }
 
-    /// The made-up DeepSeek key the plugin `plugin` found in the Claude
-    /// Code folder: the DeepSeek plugin and its fork find the same key.
-    fn deepseek_copy(plugin: &str) -> Account {
+    /// The made-up Tealcloud key the plugin `plugin` found in the Claude
+    /// Code folder: the Tealcloud plugin and its fork find the same key.
+    fn tealcloud_copy(plugin: &str) -> Account {
         Account::new(
             plugin,
-            otty_agents::ProviderId::new("deepseek"),
-            "key:made-up-deepseek",
+            otty_agents::ProviderId::new("tealcloud"),
+            "key:made-up-tealcloud",
             "dev@example.com",
             otty_agents::AccountKind::Key,
             Vec::new(),
         )
     }
 
-    /// Codex with its login, and Claude Code with the DeepSeek key each
+    /// Codex with its login, and Claude Code with the Tealcloud key each
     /// plugin found.
-    fn deepseek_profiles()
+    fn tealcloud_profiles()
     -> [(Profile, otty_agents::ProfileStatus, Vec<Account>); 2] {
         [
             (codex(), connected(), vec![chatgpt_login()]),
             (
                 crate::testing::claude(),
                 crate::testing::connected(),
-                vec![deepseek_copy("deepseek"), deepseek_copy("deepseek-fork")],
+                vec![
+                    tealcloud_copy("tealcloud"),
+                    tealcloud_copy("tealcloud-fork"),
+                ],
             ),
         ]
     }
 
     /// The accounts read by themselves at the first read with `saved`.
     fn own_reads_at_start(saved: SavedProfiles) -> Vec<Account> {
-        let mut state = AgentsState::new(agents(), with_deepseek_fork(), env());
+        let mut state =
+            AgentsState::new(agents(), with_tealcloud_fork(), env());
         let _ = reduce(&mut state, AgentsIntent::Enter);
         let outcomes = reduce(
             &mut state,
-            profiles_with_accounts_loaded(&deepseek_profiles(), saved),
+            profiles_with_accounts_loaded(&tealcloud_profiles(), saved),
         );
 
         outcomes
@@ -290,13 +294,13 @@ mod tests {
     #[test]
     fn hiding_one_copy_of_an_account_keeps_the_other_shown_and_read() {
         let fork_hidden = report_shown()
-            .with_account_hidden(&deepseek_copy("deepseek-fork"), true);
+            .with_account_hidden(&tealcloud_copy("tealcloud-fork"), true);
         let mut state = with_accounts_in(
-            with_deepseek_fork(),
-            &deepseek_profiles(),
+            with_tealcloud_fork(),
+            &tealcloud_profiles(),
             report_shown(),
         );
-        open_account_menu(&mut state, deepseek_copy("deepseek-fork"));
+        open_account_menu(&mut state, tealcloud_copy("tealcloud-fork"));
 
         let outcomes =
             reduce(&mut state, AgentsIntent::AccountMenu(AccountAction::Hide));
@@ -304,7 +308,7 @@ mod tests {
         assert_eq!(outcomes, vec![save(fork_hidden.clone())]);
         assert!(same_accounts(
             &state.profiles().accounts(),
-            &[chatgpt_login(), deepseek_copy("deepseek")]
+            &[chatgpt_login(), tealcloud_copy("tealcloud")]
         ));
         assert_eq!(
             listed_accounts(&state)
@@ -316,24 +320,24 @@ mod tests {
         assert!(
             state
                 .profiles()
-                .is_account_hidden(&deepseek_copy("deepseek-fork"))
+                .is_account_hidden(&tealcloud_copy("tealcloud-fork"))
         );
         assert!(
             !state
                 .profiles()
-                .is_account_hidden(&deepseek_copy("deepseek"))
+                .is_account_hidden(&tealcloud_copy("tealcloud"))
         );
         assert!(same_accounts(
             &own_reads_at_start(report_shown()),
             &[
                 chatgpt_login(),
-                deepseek_copy("deepseek"),
-                deepseek_copy("deepseek-fork")
+                tealcloud_copy("tealcloud"),
+                tealcloud_copy("tealcloud-fork")
             ]
         ));
         assert!(same_accounts(
             &own_reads_at_start(fork_hidden),
-            &[chatgpt_login(), deepseek_copy("deepseek")]
+            &[chatgpt_login(), tealcloud_copy("tealcloud")]
         ));
     }
 

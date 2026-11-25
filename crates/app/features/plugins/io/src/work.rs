@@ -279,25 +279,11 @@ mod tests {
             .expect("an answer")
     }
 
-    fn assets_folder() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../assets/plugins")
-    }
-
+    /// The built example test plugin of `otty-plugin-host`, a copy of the
+    /// plugin template, as an installed plugin folder holds it.
     fn template_folder() -> PathBuf {
-        assets_folder().join("example")
-    }
-
-    /// The folders of `assets/plugins/`, one per built plugin, by name.
-    fn built_plugin_folders() -> Vec<PathBuf> {
-        let mut folders: Vec<PathBuf> = std::fs::read_dir(assets_folder())
-            .expect("assets/plugins/")
-            .map(|entry| entry.expect("a folder entry").path())
-            .filter(|path| path.is_dir())
-            .collect();
-        folders.sort();
-
-        folders
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../plugins/host/tests/fixtures/example")
     }
 
     fn shared_in(folder: &TempDir) -> SharedInstaller {
@@ -387,53 +373,7 @@ mod tests {
         );
     }
 
-    /// Issues 13, 14, 16 and 28: every built plugin in `assets/plugins/`
-    /// passes the checks of the engine, such as the host operations its
-    /// `.wasm` asks for, and installs from its folder with every part on,
-    /// as Add plugin from folder… installs an official plugin.
-    #[test]
-    fn every_built_plugin_in_assets_installs_from_its_folder() {
-        let folder = TempDir::new("plugins-io-assets");
-        let shared = shared_in(&folder);
-        let built = built_plugin_folders();
-
-        for plugin_folder in &built {
-            let found = run(find_local(&shared, plugin_folder.clone()));
-            let PluginsIntent::Found(Ok(plan)) = found else {
-                panic!("{}: {found:?}", plugin_folder.display());
-            };
-            let installed = run(install(&shared, *plan));
-            assert!(
-                matches!(installed, PluginsIntent::Changed(Ok(_))),
-                "{}: {installed:?}",
-                plugin_folder.display()
-            );
-        }
-
-        let plugins = shared.plugins();
-        let ids: Vec<&str> =
-            plugins.iter().map(|plugin| plugin.installed.id()).collect();
-        assert_eq!(
-            ids,
-            [
-                "anthropic",
-                "deepseek",
-                "example",
-                "openai",
-                "opencode",
-                "openrouter"
-            ]
-        );
-        for plugin in &plugins {
-            assert!(
-                plugin.installed.parts().iter().all(|part| part.is_on()),
-                "{}",
-                plugin.installed.id()
-            );
-        }
-    }
-
-    /// Installs the template from its folder in `assets/plugins/` and
+    /// Installs the template from its built folder and
     /// adds `[api]` to the manifest of the installed copy, as the plugins
     /// installed before issue 15 of spec
     /// 2026-11-23-accounts-apart-from-profiles have it.

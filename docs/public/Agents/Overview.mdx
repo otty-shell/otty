@@ -26,8 +26,8 @@ works: log in with an agent, give a key a plugin asks for, or allow the system k
 OTTY has no code for any agent or provider by name. What it knows comes from
 [plugins](../plugins/), and OTTY comes with none: on the first start Agents mode says that no agent
 plugin is on, with **Manage plugins…**, which opens Plugins mode. Install the plugins of the agents and providers you use. The
-five [official plugins](../official-plugins/anthropic/) cover Claude Code, Codex, OpenCode,
-Anthropic, OpenAI, DeepSeek and OpenRouter. See
+three [official plugins](../official-plugins/anthropic/) cover Claude Code, Codex, OpenCode,
+Anthropic and OpenAI, each from its own repository. See
 [Install the official plugins](../plugins/#install-the-official-plugins).
 
 ## Profiles and accounts
@@ -84,7 +84,8 @@ Codex profiles, the Anthropic plugin a Claude login in your Claude Code profiles
 places is one account with both places under **Source**: whether two logins are one account is the
 plugin's call, since only it knows what makes them the same at its provider. A provider part never
 reads the profiles of another plugin, and OTTY joins no accounts of different plugins. So OpenCode
-is a profile only, and a DeepSeek key in the settings of Claude Code is no account. Keys pasted into
+is a profile only, and a key the settings of Claude Code send to another provider's server is no
+account. Keys pasted into
 OTTY will bring such accounts later.
 
 After the first read with an agent plugin on, **Found by OTTY** lists what it found in two groups:
@@ -181,8 +182,7 @@ The title and the text are the plugin's. The button does one of four things:
 | Copy report        | Copies a text the plugin wrote, such as a report for its author.                             |
 
 What each official plugin asks for is on its page: [Anthropic](../official-plugins/anthropic/#what-it-asks-you-for),
-[OpenAI](../official-plugins/openai/#what-it-asks-you-for), [OpenCode](../official-plugins/opencode/#what-it-asks-you-for),
-[DeepSeek](../official-plugins/deepseek/#what-it-asks-you-for), [OpenRouter](../official-plugins/openrouter/#what-it-asks-you-for).
+[OpenAI](../official-plugins/openai/#what-it-asks-you-for), [OpenCode](../official-plugins/opencode/#what-it-asks-you-for).
 
 ### Login needs
 
@@ -243,7 +243,7 @@ work in, such as the limits of a Claude plan with no Claude Code profile.
    With none on, the dialog says so and offers **Manage plugins…**.
 2. Under **How**, **Log in with *agent***, such as "Log in with Codex" or "Log in with Claude Code",
    names the command it runs. **Paste a key** is shown but off ("Coming later"). A provider with no
-   agent login, such as DeepSeek, says so, and **Continue** stays off.
+   agent login, such as one that reads only keys, says so, and **Continue** stays off.
 3. **Continue** makes an empty folder of OTTY's own in the folder of the provider's plugin,
    `~/.local/share/otty/plugins/<plugin>/accounts/<id>/` (with a new random id, under
    `XDG_DATA_HOME` when it is set), and runs the agent's own login command
@@ -347,8 +347,7 @@ provider then shows **Your spend this month**, such as "~$42.10", with the mark 
 kinds on hover and where it was counted ("From your Claude Code sessions on this computer"). The
 Now of the account shows it with "~". The page of each official plugin says what it counts.
 
-The price of a model depends on who served it: the maker itself, a cloud or a reseller such as
-OpenRouter. Each plugin knows who served each answer, as the agent wrote it, and OTTY gives the
+The price of a model depends on who served it: the maker itself, a cloud or a reseller. Each plugin knows who served each answer, as the agent wrote it, and OTTY gives the
 price: the API price of who served the answer, else the maker's own price of the model, else no
 price. OTTY never takes the price of a similar model instead.
 

@@ -543,11 +543,11 @@ mod tests {
         );
 
         assert_eq!(
-            number("deepseek", otty_agents::AccountNumbers::Balance(left)),
+            number("tealcloud", otty_agents::AccountNumbers::Balance(left)),
             muted(credits_left("¥110.00"))
         );
         assert_eq!(
-            number("openrouter", otty_agents::AccountNumbers::Balance(used)),
+            number("hopway", otty_agents::AccountNumbers::Balance(used)),
             muted(i18n::filled(
                 Key::TplAgentsAmountUsed,
                 &[("amount", "$12.30")]
@@ -559,7 +559,7 @@ mod tests {
     /// it spent this month shows that, as the provider counted it.
     #[test]
     fn a_key_shows_the_money_its_provider_counted_this_month() {
-        let account = crate::testing::found_key("deepseek");
+        let account = crate::testing::found_key("tealcloud");
         let spent = otty_agents::Balance::new(None, None)
             .with_spent_this_month(otty_agents::Amount::new(4.2, "USD"));
 

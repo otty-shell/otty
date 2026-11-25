@@ -228,7 +228,7 @@ mod tests {
         AddAccountDialogViewModel {
             title: "Add account",
             intro: "Pick the provider of the account.",
-            providers: vec![option("OpenAI"), option("DeepSeek")],
+            providers: vec![option("OpenAI"), option("Tealcloud")],
             picked: Some(0),
             is_list_open: false,
             log_in: Some(LogInChoiceViewModel {

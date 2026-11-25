@@ -54,7 +54,9 @@ of known versions of `otty-plugin-manifest`; the types of the
 `AgentCalls` converts between the 0.1 types and them with `From`. The
 old version stays as long as plugins use it.
 
-The test plugins are built from `tests/plugins/` and the template plugin
-from `plugins/template/` by `scripts/build-test-plugins.sh`, and kept as
-`.wasm` files in `tests/fixtures/`, so the tests need no WebAssembly
-target.
+The test plugins are built from `tests/plugins/`, and the example test
+plugin, a copy of the plugin template with one agent part and one
+provider part, from `tests/example/`, by `scripts/build-test-plugins.sh`.
+They are kept in `tests/fixtures/`, the example as the folder an
+installed plugin has, so the tests need no WebAssembly target. The tests
+of other OTTY crates that need a whole plugin use that example too.

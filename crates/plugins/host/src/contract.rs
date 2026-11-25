@@ -345,7 +345,8 @@ mod tests {
 
     use super::*;
     use crate::testing::{
-        TEST_PLUGIN_MANIFEST, TempDir, fixture, fixture_with_agent_0_2,
+        TEST_PLUGIN_MANIFEST, TempDir, example_wasm, fixture,
+        fixture_with_agent_0_2,
     };
 
     fn exports(names: &[&str]) -> ExportedApi {
@@ -567,14 +568,14 @@ mod tests {
     /// compiling it, as an install or an update check needs.
     #[test]
     fn the_contracts_of_a_wasm_are_read_from_its_bytes() {
-        let template = std::fs::read(fixture("template")).expect("template");
+        let example = std::fs::read(example_wasm()).expect("example");
         let minimal = std::fs::read(fixture("minimal")).expect("minimal");
 
-        let template = ExportedApi::of_wasm(&template).expect("a component");
+        let example = ExportedApi::of_wasm(&example).expect("a component");
         let minimal = ExportedApi::of_wasm(&minimal).expect("a component");
 
         assert_eq!(
-            template.to_string(),
+            example.to_string(),
             "agents.agent 0.1, agents.provider 0.1, language 0.1"
         );
         assert_eq!(minimal.to_string(), "agents.agent 0.1");

@@ -26,8 +26,7 @@ Install OTTY in one of three ways:
 - [What OTTY reads and sends](./agents/what-otty-reads-and-sends/): keys, requests, programs and
   files.
 - Official plugins: [Anthropic](./agents/official-plugins/anthropic/),
-  [OpenAI](./agents/official-plugins/openai/), [OpenCode](./agents/official-plugins/opencode/),
-  [DeepSeek](./agents/official-plugins/deepseek/) and [OpenRouter](./agents/official-plugins/openrouter/).
+  [OpenAI](./agents/official-plugins/openai/) and [OpenCode](./agents/official-plugins/opencode/).
 - [Write a plugin](./agents/write-a-plugin/) for another agent or provider.
 
 ## Terminal

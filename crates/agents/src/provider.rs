@@ -365,23 +365,26 @@ fn host_of(url: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn deepseek_entry() -> ProviderEntry {
+    fn tealcloud_entry() -> ProviderEntry {
         ProviderEntry::new(
-            ProviderId::new("deepseek"),
-            "DeepSeek",
-            crate::testing::made_up_part("deepseek"),
+            ProviderId::new("tealcloud"),
+            "Tealcloud",
+            crate::testing::made_up_part("tealcloud"),
         )
-        .with_hosts(["deepseek.com"])
+        .with_hosts(["tealcloud.example"])
     }
 
     #[test]
     fn a_base_url_names_the_host_of_its_server_in_lower_case() {
         let cases = [
             ("https://api.anthropic.com", "api.anthropic.com"),
-            ("https://api.deepseek.com/anthropic", "api.deepseek.com"),
-            ("https://openrouter.ai/api", "openrouter.ai"),
+            (
+                "https://api.tealcloud.example/anthropic",
+                "api.tealcloud.example",
+            ),
+            ("https://hopway.example/api", "hopway.example"),
             ("http://localhost:4000", "localhost"),
-            (" HTTPS://API.DeepSeek.com ", "api.deepseek.com"),
+            (" HTTPS://API.Tealcloud.example ", "api.tealcloud.example"),
         ];
 
         for (base_url, host) in cases {
@@ -404,12 +407,16 @@ mod tests {
     /// host is one of the provider's domains or ends with `.` and one.
     #[test]
     fn a_provider_serves_its_domains_and_their_subdomains_only() {
-        let deepseek = deepseek_entry();
+        let tealcloud = tealcloud_entry();
 
-        assert!(deepseek.serves_host("deepseek.com"));
-        assert!(deepseek.serves_host("api.deepseek.com"));
-        for host in ["deepseek.com.example.com", "notdeepseek.com", "com"] {
-            assert!(!deepseek.serves_host(host), "{host}");
+        assert!(tealcloud.serves_host("tealcloud.example"));
+        assert!(tealcloud.serves_host("api.tealcloud.example"));
+        for host in [
+            "tealcloud.example.example.com",
+            "nottealcloud.example",
+            "com",
+        ] {
+            assert!(!tealcloud.serves_host(host), "{host}");
         }
     }
 
@@ -424,8 +431,8 @@ mod tests {
         )
         .with_usage_page("https://console.anthropic.com/settings/usage")
         .with_plan_usage_page("https://claude.ai/settings/usage");
-        let deepseek = deepseek_entry()
-            .with_usage_page("https://platform.deepseek.com/usage");
+        let tealcloud = tealcloud_entry()
+            .with_usage_page("https://platform.tealcloud.example/usage");
 
         assert_eq!(
             anthropic.usage_page(AccountKind::Subscription),
@@ -436,9 +443,9 @@ mod tests {
             Some("https://console.anthropic.com/settings/usage")
         );
         assert_eq!(
-            deepseek.usage_page(AccountKind::Subscription),
-            Some("https://platform.deepseek.com/usage")
+            tealcloud.usage_page(AccountKind::Subscription),
+            Some("https://platform.tealcloud.example/usage")
         );
-        assert_eq!(deepseek_entry().usage_page(AccountKind::Key), None);
+        assert_eq!(tealcloud_entry().usage_page(AccountKind::Key), None);
     }
 }

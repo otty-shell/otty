@@ -902,7 +902,7 @@ mod tests {
     }
 
     /// Decision 11: a part whose manifest names no `logins` finds no
-    /// account, such as DeepSeek or OpenRouter.
+    /// account, such as one that reads only the keys the user gives.
     #[test]
     fn a_part_with_no_logins_finds_no_account() {
         let mut calls = MockProviderPartCalls::new();

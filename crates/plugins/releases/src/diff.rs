@@ -247,44 +247,28 @@ mod tests {
         assert!(!shrunk.asks_for_more());
     }
 
-    /// Issue 15 of spec 2026-11-19-agent-plugins: the built Anthropic and
-    /// OpenAI plugins in `assets/plugins/` add a provider part to the
-    /// agent-only versions before them, so an installed agent-only version
-    /// updated to them shows the new part and waits for the user.
+    /// Issue 15 of spec 2026-11-19-agent-plugins: a plugin whose new
+    /// version adds a provider part to an agent-only version, as the
+    /// official Anthropic and OpenAI plugins did, shows the new part and
+    /// waits for the user. The built example plugin stands for them.
     #[test]
-    fn the_built_copies_ask_for_their_new_provider_part() {
-        let copies = [
-            (
-                include_str!(
-                    "../../../../assets/plugins/anthropic/otty-plugin.toml"
-                ),
-                "anthropic",
-            ),
-            (
-                include_str!(
-                    "../../../../assets/plugins/openai/otty-plugin.toml"
-                ),
-                "openai",
-            ),
-        ];
+    fn a_new_provider_part_of_a_built_plugin_asks_for_more() {
+        let text =
+            include_str!("../../host/tests/fixtures/example/otty-plugin.toml");
+        let new = Manifest::parse(text).expect("valid");
+        let agent_only = Manifest::parse(
+            text.split("[[agents.provider]]")
+                .next()
+                .expect("the agent half"),
+        )
+        .expect("valid");
 
-        for (text, provider) in copies {
-            let new = Manifest::parse(text).expect("valid");
-            let agent_only = Manifest::parse(
-                text.split("[[agents.provider]]")
-                    .next()
-                    .expect("the agent half"),
-            )
-            .expect("valid");
+        let diff = PermissionDiff::between(&template_parts(&agent_only), &new);
 
-            let diff =
-                PermissionDiff::between(&template_parts(&agent_only), &new);
-
-            let [PartChange::New { part, .. }] = diff.parts() else {
-                panic!("one new part: {diff:?}");
-            };
-            assert_eq!(*part, PartRef::provider(provider));
-            assert!(diff.asks_for_more(), "{provider}");
-        }
+        let [PartChange::New { part, .. }] = diff.parts() else {
+            panic!("one new part: {diff:?}");
+        };
+        assert_eq!(*part, PartRef::provider("example-cloud"));
+        assert!(diff.asks_for_more());
     }
 }

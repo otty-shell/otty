@@ -59,8 +59,9 @@ between a profile and an account, and joins no accounts of different plugins.
 
 ## Start from the template
 
-Copy `plugins/template/` of the [OTTY repository](https://github.com/otty-shell/otty) into a new
-repository. It is a working plugin over a made-up agent and a made-up provider:
+Copy the [template repository](https://github.com/otty-shell/otty-plugin-template),
+`otty-shell/otty-plugin-template`, into a new repository. It is a working plugin over a made-up
+agent and a made-up provider:
 
 | File                             | Holds                                                                    |
 | -------------------------------- | ------------------------------------------------------------------------ |
@@ -73,11 +74,14 @@ repository. It is a working plugin over a made-up agent and a made-up provider:
 | `*.svg`                          | One icon per part.                                                       |
 | `.github/workflows/release.yml`  | Builds and releases the plugin on a version tag.                         |
 
-The SDK is not on crates.io yet. Depend on it by a tag of the OTTY repository:
+The SDK is not on crates.io yet. The template takes it from the `agents` branch of the OTTY
+repository; once OTTY tags a release with it, depend on that tag instead:
 
 ```toml
 [dependencies]
-otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY release tag>" }
+otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", branch = "agents" }
+# or, once OTTY tags a release with the SDK:
+# otty-plugin-sdk = { git = "https://github.com/otty-shell/otty", tag = "<OTTY release tag>" }
 ```
 
 ## The manifest
@@ -364,7 +368,7 @@ settings and files: `ProviderRef::Id` with the provider's name as the agent wrot
 even when no plugin serves that provider, such as OpenCode's `google` or a local model. Do not map
 it to the providers you know. OTTY answers `price_of` from the
 [LiteLLM](https://github.com/BerriAI/litellm) price table: the row of who served it and the model
-(`openrouter/anthropic/claude-x`), else the row of the plain model name, the maker's own price,
+(`<provider>/<model>`), else the row of the plain model name, the maker's own price,
 else no price.
 
 A provider part is known to the price table by its id. When the table names the provider otherwise,
@@ -616,10 +620,12 @@ shows what it wrote with `log::*` and to stderr.
 
 <Steps>
 
-1. Set `version` in `otty-plugin.toml`, commit, and push a tag with the same version: `v0.1.0` or
-   `0.1.0`. Other tags are ignored.
-2. The template's workflow tests and builds the plugin, checks that the tag is semver and equals the
-   manifest's version, and attaches `otty-plugin.toml`, `<id>.wasm` and the icons to the release.
+1. Set `version` in `otty-plugin.toml`, commit, and push the tag `v<version>`, such as `v0.1.0`.
+   The template's workflow runs on such tags only; OTTY also takes a release tagged `0.1.0`, and
+   ignores other tags.
+2. The template's workflow checks that the tag is semver and equals the manifest's version, tests
+   and builds the plugin for `wasm32-wasip2`, and attaches `otty-plugin.toml`, `<id>.wasm` and the
+   icons to the release.
 3. Users paste your repository's link in **Add plugin…**. OTTY checks for new releases once a day.
 
 </Steps>
@@ -650,6 +656,6 @@ The OTTY team reviews its own plugins against these rules; they are good rules f
 - Read tolerantly and count what you did not understand, so a format change shows as "format
   changed".
 
-`plugins/build.sh` in the OTTY repository is for the OTTY team only: it builds an official plugin
-into `assets/plugins/<id>/`, the folder users install it from with **Add plugin from folder…**. A
-plugin of your own does not need it.
+The official plugins are built and released the same way as the template, each from its own
+repository: `otty-shell/otty-plugin-anthropic`, `otty-shell/otty-plugin-openai` and
+`otty-shell/otty-plugin-opencode`. Their code is a good place to see these rules at work.

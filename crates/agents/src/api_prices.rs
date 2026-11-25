@@ -172,14 +172,14 @@ mod tests {
     /// of a cloud under their names. Input only, in dollars per token.
     const SERVED_TABLE: &str = r#"{
         "claude-x": {"input_cost_per_token": 3e-06, "output_cost_per_token": 0.0},
-        "openrouter/anthropic/claude-x": {"input_cost_per_token": 4e-06, "output_cost_per_token": 0.0},
+        "hopway/anthropic/claude-x": {"input_cost_per_token": 4e-06, "output_cost_per_token": 0.0},
         "gpt-x": {"input_cost_per_token": 1e-06, "output_cost_per_token": 0.0},
         "azure/gpt-x": {"input_cost_per_token": 2e-06, "output_cost_per_token": 0.0},
         "gemini-x": {"input_cost_per_token": 5e-07, "output_cost_per_token": 0.0},
         "gemini/gemini-x": {"input_cost_per_token": 6e-07, "output_cost_per_token": 0.0}
     }"#;
 
-    /// The providers OTTY has parts for in these tests: OpenRouter and
+    /// The providers OTTY has parts for in these tests: Hopway and
     /// OpenAI, each with the hosts of its servers.
     fn served_registry() -> Registry {
         let provider = |id: &str, hosts: [&'static str; 1]| {
@@ -190,7 +190,7 @@ mod tests {
         Registry::new(
             Vec::new(),
             vec![
-                provider("openrouter", ["openrouter.ai"]),
+                provider("hopway", ["hopway.example"]),
                 provider("openai", ["openai.com"]),
             ],
         )
@@ -218,20 +218,16 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_served_by_openrouter_gets_openrouters_price() {
+    fn an_answer_served_by_hopway_gets_hopways_price() {
         // OpenCode names the provider; Codex the host of its `base_url`.
         assert_eq!(
-            served_input(
-                "anthropic/claude-x",
-                id("openrouter"),
-                served_registry()
-            ),
+            served_input("anthropic/claude-x", id("hopway"), served_registry()),
             Some(4_000_000)
         );
         assert_eq!(
             served_input(
                 "anthropic/claude-x",
-                host("openrouter.ai"),
+                host("hopway.example"),
                 served_registry()
             ),
             Some(4_000_000)

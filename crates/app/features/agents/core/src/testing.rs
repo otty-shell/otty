@@ -119,7 +119,8 @@ fn stand_in_agents() -> Vec<Box<dyn otty_agents::Agent>> {
 }
 
 /// [`registry`]: the entries of the stand-ins and the provider parts of
-/// the Anthropic, OpenAI, DeepSeek and OpenRouter plugins.
+/// the Anthropic and OpenAI plugins and of two made-up plugins of a key
+/// provider each, Tealcloud and Hopway.
 fn test_registry() -> Registry {
     let agents = Registry::of_readers(&stand_in_agents(), &[]);
     let plugin_provider = |id: &str, name: &str, host: &str, page: &str| {
@@ -154,16 +155,16 @@ fn test_registry() -> Registry {
         .with_plan_usage_page("https://chatgpt.com/codex/settings/usage")
         .with_log_in(LogInWith::new(codex_id(), "Codex")),
         plugin_provider(
-            "deepseek",
-            "DeepSeek",
-            "deepseek.com",
-            "https://platform.deepseek.com/usage",
+            "tealcloud",
+            "Tealcloud",
+            "tealcloud.example",
+            "https://platform.tealcloud.example/usage",
         ),
         plugin_provider(
-            "openrouter",
-            "OpenRouter",
-            "openrouter.ai",
-            "https://openrouter.ai/activity",
+            "hopway",
+            "Hopway",
+            "hopway.example",
+            "https://hopway.example/activity",
         ),
     ];
 
@@ -289,16 +290,16 @@ pub(crate) fn login_expired() -> SourceError {
     SourceError::NeedsUser(Box::new(need))
 }
 
-/// The need of the DeepSeek part whose key the provider refused: the
+/// The need of the Tealcloud part whose key the provider refused: the
 /// button opens the page of the keys.
 pub(crate) fn refused_key_need() -> SourceError {
     let need = otty_agents::PartNeed::new(
-        otty_agents::fixtures::plugin_part("deepseek", "deepseek"),
+        otty_agents::fixtures::plugin_part("tealcloud", "tealcloud"),
         "new-key",
         "The key was refused",
         "Make a new key on its page.",
         otty_agents::PartNeedAction::OpenPage(String::from(
-            "https://platform.deepseek.com/api_keys",
+            "https://platform.tealcloud.example/api_keys",
         )),
     );
 
@@ -640,10 +641,10 @@ pub(crate) fn provider_icon(id: &str) -> EntryIcon {
     EntryIcon::of(entry.and_then(|entry| entry.icon()), name)
 }
 
-/// The registry of the tests without the DeepSeek entry, as when no
-/// plugin serves DeepSeek.
-pub(crate) fn registry_without_deepseek() -> Arc<Registry> {
-    Arc::new(test_registry().without_provider(&ProviderId::new("deepseek")))
+/// The registry of the tests without the Tealcloud entry, as when no
+/// plugin serves Tealcloud.
+pub(crate) fn registry_without_tealcloud() -> Arc<Registry> {
+    Arc::new(test_registry().without_provider(&ProviderId::new("tealcloud")))
 }
 
 /// The registry of the tests without the Codex entry, as when the plugin

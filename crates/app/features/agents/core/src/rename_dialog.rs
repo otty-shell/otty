@@ -318,7 +318,7 @@ mod tests {
     /// account is renamed by its plugin and id like any account.
     #[test]
     fn a_key_account_is_renamed_like_any_account() {
-        let key = crate::testing::found_key("deepseek");
+        let key = crate::testing::found_key("tealcloud");
         let mut state = with_accounts(
             &[(claude(), connected(), vec![key.clone()])],
             SavedProfiles::default(),

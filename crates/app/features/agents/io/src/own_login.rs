@@ -280,14 +280,16 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{providers_with_plugins, write};
+    use crate::testing::{
+        EXAMPLE_AGENT, EXAMPLE_CLOUD, providers_with_example, write,
+    };
 
-    fn claude_login(id: &str) -> OwnLogin {
+    fn example_login(id: &str) -> OwnLogin {
         OwnLogin::new(
             id,
-            "anthropic",
-            ProviderId::new("anthropic"),
-            AgentId::new("claude-code"),
+            "example",
+            ProviderId::new(EXAMPLE_CLOUD),
+            AgentId::new(EXAMPLE_AGENT),
         )
     }
 
@@ -297,13 +299,13 @@ mod tests {
     #[test]
     fn the_folder_of_a_new_own_login_is_made_empty_under_its_plugin() {
         let plugins = TempDir::new("own-login-make");
-        let login = claude_login("6f0c1e2a");
+        let login = example_login("6f0c1e2a");
 
         let made = make_folder(plugins.path(), &login);
 
         let folder = plugins
             .path()
-            .join("anthropic")
+            .join("example")
             .join("accounts")
             .join("6f0c1e2a");
         assert_eq!(made, Ok(()));
@@ -316,7 +318,7 @@ mod tests {
     #[test]
     fn a_folder_that_is_there_already_is_not_made_again() {
         let plugins = TempDir::new("own-login-there");
-        let login = claude_login("6f0c1e2a");
+        let login = example_login("6f0c1e2a");
         write(&login.folder_in(plugins.path()).join("a.json"), "{}");
 
         let made = make_folder(plugins.path(), &login);
@@ -339,24 +341,20 @@ mod tests {
     }
 
     /// Decision 6: once the login tab closes, the provider part is asked
-    /// about the folder: nothing there is no login, the Claude login there
-    /// is an account.
+    /// about the folder: nothing there is no login, the login of the
+    /// example agent there is an account.
     #[test]
     fn the_part_tells_whether_the_folder_holds_an_account() {
         let home = TempDir::new("own-login-check");
         let plugins = home.path().join("data").join("plugins");
-        let providers = providers_with_plugins(home.path());
-        let empty = claude_login("a1");
-        let logged_in = claude_login("b2");
+        let providers = providers_with_example(home.path());
+        let empty = example_login("a1");
+        let logged_in = example_login("b2");
         std::fs::create_dir_all(empty.folder_in(&plugins)).expect("a folder");
         let folder = logged_in.folder_in(&plugins);
         write(
-            &folder.join(".claude.json"),
-            r#"{"oauthAccount":{"accountUuid":"00000000-0000-4000-8000-00000000000a","emailAddress":"own@example.com"}}"#,
-        );
-        write(
-            &folder.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"made-up","refreshToken":"made-up","expiresAt":4102444800000}}"#,
+            &folder.join("auth.json"),
+            r#"{"api_key": "ex-made-up-key-0003", "email": "own@example.com"}"#,
         );
 
         let nothing = has_account(&providers, &plugins, &empty);
@@ -371,8 +369,8 @@ mod tests {
     #[test]
     fn removing_the_folder_of_an_own_login_removes_it_only() {
         let plugins = TempDir::new("own-login-remove");
-        let gone = claude_login("a1");
-        let kept = claude_login("b2");
+        let gone = example_login("a1");
+        let kept = example_login("b2");
         write(&gone.folder_in(plugins.path()).join("x.json"), "{}");
         write(&kept.folder_in(plugins.path()).join("y.json"), "{}");
 

@@ -210,7 +210,7 @@ mod tests {
     use crate::agents::prices::{MockPriceList, ModelPrice, TokenPrices};
     use crate::engine::PluginEngine;
     use crate::testing::{
-        TempDir, fixture, load_fixture, load_template, template_env,
+        TempDir, example_env, example_wasm, load_example, load_fixture,
     };
 
     const AGENT: &str = "example-agent";
@@ -229,7 +229,7 @@ mod tests {
     }
 
     fn default_profile() -> Profile {
-        let folder = template_env().home().join(".example-agent");
+        let folder = example_env().home().join(".example-agent");
 
         Profile {
             agent: AGENT.to_string(),
@@ -239,11 +239,11 @@ mod tests {
     }
 
     #[test]
-    fn the_template_gives_its_version_from_its_fixtures() {
+    fn the_example_gives_its_version_from_its_fixtures() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -256,14 +256,14 @@ mod tests {
         assert_eq!(version, Ok(Some("1.4.2".to_string())));
     }
 
-    /// Spec 2026-11-23, Decision 4: the template gives only its default
+    /// Spec 2026-11-23, Decision 4: the example gives only its default
     /// folder, even with another of its folders in the home folder.
     #[test]
-    fn the_template_gives_only_its_default_folder() {
+    fn the_example_gives_only_its_default_folder() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -286,8 +286,8 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let env = template_env().with_var("EXAMPLE_AGENT_HOME", "/data/agent");
-        let plugin = load_template(&engine, &env);
+        let env = example_env().with_var("EXAMPLE_AGENT_HOME", "/data/agent");
+        let plugin = load_example(&engine, &env);
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -307,12 +307,12 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
         let work = Profile {
-            folder: template_env()
+            folder: example_env()
                 .home()
                 .join(".example-agent-work")
                 .display()
@@ -337,11 +337,11 @@ mod tests {
     /// Issue 25: the part names where its sessions are, and reads one
     /// file into the sessions it holds.
     #[test]
-    fn the_template_reads_its_sessions_through_the_host() {
+    fn the_example_reads_its_sessions_through_the_host() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -388,8 +388,8 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let env = template_env();
-        let plugin = load_template(&engine, &env);
+        let env = example_env();
+        let plugin = load_example(&engine, &env);
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -425,11 +425,9 @@ mod tests {
     #[test]
     fn the_agent_part_has_no_login_calls() {
         let engine = wasmtime::Engine::default();
-        let component = wasmtime::component::Component::from_file(
-            &engine,
-            fixture("template"),
-        )
-        .expect("the template compiles");
+        let component =
+            wasmtime::component::Component::from_file(&engine, example_wasm())
+                .expect("the example compiles");
 
         let exports = component.component_type();
         let agent = exports
@@ -440,7 +438,7 @@ mod tests {
             agent,
         )) = agent
         else {
-            panic!("the template exports the agent contract");
+            panic!("the example exports the agent contract");
         };
         let calls: Vec<&str> =
             agent.exports(&engine).map(|(name, _)| name).collect();
@@ -458,8 +456,8 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let env = template_env();
-        let plugin = load_template(&engine, &env);
+        let env = example_env();
+        let plugin = load_example(&engine, &env);
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -491,11 +489,11 @@ mod tests {
     /// Decision 3: the part asks OTTY's price list for the price of each
     /// answer's model, through the host, and prices the tokens itself.
     #[test]
-    fn the_template_prices_its_answers_at_the_price_otty_gives() {
+    fn the_example_prices_its_answers_at_the_price_otty_gives() {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -549,7 +547,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::agent(AGENT))
             .expect("a listed part");
@@ -581,7 +579,7 @@ mod tests {
         let cache = TempDir::new();
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("engine");
-        let plugin = load_template(&engine, &template_env());
+        let plugin = load_example(&engine, &example_env());
         let mut batch = plugin
             .start_calls(&PartRef::provider("example-cloud"))
             .expect("a listed part");

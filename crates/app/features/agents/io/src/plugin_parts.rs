@@ -290,19 +290,13 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-
-    /// The built template plugin of `assets/plugins/example/`: its manifest, its
-    /// `.wasm` and its icons in one folder.
-    fn template_folder() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../assets/plugins/example")
-    }
+    use crate::testing::example_copy;
 
     fn load(home: &TempDir, cache: &TempDir, on: Vec<PartRef>) -> PluginParts {
         let engine =
             PluginEngine::new(cache.path().to_path_buf()).expect("the engine");
         let installed = [InstalledParts {
-            folder: template_folder(),
+            folder: example_copy(),
             on,
         }];
 
@@ -397,7 +391,7 @@ mod tests {
         let folder = home.path().join("example");
         std::fs::create_dir_all(&folder).expect("the folder");
         std::fs::copy(
-            template_folder().join(MANIFEST_FILE),
+            example_copy().join(MANIFEST_FILE),
             folder.join(MANIFEST_FILE),
         )
         .expect("the manifest");
@@ -427,7 +421,7 @@ mod tests {
 
     #[test]
     fn the_parts_see_only_the_variables_they_list() {
-        let manifest = read_manifest(&template_folder()).expect("a manifest");
+        let manifest = read_manifest(&example_copy()).expect("a manifest");
 
         let env = plugin_env(
             PathBuf::from("/home/dev"),

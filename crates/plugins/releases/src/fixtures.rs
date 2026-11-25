@@ -15,16 +15,16 @@ use crate::package::{MANIFEST_FILE, Package};
 use crate::plan::{InstallPlan, PendingUpdate, UpdateOutcome, UpdateReport};
 use crate::plugins_file::{InstalledPlugin, Source};
 
-/// The manifest of the template plugin, `assets/plugins/example/`, at
-/// `version`: an agent part `example-agent` and a provider part
-/// `example-cloud`.
+/// The manifest of the example test plugin of `otty-plugin-host`, a copy
+/// of the plugin template, at `version`: an agent part `example-agent` and
+/// a provider part `example-cloud`.
 ///
 /// The version line of the `[plugin]` table, the first that starts with
-/// `version =`, is replaced whatever version the template has now, so a
-/// new version of the template changes no test.
+/// `version =`, is replaced whatever version the example has now, so a
+/// new version of the example changes no test.
 pub fn example_manifest(version: &str) -> String {
     let text =
-        include_str!("../../../../assets/plugins/example/otty-plugin.toml");
+        include_str!("../../host/tests/fixtures/example/otty-plugin.toml");
 
     let mut is_replaced = false;
     let lines: Vec<String> = text

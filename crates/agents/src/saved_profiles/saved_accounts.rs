@@ -56,11 +56,11 @@ mod tests {
             .expect("the text is the layout of agents.json")
     }
 
-    /// A made-up key of DeepSeek, known by its fingerprint.
+    /// A made-up key of Tealcloud, known by its fingerprint.
     fn key() -> Account {
         Account::new(
-            "deepseek",
-            ProviderId::new("deepseek"),
+            "tealcloud",
+            ProviderId::new("tealcloud"),
             "key:27c8d30e",
             "key ••••d30e",
             AccountKind::Key,
@@ -119,7 +119,7 @@ mod tests {
                 { "plugin": "example", "id": "chatgpt:made-up-one", "name": "ChatGPT (Home)" },
                 { "plugin": "example", "id": "chatgpt:made-up-two", "hidden": true },
                 { "plugin": "example", "id": "org:made-up-org", "name": "Acme" },
-                { "plugin": "deepseek", "id": "key:27c8d30e", "hidden": true }
+                { "plugin": "tealcloud", "id": "key:27c8d30e", "hidden": true }
             ]
         }"#;
 
@@ -135,8 +135,8 @@ mod tests {
             .with_account_name(&key(), Some(String::from("Mine")))
             .with_account_hidden(&key(), true);
         let read_again = Account::new(
-            "deepseek",
-            ProviderId::new("deepseek"),
+            "tealcloud",
+            ProviderId::new("tealcloud"),
             "key:27c8d30e",
             "you@example.com",
             AccountKind::Key,

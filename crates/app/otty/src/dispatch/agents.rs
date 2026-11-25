@@ -457,8 +457,8 @@ mod tests {
     fn the_numbers_of_an_account_are_read_in_the_background() {
         let mut app = app();
         let account = otty_agents::Account::new(
-            "deepseek",
-            otty_agents::ProviderId::new("deepseek"),
+            "tealcloud",
+            otty_agents::ProviderId::new("tealcloud"),
             "key:made-up",
             "key ••••made",
             otty_agents::AccountKind::Key,

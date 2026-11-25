@@ -108,36 +108,36 @@ mod tests {
     use crate::event::AgentsIntent;
     use crate::reducer::reduce;
     use crate::testing::{
-        claude, connected, registry_without_deepseek, with_profiles,
+        claude, connected, registry_without_tealcloud, with_profiles,
     };
     use crate::types::AgentReaders;
 
-    fn deepseek_part() -> OffPart {
+    fn tealcloud_part() -> OffPart {
         OffPart {
-            plugin: String::from("deepseek"),
-            plugin_name: String::from("DeepSeek"),
+            plugin: String::from("tealcloud"),
+            plugin_name: String::from("Tealcloud"),
             version: String::from("0.2.0"),
             side: PartSide::Provider,
-            part: String::from("deepseek"),
-            part_name: String::from("DeepSeek"),
-            hosts: vec![String::from("deepseek.com")],
+            part: String::from("tealcloud"),
+            part_name: String::from("Tealcloud"),
+            hosts: vec![String::from("tealcloud.example")],
         }
     }
 
-    /// The registry of the tests with a DeepSeek provider read by the
-    /// DeepSeek plugin.
+    /// The registry of the tests with a Tealcloud provider read by the
+    /// Tealcloud plugin.
     fn registry_with_plugin() -> Arc<Registry> {
         let part = PluginPart::new(
-            "deepseek",
-            "DeepSeek",
+            "tealcloud",
+            "Tealcloud",
             "0.2.0",
-            "https://github.com/otty-shell/otty-plugin-deepseek",
-            "deepseek",
+            "https://github.com/otty-shell/otty-plugin-tealcloud",
+            "tealcloud",
         );
         let entry =
-            ProviderEntry::new(ProviderId::new("deepseek"), "DeepSeek", part)
-                .with_hosts(["deepseek.com"]);
-        let without = registry_without_deepseek();
+            ProviderEntry::new(ProviderId::new("tealcloud"), "Tealcloud", part)
+                .with_hosts(["tealcloud.example"]);
+        let without = registry_without_tealcloud();
         let agents: Vec<AgentEntry> = without.agents().to_vec();
         let mut providers = vec![entry];
         providers.extend(without.providers().iter().cloned());
@@ -158,14 +158,14 @@ mod tests {
         state
     }
 
-    fn deepseek_host() -> ProviderRef {
-        ProviderRef::Host(String::from("api.deepseek.com"))
+    fn tealcloud_host() -> ProviderRef {
+        ProviderRef::Host(String::from("api.tealcloud.example"))
     }
 
-    /// A DeepSeek key the DeepSeek plugin found: read by it while its part
+    /// A Tealcloud key the Tealcloud plugin found: read by it while its part
     /// is in the registry.
-    fn deepseek_key() -> Account {
-        crate::testing::found_key("deepseek")
+    fn tealcloud_key() -> Account {
+        crate::testing::found_key("tealcloud")
     }
 
     /// Issue 09: "Read by" for a plugin, no plugin and off.
@@ -173,11 +173,11 @@ mod tests {
     fn read_by_names_the_plugin_no_plugin_or_off() {
         let plugin = state_with(registry_with_plugin(), PluginNotes::default());
         let none =
-            state_with(registry_without_deepseek(), PluginNotes::default());
+            state_with(registry_without_tealcloud(), PluginNotes::default());
         let off = state_with(
-            registry_without_deepseek(),
+            registry_without_tealcloud(),
             PluginNotes {
-                off_parts: vec![deepseek_part()],
+                off_parts: vec![tealcloud_part()],
                 waiting_updates: Vec::new(),
                 broken_parts: Vec::new(),
             },
@@ -185,29 +185,29 @@ mod tests {
         let label = i18n::t(Key::AgentsFieldReadBy);
 
         assert_eq!(
-            account_read_by(&plugin, &deepseek_key()),
+            account_read_by(&plugin, &tealcloud_key()),
             FactViewModel::linked(
                 label,
-                String::from("DeepSeek 0.2.0"),
-                String::from("deepseek")
+                String::from("Tealcloud 0.2.0"),
+                String::from("tealcloud")
             )
         );
         assert_eq!(
-            account_read_by(&none, &deepseek_key()),
+            account_read_by(&none, &tealcloud_key()),
             FactViewModel::new(
                 label,
                 i18n::t(Key::AgentsReadByNoPlugin).to_string()
             )
         );
         assert_eq!(
-            account_read_by(&off, &deepseek_key()),
+            account_read_by(&off, &tealcloud_key()),
             FactViewModel::linked(
                 label,
                 i18n::filled(
                     Key::TplAgentsReadByOff,
-                    &[("plugin", "DeepSeek 0.2.0")]
+                    &[("plugin", "Tealcloud 0.2.0")]
                 ),
-                String::from("deepseek")
+                String::from("tealcloud")
             )
         );
     }
@@ -225,19 +225,19 @@ mod tests {
     #[test]
     fn an_off_part_serves_a_host_under_its_own() {
         let state = state_with(
-            registry_without_deepseek(),
+            registry_without_tealcloud(),
             PluginNotes {
-                off_parts: vec![deepseek_part()],
+                off_parts: vec![tealcloud_part()],
                 waiting_updates: Vec::new(),
                 broken_parts: Vec::new(),
             },
         );
 
-        assert!(off_provider_part(&state, &deepseek_host()).is_some());
+        assert!(off_provider_part(&state, &tealcloud_host()).is_some());
         assert!(
             off_provider_part(
                 &state,
-                &ProviderRef::Host(String::from("notdeepseek.com"))
+                &ProviderRef::Host(String::from("nottealcloud.example"))
             )
             .is_none()
         );

@@ -40,8 +40,8 @@ read = ["~/.test-agent/**"]
 
 /// The manifest of a test plugin whose agent part declares keys in every
 /// kind of place, and two provider parts, each with its own host. The
-/// template plugin's `.wasm` loads with it: it exports both contracts and
-/// the language receiver.
+/// example test plugin's `.wasm` loads with it: it exports both contracts
+/// and the language receiver.
 pub(crate) const KEYS_PLUGIN_MANIFEST: &str = r#"
 [plugin]
 id = "test-plugin"
@@ -245,34 +245,39 @@ pub(crate) fn fixture_with_agent_0_2(name: &str, folder: &Path) -> PathBuf {
     path
 }
 
-/// The folder of the template plugin, `plugins/template/`.
-pub(crate) fn template_folder() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../plugins/template")
-        .canonicalize()
-        .expect("the template plugin")
+/// The built example test plugin, as an installed plugin folder holds it:
+/// `tests/fixtures/example/`, made from `tests/example/` by
+/// `scripts/build-test-plugins.sh`.
+pub(crate) fn example_copy() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/example")
 }
 
-/// The environment of the template's tests: its `fixtures/` is the home
-/// folder.
-pub(crate) fn template_env() -> Environment {
-    Environment::new(template_folder().join("fixtures"))
+/// The `.wasm` of the built example test plugin.
+pub(crate) fn example_wasm() -> PathBuf {
+    example_copy().join("example.wasm")
 }
 
-/// The template plugin, built into `tests/fixtures/template.wasm`, loaded
-/// with its own manifest by `engine` for `env`.
-pub(crate) fn load_template(
+/// The environment of the example plugin's tests: `tests/example/home/`
+/// is the home folder.
+pub(crate) fn example_env() -> Environment {
+    Environment::new(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/example/home"),
+    )
+}
+
+/// The built example test plugin loaded with its own manifest by `engine`
+/// for `env`.
+pub(crate) fn load_example(
     engine: &PluginEngine,
     env: &Environment,
 ) -> LoadedPlugin {
-    let text =
-        std::fs::read_to_string(template_folder().join("otty-plugin.toml"))
-            .expect("the template's manifest");
+    let text = std::fs::read_to_string(example_copy().join("otty-plugin.toml"))
+        .expect("the example's manifest");
     let manifest = Manifest::parse(&text).expect("a valid manifest");
 
     engine
-        .load(manifest, &fixture("template"), env)
-        .expect("the template loads")
+        .load(manifest, &example_wasm(), env)
+        .expect("the example loads")
 }
 
 /// A test environment whose home folder does not exist.
@@ -303,7 +308,7 @@ pub(crate) fn engine_with(
         .expect("engine")
 }
 
-/// The template plugin's `.wasm` loaded with [`KEYS_PLUGIN_MANIFEST`] by
+/// The example test plugin's `.wasm` loaded with [`KEYS_PLUGIN_MANIFEST`] by
 /// `engine` for `env`.
 pub(crate) fn load_keys_plugin(
     engine: &PluginEngine,
@@ -312,7 +317,7 @@ pub(crate) fn load_keys_plugin(
     let manifest = Manifest::parse(KEYS_PLUGIN_MANIFEST).expect("valid");
 
     engine
-        .load(manifest, &fixture("template"), env)
+        .load(manifest, &example_wasm(), env)
         .expect("the test plugin loads")
 }
 

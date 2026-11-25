@@ -677,16 +677,16 @@ mod tests {
         }
     }
 
-    /// The owner's check: a DeepSeek key shows Left.
+    /// The owner's check: a Tealcloud key shows Left.
     #[test]
     fn a_key_shows_the_money_left_in_its_currency() {
-        let deepseek = crate::testing::found_key("deepseek");
+        let tealcloud = crate::testing::found_key("tealcloud");
         let state = crate::testing::with_key_read(
-            &deepseek,
+            &tealcloud,
             Ok(balance(Amount::new(110.0, "CNY"), None)),
         );
 
-        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+        let numbers = AccountNumbersViewModel::of(&state, &tealcloud, now());
 
         assert_eq!(
             numbers,
@@ -703,18 +703,18 @@ mod tests {
     }
 
     #[test]
-    fn an_openrouter_key_shows_its_limit_with_a_bar() {
-        let openrouter = crate::testing::found_key("openrouter");
+    fn an_hopway_key_shows_its_limit_with_a_bar() {
+        let hopway = crate::testing::found_key("hopway");
         let limited = otty_agents::KeyLimit::new(
             Amount::new(12.3, "USD").expect("a number"),
             Amount::new(50.0, "USD"),
         );
         let state = crate::testing::with_key_read(
-            &openrouter,
+            &hopway,
             Ok(balance(None, Some(limited))),
         );
 
-        let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
+        let numbers = AccountNumbersViewModel::of(&state, &hopway, now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the money of the key: {numbers:?}");
@@ -728,13 +728,13 @@ mod tests {
 
     #[test]
     fn a_failed_read_with_nothing_before_says_why() {
-        let openrouter = crate::testing::found_key("openrouter");
+        let hopway = crate::testing::found_key("hopway");
         let state = crate::testing::with_key_read(
-            &openrouter,
+            &hopway,
             Err(crate::testing::refused_key_need()),
         );
 
-        let numbers = AccountNumbersViewModel::of(&state, &openrouter, now());
+        let numbers = AccountNumbersViewModel::of(&state, &hopway, now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the failure: {numbers:?}");
@@ -745,7 +745,7 @@ mod tests {
             money
                 .failure
                 .as_deref()
-                .is_some_and(|failure| failure.contains("OpenRouter")),
+                .is_some_and(|failure| failure.contains("Hopway")),
             "{money:?}"
         );
     }
@@ -755,7 +755,7 @@ mod tests {
     /// shows both, as the provider counted them.
     #[test]
     fn a_key_shows_the_money_spent_this_month_and_its_credits() {
-        let deepseek = crate::testing::found_key("deepseek");
+        let tealcloud = crate::testing::found_key("tealcloud");
         let numbers = otty_agents::AccountNumbers::Balance(
             Balance::new(Amount::new(110.0, "USD"), None)
                 .with_spent_this_month(Amount::new(4.2, "USD"))
@@ -766,9 +766,9 @@ mod tests {
                     None,
                 ))),
         );
-        let state = crate::testing::with_key_read(&deepseek, Ok(numbers));
+        let state = crate::testing::with_key_read(&tealcloud, Ok(numbers));
 
-        let numbers = AccountNumbersViewModel::of(&state, &deepseek, now());
+        let numbers = AccountNumbersViewModel::of(&state, &tealcloud, now());
 
         let Some(AccountNumbersViewModel::Money(money)) = numbers else {
             panic!("the money of the key: {numbers:?}");

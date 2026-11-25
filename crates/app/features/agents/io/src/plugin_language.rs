@@ -68,12 +68,7 @@ mod tests {
 
     use super::*;
     use crate::plugin_parts::{InstalledParts, PluginParts};
-
-    /// The built template plugin of `assets/plugins/example/`.
-    fn template_folder() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../../assets/plugins/example")
-    }
+    use crate::testing::example_copy;
 
     /// A plugin whose texts are only in English: the smallest test plugin
     /// of the host, which exports no language receiver.
@@ -94,7 +89,7 @@ mod tests {
         folder
     }
 
-    /// A profile of the template's agent nobody is logged in with.
+    /// A profile of the example's agent nobody is logged in with.
     fn nobody(home: &TempDir) -> Profile {
         let folder = home.path().join(".example-agent-nobody");
         std::fs::create_dir_all(&folder).expect("the folder");
@@ -114,7 +109,7 @@ mod tests {
             PluginEngine::new(cache.path().to_path_buf()).expect("the engine"),
         );
         let installed = [InstalledParts {
-            folder: template_folder(),
+            folder: example_copy(),
             on: vec![PartRef::agent("example-agent")],
         }];
         let parts = PluginParts::load(

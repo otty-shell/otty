@@ -121,7 +121,7 @@ mod tests {
     use otty_app_testing::temp_dir::TempDir;
 
     use super::*;
-    use crate::testing::{agents_with_plugins, no_prices, run};
+    use crate::testing::{EXAMPLE_AGENT, agents_with_example, no_prices, run};
 
     /// 2026-11-16T10:00:00Z.
     const NOW: u64 = 1_794_823_200;
@@ -133,17 +133,21 @@ mod tests {
         )
     }
 
-    /// A Coder profile in a made-up folder with one session file of
-    /// one answer written today.
-    fn claude_with_one_answer(home: &TempDir) -> Profile {
-        let config_dir = home.path().join(".claude-test");
-        let session_file = config_dir.join("projects/-home-user-otty/s1.jsonl");
+    /// A profile of the example agent in a made-up folder with one
+    /// session file of one answer written today, 2026-11-16T09:00:00Z.
+    fn example_with_one_answer(home: &TempDir) -> Profile {
+        let config_dir = home.path().join(".example-agent-test");
+        let session_file = config_dir.join("sessions/s1.jsonl");
         std::fs::create_dir_all(
-            session_file.parent().expect("the project folder"),
+            session_file.parent().expect("the sessions folder"),
         )
-        .expect("the project folder");
-        let answer = r#"{"type":"assistant","cwd":"/home/user/otty","sessionId":"s1","requestId":"req_1","timestamp":"2026-11-16T09:00:00Z","message":{"id":"msg_1","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"cache_read_input_tokens":100,"output_tokens":5}}}"#;
-        std::fs::write(&session_file, answer).expect("the session file");
+        .expect("the sessions folder");
+        let lines = [
+            r#"{"type":"meta","version":"1.4.2","cwd":"/home/user/otty","title":"Fix the tabs"}"#,
+            r#"{"type":"answer","id":"a1","at_ms":1794819600000,"model":"example-large","tokens":{"input":10,"cached":100,"output":5}}"#,
+        ];
+        std::fs::write(&session_file, lines.join("\n"))
+            .expect("the session file");
         std::fs::File::options()
             .write(true)
             .open(&session_file)
@@ -151,8 +155,8 @@ mod tests {
             .expect("the file time");
 
         Profile::added(
-            AgentId::new("claude-code"),
-            "Claude Code (Test)",
+            AgentId::new(EXAMPLE_AGENT),
+            "Example (Test)",
             config_dir,
         )
     }
@@ -160,11 +164,11 @@ mod tests {
     #[test]
     fn the_tokens_are_counted_by_the_agent_of_the_profile() {
         let home = TempDir::new("agents-spend");
-        let profile = claude_with_one_answer(&home);
+        let profile = example_with_one_answer(&home);
         let before = SystemTime::now();
 
         let counted = count_spend(
-            &agents_with_plugins(home.path()),
+            &agents_with_example(home.path()),
             profile.clone(),
             &now(),
             &no_prices(),
@@ -172,7 +176,7 @@ mod tests {
 
         assert_eq!(counted.profile, profile);
         let SpendCount::Counted(spend) = counted.spend else {
-            panic!("the Anthropic plugin counts the tokens of the files");
+            panic!("the example plugin counts the tokens of the files");
         };
         assert_eq!(spend.today(), TokenCount::new(10, 100, 5));
         assert!(counted.counted_at >= before);
@@ -194,8 +198,8 @@ mod tests {
     #[test]
     fn the_count_runs_in_the_background_and_answers_with_an_intent() {
         let home = TempDir::new("agents-spend-task");
-        let profile = claude_with_one_answer(&home);
-        let agents = agents_with_plugins(home.path());
+        let profile = example_with_one_answer(&home);
+        let agents = agents_with_example(home.path());
 
         let answers = run(load_spend(&agents, profile.clone(), &no_prices()));
 
@@ -213,9 +217,9 @@ mod tests {
     #[test]
     fn a_count_that_stopped_fails_because_it_stopped() {
         let home = TempDir::new("agents-spend-stopped");
-        let profile = claude_with_one_answer(&home);
+        let profile = example_with_one_answer(&home);
 
-        let counts = has_counter(&agents_with_plugins(home.path()), &profile);
+        let counts = has_counter(&agents_with_example(home.path()), &profile);
 
         let counted = stopped_count(profile.clone(), counts);
 

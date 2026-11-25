@@ -316,9 +316,9 @@ mod tests {
         organization,
     };
 
-    /// A made-up DeepSeek key found in the Claude Code folder.
-    fn deepseek() -> Account {
-        crate::testing::found_key("deepseek")
+    /// A made-up Tealcloud key found in the Claude Code folder.
+    fn tealcloud() -> Account {
+        crate::testing::found_key("tealcloud")
     }
 
     fn left(value: f64) -> AccountNumbers {
@@ -340,33 +340,33 @@ mod tests {
     #[test]
     fn an_account_is_read_once_until_its_read_ends() {
         let mut reads = AccountReads::default();
-        let wanted = vec![deepseek()];
+        let wanted = vec![tealcloud()];
 
         let first = reads.start(wanted.clone(), Which::Every, true);
         let again = reads.start(wanted.clone(), Which::Every, true);
-        reads.apply(loaded(deepseek(), Ok(left(110.0)), at(10)));
+        reads.apply(loaded(tealcloud(), Ok(left(110.0)), at(10)));
         let after = reads.start(wanted, Which::Stale(at(20)), true);
 
-        assert_eq!(first, [deepseek()]);
+        assert_eq!(first, [tealcloud()]);
         assert!(again.is_empty(), "a read is on its way");
         assert!(after.is_empty(), "the read is fresh");
-        let read = reads.of(&deepseek()).map(AccountRead::reads);
+        let read = reads.of(&tealcloud()).map(AccountRead::reads);
         assert!(read.is_some_and(|read| !read.is_reading()));
     }
 
     #[test]
     fn a_failed_read_keeps_the_last_good_numbers_and_says_why() {
         let mut reads = AccountReads::default();
-        let _ = reads.start(vec![deepseek()], Which::Every, true);
-        reads.apply(loaded(deepseek(), Ok(left(110.0)), at(10)));
-        let _ = reads.start(vec![deepseek()], Which::Every, true);
+        let _ = reads.start(vec![tealcloud()], Which::Every, true);
+        reads.apply(loaded(tealcloud(), Ok(left(110.0)), at(10)));
+        let _ = reads.start(vec![tealcloud()], Which::Every, true);
         reads.apply(loaded(
-            deepseek(),
+            tealcloud(),
             Err(crate::testing::refused_key_need()),
             at(20),
         ));
 
-        let read = reads.of(&deepseek()).expect("the account was read");
+        let read = reads.of(&tealcloud()).expect("the account was read");
 
         assert_eq!(
             read.balance().map(|(balance, at)| (balance.clone(), at)),
@@ -381,12 +381,12 @@ mod tests {
     #[test]
     fn an_account_no_longer_wanted_is_forgotten() {
         let mut reads = AccountReads::default();
-        let _ = reads.start(vec![deepseek()], Which::Every, true);
+        let _ = reads.start(vec![tealcloud()], Which::Every, true);
 
         let _ = reads.start(Vec::new(), Which::Every, true);
-        reads.apply(loaded(deepseek(), Ok(left(1.0)), at(10)));
+        reads.apply(loaded(tealcloud(), Ok(left(1.0)), at(10)));
 
-        assert_eq!(reads.of(&deepseek()), None);
+        assert_eq!(reads.of(&tealcloud()), None);
     }
 
     #[test]
@@ -420,17 +420,17 @@ mod tests {
     #[test]
     fn an_account_no_part_reads_or_a_key_has_no_limits_to_draw() {
         let mut reads = AccountReads::default();
-        let wanted = vec![chatgpt_login(), deepseek()];
+        let wanted = vec![chatgpt_login(), tealcloud()];
         let _ = reads.start(wanted, Which::Every, true);
         reads.apply(loaded(
             chatgpt_login(),
             Err(SourceError::NotAvailable(Unavailable::NoAccountSource)),
             at(10),
         ));
-        reads.apply(loaded(deepseek(), Ok(left(1.0)), at(10)));
+        reads.apply(loaded(tealcloud(), Ok(left(1.0)), at(10)));
 
         let unread = reads.of(&chatgpt_login()).and_then(AccountRead::limits);
-        let key = reads.of(&deepseek()).and_then(AccountRead::limits);
+        let key = reads.of(&tealcloud()).and_then(AccountRead::limits);
 
         assert!(unread.is_some_and(|limits| !limits.has_sources()));
         assert_eq!(key, None);
